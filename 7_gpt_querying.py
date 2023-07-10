@@ -2,8 +2,8 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 # Load pretrained model and tokenizer
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-model = GPT2LMHeadModel.from_pretrained("gpt2")
-#model = GPT2LMHeadModel.from_pretrained("./gpt2_finetuned")
+#model = GPT2LMHeadModel.from_pretrained("gpt2")
+model = GPT2LMHeadModel.from_pretrained("./gpt2_finetuned")
 
 # Encode input context
 while True:
