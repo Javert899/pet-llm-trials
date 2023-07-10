@@ -27,32 +27,34 @@ else:
     import torch
     from transformers import BertForQuestionAnswering, BertTokenizer
 
-    # Load pretrained model and tokenizer
-    model = BertForQuestionAnswering.from_pretrained('bert-large-uncased-whole-word-masking-finetuned-squad')
-    tokenizer = BertTokenizer.from_pretrained('bert-large-uncased-whole-word-masking-finetuned-squad')
-
     # Provide your context and question
     context = "Hugging Face Inc. is a company based in New York City. Its headquarters are in DUMBO, therefore very close to the Manhattan Bridge."
-    question = "Where is Hugging Face Inc. based?"
 
-    # Encode the context and question
-    input_ids = tokenizer.encode(question, context)
+    while True:
+        question = input("## Please insert a question -> ")
 
-    # Find the tokens for the start and end of answer
-    answer_start = input_ids.index(tokenizer.sep_token_id) + 1
-    answer_end = len(input_ids) - 1
+        # Load pretrained model and tokenizer
+        model = BertForQuestionAnswering.from_pretrained('bert-large-uncased-whole-word-masking-finetuned-squad')
+        tokenizer = BertTokenizer.from_pretrained('bert-large-uncased-whole-word-masking-finetuned-squad')
 
-    # Define segment_ids: 0 for the question and 1 for the context
-    segment_ids = [0] * answer_start + [1] * (answer_end - answer_start + 1)
+        # Encode the context and question
+        input_ids = tokenizer.encode(question, context)
 
-    # Convert to tensors and run through the model
-    start_scores, end_scores = model(torch.tensor([input_ids]), token_type_ids=torch.tensor([segment_ids]))
+        # Find the tokens for the start and end of answer
+        answer_start = input_ids.index(tokenizer.sep_token_id) + 1
+        answer_end = len(input_ids) - 1
 
-    # Find the tokens with the highest start and end scores
-    #answer_start = torch.argmax(start_scores)
-    #answer_end = torch.argmax(end_scores)
+        # Define segment_ids: 0 for the question and 1 for the context
+        segment_ids = [0] * answer_start + [1] * (answer_end - answer_start + 1)
 
-    # Convert tokens to string
-    answer = tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(input_ids))
+        # Convert to tensors and run through the model
+        start_scores, end_scores = model(torch.tensor([input_ids]), token_type_ids=torch.tensor([segment_ids]))
 
-    print(answer)
+        # Find the tokens with the highest start and end scores
+        #answer_start = torch.argmax(start_scores)
+        #answer_end = torch.argmax(end_scores)
+
+        # Convert tokens to string
+        answer = tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(input_ids))
+
+        print(answer)
