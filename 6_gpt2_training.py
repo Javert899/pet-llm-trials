@@ -32,6 +32,7 @@ def fine_tune_gpt2(model_name, train_path, output_dir, eval_path=None, epochs=4,
         per_device_train_batch_size=1,
         save_steps=10_000,
         save_total_limit=2,
+        gradient_accumulation_steps=2,
         weight_decay=0.01,
         learning_rate=learning_rate,
         evaluation_strategy="epoch" if eval_path else "no",
@@ -53,5 +54,5 @@ def fine_tune_gpt2(model_name, train_path, output_dir, eval_path=None, epochs=4,
     trainer.save_model(output_dir)
 
 # Fine-tune GPT-2 on your text data
-fine_tune_gpt2("gpt2", "./pet_united.txt", "./gpt2_finetuned", None, epochs=35, learning_rate=3e-5)
+fine_tune_gpt2("gpt2", "./pet_united.txt", "./gpt2_finetuned", None, epochs=70, learning_rate=2e-5)
 
