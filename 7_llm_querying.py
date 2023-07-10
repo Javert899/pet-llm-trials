@@ -24,44 +24,36 @@ if False:
 
         print(generated_text)
 else:
-    from transformers import RagTokenizer, RagRetriever, RagTokenForGeneration
-    from transformers import DPRQuestionEncoder, DPRContextEncoder
     import torch
+    from transformers import BartForQuestionAnswering, BartTokenizer
 
-    # Initialize the question encoder and context encoder
-    question_encoder = DPRQuestionEncoder.from_pretrained("facebook/dpr-question_encoder-single-nq-base")
-    context_encoder = DPRContextEncoder.from_pretrained("facebook/dpr-ctx_encoder-single-nq-base")
+    # Load the pre-trained BART model and tokenizer
+    model = BartForQuestionAnswering.from_pretrained('facebook/bart-large')
+    tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
 
-    # Initialize the tokenizer
-    tokenizer = RagTokenizer.from_pretrained("facebook/rag-token-nq")
+    # Provide the context and the question
+    context = "OpenAI is an artificial intelligence research lab consisting of the for-profit OpenAI LP and its parent company, the non-profit OpenAI Inc. OpenAI LP is an employer of researchers and engineers who aim to ensure that artificial general intelligence (AGI) benefits all of humanity."
+    question = "What is OpenAI?"
 
-    # Initialize the retriever
-    retriever = RagRetriever(
-        question_encoder=question_encoder,
-        context_encoder=context_encoder,
-        index_name="exact",  # Use the exact index for faster retrieval
-        use_dummy_dataset=True  # Use a dummy dataset
-    )
+    # Encode the context and question to get input_ids and attention_mask
+    inputs = tokenizer(question, context, return_tensors='pt')
 
-    # Initialize the generator
-    model = RagTokenForGeneration.from_pretrained("facebook/rag-token-nq", retriever=retriever)
+    # Feed the input to BART to retrieve the start and end positions of the answer
+    start_positions = torch.tensor([1])
+    end_positions = torch.tensor([3])
+    outputs = model(**inputs, start_positions=start_positions, end_positions=end_positions)
 
-    # Define a question and a context
-    context = "The Eiffel Tower is located in Paris."
-    question = "Where is the Eiffel Tower located?"
+    # Get the loss and the start/end position logits
+    loss = outputs.loss
+    start_scores = outputs.start_logits
+    end_scores = outputs.end_logits
 
-    # Encode the question and context
-    inputs = tokenizer(question, context, return_tensors="pt")
+    # Find the tokens with the highest `start` and `end` scores.
+    answer_start = torch.argmax(start_scores)
+    answer_end = torch.argmax(end_scores) + 1
 
-    # Generate the output
-    outputs = model.generate(
-        input_ids=inputs["input_ids"],
-        attention_mask=inputs["attention_mask"],
-        decoder_start_token_id=model.config.pad_token_id
-    )
+    # Get the answer from the context
+    answer = tokenizer.convert_tokens_to_string(
+        tokenizer.convert_ids_to_tokens(inputs['input_ids'][0][answer_start:answer_end]))
 
-    # Decode the output
-    generated = tokenizer.batch_decode(outputs, skip_special_tokens=True)
-
-    # Print the answer
-    print(generated[0])
+    print(f"The answer to the question is: {answer}")
