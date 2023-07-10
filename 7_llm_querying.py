@@ -24,38 +24,34 @@ if False:
 
         print(generated_text)
 else:
-    import torch
-    from transformers import BartForQuestionAnswering, BartTokenizer
+    from transformers import BertForQuestionAnswering, BertTokenizer
 
-    # Load the pre-trained BART model and tokenizer
+    # Load pretrained model and tokenizer
+    model = BertForQuestionAnswering.from_pretrained('bert-large-uncased-whole-word-masking-finetuned-squad')
+    tokenizer = BertTokenizer.from_pretrained('bert-large-uncased-whole-word-masking-finetuned-squad')
 
-    # Provide the context and the question
-    context = "OpenAI is an artificial intelligence research lab consisting of the for-profit OpenAI LP and its parent company, the non-profit OpenAI Inc. OpenAI LP is an employer of researchers and engineers who aim to ensure that artificial general intelligence (AGI) benefits all of humanity."
-    while True:
-        question = input("Please insert a question -> ")
+    # Provide your context and question
+    context = "Hugging Face Inc. is a company based in New York City. Its headquarters are in DUMBO, therefore very close to the Manhattan Bridge."
+    question = "Where is Hugging Face Inc. based?"
 
-        model = BartForQuestionAnswering.from_pretrained('facebook/bart-large')
-        tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
+    # Encode the context and question
+    input_ids = tokenizer.encode(question, context)
 
-        # Encode the context and question to get input_ids and attention_mask
-        inputs = tokenizer(question, context, return_tensors='pt')
+    # Find the tokens for the start and end of answer
+    answer_start = input_ids.index(tokenizer.sep_token_id) + 1
+    answer_end = len(input_ids) - 1
 
-        # Feed the input to BART to retrieve the start and end positions of the answer
-        start_positions = torch.tensor([1])
-        end_positions = torch.tensor([3])
-        outputs = model(**inputs, start_positions=start_positions, end_positions=end_positions)
+    # Define segment_ids: 0 for the question and 1 for the context
+    segment_ids = [0] * answer_start + [1] * (answer_end - answer_start + 1)
 
-        # Get the loss and the start/end position logits
-        loss = outputs.loss
-        start_scores = outputs.start_logits
-        end_scores = outputs.end_logits
+    # Convert to tensors and run through the model
+    start_scores, end_scores = model(torch.tensor([input_ids]), token_type_ids=torch.tensor([segment_ids]))
 
-        # Find the tokens with the highest `start` and `end` scores.
-        answer_start = torch.argmax(start_scores)
-        answer_end = torch.argmax(end_scores) + 1
+    # Find the tokens with the highest start and end scores
+    answer_start = torch.argmax(start_scores)
+    answer_end = torch.argmax(end_scores)
 
-        # Get the answer from the context
-        answer = tokenizer.convert_tokens_to_string(
-            tokenizer.convert_ids_to_tokens(inputs['input_ids'][0][answer_start:answer_end]))
+    # Convert tokens to string
+    answer = tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(input_ids[answer_start:answer_end + 1]))
 
-        print(f"The answer to the question is: {answer}")
+    print(answer)
