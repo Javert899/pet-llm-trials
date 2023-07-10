@@ -15,8 +15,6 @@ while True:
     # Generate the output
     output = model.generate(input_ids, max_length=200)
 
-    # Decode the output
-    for text in output:
-        generated_text = tokenizer.decode(text, skip_special_tokens=True).strip()
-        if generated_text:
-            print(generated_text)
+    generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
+
+    print(generated_text)
