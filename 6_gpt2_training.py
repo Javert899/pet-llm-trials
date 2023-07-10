@@ -32,6 +32,7 @@ def fine_tune_gpt2(model_name, train_path, output_dir, eval_path=None, epochs=4,
         per_device_train_batch_size=1,
         save_steps=10_000,
         save_total_limit=2,
+        weight_decay=0.01,
         learning_rate=learning_rate,
         evaluation_strategy="epoch" if eval_path else "no",
     )
