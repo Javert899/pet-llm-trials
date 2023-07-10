@@ -24,6 +24,7 @@ if False:
 
         print(generated_text)
 else:
+    import torch
     from transformers import BertForQuestionAnswering, BertTokenizer
 
     # Load pretrained model and tokenizer
@@ -48,10 +49,10 @@ else:
     start_scores, end_scores = model(torch.tensor([input_ids]), token_type_ids=torch.tensor([segment_ids]))
 
     # Find the tokens with the highest start and end scores
-    answer_start = torch.argmax(start_scores)
-    answer_end = torch.argmax(end_scores)
+    #answer_start = torch.argmax(start_scores)
+    #answer_end = torch.argmax(end_scores)
 
     # Convert tokens to string
-    answer = tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(input_ids[answer_start:answer_end + 1]))
+    answer = tokenizer.convert_tokens_to_string(tokenizer.convert_ids_to_tokens(input_ids))
 
     print(answer)
