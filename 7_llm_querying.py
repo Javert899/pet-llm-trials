@@ -3,7 +3,7 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 # Load pretrained model and tokenizer
 tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-model = GPT2LMHeadModel.from_pretrained("gpt2")
+model = GPT2LMHeadModel.from_pretrained("./gpt2_finetuned")
 #tokenizer = T5Tokenizer.from_pretrained('t5-base')
 #model = T5ForConditionalGeneration.from_pretrained('t5-base')
 #tokenizer = T5Tokenizer.from_pretrained('t5-large')
