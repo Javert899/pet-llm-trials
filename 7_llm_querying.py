@@ -28,13 +28,14 @@ else:
     from transformers import BartForQuestionAnswering, BartTokenizer
 
     # Load the pre-trained BART model and tokenizer
-    model = BartForQuestionAnswering.from_pretrained('facebook/bart-large')
-    tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
 
     # Provide the context and the question
     context = "OpenAI is an artificial intelligence research lab consisting of the for-profit OpenAI LP and its parent company, the non-profit OpenAI Inc. OpenAI LP is an employer of researchers and engineers who aim to ensure that artificial general intelligence (AGI) benefits all of humanity."
     while True:
         question = input("Please insert a question -> ")
+
+        model = BartForQuestionAnswering.from_pretrained('facebook/bart-large')
+        tokenizer = BartTokenizer.from_pretrained('facebook/bart-large')
 
         # Encode the context and question to get input_ids and attention_mask
         inputs = tokenizer(question, context, return_tensors='pt')
