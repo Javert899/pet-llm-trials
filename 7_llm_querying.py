@@ -33,27 +33,28 @@ else:
 
     # Provide the context and the question
     context = "OpenAI is an artificial intelligence research lab consisting of the for-profit OpenAI LP and its parent company, the non-profit OpenAI Inc. OpenAI LP is an employer of researchers and engineers who aim to ensure that artificial general intelligence (AGI) benefits all of humanity."
-    question = "What is OpenAI?"
+    while True:
+        question = input("Please insert a question -> ")
 
-    # Encode the context and question to get input_ids and attention_mask
-    inputs = tokenizer(question, context, return_tensors='pt')
+        # Encode the context and question to get input_ids and attention_mask
+        inputs = tokenizer(question, context, return_tensors='pt')
 
-    # Feed the input to BART to retrieve the start and end positions of the answer
-    start_positions = torch.tensor([1])
-    end_positions = torch.tensor([3])
-    outputs = model(**inputs, start_positions=start_positions, end_positions=end_positions)
+        # Feed the input to BART to retrieve the start and end positions of the answer
+        start_positions = torch.tensor([1])
+        end_positions = torch.tensor([3])
+        outputs = model(**inputs, start_positions=start_positions, end_positions=end_positions)
 
-    # Get the loss and the start/end position logits
-    loss = outputs.loss
-    start_scores = outputs.start_logits
-    end_scores = outputs.end_logits
+        # Get the loss and the start/end position logits
+        loss = outputs.loss
+        start_scores = outputs.start_logits
+        end_scores = outputs.end_logits
 
-    # Find the tokens with the highest `start` and `end` scores.
-    answer_start = torch.argmax(start_scores)
-    answer_end = torch.argmax(end_scores) + 1
+        # Find the tokens with the highest `start` and `end` scores.
+        answer_start = torch.argmax(start_scores)
+        answer_end = torch.argmax(end_scores) + 1
 
-    # Get the answer from the context
-    answer = tokenizer.convert_tokens_to_string(
-        tokenizer.convert_ids_to_tokens(inputs['input_ids'][0][answer_start:answer_end]))
+        # Get the answer from the context
+        answer = tokenizer.convert_tokens_to_string(
+            tokenizer.convert_ids_to_tokens(inputs['input_ids'][0][answer_start:answer_end]))
 
-    print(f"The answer to the question is: {answer}")
+        print(f"The answer to the question is: {answer}")
