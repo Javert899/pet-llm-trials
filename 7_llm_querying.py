@@ -4,8 +4,8 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer
 # Load pretrained model and tokenizer
 #tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 #model = GPT2LMHeadModel.from_pretrained("gpt2")
-tokenizer = T5Tokenizer.from_pretrained('t5-large')
-model = T5ForConditionalGeneration.from_pretrained('t5-large')
+tokenizer = T5Tokenizer.from_pretrained('t5-base')
+model = T5ForConditionalGeneration.from_pretrained('t5-base')
 
 # Encode input context
 while True:
@@ -16,7 +16,6 @@ while True:
     output = model.generate(input_ids)
 
     # Decode the output
-    generated_text = tokenizer.decode(output[0], skip_special_tokens=True)
-
-    print(generated_text)
-
+    for text in output:
+        generated_text = tokenizer.decode(text, skip_special_tokens=True)
+        print(generated_text)
