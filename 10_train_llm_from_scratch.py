@@ -5,27 +5,24 @@ from torch.utils.data import Dataset
 
 class TextDataset(Dataset):
     def __init__(self, text_file, block_size=1024):
-        self.text_file = text_file
-        self.text = []
+        self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
         self.block_size = block_size
         with open(text_file, "r", encoding="utf-8") as file:
-            for line in file.readlines():
-                self.text.append(line)
-        self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
-        self.input_ids = self.tokenizer('\n'.join(self.text), return_tensors='pt').input_ids[0]
-        self.input_ids = self._chunk_text(self.input_ids)
+            self.text = file.read()
+        self.tokenized_text = self._tokenize_and_chunk_text()
 
-    def _chunk_text(self, input_ids):
-        ids = [input_ids[i:i+self.block_size] for i in range(0, len(input_ids), self.block_size)]
-        if len(ids[-1]) < self.block_size:
-            ids[-1] = torch.cat([ids[-1], torch.tensor([self.tokenizer.eos_token_id]*(self.block_size-len(ids[-1])))])
-        return ids
+    def _tokenize_and_chunk_text(self):
+        tokenized_text = self.tokenizer.tokenize(self.text)
+        return [tokenized_text[i:i+self.block_size] for i in range(0, len(tokenized_text), self.block_size)]
 
     def __len__(self):
-        return len(self.input_ids)
+        return len(self.tokenized_text)
 
     def __getitem__(self, idx):
-        return self.input_ids[idx]
+        tokenized_block = self.tokenized_text[idx]
+        input_ids = self.tokenizer.convert_tokens_to_ids(tokenized_block)
+        input_ids = torch.tensor(input_ids)
+        return input_ids
 
 
 # Create a new tokenizer
