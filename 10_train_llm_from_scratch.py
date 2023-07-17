@@ -14,7 +14,9 @@ class TextDataset(Dataset):
 
     def _tokenize_and_chunk_text(self):
         tokenized_text = self.tokenizer.tokenize(self.text)
-        return [tokenized_text[i:i+self.block_size] for i in range(0, len(tokenized_text), self.block_size)]
+        lst = [tokenized_text[i:i+self.block_size] for i in range(0, len(tokenized_text), self.block_size)]
+        lst = [x for x in lst if x]
+        return lst
 
     def __len__(self):
         return len(self.tokenized_text)
