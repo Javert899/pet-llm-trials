@@ -5,6 +5,7 @@ from torch.utils.data import Dataset
 
 class TextDataset(Dataset):
     def __init__(self, text_file, block_size=1024):
+        print(text_file)
         self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
         self.block_size = block_size
         with open(text_file, "r", encoding="utf-8") as file:
