@@ -1,0 +1,1726 @@
+an alignment-based framework to check the conformance of
+declarative process models and to preprocess event-log data
+massimiliano de leonia,n, fabrizio m. maggib, wil m.p. van der aalsta
+adepartment of mathematics and computer science, eindhoven university of technology, eindhoven, the netherlands
+binstitute of computer science, university of tartu, estonia
+article info
+available online 17 january 2014
+keywords:
+process miningdeclareltlconformance checkingevent-log preprocessingabstract
+process mining can be seen as the “missing link ”between data mining and business
+process management. the lion0s share of process mining research has been devoted to the
+discovery of procedural process models from event logs. however, often there arepredefined constraints that (partially) describe the normative or expected process, e.g.,
+“activity ashould be followed by b”or“activities aand bshould never be both executed ”.
+a collection of such constraints is called a declarative process model . although it is possible
+to discover such models based on event data, this paper focuses on aligning event logs and
+predefined declarative process models. discrepancies between log and model are
+mediated such that observed log traces are related to paths in the model. the resultingalignments provide sophisticated diagnostics that pinpoint where deviations occur and how
+severe they are . moreover, selected parts of the declarative process model can be used to
+clean and repair the event log before applying other process mining techniques. our
+alignment-based approach for preprocessing and conformance checking using declarativeprocess models has been implemented in prom and has been evaluated using both
+synthetic logs and real-life logs from a dutch hospital.
+&2013 elsevier ltd. all rights reserved.
+1. introduction
+traditional workflow management (wfm) and business
+process management (bpm) systems are based on the idea
+that processes can be described by procedural languages
+where the completion of one task may enable the execution
+of other tasks, i.e., procedural models are used to “drive ”
+operational processes. while such a high degree of support
+and guidance is certainly an advantage when processes are
+repeatedly executed in the same way, in dynamic and less
+structured sett ings (e.g., healthcare) these systems are often
+considered to be too restrictive. users need to react to
+exceptional situations and execute the process in the mostappropriate manner. it is difficult, if not impossible, to
+encode this human flexibility and decision making in proce-
+dural models.
+declarative process models acknowledge this and aim at
+providing freedom without unnecessarily restricting users
+in their actions. procedural process models take an
+“inside-to-outside ”approach, i.e., all execution alterna-
+tives need to be explicitly specified and new alternatives
+need to be incorporated in the model. declarative models
+use an “outside-to-inside ”approach: anything is possible
+unless explicitly forbidden. hence, a declarative process
+model can be viewed as a set of constraints rather than as
+a procedure.
+wfm and bpm systems tend to force people to work in
+a particular way. when using a declarative wfm and bpm
+system, more freedom can be offered. however, in most
+dynamic and less structured settings no system is enfor-
+cing users to work in a particular way. this may result incontents lists available at sciencedirect
+journal homepage: www.elsevier.com/locate/infosysinformation systems
+0306-4379/$ - see front matter &2013 elsevier ltd. all rights reserved.
+http://dx.doi.org/10.1016/j.is.2013.12.005
+ncorresponding author.
+e-mail addresses: m.d.leoni@tue.nl (m. de leoni),
+f.m.maggi@ut.ee (f.m. maggi),
+w.m.p.v.d.aalst@tue.nl (w.m.p. van der aalst).information systems 47 (2015) 258 –277undesirable deviations and inefficiencies. sometimes there
+may be good reasons to do things differently. consider the
+“breaking the glass ”functionality in many systems as a
+means to deal with exceptions, e.g., using the emergency
+breaks in case of an accident, unauthorized access to
+private patient data in case of an emergency and bypassing
+an administrative check to help an important customer.
+even though process models are typically not enforced,
+many events are recorded by today0s information systems.
+as information systems are becoming more and more
+intertwined with the operational processes they support,
+“torrents of event data ”become available. therefore, it is
+interesting to compare observed behavior with modeled
+behavior.
+this paper proposes the implementation of a framework
+for the analysis of the execution of declarative processes. it is
+based on the principle of creating an alignment of an event
+log and a process model. each trace in the event log is related
+to a possible path in the process model. ideally, every event
+in the log trace corresponds to the execution of an activity in
+the model. however, it may be the case that the log trace
+does not fit completely. therefore, there may be “moves ”in
+the event log that are not followed by “moves ”in the model
+or vice versa.
+the alignment concept has successfully been used in the
+context of procedural models (e.g., [1–3]); here, we adapt it
+for declarative models. similarly to what has been proposed
+for procedural models, in our approach, events in the log are
+mapped to executions of activities in the process model. a
+cost/weight is assigned to every potential deviation. we use
+the analgorithm [4]to find, for each trace in the event log,
+an optimal alignment, i.e., an a lignment that minimizes the
+cost of the deviations. the application of the analgorithm is
+more challenging for declarative models than for proceduralmodels. this is due to the fact that, since in a declarative
+model everything is allowed unless constrained otherwise,
+the set of admissible behaviors is generally far larger than
+the set of behaviors allowed by procedural models. this
+implies that the search space to find an optimal alignment of
+a log and a declarative model is much larger. therefore, for
+this type of models, it is essential to avoid exploring search-
+space portions that certainly lead to non-optimal solutions.
+the log-model alignment can be the main input of a
+wide range of techniques for the analysis of declarative
+processes. on this concern, section 3 shows the three main
+use cases that are considered in this paper. the first use case
+is concerned with cleaning the event logs by removing log
+traces that should not be used for further analysis (e.g.,
+incomplete traces). the second use case is about checking
+the conformance of the event logs against a given declara-
+tive model, which can be regarded and measured from
+diverse dimensions, highlighting where deviations occur.
+the third and last use case concerns repairing event logs to
+make sure that the essential constraints are satisfied before
+further analysis. these use cases are supported by function-
+alities that are available in prom , a generic open-source
+framework for implementing process mining tools in a
+standard environment [5].
+in this paper, we use declare as an example of declarative
+language. section 2 introduces the basic aspects of the
+declare language along with the working example that isused throughout the paper, while section 4 introduces some
+background knowledge. section 5 describes the notion of
+log–model alignment and some diagnostics that can be
+computed using alignments. section 6 describes the appli-
+cation of the a
+nalgorithm to find an optimal alignment.
+here, we also introduce an optimization of the algorithm to
+prune large irrelevant portions of the search space that
+certainly lead to non-optimal solutions. section 7 discusses
+the second use case in detail, i.e., how the alignments can be
+used to check the conformance of an event log with respect
+to a declare model. section 8 focuses on the first and third
+use case, i.e., how event logs can be cleaned and repaired.
+section 9 reports an evaluation of the different techniques,
+which is based on synthetic and real-life logs. section 10
+discusses related work, whereas section 11 concludes the
+paper and highlights potential future work.
+2. declare and basic notation
+declare is a declarative language with an intuitive gra-
+phical representation to describe constraints and activities
+[6–8]. its formal semantics is based on linear temporal logic
+(ltl) for finite traces [9]where each constraint is defined
+t h r o u g ha nl t lf o r m u l a .1the declare toolset includes a
+graphical designer, a workflow engine, a worklist handler
+and various analysis tools [10].2a detailed description of
+declare is out of the scope of this paper. the most relevant
+declare features are introduced here through an illustrative
+example. interested readers are referred to [11]for a detailed
+coverage of the declare language.
+example 1. a travel agency has enacted a process to
+handle health-related insurance claims. the process to
+handle these claims is illustrated in fig. 1 . the model
+includes eight activities (depicted as rectangles, e.g., con-
+tact hospital ) and six constraints (shown as connectors
+between activities). depending on the claimed amount, a
+claim can be classified as high or low. for low claims, tasks
+low insurance check and low medical history need to be
+executed. the co-existence constraint indicates that these
+activities are always executed together (in any order). if a
+claim is classified as low, no activities referring to high
+claims can be executed and vice versa. the not co-existence
+constraint indicates that low insurance check and high
+insurance check can never coexist in the same process
+instance. moreover, in case of high claims, the medical
+history check ( high medical history ) can only be executed
+together with the insurance check ( high insurance check ),
+even though they can be executed in any order. never-
+theless, it is possible to execute high insurance check with-
+out executing high medical history . all this is enforced by
+the responded existence constraint. for every claim, it is
+also possible to contact the doctor/hospital for verification.
+however, in case of high claims, this cannot be done before
+the insurance check. this is defined by the not succession
+constraint: contact hospital cannot be followed in the
+same process instance by high insurance check .a
+1for compactness, in the following we will use the ltl acronym to
+denote ltl for finite traces.
+2declare web site –http://www.win.tue.nl/declare/ .m. de leoni et al. / information systems 47 (2015) 258 –277 259questionnaire may be created and eventually sent to the
+applicant (modeled by the response constraint); only after
+the questionnaire is sent, the applicant can possibly decide
+whether to fill it out or not ( precedence constraint).
+the response constraint in fig. 1 can be formally
+represented using ltl as □(create questionnaire -◊send
+questionnaire ). this means that “whenever activity create
+questionnaire is executed, eventually activity send ques-
+tionnaire is executed ”. in the following, we refer to a
+declare model d¼ða;πþ, where ais a set of activities and
+πis a set of declare constraints defined over activities in a.
+we conclude this section by introducing the basic nota-
+tion that is used throughout the paper. a multiset m¼ðy;λþ
+consists of a set yand a function λ:y-nthat associates
+each element aaywith its multiplicity λðaþ, i.e., the number
+of its occurrences in the multiset. aayif and only if aam.
+we indicate the number of elements in the multiset with
+jmj:jmj¼∑yayλðyþ.l e t xbe a set; jxjdenotes the number
+of elements in x. we indicate the set of all finite sequences
+over xwith xnand the set of all multi-sets over xwithbðxþ.
+moreover, we use angle brackets to denote sequences saxn,
+i.e.,s¼〈s1;…;sn〉. given two arbitrary sequences xand y,jxj
+denotes the length of xand x/c8ydenotes the sequence
+obtained by concatenating ytox.m o r e o v e r , prefix ðxþdenotes
+the set of all prefixes of x, i.e., a sequence zaprefix ðxþif there
+exists a sequence wsuch that z/c8w¼x.f r o mt h ed e f i n i t i o n
+above, for any sequence x,b o t h xand the empty sequence 〈〉
+always belongs to prefix ðxþ.
+3. a framework based on log –model alignment for the
+analysis of declarative processes
+this paper proposes a framework for the analysis of
+declarative processes that is based on three use cases .a l l
+three use cases are supported by new functionalities added
+toprom . the application of the use cases heavily relies on the
+computation of log –model alignments, which is also part of
+this paper.3the starting point is a raw event log lrawand a
+so-called whole model dwhole ¼ðawhole ;πwholeþ.
+a first use case is based on the definition of a core model
+dcore¼ðacore ;πcoreþ, where πcoredπwhole and acoredawhole.
+this model is used to clean the event log, i.e., if the optimal
+alignment of a log trace reveals a violation of any con-
+straint in πcore, the trace is simply discarded. for example,if the not co-existence constraint in fig. 1 is in πcore, then all
+log traces containing both low insurance check and high
+insurance check are removed from the log. the core model
+dcore¼ðacore ;πcoreþcan be used to filter out traces that are
+obviously incomplete or deviating too much from the
+expected behavior to be used for further analysis. indeed,
+without the log cleaning, the results of some analysis can
+be far misleading.
+the cleaned event log lclean and the whole model
+dwhole ¼ðawhole ;πwholeþcan be used to diagnose deviations.
+in particular, the analyst may use the new functionalities
+added to prom to inspect the optimal alignment for each
+log trace and to interpret the deviations. in our toolset, we
+also provide the process analyst with a summary that gives
+a helicopter view of the conformance of the model with
+respect to the entire log. in particular, we aggregate the
+information associated with the optimal alignments and
+visualize the deviations on the process model. in fact, we
+generate a “map ”thus highlighting on the declare model in
+which constraints are more often violated during the
+execution and in which activities are mostly involved inthe violations.
+we also introduce a repair model d
+repair ¼ðarepair ;πrepairþ
+such that πcoredπrepairdπwhole and acoredarepairdawhole.
+the cleaned event log lclean and the repair model
+drepair ¼ðarepair ;πrepairþcan be used to adjust the event
+log to prepare it for further analysis. depending on the
+computed optimal alignment, some events may be dis-
+carded whereas other events may be artificially created
+and inserted in lclean. most process mining techniques for
+performance analysis [12] and operational support (e.g.,
+predictions and recommendations) only function properly if
+the event log indeed “fits”the model used for analysis . these
+process mining techniques often assume a perfect fitness
+and need to ignore deviating log traces.
+however, in real-life scenarios a large fraction of cases
+may not fit perfectly (especially if the corresponding log
+traces are relatively long). generally, it is not acceptable to
+discard large amounts of event data. moreover, deviating
+log traces may have different characteristics (e.g., longer
+flow times). hence, leaving them out may lead to mislead-
+ing results. therefore, the log is repaired before analysis:
+lrepair contains repaired traces satisfying all constraints in
+πrepair and do not contain deviations for the activities in
+arepair. note that, unlike when cleaning an event log, in this
+case no traces are removed from the log.
+when repairing the event log, the original behavior is
+modified, i.e., non-fitting traces are “squeezed ”into the
+fig. 1. declare model used as working example. it consists of six constraints and eight activities.
+3prom , including the new functionalities described in this paper, can
+be downloaded from www.processmining.org .m. de leoni et al. / information systems 47 (2015) 258 –277 260repair model drepair ¼ðarepair ;πrepairþ. this should be taken
+into consideration when analyzing lrepair using other
+process mining techniques.
+note that, given a whole model, a clean and repair
+model can be usually defined in collaboration with process
+experts. indeed, process experts have the proper expertise
+to determine which characteristics a log trace needs to
+have not to be discarded, i.e., which activities and con-
+straints need to be part of the core model. for example, if
+all events in a certain time frame are extracted from a
+database and, then, grouped in traces based on the process
+instance identifier, some traces may be incomplete. in
+these traces, for example, the first or the last event can
+be missing since they occurred outside the considered
+time frame. certainly, these traces should be discarded as
+they would affect the correctness of the outcomes of
+various process-mining techniques. regarding the repair
+model, process experts can identify the constraints that
+should not be violated. the violations of these constraints
+are not as severe as the violations of the constraintsbelonging to the core model. hence, the violating log
+traces are still worth to be considered for further analysis
+but they need to be “adjusted ”.
+all three use cases described in fig. 2 heavily rely on
+the computation of alignments. the main contribution of
+this paper is, then, a new approach for efficient computing
+alignments of logs and declarative process models.
+4. checking declare constraints
+to identify potential deviations of a log from a refer-
+ence declare model, we need to map each event in the log
+to an activity in the model. each process instance in a log
+follows a trace (a sequence) of events and different
+instances may follow the same trace. therefore, an event
+log can be seen as a multi-set of traces, i.e., labðan
+lþ,
+where alis the set of activities in the log. since declare is
+an“open ”language, it allows for the execution of any
+activity which is not in the model. therefore, the set of
+various
+process mining
+techniquescleaned
+event log
+repaired
+event logwhole model
+repair model
+core modelraw
+event log
+clean
+diagnose
+repairdiagnostic information on
+conformance and deviationsalign log and core
+model and remove
+deviating traces
+align log and repair
+model to correct
+deviating tracesalign log and whole
+model to show and
+measure deviationstraces violating core
+constraints are removed
+from the event logthe so-called repair constraints
+are used to modify the event log
+to ensure compliance with
+respect to these constraints
+before further analysis
+all constraints describing
+desirable or expected
+behavior; these are used
+for diagnosisevent data extracted from
+some information system
+fig. 2. overview showing the three main use cases considered in this paper: (i) cleaning event logs to remove log traces that should not be used for further
+analysis, (ii) diagnosing event logs to check conformance, show deviations and measure compliance scores and (iii) repairing event logs to make sure that the
+essential constraints are satisfied before further analysis.m. de leoni et al. / information systems 47 (2015) 258 –277 261activities in the log may include all activities in the model
+and more, i.e., adal.
+for conformance checking, we do not need to distinguish
+the activities in the set al\aas they do not appear in the
+model. this allows us to reduce the space of the allowed
+behaviors. note that we cannot completely abstract from the
+activities in al\ab e c a u s es o m ec o n s t r a i n t su s el t l0sn e x t
+operator (e.g., the chain response and chain precedence
+constraints). therefore, we map all events referring to
+activities in al\ato✓. then, the log labðan
+lþis converted
+intol0abðσnþwith σ¼al[f✓g.f u n c t i o n χ:al-σis
+used to map each activity in altoς.8aaa;χðaþ¼aand
+8aaðal\aþ,χðaþ¼✓, i.e., every event in a log trace referring
+to an activity that is also defined in the model is mapped to
+the activity itself, whereas the other events are mapped to ✓.
+example 1 (cont.). the set of activities of the declare
+model in fig. 1 is
+a¼〈low insurance check ;low medical history ;
+high insurance check ;high medical history ;
+contact hospital ;create questionnaire ;
+send questionnaire ;receive questionnaire response 〉
+let us assume to have a log that contains the following
+trace:
+sl¼〈register ;low insurance check ;create questionnaire ;
+prepare notification content ;create questionnaire ;
+send notification by e /c0mail ;
+send notification by post ;archive 〉
+using the mapping function χ,slcan be transformed into
+sl0¼〈✓;low insurance check ;create questionnaire ;✓;
+create questionnaire ;✓;✓;✓〉
+note that register, send notification by e-mail, send
+notification by post, archive are mapped to ✓.
+in the remainder, when aligning declare models and
+event logs, we only consider event logs after mapping
+unconstrained activities to ✓, i.e., labðσnþ. to check
+whether a log trace slalis compliant with a declare con-
+straint πaπ, we use the technique described in [13] and
+translate the ltl formula corresponding to πinto a finite
+state automaton that accepts all traces that do not violate
+π.
+definition 1 (constraint automaton ). let d¼ða;πþbe a
+declare model, πaπandς¼a[f✓g. the constraint auto-
+maton aπ¼ðς;ψπ;ψ0π;δπ;fπþis the finite state automaton
+that accepts exactly those traces saσnsatisfying π, where:
+/c15σ¼a[f✓gis the input alphabet;
+/c15ψπis a finite, non-empty set of states;
+/c15ψ0πaψπis an initial state;
+/c15δπ:ψπ/c2σ-ψπis the state-transition function;
+/c15fπdψπis the set of final states.
+in the remainder, given a state-transition function δand a
+sequence of symbols s¼〈s1;…;sn〉,δnðψ0;sþdenotes therecursive application of the state-transition function over s
+starting from state ψ0, i.e., δnðψ0;sþ¼ψnwhere, for all
+0oirn,ψiis recursively defined as ψi¼δðψi/c01;siþ.
+a constraint automaton aπis associated with every
+constraint πaπ. for each constraint automaton, we use a
+general convention according to which δπis allowed to be
+a partial function, i.e., δπðψ;sþdoes not have to be defined
+for every combination of ψaψπand saς. if a constraint
+automaton is in a state ψ, the next symbol is sandδπðψ;sþis
+not defined, then the sequence is not accepted. a sequence
+saσnis accepted by a constraint automaton aπ,i fδn
+πðψ0;sþ
+afπ, i.e., after reading the sequence s, the automaton aπis
+in a final state.
+these automata can be used to check the conformance
+of a log trace with respect to each constraint in d.
+example 1 (cont.). for the co-existence constraint and the
+precedence constraint in fig. 1 , we obtain the automata
+depicted in fig. 3 (a) and (b). in both cases, state 0 is the
+initial state and final states are indicated using a double
+outline. a transition is labeled with the set of the activities
+triggering it (we use the initial letters to denote an activity,
+e.g., we use licto indicate low insurance check ). this
+indicates that we can follow the transition for any event
+included in the set (e.g., we can execute event high
+insurance check from state 0 of the precedence automaton
+and remain in the same state).
+the process behavior set pddσnof a declare model
+d¼ða;πþis the set of traces that are accepted by all
+automata aπwith πaπ, i.e., all process executions that
+comply with the model d. we call these traces model
+traces .
+note that the cardinality of the process behavior set is
+infinite in most of the cases. for example, consider the
+fig. 3. constraint automata for two declare constraints in fig. 1 .
+(a) constraint automaton for the co-existence constraint. (b) constraintautomaton for the precedence constraint.m. de leoni et al. / information systems 47 (2015) 258 –277 262declare model that only contains the precedence constraint
+infig. 3 (b) and the activities shown in fig. 2 . the process
+behavior set of this model contains the traces accepted by
+the automaton in fig. 3 (b), i.e., the traces of the form
+ðς\frqr ;sqgþnsqðσþn. this set has an infinite number of
+traces.
+5. alignment of event logs and declare models
+to check the conformance of an event log lwith
+respect to a declare model d, we adopt an approach where
+we search for an alignment of the log and the model. an
+alignment relates moves in log and moves in model as
+explained in the following definition. here, we explicitly
+indicate no move with≫. we indicate set σ[f≫gwith σ≫,
+where σdenotes the input alphabet of each constraint
+automaton in d.
+definition 2 (alignment and complete alignment ). a pair
+ðs0;s″þaðς≫/c2σ≫þ\fð≫;≫þgis
+/c15amove in log ifs0aσand s″¼≫;
+/c15amove in model ifs0¼≫and s″aς;
+/c15amove in both ifs0aς,s″aσand s0¼s″.
+letσa¼ðς≫/c2σ≫þ\fð≫;≫þgbe the set of the legal moves .
+the alignment of two traces s0;s″aσnis a sequence
+γ¼〈ðs0
+1;s″1þ;…;ðs0
+n;s″nþ〉aσn
+asuch that 〈s0
+1;…;s0
+n〉iss0and
+〈s″1;…;s″n〉iss″(ignoring ≫).
+in particular, if s0¼slaland s″apd, we refer to the
+alignment γas a complete alignment ofslandd.
+given slaland smapd, let us suppose to have an
+alignment γ¼〈ðs0
+1;s″1þ;…;ðs0
+n;s″nþ〉aσn
+asuch that s0
+l¼
+〈s0
+1;…;s0
+n〉aprefix ðslþand s0
+m¼〈s″1;…;s″n〉aprefix ðslþ,
+ignoring ≫. we indicate s0
+lwith γ#land s0
+mwith γ#m.
+an alignment of the event log land the model dis a
+multi-set aabðσn
+aþof alignments such that, for each log
+trace sl, there exists an alignment γaaofslandd. the
+definition of aas a multi-set is motivated by the fact that
+an event log may contain the same log trace slmultiple
+times and, hence, the same alignment can be associated
+with all its occurrences.
+example 1 (cont.). given the log trace sl¼〈✓;lic ;cq ;
+✓;cq ;✓;✓;✓〉, there are many possible complete align-
+ments of sland the model in fig. 1 . for example, the
+alignments γ1;…;γ4infig. 4 are examples of complete
+alignments. conversely, alignment γ0is not a complete
+alignment since γ#mis not in the process behavior set of
+the model. indeed, the co-existence constraint is violated,
+because low insurance check occurs in γ#mbut low
+medical history does not. moreover, two occurrences of
+create questionnaire are not followed by any occurrence
+ofsend questionnaire , as the response constraint would
+prescribe.
+in order to quantify the severity of a deviation, we
+introduce a cost function on the legal moves κ:σa-rþ
+0.
+one can use a standard cost function with unit costs for
+moves in log or in model. however, the costs may also
+depend on the specific characteristics of the process, e.g., itmay be more costly to skip an insurance check for high
+claims than for low claims. therefore, in some cases, a
+different cost function κneeds to be defined. the cost of an
+alignment γis defined as the sum of the costs of the
+individual moves in the alignment, kðγþ¼∑ðs0;s″þaγκðs0;s″þ.
+given a log trace slal, our goal is to find a complete
+alignment of sland a model trace smapdthat minimizes
+the cost with respect to all s0
+mapd. this complete align-
+ment is referred to as an optimal alignment .
+definition 3 (optimal alignment ). let slalbe a log trace
+andda declare model. let γðsl;dþbe a set of the complete
+alignments of slandd. a complete alignment γaγðsl;dþ
+is an optimal alignment ofslanddif and only if
+8γ0aγðsl;dþ:kðγ0þzkðγþ.
+example 1 (cont.). in our example, we can suppose that
+deviations for activity send questionnaire are less severe
+than those referring to the other activities, since this activity
+is automatically performed by a system. moreover, moves
+associated with ✓can be weighted less than any other, since
+they refer to activities that are not in the model. therefore, a
+reasonable cost function on legal moves can be defined as
+follows:
+κða0;a″þ¼0i f a0¼a″
+1i f a0¼✓4a″¼≫
+1i f a0¼≫4a″¼✓
+2i f a0¼send questionnaire 4a″¼≫
+2i f a0¼≫4a″¼send questionnaire
+4i f a0asend questionnaire 4a″¼≫
+4i f a0¼≫4a″asend questionnaire
+1 otherwise8
+>>>>>>>>>>>>>><
+>>>>>>>>>>>>>>:
+using this cost function, alignments γ
+1,γ2,γ3and γ4have
+the following costs: kðγ1þ¼6,kðγ2þ¼12,kðγ3þ¼6a n d
+kðγ4þ¼12. then, γ1andγ3are better complete alignments;
+in fact, they are optimal alignments, as well.
+insection 6 ,w ed i s c u s sat e c h n i q u et oc r e a t ea no p t i m a l
+alignment with respect to a custom cost function κ.t h e
+approach is based on the analgorithm that is intended to
+find the path with the lowest overall cost between two nodes
+in a direct graph with costs associated with nodes.
+in our alignment-based technique, activities are pro-
+moted as first-class citizens , whereas the literature pro-
+poses approaches that focus on constraint violations. infig. 4. some examples of alignments of sland the model in fig. 1 . apart
+from γ0, they are all complete alignments.m. de leoni et al. / information systems 47 (2015) 258 –277 263several scenarios, companies may be interested in know-
+ing which actual executions or missing executions of
+activities have triggered the deviations. section 5.1 dis-
+cusses how the application of existing techniques would
+tend to overestimate the number of activities whose
+execution deviates from the prescribed behavior.
+the provision of a set of alignments does not allow
+process analysts to gain a quick insight into the most
+common deviations. therefore, we also provide a sum-
+mary to determine which activities are mostly involved in
+deviations and which constraints are more often violated.
+on this concern, we provide a metrics to measure the
+degree of conformance of single activities and constraints in
+adeclare model with respect to a log.
+in order to measure the degree of conformance, we first
+need to compute which constraints each move in model or
+in log contributes to solve, i.e., why a certain move in
+model/log is needed. section 5.2 illustrates how to identify
+which moves are needed to solve constraint deviations
+and section 5.3 details how to measure the degree of
+conformance.
+5.1. promoting activities as first-class citizens: why existing
+techniques tend to overestimate the activities involved in
+deviations?
+there is a body of techniques that check (running)
+process instances based on some temporal logic, including
+ltl (e.g., [14–16]). these approaches classify process
+instances as deviating or not and diagnose the constraints
+that cause deviations. unfortunately, these approaches
+tend to overestimate the activities whose execution devi-
+ates from the prescribed behavior. therefore, when aggre-
+gated diagnostics are shown to the user, activities tend tobe considered as involved in a large number of deviations
+when executed, far more than the real number of devia-
+tions. this due to the fact that different constraints and
+activities may interact in various ways. that motivates why
+optimal alignments are necessary.
+consider, for example, the declare model in fig. 5 and
+trace s¼〈a;b;c〉. according to the model, the not-coexist-
+ence constraints prescribe that activities aand bcannot
+occur in the same trace, like so activities cand b. existing
+techniques would diagnose that, indeed, the two con-
+straints are violated during the execution of s. therefore,
+they would derive that the executions of the three activ-
+ities are deviating from the prescribed behavior. none-
+theless, our technique would return the following optimal
+alignment:
+l:abc
+m:a≫ c.this shows that, in fact, only the execution of activity bis
+deviating. therefore, generally speaking, if an optimal
+alignment is not built, e.g., through the technique pro-
+posed in this paper, the diagnosis will report several
+deviations which, actually, are not so.
+5.2. why a log or model move is needed?
+letγ¼〈ðal
+1;am
+1þ;…;ðal
+n;am
+nþ〉be an optimal alignment of
+slandd¼ða;πþ. letaπbe the constraint automaton for a
+constraint πaπ. each move ðal
+i;am
+iþaγin log or in model
+of an alignment (i.e., such that either al
+i¼≫oram
+i¼≫), is
+introduced to contribute to solve violation(s) of constraint
+(s) in the declare model. for diagnosis purpose, it
+is important to identify the violation(s) that moves con-
+tribute to solve (every move in log or in model always
+solves one violation, at least). for this purpose, a trace siis
+constructed by removing every ≫occurrence from the trace
+〈am
+1;…;am
+i/c01;al
+i;am
+iþ1;…;am
+n〉. then, for each constraint πaπ,
+we check whether siis accepted by aπ.i fi ti s
+not accepted, ðal
+i;am
+iþhas been introduced to solve a
+violation in π.
+example 1 (cont.). let us consider again the optimal
+alignment γ1(see fig. 4 ). it contains two moves in log or
+in model: ðlic ;≫þand ð≫;sqþ.f o r ðlic ;≫þ, we build
+the trace s1¼〈✓;lic ;cq ;✓;cq ;✓;✓;✓〉. this sequence is
+accepted by all the constraint automata in the declare model,
+besides the constraint automaton for the co-existence con-
+straint (see fig. 3 (a)). similarly, for ð≫;sqþ,s5¼〈✓;cq ;✓;
+cq ;✓;✓;✓〉is accepted by all the constraint automata, besides
+the constraint automaton for the precedence constraint
+(shown in fig. 3 (b)). therefore, ðlic ;≫þhas been introduced
+to solve a violation in the co-existence constraint and ð≫;sqþ
+has been introduced to solve a violation in the precedence
+constraint.
+5.3. degree of conformance
+in order to quantify the degree of conformance, we
+introduce metrics mm γðaþ,mlγðaþand mb γðaþ.f o r aaς,w e
+denote with mm γðaþthe number of moves in the model
+involving a, with mlγðaþbeing the number of moves in log
+involving aand with mb γðaþthe number of moves in both
+model and log involving a.
+for reliability, we average over all optimal alignments.
+letγ¼ð fγ1;…;γng;λþbe a multi-set of optimal alignments
+of a log land a model d. the degree of conformance of an
+activity a aσwith respect to γis defined as follows:
+dconf γaðþ ¼ 1/c01
+n/c1∑
+γaγλγðþmm γðaþþmlγðaþ
+mm γðaþþmlγðaþþmb γðaþ:
+dconf γðaþ¼1, if the moves that involve aare only moves
+in both (i.e., there are no deviations related to a).
+dconf γðaþdecreases when the fraction of moves in model
+or in log involving aincreases. dconf γðaþ¼0, if all moves
+that involve aare only moves in the log or moves in the
+model.
+in the remainder, given an alignment γand a constraint
+π, we denote with mc γðπþthe metric representing the
+number of moves in the model and in the log in γthat
+fig. 5. an example to illustrate the limitation of existing techniques:
+the number of activities that are involved in deviated executions isoverestimated.m. de leoni et al. / information systems 47 (2015) 258 –277 264contributes to solve a violation of π. the moves that
+contribute to solve a violation of a constraint are computed
+according to the technique described in section 5.2 . the
+degree of conformance of a constraint πaπwith respect to
+γis defined as follows:
+dconf γπðþ ¼ 1/c01
+n/c1∑
+γaγλγðþmc γðπþ
+jγj:
+dconf γðπþ¼1, if πis never violated. dconf γðπþgets closer
+to 0 when the fraction of moves in the model or in the log
+needed to solve violations of πincreases.
+6. the analgorithm for computing log –model alignments
+let us suppose to have a graph vwith costs associated
+with arcs. the analgorithm, initially proposed in [4],i sa
+pathfinding search in v. it starts at a given source node
+v0avand explores adjacent nodes until one node of a
+given target set v trg/c26vis reached, aiming at finding the
+path with the overall lowest cost.
+every node vavis also associated with a cost, which is
+determined by an evaluation function fðvþ¼gðvþþhðvþ,w h e r e
+/c15g:v-rþ
+0is a function that returns the smallest path
+cost from v0tov;
+/c15h:v-rþ
+0is a heuristic function that estimates the
+smallest path cost from vto any target node v0avtrg.
+function his said to be admissible , if it never overestimates
+the smallest path cost to reach any target node: for each
+node vavand for each target node v0avtrgreachable
+from v,hðvþrgðv0þ. technical results in [4]show that if his
+admissible, anfinds a path that is guaranteed to have the
+overall lowest cost.
+the analgorithm keeps a priority queue of nodes to be
+visited: nodes with lower costs are assigned higher prior-
+ity, thus guaranteeing that these are going to be visited
+earlier. the algorithm works iteratively: at each step, the
+node vwith lowest cost is taken from the priority queue. if
+vbelongs to the target set, the algorithm ends returning v.
+otherwise, vis expanded: every successor v0ofvis added
+to the priority queue with cost fðv0þ.
+we use anto find any of the optimal alignments of a log
+trace slaσnand a declare model d¼ða;πþ. in order to be
+able to apply an, an opportune search space vneeds to be
+defined.
+the search space for finding an optimal alignment
+between slanddis a directed graph ( v,e) where
+/c15vcontains prefixes of some complete alignment of sl
+and d:v¼fγaσn
+a:γ#laprefix ðslþand(smapd;
+γ#maprefix ðsmþg;
+/c15econtains all edges ðγ0;γ″þav/c2v, where γ″is
+obtained concatenating a legal move to γ0:
+e¼f ðγ0;γ″þav/c2v:(ðs0;s″þaσas:t:γ″¼γ0/c8ðs0;s″þ.
+the set of target nodes vtrg/c26vcontains all complete
+alignments of slandd.
+it is easy to see that, if the directions on the edges are
+ignored, the path from a certain γ0avto a certain γ″avnever contains the same node twice and, therefore, the
+search space is a directed tree. the root of the tree is the
+empty alignment γ0¼〈〉, which is the source node to start
+the application of the analgorithm from. since a different
+alignment is also associated with every node and vice versa,
+later on, we use the alignment to refer to the associated node.
+let us consider a custom cost function κand denote
+with κminthe smallest value greater than 0 in the codo-
+main of κ, i.e., κmin¼ min
+ðs0;s″þaσn
+a:κðs0;s″þ≫0κðs0;s″þ.
+we define the cost of a path from the initial node to
+γavas
+gðγþ¼κmin/c1jγ#ljþkðγþ;
+this definition of gðγþguarantees that the optimal solution
+computed by the analgorithm is an optimal alignment.
+theorem 1. let(v,e)be the search space of the analgorithm
+to find an optimal alignment between a log trace sland a
+declare model d.let v trgdv be the set of the target nodes of
+the search space ,i.e.,the set of all complete alignments of sl
+andd.ifγoavtrgis an optimal alignment ,then,for each
+γavtrg,gðγþzgðγoþ.
+proof. let us consider any complete alignment γ0avtrg\fγog.
+let us suppose by contradiction that gðγ0þogðγoþ.i th o l d st h a t
+gðγ0þ¼κmin/c1jγ0#ljþkðγ0þand gðγoþ¼κmin/c1jγo#ljþkðγoþ.
+since γ0and γoare complete alignments, γ0#l¼γo#l¼sl.
+therefore, κmin/c1jγ0#ljþkðγ0þoκmin/c1jγo#ljþkðγoþ,i . e . ,kðγ0þ
+okðγoþ.t h e r e f o r e ,i ti sn o tt r u et h a t γois an optimal
+alignment. □
+the application of the analgorithm to find optimal
+alignments employs the following heuristics:
+hðγþ¼κmin/c1ð jslj/c0jγ#ljþ
+as the next theorem shows, this heuristics is admissible
+and, hence, guarantees the optimality of the solution
+computed by the analgorithm.
+theorem 2. let(v,e)be the search space of the analgorithm
+to find an optimal alignment between a log trace sland a
+declare model d.let v trgdv be the set of the target nodes of
+the search space. the heuristic h ðγþ¼κmin/c1ð jslj/c0jγ#ljþis
+admissible ,i.e.,for each γ0avtrgsuch that γaprefix ðγ0þ,
+hðγþrgðγ0þ.
+proof. letγavbe an alignment. if γavtrg,jslj¼jγ#ljand,
+hence, hðγþ¼0rgðγþis trivially true. if γ=2vtrg,l e tu st a k e
+anyγ0avtrgsuch that γaprefix ðγ0þ.l e tu sa s s u m e gðγ0þohðγþ
+by contradiction. therefore, gðγ0þ¼κmin/c1jsljþkðγ0þohðγþ
+¼κmin/c1ð jslj/c0jγ#ljþ.t h i si m p l i e st h a t kðγ0þo/c0κmin/c1jγ#lj
+o0, which is not possible. hence, gðγ0þohðγþcannot be true
+sincekð/c1þcan never be negative (it is a sum of non-negative
+costs). □
+the set of any declare process behavior is infinite and,
+hence, the set of complete alignments for a given log trace is
+also infinite, like so the search space. in principle, the same
+may also hold for procedural models (e.g., in the presence of
+cycles). nonetheless, declare models allow for more flexibility
+and, hence, a prefix of a model trace can be extended with a
+very large number of activities, if compared with proceduralm. de leoni et al. / information systems 47 (2015) 258 –277 265models. this implies that every search-space node has a very
+large number of successors, far more than for computing the
+alignment of a trace and a procedural model.
+therefore, it is important to prune the search-space
+tree so as not to visit nodes that are equivalent to nodes
+which have already been visited. we say that two align-
+ments (i.e., search-space nodes) are equivalent, if they can
+be extended with the same moves. space limitations
+prevent us from giving further details on the technique
+we have devised for search-space pruning. we refer
+interested readers to [17] for further information on it.
+7. conformance checking using alignments
+there are four basic quality dimensions for checking
+the conformance of event logs with respect to process
+models: (a) fitness , (b) precision , (c) generalization and (d)
+simplicity [18]. a model with good fitness allows for most of
+the behavior seen in the event log. a model has a perfect
+fitness if all traces in the log can be replayed by the model
+from the beginning to the end.
+a model is precise if it does not allow for “too much ”
+behavior. a model that is not precise is “underfitting ”, i.e.,
+it is too generic.
+a model that does not generalize is“overfitting ”.a n
+overfitting model is too specific, i.e., it explains a particular
+sample log but it is unlikely that another sample log of the
+same process can be explained well by the same model.
+the fourth quality dimension, simplicity , is related to
+occam0s razor which states that “one should not increase,
+beyond what is necessary, the number of entities required
+to explain anything ”. following this principle, we look for
+the “simplest process model ”that can explain what is
+observed in the event log. in this paper, we do not take the
+simplicity dimension into account and we characterize the
+other three dimensions.
+although these quality dimensions were originally
+devised for procedural models, they are also important in
+the declarative case. it is also worth highlighting that the
+precision and generalization dimensions of conformance
+do not hinder the nature of declarative models. also for
+declarative models, a process analyst can be interested to
+verify whether the model is too precise, i.e., the model0s
+constraints limit too much the allowed process behavior,
+or, conversely, the model is too general, i.e., it has too few
+constraints and, hence, too much behavior is allowed. the
+following example discusses the importance of precision
+and generalization for declarative models.example 2. let us suppose to have the declare model dain
+fig. 6 (a). by executing this model, we can generate an event
+log ~lwith the following 5 traces: 〈a;b;c;d〉,〈a;b;a;b;c;d〉,
+〈a;b;c;c;d〉,〈c;c;a;b;d〉,〈c;a;b;d〉.u s i n gt h ed e c l a r em i n e r
+[19] with certain settings, we can generate the models db
+anddcinfig. 6 (b) and (c) from ~l. these models have a
+perfect fitness with respect to ~l. nonetheless, dbcontains no
+constraints and its precision is lower than the precision
+ofda. conversely, the generalization of dcis lower than
+the generalization of da, since an additional constraint is
+attached to d, which prescribes dto be executed exactly
+once. moreover, the response constraint between aand bin
+dabecomes a chain response indc. this means that amust
+be immediately followed by b. however, the reason why dc
+contains these constraints is related to the fact that, only by
+coincidence, in all traces of ~l,ais always immediately
+followed by band dalways occurs only once.
+clearly, the model daofexample 2 is the “ideal model ”
+that the declare miner should discover. unfortunately, this
+model is not known since only the behaviors recorded in the
+event logs are observed: unfortunately, the event log with 5
+traces is not complete , i.e., it does not contain examples of all
+possible behavior. as a consequence, it is highly probable
+that any discovered model will score low for some quality
+dimensions of conformance (e.g., dbanddchave low
+precision and generalization respectively). however, one
+wants to have an estimation of how much a mined model
+moves away from the ideal one. this motivates why the four
+dimensions of conformance are important. it is out of scope
+of this paper to have a thorough discussion about the
+comparison between the ideal model and the mined models
+with respect to the conformance dimensions. for further
+details about this, we refer the reader to [20].
+7.1. the fitness dimension: are the observed behaviors
+allowed by the model?
+when focusing on the fitness dimension of conformance,
+we are interested in quantifying the fitness score of a log trace
+slwith respect to a declare model d.t h e r e f o r e ,w ei n t r o d u c e
+afitness function fitness ðsl;dþ,w h i c hr e t u r n sav a l u e
+between 0 and 1. fitness ðsl;dþ¼1 if there is an (optimal)
+alignment between slanddwith cost 0, i.e., slis perfectly
+compliant with d.c o n v e r s e l y , fitness ðsl;dþ¼0 denotes a
+very poor fitness.
+cost function kð/c1þ, introduced in section 5 , is a good
+candidate but it cannot be used as it is, since the score
+needs to be a number between 0 and 1. the normalization
+fig. 6. three alternative declare models derived from the same event log. model (a) adequately balances the precision and generalization dimensions of
+conformance, whereas (b) is not a precise declare model because it contains no constraints and, hence, too much behavior is allowed. finally, model (c)
+does not generalize sufficiently: the number of constraints and their type disallow a lot of behavior that is potentially admissible.m. de leoni et al. / information systems 47 (2015) 258 –277 266between 0 and 1 can be done in several ways. in our
+approach, we divide the cost of the optimal alignment by
+the maximal alignment cost. typically, the greatest cost of
+an alignment of a log trace sl¼〈al
+1;…;al
+n〉and a model
+trace sm¼〈am
+1;…;am
+m〉apdis obtained for the reference
+alignment , i.e., the alignment in which there are only
+moves in the model and moves in the log:
+definition 4 (fitness ). let d¼ða;πþbe a declare model
+andslbe a log trace. let γaσn
+abe an optimal alignment of
+slandd. let smγ#mbe the aligned model trace. let
+γref
+ðsl;smþaσn
+abe the reference alignment of slandd. the
+fitness score of slwith respect to dis defined as follows:
+fitness sl;dðþ ¼ 1/c0kðγslþ
+kðγref
+ðsl;smþþ:
+therefore, fitness ðsl;dþ¼1, if in the alignment there
+are only moves in both, i.e., there are no deviations.
+fitness ðsl;dþ¼0, if the optimal alignment only contains
+moves in the log or in the model. note that the above-
+defined fitness always scores between 0 and 1. indeed, if
+γoaσn
+ais an optimal alignment, any other alignment,
+including γref
+ðsl;smþ, must have the same or a higher cost.
+example 1 (cont.). the optimal alignment γ1is associated
+with a cost 3, whereas the cost of the relative reference align-
+ment is 32. therefore, fitness ðsl;dþ¼1/c03=32¼0:90625.
+7.2. precision: does the model allow for too much behavior?
+in[21], a technique is proposed to compute the preci-
+sion of procedural model. here, this technique is adapted
+and extended to deal with declarative models. the tech-
+nique proposed relies on the construction of the so-called
+alignment automaton .
+definition 5 (alignment automaton ). let landd¼ða;πþ
+be an event log and a declare model respectively. let
+γ¼ð fγ1;…;γng;λγþabðσn
+aþbe the multi-set of optimal
+alignments of landd. let pbe the multi-set ðfs1;
+…;sng;λpþabða[✓þof“aligned ”model trace, i.e., for
+each 1 rirn,si¼γi#mandλpðsiþ¼λγðγiþ.
+the alignment automaton is a finite state automaton
+ðς;s;s0;δ;fþ, where
+/c15σ¼a[f✓gis the alphabet of the automaton;
+/c15saσnis the set of all prefixes of sequences in p, i.e.,
+s¼fs:(s0ap;saprefix ðs0þg;
+/c15s0is the initial state, which is the empty sequence;
+/c15δ:s/c2σ-sis a function such that, if δ/c8〈s〉as,δðs;sþis
+defined and equal to δ/c8〈s〉;
+/c15fdsis the set of final states. a prefix sasbelongs to f
+if there exists saσfor which δðs;sþis defined.
+moreover, each alignment automaton is associated with
+a function υ:s-n.f o re a c h sas,υðsþreturns thenumber of sequences in multi-set pthat have sas prefix:
+υðsþ¼∑spap:saprefix ðspþλpðspþ.
+once the alignment automaton is built, the precision
+can be scored as follows.
+definition 6 (precision ). let ðς;s;s0;δ;fþbe the alignment
+automaton for a declare model dand an event log l. for
+each activity sequence sas, let avdðsþbe the set of all
+activities that are enabled for execution: avdðsþ¼fsaς:
+s/c8 〈s〉apdg. let exlðsþdavdðsþbe the set of all activities
+that have been executed after executing s,exlðsþ¼fsaς:
+δðs;sþis defined g. the precision score of dwith respect to
+lis defined as follows:
+precision d;lðþ ¼∑sas\fðλpðsþ/c1jexlðsþjþ
+∑sas\fðλpðsþ/c1javdðsþjþ:
+the precision is always a value between 0 and 1. if all
+behavior allowed by the model dis actually observed in the
+event log l,t h e n precision ðd;lþ¼1. in general, a precision
+ofx=100 identifies a situation in which x%of possible
+behaviors are observed. therefore, a model that allows for
+too much behavior has a precision score close to 0.
+example 2 (cont.). fig. 7 shows the alignment automaton
+for the four traces in ~l. since all log traces are perfectly
+fitting, p¼~l. let us consider two states of the alignment
+automaton: ~s1¼〈〉and ~s2¼〈a;b〉. according to the align-
+ment automaton, as first activity (i.e., after the empty
+sequence ~s1), activities aand chave been performed, i.e.,
+jex~lð~s1þj ¼2. activities aand chave also been performed
+after sequence ~s2, i.e., jex~lð~s1þj ¼2. let us consider the
+three declare models da,dbanddcinfig. 6 . after ~s1,
+models daanddcallow for activities a,b,cas well as any
+other activity not in the model, i.e., ✓. in addition, model
+dbalso allows for d. it follows that javdaðs1þj ¼4,javdb
+ðs1þj ¼5 and javdcðs1þj ¼4. similarly, javdaðs2þj ¼4,javdb
+ðs2þj ¼5 and javdcðs2þj ¼4. to measure the precision of
+each dafda;db;dcg,jex~lðsþjand javdðsþjneed to be
+computed for each state sof the alignment automaton.
+for this example, we have the following scores: precision
+ðda;~lþc0:19, precision ðdb;~lþc0:17 and precision
+ðdc;~lþc0:21. as expected, models dbanddcare the least
+and the most precise respectively. we will show that,
+however, the generalization of dcis low. the precision
+score is relatively low for all the three models in fig. 6 .
+fig. 7. the alignment automaton for traces in example 2 .m. de leoni et al. / information systems 47 (2015) 258 –277 267precision of a model is defined with respect to a given
+event log. if the event log is sufficiently large (e.g., spanning
+over a period of multiple years), due to the strong law of
+large numbers , the event log is likely being complete. clearly,
+log completeness is related to precision: if the event log is
+complete, all possible behavior is observed and, hence, the
+precision score is reliable.
+the precision score of many declare models can be
+relatively low, since declare models allow for high flex-
+ibility. however, the absolute score of precision of a model
+is only partly interesting. in many situations, one is
+interested to compare multiple models (e.g., the models
+mined from a given event log) to choose the one with the
+highest precision.
+7.3. generalization: does the model allow for too little
+behavior?
+it is difficult to reason about generalization because it
+refers to unseen behavior. our approach is based on
+probability estimators, similar to what has been proposed
+in[1]for procedural models.
+we again exploit the alignment automaton ðς;s;s0;δ;fþ.
+letd¼ða;πþbe a declare model. for each πaπ,l e taπbe
+the constraint automaton for π.l e tad¼ðς;ψd;ψ0d;δd;fdþ
+be the so-called global automaton obtained through the
+cartesian (intersection) of every automaton aπwith πaπ.
+the set of non-final states x¼s\fcan be partitioned
+in equivalent classes using an equivalence relation /c24d
+such that, for each s0;s″ax,s0/c24ds″iffδn
+dðψ0d;s0þ
+¼δn
+dðψ0d;s″þ.4in the remainder, the set of all equivalence
+classes in xis denoted as follows: x=/c24d¼fx1;…;xng.
+equivalence class xiax=/c24dcomprises all sequences
+that reach a certain state of the global automaton. let
+ωdðxiþbe the number of times that state is reached:
+ωdðxiþ¼∑s0axiυðs0þ.
+letδdðxiþbe the set of activities performed when being
+in that state: δdðxiþ¼fsaς:(s0a½s/c138d;δðs0;sþis defined g.
+for any xiax=/c24d,i fjδdðxiþjcωdðxiþ, the execution
+supposedly proceeds with an activity different from that
+already observed. therefore, it is likely that a new event
+refers to a new unseen activity. conversely, if jδdðxiþj
+≫ωdðxiþ, the execution can be reasonably assumed to
+proceed with an activity that has already been seen.
+definition 7 (generalization ). let ðς;s;s0;δ;fþbe the
+alignment automaton for a declare model dand an event
+logl. let x=/c24dthe set of all equivalence classes of
+x¼s\f. let pnew ðn;mþbe an estimator of the probability
+of observing a new activity in the ðmþ1þ-th observation,
+when ndifferent activities are observed in the first mobservations [1]:
+pnew n ;mðþ ¼nðnþ1þ
+mðm/c01þifmznþ2
+1 otherwise8
+<
+:
+the generalization ofdwith respect to lis defined as
+follows:
+generalization d;lðþ ¼ 1/c01
+jx=/c24dj∑
+xiax=/c24dpnew δdxiðþ ;ωdxiðþ/c12/c12 þ:/c12/c12/c0
+estimator pnew ðn;mþis the transition probability to observe a
+new activity, under the assumption that its distribution is
+multinomial. generalization can be defined as the probability
+that the next trace, not yet observed, can be replayed by theprocess model.
+example 2 (cont.). let ðς;s;s
+0;δ;fþbe the alignment
+automaton in fig. 7 and let be x¼s\f. for declare model
+db, there exist no constraint automata. as a consequence,
+x=/c24db¼fxgwith ωdbðxþ¼16 and jδdbðxþj ¼4. therefore,
+generalization ðdb;~lþ¼1/c0pnew ð16;4þ¼0:95.
+consider ~s3¼〈a;b〉as,~s4¼〈a;b;a;b〉as. for the declare
+model dc, after performing ~s4, (i) the chain-response
+constraint automaton is back to the initial state, (ii) the
+automaton of the precedence constraint between band cis
+in the same state as after performing ~s3and (iii)the
+automata for the other two constraints have not moved.
+consequently, one of the partitions of xisx0¼f~s3;~s4g.i n
+this case, ~s3is a prefix of three traces and ~s4is a prefix of
+one trace; hence, ωdbðx0þ¼4. moreover, after performing
+~s3and ~s4, executions of activities a;care observed; hence,
+jδdbðx0þj ¼2. therefore, when the global automaton is the
+state as after performing ~s3and ~s4, the probability of
+observing an activity different from what observed is
+pnew ð3;2þ¼1. the computation of this probability needs
+to be repeated for any other partition of xin order to score
+the generalization of dc:generalization ðdc;~lþ¼0:316.
+space limitations prevent us from discussing the com-
+putation of the generalization score of da, which is
+generalization ðda;~lþ¼0:45. as it could be expected,
+the generalization score of dbis higher than of da, which,
+in turn, has a higher score than dc.
+if an event log contains relatively few traces, the
+generalization will score low, since the next log trace is
+likely to be different from those already seen and, prob-
+ably, it cannot be replayed by the model. conversely, if the
+event log is complete and many traces appear multiple
+times, the generalization will be high: even if a log trace
+has not been observed yet, the model will be able to
+replay it.
+7.4. complexity analysis for the computation of fitness,
+precision and generalization
+after computing the optimal alignment for each trace
+in the event log, the scores of fitness, precision and
+generalization can be computed in polynomial time with
+respect to the number and length of the log traces.4the concept of global automaton is only introduced to simplify the
+discussion. concretely, the equivalence classes can be easily computed by
+using an equivalence notion where two sequences/states of the align-ment automaton are equivalent iff all constraint automata are in thesame state.m. de leoni et al. / information systems 47 (2015) 258 –277 268letnbe the number of traces of an event log land m
+be the order of magnitude of the number of events in
+each trace.
+without additional information, we assume that each
+event has the same probability of being involved in a move
+in both or in log. moreover, we assume that, for each move in
+the log (or model), one move in the model (or log, respec-
+tively) is also necessary. therefore, the number of moves in
+each alignment γhas the order of magnitude of mand like so
+the length of every “aligned ”model trace γ#m.
+to compute the fitness score, each alignment needs to
+be entirely iterated once. therefore, the complexity for
+computing the fitness of all traces in lisoðm/c1nþ. for
+constructing the alignment automaton ðς;s;s0;δþ, every
+“aligned ”model trace, whose length has the order of
+magnitude of m, needs to be iterated once. hence, the
+complexity for constructing the automaton is oðm/c1nþ. the
+number jsjof states of the alignment automaton is also
+oðm/c1nþ. while iterating over the “aligned ”model traces,
+the set of equivalence classes can be constructed on the fly,
+like so exlðsþ,avdðsþcan be computed for each sas.
+therefore, the precision and generalization scores can be
+computed in oðm/c1nþ.
+8. usage of the optimal alignments to clean and repair
+event logs
+this section discusses the first and third use case of the
+framework described in section 3 , i.e., how to clean and
+repair event logs. let l¼ðl;λþbe an event log and let
+dwhole ¼ðawhole ;πwholeþbe a declare (whole) model. for
+each trace sal, let γsbe an optimal alignment of sand
+a core model dcore¼ðacore ;πcoreþsuch that πcoredπwhole.
+acleaned log lcleanoflwith respect to dcoreis an event
+logðlc;λcþ, where lconly contains the log traces salsuch
+that γscontains no move in the log or the model for any
+activity aaacoreas well as sdoes not violate any constraint
+πaπcore. the cleaned event log lcleanonly contains the log
+traces that are worthwhile to be considered for further
+analysis.
+as mentioned in section 3 , many analysis techniques
+require that the event log perfectly fits a process model
+and, hence, results lose (part of) their significance if there
+are deviations. therefore, non-fitting event logs need
+adjustments to remove deviations. the resulting log is
+called repaired event log.
+letl¼ð fs1;…;sng;λþabðan
+lþbe a (cleaned) log. let
+drepair ¼ðarepair ;πrepairþbe a repair model. let γsibe an
+optimal alignment of sianddrepair.
+arepaired log lrepair oflwith respect to drepair is an
+event log lrepair ¼ð fsr
+1;…;sr
+ng;λrþabððal[✓þnþwhere, for
+1rirn,sr
+i¼γsi#mandλrðsr
+iþ¼λðsiþ.
+when an event is created because of a move in the
+model, there are two aspects to consider. moves in model
+might be associated with ✓. as a result, an event ✓could
+be inserted. events ✓do not affect many diagnostics when
+using the repaired log as input. nonetheless, if log traces
+can only be repaired by adding ✓events, i.e., events
+referring to activities not belonging to the model, that
+should be an alert of the fact that possibly the model is not
+designed well.for the sake of simplicity, each event has been abstracted
+as the activity name only, and an event trace is a sequence of
+activity names. of course, in reality, each event is also
+associated with a timestamp indicating the time when the
+event occurred. when inserting an event, this event needs
+to be associated with a timestamp, as well. the timestamp is
+necessary when one wants to execute some performance
+analysis. the inserted event is associated with a timestamp
+which is the average between the timestamps of the events
+that precede and follow it.
+example 1 (cont.). let us suppose that dcore¼ðacore ;πcoreþ
+where acore¼fcqgand set πcorecontains all constraints in
+fig. 1 apart from the response and the not-succession
+constraint. furthermore, let us suppose that drepair is the
+entire declare model in fig. 1 , i.e., traces are repaired with
+respect to all the constraints in the model in fig. 1 . trace sl
+is repaired as follows:
+sr
+l¼〈register ;create questionnaire ;
+prepare notification content ;create questionnaire ;
+send questionnaire ;send notification by e /c0mail ;
+send notification by post ;archive 〉
+which is part of the repaired event log lrepair.
+9. implementation and evaluation
+in order to evaluate the three use cases described in
+section 3 , we have implemented a series of plug-ins of
+prom , a generic open-source framework for implementing
+process mining functionalities [5]:
+declare replayer it takes a declare model and an event log
+as input and, using the algorithm described in
+section 6 , finds a multi-set of optimal alignments,
+i.e., one alignment for each trace in the event log.
+this plug-in is also in charge of computing the score
+of the different dimensions of conformance (fitness,
+precision and generalization).
+declare diagnoser it takes as input the multi-set of
+optimal alignments and projects them on the
+model. activities and constraints are colored
+according to their degree of conformance (see
+section 5.3 ).
+log cleaner it takes a (core) declare model and an event
+log and returns an event log in which traces in
+the original log violating at least one constraint
+in the model are discarded. internally, it invokes
+thedeclare replayer plug-in to find the multi-set
+of optimal alignments.
+log repairer it takes a (repair) declare model and, using the
+algorithm in section 8 , adjusts the log traces by
+removing and inserting events, thus producing a
+perfectly fitting event log. internally, it invokes the
+declare replayer plug-in to find the multi-set of
+optimal alignments.
+to assess the viability of the proposed techniques, we
+performed validations along two main directions. firstly, the
+scalability was evaluated with declare models and eventm. de leoni et al. / information systems 47 (2015) 258 –277 269logs of increasing sizes (one real-life and some synthetic
+event logs were used) and with increasing numbers of
+deviations. secondly, we aimed at validating the usefulness
+of the approach and the effectiveness of the results
+obtained. in particular, we applied all of the three use cases
+described in section 3 on a real case study from a dutch
+hospital. section 9.2 discusses the validation, highlighting
+the possible benefits for potential stakeholders.
+9.1. performance evaluation
+the scalability of the proposed techniques has been
+evaluated through two sets of experiments. in a first set of
+experiments, one single declare model was used and
+synthetic event logs were generated with different sizes
+and including different numbers of deviations. in a second
+set, the size of the declare model was varied. models
+were generated with different numbers of constraints
+and number of activities.
+for the first set of experiments, several synthetic logs
+has been generated by modeling the process described in
+example 1 in cpn tools5and by simulating the model.
+specifically, we generated event logs of different sizes (i.e.,
+containing from 250 up to 750 traces) and with different
+probabilities of violating a certain constraint within a log
+trace (i.e., from 0% up to 90%). in other words, a probability
+of violation of x%means that the probability that a certain
+constraint is violated in a trace is x=100. note that multiple
+constraints can be violated at the same time in a log trace:
+for instance, if the probability of violating a constraint is p,
+the probability of violating two constraints is p2.
+infig. 8 , the results are shown. for each combination of
+log size (250, 500 or 750 traces) and probability of
+violation, the execution time is averaged over 5 runs. a
+trend line is also shown to highlight that the execution
+time grows linearly with increasing probability of viola-
+tions in the event logs.
+also, with respect to a single probability of violation, the
+execution time is linear in the number of traces of the event
+log. it was expected that the alignment of a trace of the
+event log and the declare model is computed without
+considering the other traces of the event log. therefore,
+if the number of log traces is multiplied by n, the execution
+time would be ntimes greater.
+in order to compare the optimized approach with the
+situations in which no pruning is made and also no
+heuristics is used, an event log was used with 250 traces
+and a degree of non-fitness of 90%. table 1 shows the
+results of this comparison. if we do not prune the search-
+space, the declare replayer has to visit 457% of extra nodes
+and, consequently, the execution time increases by 500%.
+table 1 also shows the reduction in terms of time and
+number of nodes to visit when using the heuristics described
+insection 6 .w h e nn oh e u r i s t i c si su s e d ,t h eanalgorithm
+coincides with dijkstra.
+in a second set of experiments, a single event log was
+used with declare models of different sizes. at the begin-
+ning, a declare model was generated through the declareminer plug-in in prom [19]. the input was a real-life event
+log concerned with a process enacted in a dutch hospital
+(see section 9.2 for more details). the event log contained
+289 log traces, 10,215 events and 152 activities and the
+mined declare model consisted of 157 constraints and 28
+activities (the least frequent activities were abstracted out).
+in order to obtain models with fewer constraints, a percen-
+tage of constraints was randomly removed while ensuring
+each activity to be connected to one constraint, at least.
+to conduct the experiments, these models were checked
+for conformance against the event log. fig. 9 shows the
+execution time when varying the number of constraints. fory = 0,0504x + 1,4468y = 0,1054x + 2,3265y = 0,1572x + 3,4193
+1357911131517
+0 1 53 04 56 07 59 0execution time (in secs.)
+probability for each constraint to be violated250
+500
+750
+fig. 8. average execution time for different combinations of log sizes and
+probabilities of violation. each combination has been run 5 times with a
+variance which is never higher than 0.04 s.
+table 1comparison of the execution time of the declare replayer when all
+optimizations are enabled with respect to the cases when they are
+selectively turned off. the results refer to a synthetic log from example
+1with 250 traces and a probability of violation of 90%.
+employed visited tree execution
+technique nodes size time
+optimized a
+n67 218 6 s
+without pruning 373 3310 36 swithout heuristics 324,119 3,402,799 ca. 12 h
+y = 35,253ln(x) -112,05 
+91929394959
+30 50 70 90 110 130 150execution time (in secs.)
+number of constraints
+fig. 9. results of the experiments conducted with different declare mo-
+dels with 28 activities and different numbers of constraints. the varianceis negligible as it is never more than 0.07 s.
+5http://cpntools.orgm. de leoni et al. / information systems 47 (2015) 258 –277 270reliability, given a number of constraints, different models
+were considered with that number of constraints. the trend
+line illustrates that the execution time increases with the
+logarithm of the number of constraints.
+later, the experiments aimed to evaluating how the
+execution time is affected when varying the number of
+activities in models including different types of con-
+straints. different declare models were generated with
+different numbers of activities (5, 10, 15 and 20) with
+nearly two constraints per activity. the types of constraints
+were precedence, responded existence and response. the
+models were generated so as to balance the number ofconstraints of these three types (i.e., the models contain
+the same number of constraints of the three types) and,
+also, to have similar fitness scores (around 0.85). the
+experimental results are shown in fig. 10 . the trend line
+illustrates that the execution time increases polynomially
+with the number of activities; for models with less than 10
+activities, the execution time is very small and almost
+constant.
+9.2. validation using a case study
+in the previous section, the approach feasibility has
+been validated. this section goes beyond and aims at
+assessing its relevance and usefulness in a real scenario.
+for this purpose, the same event log relative to a dutch
+hospital has been used. the event log concerns the treatment
+of bladder cancer. bladder cancer is a complex disease and
+each patient must be treated in a different way, depending
+on the patient
+0s characteristics (e.g., age, gender), the histol-
+ogy, grade and depth of invasion. based on these parameters,
+there are several possible tests and treatments the doctors
+can decide to apply to patients affected by bladder cancer.
+due to the high flexibility of the therapy, the use of a
+declarative process model is highly indicated.
+fig. 11 shows a declare model that has been drawn by
+hand in compliance to the guidelines published by the
+european association of urology for treatment of bladdercancer.6according to the log –model alignment frame-
+work, we have identified the core and repair model. the
+core model is the union of two parts delimited by the solid
+green line, whereas the repair model is delimited by the
+red dotted line. the repair model comprises the con-
+straints that, according to the medical guidelines, must
+be always respected for a correct treatment of the cancer.
+the core model contains two constraints: the initcon-
+straint associated with first patient visit ,a c c o r d i n g
+to which this activity has to be the first of every process
+execution, as well as the 0 ‥1 constraint associated with dbc
+registration , which states that this activity cannot be executed
+more than once in a process instance. every log trace that
+violates these constraints should be discarded as certainly
+incomplete: the activities for the hospital registration and the
+first visit are not logged. in real scenarios, it is not infrequent
+that there are logging problems and that a number of activity
+executions are not stored in the event logs. these traces
+should certainly be left out since they are biased and would
+negatively affect the efficacy of process mining techniques.
+this is also shown in this event log: out of the 289 log
+traces, only 68 traces were kept after log cleaning. the
+cleaned log and the whole declare model were used as
+input for the declare replayer .
+fig. 12 illustrates the output produced by the declare
+replayer plug-in. each sequence of triangles refers to an
+alignment of a trace with respect to the model. each triangle
+is a different legal move; the color of the move depends on
+i t st y p e :m o v e si nt h el o g ,m o v e si nt h em o d e lo rm o v e si n
+both are colored in yellow, purple and green respectively.
+each sequence is also associated with a number that
+identifies the fitness score of the specific trace.
+when clicking the detail button associated with each
+trace, the alignment is shown at the bottom (e.g., thescreenshot shows the details when selecting the trace
+numbered 1000181554). each rectangle represents a dif-
+ferent move and is annotated with the activity involved in
+the move. the color of the rectangle is again associated
+with the type of move, using the color scheme mentioned
+before. when passing with the mouse over any rectangle,
+the declare replayer shows which constraint violations
+that move contributes to solve (see section 5.3 ).
+in the screenshot in fig. 12 , it is shown the 17th move is
+in the log for activity transurethral resection . when pas-
+sing over the corresponding rectangle with the mouse, the
+declare replayer lists the constraints that the move con-
+tributes to solve. two precedence constraints are solved by
+the move in the log: every occurrence of transurethral
+resection should be preceded by cysto-urethescopy and
+preoperative screening . since occurrences of these two
+activities were not present in the trace before transurethral
+resection , the latter cannot be executed, which motivates
+the move in the log.
+immediately above the enumeration of the traces with
+their optimal alignments, the graphical user interface
+shows the average fitness score with respect to all eventy = 1,0184x2-11,073x + 25,9811,073x + 25,98
+050100150200250
+51 0 1 5 2 0execution time (in secs.)
+number of activities
+fig. 10. results of the experiments conducted including a balanced
+number of constraints of type precedence, responded existence andresponse and different numbers of activities. the execution time trendis polynomial when the number of activities is equal to or bigger than10; the execution time is very small and almost constant for smallernumbers.
+6see http://www.uroweb.org/guidelines/online-guidelines/ .i ti s
+worth saying that this model is none of the models used for thescalability evaluation in the previous section.m. de leoni et al. / information systems 47 (2015) 258 –277 271traces as well as the score of the precision and general-
+ization dimensions of conformance.
+fig. 13 shows a screenshot of the declare diagnoser
+plug-in where moves in the log and in the model are
+projected on the declare model. the figure refers to the
+same set of alignments as in fig. 12 , i.e., using the clean
+event log and the whole model as input. each activity is
+associated with a number that represents the degree ofconformance (see section 5.3 ). each constraint is asso-
+ciated with two numbers, the first representing the degree
+of conformance and the second the percentage of process
+instances in which a certain constraint is violated. more-
+over, the degree of conformance is also reflected in the
+colors of activities to make the visualization more effective.
+green and red nodes and arcs indicate a degree 1 or 0 of
+conformance respectively. intermediate shades between
+fig. 11. the core, repair and whole models to describe the case study from a dutch hospital. the core constraints are those in the two areas delimited by
+the solid green line, whereas the repair constraints are those included in the area delimited by the red dotted line. (for interpretation of the refere nces to
+color in this figure caption, the reader is referred to the web version of this paper.)
+fig. 12. a screenshot showing the trace-model alignments as visualized in the declare replayer plug-in of prom . the average fitness is also shown with
+respect to all optimal alignments, along with the values of precision and generalization of the model. (for interpretation of the references to color s in this
+figure caption, the reader is referred to the web version of this paper.)m. de leoni et al. / information systems 47 (2015) 258 –277 272green and red reflect values in-between these two extremes.
+white color is associated with activities that do not occur in
+the log traces.
+in our case study, the clean log only contains traces that
+do not violate the core constraints; therefore, the degree of
+conformance of the core constraints is equal to 1. the
+presence of white-colored activities is motivated by the
+fact that some activities are so infrequent that they donot occur in the event log resulting from the cleaning
+phase. the figure also brings out the red color for
+activity ct thorax : its degree of conformance is equal
+to 0. this means that it is always associated with moves
+in the log or in the model, never with moves in both. this
+means that the activity is never executed correctly. either it
+is performed when it should not be or is not performed
+when it should be.
+when selecting an activity, on the left-hand side of the
+screen, a summary is provided with the number of moves in
+which the activity is involved; in the figure, activity cysto-
+urethescopy is selected, which is involved in two moves in
+the log, one move in the model and 27 moves in both. it is
+worth noting that the outcome of declare diagnoser is also very
+insightful for repairing the declare model. the model can be
+repaired by removing the constraints for which the degree of
+conformance is below a certain threshold.
+in order to meaningfully apply additional process mining
+techniques off the shelf, the event log has to entirely comply
+w i t ht h em o d e l .t h e r e f o r e ,w en e e dt oa p p l yt h eu s ec a s e( i i i )
+infig. 2 and repair the event log using the repair model
+d e l i m i t e db yt h er e dd o t t e dl i n ei n fig. 11 .
+fig. 14 shows the results of using the repaired event log
+as input for some process mining techniques implemented
+as plug-ins of prom .fig. 14 (a) refers to the prediction
+technique described in [12]. the underlying model is a
+transition system. nodes correspond to the states whichsome process instances went through. respectively, ingoing
+and outgoing arcs of a state identify the activities that led to
+that state and that were performed when being in that state.
+without repairing and cleanin g the event log, the transition
+system is much more chaotic. indeed, the number of states
+would blow up since it should incorporate those states that
+refer to non-conforming behavior. obviously, those states
+should not be part of the transition system and, hence, thepredictions for those states are meaningless and also affect
+the predictions for the other states. the predictions are also
+more inaccurate due to the fact that the technique is based
+on replaying the log traces and shows issues when replaying
+non-conforming traces.
+fig. 14 (b) depicts a social network that describes the
+hand over of work between resources (see [22]): each oval
+identifies a different resource and the horizontal and vertical
+diameters grow with the amount of work that is delegated
+or received respectively. if we compare this hand over social
+network with the same obtained from the event log before
+repairing, the ovals
+0size tends to reduce with respect to
+both the horizontal and vertical diameters. in general, this is
+normal, since, in the repaired log, some events are removed
+and, hence, there is less work that is handed over. none-
+theless, the comparison shows that the length of the
+diameters is mostly reduced for only some ovals, whereas
+the diameters stay unchanged for others. this means that
+always the same resources are used to misbehave.
+fig. 14 (c) illustrates a bar diagram obtained by the
+throughput analyzer in prom (see [18]). each bar is asso-
+ciated with a different process instance. the y-axis indi-
+cates the execution time of each process instance in hours.
+apart from few outliers, it is clear that the entire treatment
+of a bladder cancer is usually concluded within 1000 h. if
+we use the event log before repairing, the resulting bar
+diagram does not differ significantly. conversely, if we do
+fig. 13. a screenshot showing the output of the declare diagnoser plug-in, which gives a helicopter view of the activities and constraints that are mostly
+involved in deviations. red color is associated with activities which are often involved in moves in the log or model as well as with constraints that ar e
+violated more frequently. green color indicates the opposite situations, with intermediate shades indicating intermediate situations. white col or is given to
+activities that have never occurred in the event log. (for interpretation of the references to colors in this figure caption, the reader is referred to the web
+version of this paper.)m. de leoni et al. / information systems 47 (2015) 258 –277 273not clean the event logs, the bar diagrams show 15% more
+outliers characterized by very long execution time. this
+suggests that the traces with logging problems are also
+characterized by long execution time. possibly, this is
+caused by errors in the logging system.
+10. related work
+over the last decade process mining evolved into an
+active research field relating data analysis (data mining,
+machine learning, etc.) and process analysis. see [18] for
+an introduction to process mining. we refer to the
+recently released process mining manifesto [23] for the
+main challenges in process mining. the focus of thispaper is on the analysis of the execution of declare
+models ; therefore we do not elaborate on process dis-
+covery techniques.
+conformance checking is highly relevant for auditing [24]
+and risk analysis [25]. however, the literature on auditing
+a n dr i s ka n a l y s i s [24,25]does not suggest concrete techni-
+ques to systematically compare observed behavior and
+modeled behavior. fortunatel y, a variety of conformance
+checking techniques has been developed in the context of
+process mining.
+cook and wolf [26] were among the first to quantify
+the relationship between an event log and a process
+model. they compare event streams generated from the
+model with event steams generated from the event log.
+fig. 14. the application of diverse process mining techniques using the repaired or cleaned event log of the case study stemming from a dutch hospital.
+the figures refer to screenshots of the graphical user interfaces of the respective plug-in implementations in prom . (a) execution time prediction: each oval
+is a state which some process execution has gone through. each arc indicates the activity that causes the state change. each state is also annotated wit h the
+predicted execution time to complete a process instance, when the execution is in that state. (b) social network: each oval represents a different res ource
+and the arcs highlight the hand over of work between resources. (c) execution time analysis: each bar is a different process instance. the y-axis indicates
+the execution time of the each process instance and is measured in hours.m. de leoni et al. / information systems 47 (2015) 258 –277 274several authors proposing process discovery algorithms
+also provide a quality metric (often related to fitness). for
+example, in [27] the authors define a fitness function for
+searching for the optimal model using a genetic approach.
+in[28] a“process mining evaluation framework ”for
+benchmarking process discovery algorithms is proposed.
+the first comprehensive approach to conformance ana-
+lysis was proposed in [29] by rozinat and van der aalst. two
+different types of metrics are proposed: (a) fitness metrics ,i .
+e., the extent to which the log traces can be associated with
+valid execution paths specified by the process model and (b)
+appropriateness metrics ,i . e . ,t h ed e g r e eo fa c c u r a c yi nw h i c h
+the process model describes the observed behavior, com-
+bined with the degree of clarity in which it is represented.
+fitness in [29] is measured by “replaying the event log ”and
+counting the number of missing and remaining tokens. this
+typically results in rather high fitness values as also pointed
+out in [2,30].i n [29], four appropriateness metrics are
+defined. simple behavioral appropriateness looks at the
+average number of enabled transitions. if most transitions
+are continuously enabled, the model is likely to lack preci-
+sion (i.e., underfitting). advanced behavioral appropriateness
+compares the “footprint ”of the log (follows and precedes
+relationships) to the “footprint ”of the model. simple struc-
+tural appropriateness andadvanced structural appropriateness
+quantify the complexity of the model.
+o n eo ft h ed r a w b a c k so ft h ea p p r o a c hi n [29] and most
+other approaches that “play the token game ”is that fitness is
+typically overestimated. when a model and log do not fit well
+together, replay will overload the process model with super-
+fluous tokens. as a result, the model will allow for too much
+behavior. in fact, most conformance techniques give up after
+the first non-fitting event or simply “guess ”the corresponding
+path in the model. therefore, adriansyah et al. formulatedconformance checking problems as an optimization problem
+[2]. this is the approach we also use in this paper. besides the
+four appropriateness notions in [29], muñoz-gama and car-
+mona quantified additional precision notions [31,32].
+it is difficult to use classical quality notions such as
+precision and recall for process mining. the main reason is
+that event logs only contain positive examples, i.e., one can
+see what “
+did happen ”but not what “could not happen ”.
+therefore, some authors suggest inserting artificially gener-
+ated “negative events ”[33,34]. goedertier et al. proposed
+such events for both process discovery and conformance
+checking [33]. weerdt et al. defined a so-called f-measure
+based on artificially generated negative events [34].t h e
+authors of the latter paper also conducted a comparative
+analysis of several conformance metrics [30]. however, their
+study did not consider the more advanced alignment-based
+approaches discussed in this paper.
+in[35], a completeness metric and a soundness metric
+are defined. these metrics compare the model traces with
+the log traces. this approach suffers from several drawbacks.
+first of all, only complete traces are compared. second, it is
+assumed that the model0s behavior can be enumerated.
+finally, it is assumed that the log contains all possible traces.
+there are also efficient algorithms to perform sequence
+alignments (e.g., the algorithms of needleman –wunsch and
+smith –waterman). similarly, in process mining, jagadeesh
+chandra bose and van der aalst [36] have proposedtechniques to efficiently align pairs of log traces. unfortu-
+nately, they cannot be applied to find an alignment between
+a log trace and a process model. in our setting, we do not
+know a priori the model trace to align with the log trace;
+conversely, the model trace needs to be chosen, thus
+minimizing the severity of the deviations.
+this paper extends [17] along the following directions:
+1. it proposes a framework for analysis of declare models
+that is based on three use cases which are supported by
+prom and are based on log –model alignment. in these
+use cases, conformance is evaluated through three
+dimensions: fitness, precision and generalization. paper
+[17] was only concerned with computing fitness for
+diagnostics purposes, which is one single aspect of oneof the three use cases.
+2. the performance evaluation of the approach has been
+strengthened. we provide a detailed analysis of how
+the approach scales with models of increasing sizes,
+proving that it is applicable to realistic scenarios.
+3. the approach has also been used to evaluate a real-life
+process enacted in a dutch hospital. we have applied all
+three use cases defined in the analysis framework. this
+has allowed us to put in evidence which kind of stake-
+holders in process-aware information systems would
+benefit from the approach presented in this paper.
+4. the implementation in prom is more efficient and outper-
+forms the one presented in [17].c o m p a r i n g fig. 8 with
+fig. 3 in [17], the improvements are evident: the execution
+is almost 90% faster with respect to the old implementation.
+of course, the new experiments and those reported in [17]
+were carried out using the same computer. also, the same
+algorithm was used. the reason of this drastic improvement
+is only related to the implementation. specifically, in the
+implementation reported in [17], the list of already visited
+search-space nodes/alignments γwith their cost gðγþwas
+kept in a linked list without indexing. therefore, the cost of
+checking whether an equivalent alignment was already
+visited was o(n)w h e r e nis the length of the list. for the
+new implementation, the linked list was replaced by a hash
+t a b l ew i t hn o d e s / a l i g n m e n t sa sk e ya n dc o s ta sv a l u e .
+therefore, the cost to search for equivalent alignments has
+decreased from o(n)t ooð1þ. moreover, the implementation
+reported in [17] stored the priority queue for the a
+n
+algorithm in a list sorted by cost, with insertion cost o(m)
+and removal cost oð1þwhere mis the length of the list. in
+the new implementation, a self-balancing binary search tree
+is used and insertion and removal operations take oðlogmþ
+time. since the number of insertions are far more than the
+removals, search trees perform better than sorted lists.
+11. conclusion
+this paper presents a novel log preprocessing and confor-
+mance checking approach tailored towards declarative models.
+most conformance checking techniques defined for procedural
+models (e.g., petri nets) are not di rectly applicable to declarative
+models since they are based on playing the “token game ”while
+counting missing and remaining tokens. moreover, thesem. de leoni et al. / information systems 47 (2015) 258 –277 275techniques tend to provide poor diagnostics, e.g., just reporting
+the fraction of fitting cases. we adapted alignment-based
+approaches to be able to deal with the large search spaces
+induced by the inherent flexibility of declarative models.
+as shown in this paper, alignments provide a very powerful
+tool when relating observed behavior with modeled behavior.
+we described three possible applications of our alignment-
+based approach: (i) cleaning event logs to remove traces that
+should not be used for further analysis, (ii) diagnosing event logs
+to check conformance, show deviations and measure compli-
+ance scores and (iii) repairing event logs to make sure that the
+essential constraints are satis fied before further analysis.
+the presented approach has been implemented in prom .
+our implementation provides n ovel diagnostics, at the trace
+level, showing why events need to be inserted/removed in a
+trace and at the model level, coloring constraints and activities
+in the model based on their degree of conformance. as future
+work, we plan to extend our approach in order to incorporate
+other perspectives (data, resources, risks, costs, etc.) in our
+analysis. for example, alignments can also be used to diagnose
+problems such as activities that are executed too late or by the
+wrong person.
+references
+[1]w.m.p. van der aalst, a. adriansyah, b.f. van dongen, replaying
+history on process models for conformance checking and perfor-mance analysis, wiley interdiscip. rev.: data mining knowl. discov.
+2 (2) (2012) 182 –192.
+[2] a. adriansyah, b. van dongen, w. van der aalst, conformance
+checking using cost-based fitness analysis, in: ieee international
+enterprise distributed object computing conference (edoc
+011),
+ieee computer society, 2011, pp. 55 –64.
+[3] m. de leoni, w.m.p. van der aalst, b.f. van dongen, data- and
+resource-aware conformance checking of business processes, in:
+15th international conference on business information systems,lecture notes in business information processing, vol. 117, springerverlag, 2012, pp. 48 –59.
+[4]r. dechter, j. pearl, generalized best-first search strategies and the
+optimality of a
+n, j. acm (jacm) 32 (1985) 505 –536.
+[5] h.m.w. verbeek, j.c.a.m. buijs, b.f. van dongen, w.m.p. van der
+aalst, xes, xesame, and prom 6, in: proceedings of informationsystems evolution (caise forum 2010), lecture notes in businessinformation processing, vol. 72, 2011, pp. 60 –75.
+[6] f.m. maggi, a.j. mooij, w.m.p. van der aalst, analyzing vessel
+behavior using process mining, in: situation awareness with sys-tems of systems, springer, new york, 2013, pp. 133 –148.
+[7] s. zugal, j. pinggera, b. weber, the impact of testcases on the
+maintainability of declarative process models, in: enterprise,business-process and information systems modeling (bmmds/
+emmsad 2011), lecture notes in business information processing,
+vol. 81, 2011, pp. 163 –177.
+[8] p. pichler, b. weber, s. zugal, j. pinggera, j. mendling, h.a. reijers,
+imperative versus declarative process modeling languages: an
+empirical investigation, in: proceedings of business process manage-ment workshops 2010, lecture notes in business information
+processing, vol. 99, 2011, pp. 383 –394.
+[9] d. giannakopoulou, k. havelund, automata-based verification of
+temporal properties on running programs, in: proceedings of the
+16th ieee international conference on automated software engi-
+neering (ase ’01), ieee computer society press, providence, 2001,
+pp. 412 –416.
+[10] m. westergaard, f.m. maggi, declare: a tool suite for declarative
+workflow modeling and enactment, in: proceedings of the demotrack of the 9th conference on business process management 2011,ceur workshop proceedings, vol. 820, ceur-ws.org, 2011.
+[11] w.m.p. van der aalst, m. pesic, h. schonenberg, declarative work-
+flows: balancing between flexibility and support, comput. sci. —res.
+dev. 23 (2) (2009) 99 –113.
+[12] w.m.p. van der aalst, m. schonenberg, m. song, time prediction
+based on process mining, inf. syst. 36 (2) (2011) 450 –475.[13] m. westergaard, better algorithms for analyzing and enacting declara-
+tive workflow languages using ltl, in: proceedings of the 9th businessprocess management conference (bpm
+011), lecture notes in computer
+science, vol. 6896, springer, berlin, 2011, pp. 83 –98.
+[14] a. bauer, m. leucker, c. schallhart, runtime verification for ltl and
+tltl, acm trans. softw. eng. methodol. 20 (4) (2011).
+[15] a. awad, g. decker, m. weske, efficient compliance checking using
+bpmn-q and temporal logic, in: proceedings of the 6th internationalconference on business process management, lecture notes incomputer science, vol. 5240, springer, berlin, 2008, pp. 326 –341.
+[16] f.m. maggi, m. montali, m. westergaard, w.m.p. van der aalst, monitor-
+ing business constraints with linear temporal logic: an approachbased on colored automata, in: proceedings of the 9th internationalconference on business process management (bpm
+011), lecture notes
+in computer science, vol. 6896, springer-verlag, 2011, pp. 132 –147.
+[17] m. de leoni, f. maggi, w.m.p. van der aalst, aligning event logs and
+declarative process models for conformance checking, in: proceedingsof the 10th international conference on business process manage-ment, lecture notes in computer science, vol. 7481, springer, berlin,heidelberg, 2012, pp. 82 –97.
+[18] w.m.p. van der aalst, process mining —discovery, conformance and
+enhancement of business processes, springer, berlin, 2011 .
+[19] f.m. maggi, r.p.j.c. bose, w.m.p. van der aalst, efficient discovery of
+understandable declarative process models from event logs, in:proceedings of the 24th international conference on advancedinformation systems engineering (caise 2012), lecture notes incomputer science, vol. 7328, 2012, pp. 270 –285.
+[20] w.m. van der aalst, mediating between modeled and observed
+behavior: the quest for the “right ”process, in: proceedings of the
+ieee international conference on research challenges in informa-tion science (rcis 2013), ieee computing society, paris, 2013,pp. 31 –43.
+[21] a. adriansyah, j. munoz-gama, j. carmona, b. van dongen, w. van der
+aalst, alignment based precision checking, in: proceedings of businessprocess management workshops 2012, lecture notes in business infor-mation processing, vol. 132, springer verlag, berlin, 2013, pp. 137 –149.
+[22] m. song, w.m.p. van der aalst, towards comprehensive support for
+organizational mining, decis. support syst. 46 (1) (2008) 300 –317.
+[23] w.m.p. van der aalst et al., process mining manifesto, in: proceed-
+ings of business process management workshops 2011, lecturenotes in business information processing, vol. 99, springer verlag,2012, pp. 169 –194.
+[24] m. vasarhelyi, m. alles, a. kogan, principles of analytic monitoring for
+continuous assurance, j. emerg. technol. account. 1 (1) (2004) 1 –21.
+[25] j. hulstijn, j. gordijn, risk analysis for inter-organizational controls,
+in: proceedings of the 12th international conference on enterpriseinformation systems (iceis 2010), scitepress, 2010, pp. 314 –320.
+[26] j. cook, a. wolf, software process validation: quantitatively measur-
+ing the correspondence of a process to a model, acm trans. softw.eng. methodol. 8 (2) (1999) 147 –176.
+[27] a. medeiros, a. weijters, w.m.p. van der aalst, genetic process
+mining: an experimental evaluation, data min. knowl. discov. 14 (2)(2007) 245 –304.
+[28] a. rozinat, a. medeiros, c. günther, a. weijters, w.m.p. van der aalst,
+the need for a process mining evaluation framework in research andpractice, in: proceedings of business process management work-shops 2007, lecture notes in computer science, vol. 4928, springer-verlag, berlin, 2008, pp. 84 –89.
+[29] a. rozinat, w.m.p. van der aalst, conformance checking of processes
+based on monitoring real behavior, inf. syst. 33 (1) (2008) 64 –95.
+[30] j. weerdt, m. de backer, j. vanthienen, b. baesens, a critical
+evaluation of model –log metrics in process discovery, in: proceed-
+ings of business process management workshop 2010, lecturenotes in business information processing, vol. 66, springer-verlag,
+berlin, 2011, pp. 158 –169.
+[31] j. muñoz-gama, j. carmona, a fresh look at precision in process
+conformance, in: proceedings of the 8th international conference onbusiness process management (bpm
+010), lecture notes in computer
+science, springer-verlag, 2010, pp. 211 –226.
+[32] j. muñoz-gama, j. carmona, enhancing precision in process con-
+formance: stability, confidence and severity, in: proceedings of theieee symposium on computational intelligence and data mining(cidm 2011), ieee, 2011, pp. 184 –191.
+[33] s. goedertier, d. martens, j. vanthienen, b. baesens, robust process
+discovery with artificial negative events, j. mach. learn. res. 10(2009) 1305 –1340 .
+[34] j. weerdt, m. de backer, j. vanthienen, b. baesens, a robust
+f-measure for evaluating discovered process models, in: proceedingsm. de leoni et al. / information systems 47 (2015) 258 –277 276of the ieee symposium on computational intelligence and data
+mining (cidm 2011), ieee, paris, france, 2011, pp. 148 –155.
+[35] g. greco, a. guzzo, l. pontieri, d. sacca, discovering expressive
+process models by clustering log traces, ieee trans. knowl. data eng.
+18 (8) (2006) 1010 –1027 .[36] r.p. jagadeesh chandra bose, w.m.p. van der aalst, process diag-
+nostics using trace alignment: opportunities, issues, and challenges,
+inf. syst. 37 (2) (2012) 117 –141.m. de leoni et al. / information systems 47 (2015) 258 –277 277

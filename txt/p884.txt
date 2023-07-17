@@ -1,0 +1,660 @@
+db-xes: enabling process discovery in the
+large
+alifah syamsiyah, boudewijn f. van dongen, wil m.p. van der aalst
+eindhoven university of technology, eindhoven, the netherlands
+a.syamsiyah@tue.nl, b.f.v.dongen@tue.nl, w.m.p.v.d.aalst@tue.nl
+abstract. dealing with the abundance of event data is one of the main
+process discovery challenges. current process discovery techniques are
+able to eciently handle imported event log les that t in the com-
+puter's memory. once data les get bigger, scalability quickly drops since
+the speed required to access the data becomes a limiting factor. this pa-
+per proposes a new technique based on relational database technology
+as a solution for scalable process discovery. a relational database is used
+both for storing event data (i.e. we move the location of the data) and
+for pre-processing the event data (i.e. we move some computations from
+analysis-time to insertion-time). to this end, we rst introduce db-xes
+as a database schema which resembles the standard xes structure, we
+provide a transparent way to access event data stored in db-xes, and we
+show how this greatly improves on the memory requirements of a state-
+of-the-art process discovery technique. secondly, we show how to move
+the computation of intermediate data structures, such as the directly fol-
+lows relation, to the database engine, to reduce the time required during
+process discovery. the work presented in this paper is implemented in
+prom tool, and a range of experiments demonstrates the feasibility of
+our approach.
+keywords: process discovery, process mining, big event data, relational database
+1 introduction
+process mining is a research discipline that sits between machine learning and
+data mining on the one hand and process modeling and analysis on the other
+hand. the goal of process mining is to turn event data into insights and actions
+in order to improve processes [15]. one of the main perspectives oered by
+process mining is process discovery, a technique that takes an event log and
+produces a model without using any a-priori information. given the abundance
+of event data, the challenge is to enable process mining in the large. any sampling
+technique would lead to statistically valid results on mainstream behavior, but
+would not lead to insights into the exceptional behavior, which is typically the
+goal of process mining.
+in the traditional setting of process discovery, event data is read from an
+event log le and a process model describing the recorded behavior is produced,
+63event dataintermediate structure 
+(e.g. , directly follows relation)process model 
+(e.g. , petri net or bpmn model)
+step 1 step 2process mining tool
+(b) event data are stored in a database, but the intermediate structure is computed on-demand in the process mining tool.
+process model 
+(e.g. , petri net or bpmn model)process mining tool
+(c) event data and the intermediate structure are stored in a database and inferences are partially moved to the database.
+event dataintermediate structure 
+(e.g. , directly follows relation)process model 
+(e.g. , petri net or bpmn model)
+step 1 step 2process mining tool
+(a) event data are stored in a file and not in a database : all inferences are performed by the process mining tool.
+event dataintermediate structure 
+(e.g. , directly follows relation)step 1 step 2fig. 1. three dierent settings in process discovery
+as depicted in figure 1(a). in between, there is a so-called intermediate structure,
+which is an abstraction of event data in a structured way, e.g. the directly fol-
+lows relation, a prex-automaton, etc. to build such an intermediate structure,
+process mining tools load the event log in memory and build the intermediate
+structure in the tool, hence the analysis is bound by the memory needed to store
+both the event log and the immediate structure in memory. furthermore, the
+time needed for the analysis includes the time needed to convert the log to the
+intermediate structure.
+to increase the scalability, relational databases have been proposed for stor-
+ing event data [17], as depicted in figure 1(b), i.e. the event log le is replaced
+by a database. in [17] a database schema was introduced to store event data and
+experiments showed the reduction in memory use. a connection is established
+from the database to process mining tools to access the event data on demand
+using the standard interfaces for dealing with event logs, i.e. openxes [6]. since
+no longer the entire event log is to be read in memory, the memory consump-
+tion of the process mining analysis will be shown to be reduced signicantly as
+now only the intermediate structure needs to be stored. however, this memory
+reduction comes at a cost of analysis time since access to the database is several
+64orders of magnitude slower than access to an in-memory event log while building
+the intermediate structure for further analysis.
+therefore, we present a third solution, called db-xes, where we not only
+move the location of the event data, but also the location of such intermediate
+structures. in order to do so, we move the computation of intermediate structures
+from analysis time to insertion time, as depicted in figure 1(c). in other words,
+each intermediate structure is kept up-to-date for each insertion of a new event
+of a trace in the database. in this paper we present the general idea and a con-
+crete instantiation using the intermediate structure of a state-of-the-art process
+discovery technique. we show that the proposed solution saves both memory
+and time during process analysis.
+the remainder of this paper is organized as follows. in section 2, we discuss
+some related work. in section 3, we present the database schema for db-xes.
+in section 4, we extend db-xes with the notion of intermediate structure. in
+section 5 we show how a well-known intermediate structure can be computed
+inside the database. then, in section 6, we present experiments using the in-
+ductive miner. these show signicant performance gains. finally, we conclude
+and discuss the future work in section 7.
+2 related work
+one of the rst tools to extract event data from a database was xesame [20]. in
+xesame users can interactively select data from the database and then match it
+with xes elements. however, the database is only considered as a storage place
+of data as no direct access to the database is provided.
+similar to xesame, in [3] a technique is presented where data stored in
+databases is serialized into an xes le. the data is accessed with the help of
+two ontologies, namely a domain ontology and an event ontology. besides that,
+the work also provided on-demand access to the data in the database using query
+unfolding and rewriting techniques in ontology based data access [9]. however,
+the performance issues make this approach unsuitable for large databases.
+some commercial tools, such as celonis1and minit2, also incorporate features
+to extract event data from a database. the extraction can be done extremely
+fast, however, its architecture has several downsides. first, it is not generic since
+it requires a transformation to a very specic schema, e.g. a table containing in-
+formation about case identier, activity name, and timestamp. second, it cannot
+handle huge event data which exceed computer's memory due to the fact that
+the transformation is done inside the memory. moreover, since no direct access
+to the database is provided, some updates in the database will lead to restarting
+of the whole process in order to get the desired model.
+building on the idea of direct access to the database, in [17], rxes was
+introduced before as the relational representation of xes and it is was shown that
+rxes uses less memory compared to the le-based openxes and mapdb xes
+1http://www.celonis.de/en/
+2http://www.minitlabs.com/
+65lite implementations. however, its application to a real process mining algorithm
+was not investigated and the time-performance analysis was not included.
+in [21], the performance of multidimensional process mining (mpm) is im-
+proved using relational databases techniques. it presented the underlying re-
+lational concepts of pmcube, a data-warehouse-based approach for mpm. it
+introduced generic query patterns which map olap queries to sql to push the
+operations to the database management systems. this way, mpm may bene-
+t from the comprehensive optimization techniques provided by state-of-the-art
+database management systems. the experiments reported in the paper showed
+that pmcube procides a signicantly better perfromance than pmc, the state-
+of-the-art implementation of the process cubes approach.
+the use of database in process mining gives signicance not only to the
+procedural process mining, but also declarative process mining. the work in [11]
+introduced an sql-based declarative process mining approach that analyses
+event log data stored in relational databases. it deals with existing issues in
+declarative process mining, namely the performance issues and expressiveness
+limitation to a specic set of constraints. by leveraging database performance
+technology, the mining procedure in sqlminer can be done fast. furthermore,
+sql queries provide exibility in writing constraints and it can be customized
+easily to cover process perspective beyond control ow.
+apart from using databases, some other techniques for handling big data
+in process mining have been proposed [2, 10, 12], two of them are decomposing
+event logs [1] and streaming process mining [7, 18]. in decomposition, a large
+process mining problem is broken down into smaller problems focusing on a
+restricted set of activities. process mining techniques are applied separately in
+each small problem which then they are combined to get an overall result. this
+approach deals with exponential complexity in the number of activities of most
+process mining algorithms [13]. whereas in streaming process mining, it provides
+online-fashioned process mining where the event data is freshly produced, i.e. it
+does not restrict to only process the historical data as in traditional process
+mining. both approaches however require severe changes to the algorithms used
+for analysis and they are therefore not directly applicable to existing process
+mining techniques.
+3 db-xes as event data storage
+in the eld of process mining, event logs are typically considered to be structured
+according to the xes standard [6]. based on this standard, we create a relational
+representation for event logs, which we called db-xes. we select relational
+databases rather than any other type of databases, e.g. nosql [19], because
+of the need to be able to slice and dice data in dierent ways. an e-commerce
+system, for example, may need to be analyzed using many views. one view
+can be dened based on customer order, other view may also be dened based
+on delivery, etc. some nosql databases, such as key-value store databases,
+document databases, or column-oriented databases, are suitable for the data
+66attribute
+id varchar(50)
+type varchar(50)
+key_ varchar(50)
+value_ varchar(250)
+ext_id varchar(50)
+parent_id varchar(50)
+indexes
+classifier
+id varchar(50)
+name varchar(50)
+key_ varchar(250)
+indexes
+event
+id varchar(50)
+attr_id varchar(50)
+event_coll_id varchar(50)
+indexes
+event_collection
+id varchar(50)
+name varchar(50)
+indexes
+extension
+id varchar(50)
+name varchar(50)
+prefix varchar(50)
+uri varchar(250)
+indexes
+log
+id varchar(50)
+attr_id varchar(50)
+indexes
+log_has_classifier
+log_id varchar(50)
+classifier_id varchar(50)
+indexes
+log_has_ext
+log_id varchar(50)
+ext_id varchar(50)
+indexes
+log_has_global
+log_id varchar(50)
+attr_id varchar(50)
+scope varchar(50)
+indexes
+log_has_trace
+log_id varchar(50)
+trace_id varchar(50)
+sequence int(11)
+indexes
+trace
+id varchar(50)
+attr_id varchar(50)
+indexes
+trace_has_event
+trace_id varchar(50)
+event_id varchar(50)
+sequence int(11)
+indexes
+triggersfig. 2. db-xes basic schema
+which can be aggregated, but have diculties supporting multiple perspectives
+at the same time. besides, relational databases are more mature than nosql
+databases with respect to database features, such as trigger operations.
+figure 2 shows the basic database schema of db-xes. the xes main el-
+ements are represented in tables log, trace, event, and attribute. the relation
+between these elements are stored in tables loghastrace and trace hasevent.
+furthermore, classier and extension information related to a log can be ac-
+cessed through tables loghasclassier and loghasextension. global attributes
+are maintained in the table loghasglobal . in order to store the source of event
+data, we introduce the event collection table.
+openxes is a java-based reference implementation of the xes standard for
+storing and managing event log data [6]. openxes is a collection of interfaces
+and corresponding implementations tailored towards accessing xes les. in con-
+sequence of moving event data from xes les to db-xes, we need to implement
+some java classes in openxes. having the new version of openxes, it allows
+for any process mining techniques capable of handling openxes data to be used
+on db-xes data. the implementation is distributed within the dbxes package
+in prom ( https://svn.win.tue.nl/repos/prom/packages/dbxes/trunk/).
+the general idea is to create sql queries to get the event data for instan-
+tiating the java objects. access to the event data in the database is dened
+for each element of xes, therefore we provide on demand access. we dene a
+log, a trace, and an event based on a string identier and an instance of class
+67connection in java. the identier is retrieved from a value under column idin
+log, trace, andevent table respectively. whereas the instance of class connection
+should refer to the database where we store the event data. upon initialization
+of the database connection, the list of available identiers is retrieved from the
+database and stored in memory using global variables.
+4 extending db-xes with intermediate structures
+in the analysis, process mining rarely uses event data itself, rather it processes an
+abstraction of event data called an intermediate structure. this section discusses
+the extension of db-xes with intermediate structures. first, we briey explain
+about several types of intermediate structures in process mining, then we present
+a highly used intermediate structure we implemented in db-xes as an example.
+there are many existing intermediate structures in process mining, such as
+the eventually follows relation, no co-occurrence relation [4,5], handover of work
+relation [14], and prex-closed languages in region theory [16]. each intermediate
+structure has its own functions and characteristics. some intermediate structures
+are robust to ltering, hence we may get dierent views on the processes by
+ltering the event data without recalculation of the intermediate structure like
+eventually follows relation, but some require full recomputation [15]. mostly
+intermediate structures can be computed by reading the event data in a single
+pass over the events, but some are more complex to be computed. in general the
+size of intermediate structure is much smaller than the size of the log [4, 5, 14],
+but some intermediate structures are bigger than the log [16]. in the following
+we briey introduce some examples of intermediate structures.
+{the directly follows relation (a >b) contains information that a is directly
+followed by b in the context of a trace. this relation is not robust to ltering.
+once ltering happens, the relation must be recalculated. suppose that ais
+directly followed by b, i.e.a>b , andbis directly followed by c, i.e.b>c . if
+we lterb, nowais directly followed by c, hence a new relation a>c holds.
+{the eventually follows relation (v (a;b)) is the transitive closure of the di-
+rectly follows relation: a is followed by b somewhere in the trace. suppose
+thatais eventually followed by b, i.e.v(a;b), andais eventually followed by
+c, i.e.v(a;c). if we lter b,ais still followed by csomewhere in the trace, i.e.
+v(a;c) still holds. therefore, eventually follows relation is robust to ltering.
+{the no co-occurrence relation ( r(a;b)) counts the occurrences of awith no
+co-occurring bin the trace. for example, aoccurs four times with no co-
+occurringb, i.e.r(a;b) = 4, and aoccurs three times with no co-occurring
+c, i.e.r(a;c) = 3. if we lter b, it does not eect the occurrence of awith no
+c, i.e.r(a;c) = 3 still holds. therefore, no co-occurrence relation is robust
+to ltering.
+{the handover of work relation between individual aandb(h(a;b)) exists if
+there are two subsequent activities where the rst is completed by aand the
+second byb. this is also an example of non-robust intermediate structure for
+68dfr
+id varchar(50)
+eventclass1 varchar(150)
+eventclass2 varchar(150)
+freq int(11)
+indexes
+log_has_classifier
+log_id varchar(50)
+classifier_id varchar(50)
+indexes
+log_has_dfr
+log_id varchar(50)
+classifier_id varchar(50)
+dfr_id varchar(50)
+indexesfig. 3. dfr in db-xes schema
+ltering. imagine we have h(a;b) andh(b;c). whenbis ltered,adirectly
+handed over to c, henceh(a;c) must be deduced. this indicates the whole
+relations need to be recalculated.
+{the integer linear programming (ilp) miner uses language-based theory
+of regions in its discovery. the regions are produced from a prex-closed
+language which is considered as the intermediate structure. as an example,
+we have log l=fha;b;ci;ha;d;eig. the prex-closed language of lisl=
+f;hai;ha;bi;ha;di;ha;b;ci;ha;d;eig. it is clear that lis bigger than l. the
+prex-closed language in region theory is one of the intermediate structures
+whose size is bigger than the log size.
+while many intermediate structures can be identied when studying process
+mining techniques, we currently focus on the directly follows relation (dfr).
+dfr is used in many process mining algorithms, including the most widely used
+process discovery techniques, i.e. inductive miner [8]. in the following we discuss
+how db-xes is extended by a dfr table.
+4.1 the dfr intermediate structure in db-xes
+directly follows relation (dfr) contains information about the frequency with
+which one event class directly follows another event class in the context of a
+trace. following the denition in [15], dfr is dened as follows.
+denition 1 (event log). let e be a set of events. an event log leis a
+set of event sequences (called traces) such that each event appears precisely once
+in precisely one trace.
+denition 2 (event attributes and classiers). letebe a set of events
+and letabe a set of attribute names.
+{for any event e2eand namea2a:#a(e)is the value of attribute afor
+evente.#a(e) =?if there is no value.
+69{any subset cfa 1;a2;:::;a ngais a classier, i.e., an ordered set of
+attributes. we dene: #c(e) = (# a1(e);#a2(e);:::; #an(e)).
+{in the context of an event log there is a default classier dcafor which
+we dene the shorthand of event class e= # dc(e).
+denition 3 (directly follows relation (dfr)). letlebe an event
+log.xis directly followed by y, denotedx > y , if and only if there is a trace
+=he1;e2;:::;e ni2land1i<n such thatei=xandei+1=y.
+translated to db-xes, table dfrconsists of three important columns next
+to the idof the table, namely eventclass 1which indicates the rst event class in
+directly follows relation, eventclass 2for the second event class, and freqwhich
+indicates how often an event class is directly followed by another event class.
+figure 3 shows the position of table dfrin db-xes. as dfr is dened on the
+event classes based on a classier, every instance in table dfris linked to an
+instance of table classier in the log.
+denition 4 (table dfr). letlebe an event log, x=feje2egis the
+set of event classes. dfr2xx9 n where:
+{dom(dfr) =f(x;y )2xxjx>yg
+{dfr(x;y ) =p
+he1;:::;eni2ljfi2f1;:::;n 1gjei=x^ei+1=ygj
+as mentioned before, the design choice to incorporate dfr as the interme-
+diate structure is due to fact that dfr is used in the state-of-the-art process
+discovery algorithm. however, db-xes can be extended into other intermediate
+structures such as eventually follows relations and no co-occurrence relations.
+5 dfr pre-computation in db-xes
+typically, process mining algorithms build an intermediate structure in memory
+while going through the event log in a single pass (as depicted in figure 1(a)).
+however, this approach will not be feasible to handle huge event log whose size
+exceeds the computer memory. moving the location of the event data from a le
+to a database as depicted in figure 1(b) increases the scalability of process min-
+ing as the computer memory no longer needs to contain the event data. however,
+theping-pong communication between the database and process mining tools is
+time consuming. therefore, in this section, we show how dfr is pre-computed
+in db-xes (figure 1(c)). particularly, we show how common processing tasks
+can be moved both in time and location, i.e. we show how to store intermediate
+structures in db-xes and we show how these structures can be updated while
+inserting the data rather than when doing the process mining task. this paper
+focuses on a particular intermediate structure, namely the dfr, but the work
+trivially extends to other intermediate structures, as long as they can be kept
+up-to-date during insertion of event data in the database.
+as mentioned in section 4, the table dfrin figure 3 is the table in db-xes
+which stores dfr values, furthermore, the table loghasdfrstores the context in
+70which the dfr exists, i.e. it links the dfr values to a specic log and classier
+combination. the dfrtable is responsive to update operations, particularly when
+users insert new events to the log. in the following we discuss how the dfrtable
+is created and updated in db-xes.
+5.1 creating table dfrin db-xes
+suppose that there exists two entries in the trace hasevent table with trace id
+, event id's eiandei+1and sequence's iandi+ 1. the rst event eiis linked
+to an attribute with valueaand the second event is linked to an attribute 
+with valuebwhile the log has a classier based on attribute . in db-xes, we
+store the frequency of each pair a > b in the database rather than letting the
+discovery algorithm build in it on-demand and in-memory. in other words, the
+directly follows relation is precomputed and the values can be retrieved directly
+by a process mining algorithm when needed.
+to create table dfr, we run three sql queries. the rst query is to obtain
+pairs of directly follows relations. for instance, if an event class ais directly
+followed by an event class band this happens 100 times in the log, then there
+will be a row in table dfrwith value (dfr 1, a, b, 100) , assuming the id is dfr1.
+furthermore, the second and third queries are to extract start and end event
+classes. we create an articial start ( >) and end (?) event for each process
+instance. for example, if there are 200 cases where ahappens as the start event
+class, there will be a row in dfrwith values (dfr 1,>, a, 200) . similarly, if bis
+the end event class for 150 cases, there will be a row in dfrwith values (dfr 1, b,
+?, 150).
+technically, the sql query contains big joins between tables trace hasevent,
+event, attribute, log hastrace, log hasclassier, and classier. such joins are
+needed to get pairs of event classes whose events belong to the same trace in
+the same log which has some classiers. the sql query mentioned below is a
+simplied query to obtain pairs of directly follows relations. to improve under-
+standability, we use placeholders (< ::: >) to abstract some details. basically
+they are trivial join conditions or selection conditions to interesting columns.
+1select id , eventclass1 , eventclass2 , count (*) as freq
+2from (
+3 select <...>
+4 from (
+5 select <...>
+6 from trace_has_event as t1
+7 inner join trace_has_event as t2
+8 on t1. trace_id = t2. trace_id
+9 /* here is to get consecutive events */
+10 where t1. sequence = t2. sequence - 1
+11 ) as temptable ,
+12 attribute as a1 , attribute as a2 ,
+13 event as event1 , event as event2 ,
+7114 log_has_trace , log_has_classifier , classifier
+15 where <...>
+16 group by log_id , classifier_id ,
+17 event1 .id , event2 .id
+18 ) as temptable2
+19group by id , eventclass1 , eventclass2
+we start with a self join in table trace hasevent (line 6-8) to get pairs of
+two events which belong to the same trace. then we lter to pairs whose events
+happen consecutively, i.e. the sequence of an event is preceded by the other (line
+10). the next step is obtaining the attribute values of these events. the attribute
+values are grouped based on the classier in the log (line 16-17). this grouping
+is essential if the classier is built from a combination of several attributes, for
+example a classier based on the activity name and lifecycle. after grouping, we
+get a multiset of pairs of event classes. finally, the same pairs are grouped and
+counted to have the frequency of how often they appeared in the log (line 1, 19).
+5.2 updating table dfrin db-xes
+rows in table dfrare automatically updated whenever users insert a new event
+through a trigger operation on table trace hasevent which is aware of an insert
+command. here we consider two scenarios: (1) a newly inserted event belongs
+to a new trace in a log for which a dfr table exists and (2) a newly inserted
+event belongs to an existing trace in such a log. we assume such insertion is
+well-ordered, i.e. an event is not inserted at an arbitrary position.
+suppose that we have a very small log l= [ha;bi], where we assume aand
+brefer to the event class of the two events in ldetermined by a classier clfor
+which an entry (l, cl, dfr 1)exists in the loghasdfrtable. this log only contains
+one trace (say 1) with two events that correspond to two event classes, namely a
+andb. if we add to la new event with a new event class cto a new trace dierent
+from1then such an event is considered as in the rst scenario. however, if we
+addcto1then it is considered as the second scenario.
+in the rst scenario, we update the start and end frequency of the inserted
+event type. in our example above, the rows in table dfrcontaining (dfr 1,>, c,
+f)and (dfr 1, c,?, f) will be updated as (dfr 1,>, c, f + 1) and (dfr 1, c,?, f
++ 1) withfis the frequency value. if there is no such rows, (dfr 1,>, c, 1) and
+(dfr 1, c,?, 1) will be inserted.
+in the second scenario, we update the end frequency of the last event class
+before the newly inserted event class, and add the frequency of the pair of those
+two. referring to our example, row (dfr 1, b,?, f) is updated to (dfr 1, b,?,
+f - 1). if there exists row (dfr 1, c,?, f), it is updated to (dfr 1, c,?, f + 1),
+otherwise (dfr 1, c,?, 1) is inserted. furthermore, if (dfr 1, b, c, f) exists in table
+dfr, it is updated as (dfr 1, b, c, f + 1) , otherwise (dfr 1, b, c, 1) is inserted.
+by storing the intermediate structure in the database and updating this
+structure when events are inserted, we move a signicant amount of computation
+time to the database rather than to the process analysis tool. this allows for
+72faster analysis with virtually no limits on the size of the event log as we show in
+the next section.
+6 experiments
+in this section we show the inuence of moving both the event data and the
+directly follows table to the database on the memory use and time consumption
+of inductive miner [8]. next to the traditional in-memory processing of event
+logs (figure 1(a)), we consider two scenarios in db-xes: (1) db-xes without
+dfr where the intermediate result is computed during the discovery (figure
+1(b)) and (2) db-xes with dfr where the intermediate result is pre-computed
+in the database (figure 1(c)). we show that the latter provide scalability with
+respect to data size and even improves time spent on actual analysis.
+as the basis for the experiments, we use an event log from a real company
+which contains 29,640 traces, 2,453,386 events, 54 dierent event classes and
+17,262,635 attributes. then we extend this log in two dimensions, i.e. we in-
+crease (1) the number of event classes and (2) the number of traces, events and
+attributes. we extend the log by inserting copies of the original event log data
+with some modications in the identier, task name, and timestamp. in both
+cases, we keep the other dimension xed in order to get a clear picture of the
+inuence of each dimension separately on both memory use and cpu time. this
+experiment was executed on the machine with processor intel(r) core(tm) i7-
+4700mq and 16gb of ram.
+6.1 memory use
+in figure 4(a), we show the inuence of increasing the number of event classes
+on the memory use of the inductive miner. the inductive miner makes a linear
+pass over the event log in order to build an object storing the direct succession
+relation in memory. in theory, the direct succession relation is quadratic in the
+number of event classes, but as only actual pairs of event classes with more than
+one occurrence are stored and the relation is sparse, the memory consumption
+scales linearly in the number of event classes as shown by the trendlines. it is
+clear that the memory use of db-xes is consistently lower than xes. this is
+easily explained as there is no need to store the event log in memory. the fact
+that db-xes with dfr uses more memory than db-xes without dfr is due
+to the memory overhead of querying the database for the entire dfr table at
+once.
+in figure 4(b), we present the inuence of increasing the number of events,
+traces and attributes while keeping the number of event classes constant. in this
+case, normal xes quickly uses more memory than the machine has while both
+db-xes implementations show no increase in memory use with growing data
+and the overall memory use is less than 50 mb. this is expected as the memory
+consumption of the inductive miner varies with the number of event classes only,
+i.e. the higher frequency values in the dfrtable do not inuence the memory use.
+731;000 2;000 3;000 4;000 5; 000 6;0005001;0001;500
+numb
+er of event classesmemory (mb)
+db-xes with
+dfr
+y=7:95 10 2x+ 12
+:67
+db-xes wit
+hout dfr
+y=1:87 10 2x+35
+:04
+normal x
+es
+y=7:76 10 2x+1;
+262:340:2 0:4 0:6 0:8 1 1:2 1:4
+1082;0004;0006;0008;000
+numb
+er of traces, events, and attributesmemory (mb)
+db-xes wit
+h dfr
+y=4:01 10 13x+ 26
+db-xes withou
+t dfr
+y= 1:89 10 7x+49:74
+normal xe
+s
+y=1:11 10 4x 717:5
+fig. 4. f
+rom left to right: memory use of the inductive miner in: (a) logs with extended
+event classes and (b) logs with extended traces, events, and attributes
+1;000 2;000 3;000 4;000 5;000 6; 0002468105
+num b
+er of event classescpu time
+(ms)
+db-xes w
+ith dfr
+y=23:61 x 6;155:2
+db-xes witho
+ut dfr
+y=24:37 x+6:
+1105
+normal x
+es
+y=25:29 x+4;
+7710:2 0:4 0: 6 0:8 1 1:2 1:4
+108010;00020;00030;00040;00050;00060;000
+numb
+er of traces, events, and attributescpu tim
+e (ms)
+db-xes with
+dfr
+y= 8:24 10 8x+ 420
+:35
+normal xes
+y=8:54 10 4x 9;0370:2 0:4 0: 6 0:8 1 1:2 1: 4
+1080210741076107
+cpu time
+(ms)
+db-xes w
+ithout dfr
+y=0:48 x 6:8106
+fig. 5. f
+rom left to right: cpu time of the inductive miner in: (a) logs with extended
+event classes and (b) logs with extended traces, events, and attributes
+6.2 cpu time
+we also investigated the inuence of accessing the database to the cpu time
+needed by the analysis, i.e. we measure the time spent to run the inductive
+miner. in figure 5(a), we show the inuence of the number of event classes on the
+cpu time. when switching from xes les to db-xes without dfr, the time
+74needed to do the analysis increases considerably. this is easily explained by the
+overhead introduced in java by initiating the query every time to access an event.
+however, when using db-xes with dfr, the time needed by the inductive
+miner decreases, i.e. it is faster to obtain the dfrtable from the database than
+to compute it in memory.
+this eect is even greater when we increase the number of traces, events
+and attributes rather than the number of event classes as shown in figure 5(b).
+db-xes with dfr shows a constant cpu time use, while normal xes shows a
+steep linear increase in time use before running out of memory. db-xes without
+dfr also requires linear time, but is several orders of magnitude slower (db-
+xes without dfr is drawn against the right-hand side axis).
+in this section, we have proven that the use of relational databases in pro-
+cess mining, i.e db-xes, provide scalability in terms of memory use. however,
+accessing db-xes directly by retrieving event data elements on demand and
+computing intermediate structures in prom is expensive in terms of processing
+time. therefore, we presented db-xes with dfr where we moved the com-
+putation of the intermediate structure to the database. this solution provides
+scalability in both memory and time.
+we have implemented this solution as a prom plug-in which connects db-
+xes and inductive miner algorithm. we name the plug-in as database inductive
+miner and it is distributed within the databaseinductiveminer package (https:
+//svn.win.tue.nl/repos/prom/packages/databaseinductiveminer/trunk/).
+7 conclusion and future work
+this paper focuses on the issue of scalability in terms of both memory use and
+cpu use in process discovery. we introduce a relational database schema called
+db-xes to store event data and we show how directly follows relation can be
+stored in the same database and be kept up-to-date when inserting new events
+into the database.
+using experiments on real-life data we show that storing event data in db-
+xes not only leads to a signicant reduction in memory use of the process
+mining tool, but can even speed up the analysis if the pre-processing is done in
+the right way in the database upon insertion of the event data.
+for the experiments we used the inductive miner, which is a state-of-the-art
+process discovery technique. however, the work trivially extends to other process
+discovery techniques, as long as we can identify an intermediate structure used
+by the technique which can be updated when inserting new events into the
+database.
+the work presented in this paper is implemented in prom. the plug-in paves
+a way to access pre-computed dfr stored in db-xes. these dfr values are
+then retrieved and processed by inductive miner algorithm.
+for future work, we plan to implement also the event removal and interme-
+diate structures which robust to ltering. the intermediate structures will be
+75kept live under both insertion and deletion of events where possible. further-
+more, we aim to further improve the performance through query optimization
+and indexing.
+references
+1. w.m.p. van der aalst. decomposing petri nets for process mining: a generic
+approach. distributed and parallel databases , 31(4):471{507, 2013.
+2. a. azzini and p. ceravolo. consistent process mining over big data triple stores.
+in2013 ieee international congress on big data , pages 54{61, june 2013.
+3. diego calvanese, marco montali, alifah syamsiyah, and wil mp van der aalst.
+ontology-driven extraction of event logs from relational databases. in business
+process intelligence 2015. 2015.
+4. claudio di ciccio, fabrizio maria maggi, and jan mendling. ecient discovery
+of target-branched declare constraints. information systems , 56:258 { 283, 2016.
+5. claudio di ciccio and massimo mecella. on the discovery of declarative control
+ows for artful processes. acm trans. manage. inf. syst., 5(4):24:1{24:37, january
+2015.
+6. c.w. g unther. xes standard denition. www.xes-standard.org, 2014.
+7. sergio hern andez, sebastiaan j. van zelst, joaqu n ezpeleta, and wil m. p. van der
+aalst. handling big(ger) logs: connecting prom 6 to apache hadoop. in bpm demo
+session 2015.
+8. sander j. j. leemans, dirk fahland, and wil m. p. van der aalst. discovering
+block-structured process models from event logs - a constructive approach. in
+petri nets 2013.
+9. antonella poggi, domenico lembo, diego calvanese, giuseppe de giacomo, mau-
+rizio lenzerini, and riccardo rosati. journal on data semantics x. chapter linking
+data to ontologies, pages 133{173. springer-verlag, berlin, heidelberg, 2008.
+10. hicham reguieg, boualem benatallah, hamid r. motahari nezhad, and farouk
+toumani. event correlation analytics: scaling process mining using mapreduce-
+aware event correlation discovery techniques. ieee trans. services computing ,
+8(6):847{860, 2015.
+11. stefan sch onig, andreas rogge-solti, cristina cabanillas, stefan jablonski, and
+jan mendling. ecient and customisable declarative process mining with sql,
+pages 290{305. springer international publishing, cham, 2016.
+12. w. v. d. aalst and e. damiani. processes meet big data: connecting data science
+with process science. ieee transactions on services computing , 8(6):810{819,
+nov 2015.
+13. wil m. p. van der aalst. distributed process discovery and conformance checking.
+infase 2012.
+14. wil m. p. van der aalst, hajo a. reijers, and minseok song. discovering so-
+cial networks from event logs. computer supported cooperative work (cscw),
+14(6):549{593, 2005.
+15. w.m.p. van der aalst. process mining: data science in action. 2011.
+16. j. m. e. m. van der werf, b. f. van dongen, c. a. j. hurkens, and a. serebrenik.
+process discovery using integer linear programming , pages 368{387. springer
+berlin heidelberg, berlin, heidelberg, 2008.
+17. boudewijn f. van dongen and shiva shabani. relational xes: data management
+for process mining. in caise 2015.
+7618. sebastiaan j. van zelst, boudewijn f. van dongen, and wil m. p. van der aalst.
+know what you stream: generating event streams from cpn models in prom 6.
+inbpm demo session 2015.
+19. meenu dave vatika sharma. sql and nosql databases. international journal of
+advanced research in computer science and software engineering, 2(8):20{27,
+august 2012.
+20. h.m.w. verbeek, j.c.a.m. buijs, b.f. van dongen, and w.m.p. van der aalst.
+xes, xesame, and prom 6. in p. soer and e. proper, editors, information
+systems evolution, volume 72, pages 60{75, 2010.
+21. thomas vogelgesang and h-j urgen appelrath. a relational data warehouse for
+multidimensional process mining.
+77

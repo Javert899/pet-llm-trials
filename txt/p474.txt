@@ -1,0 +1,829 @@
+merging event-driven process chains
+florian gottschalk, wil m.p. van der aalst, monique h. jansen-vullers
+eindhoven university of technology, the netherlands.
+{f.gottschalk,w.m.p.v.d.aalst,m.h.jansen-vullers}@tue.nl
+abstract. a main goal of corporate mergers is to gain synergy e®ects
+through the alignment, integration, or combination of business processes.
+while business processes are typically handled di®erently among com-
+panies, many of them are variations of a common process like, e.g., pro-
+curement or invoicing. the ¯rst goal for process analysts when aligning
+business processes is thus to identify and seamlessly integrate overlapping
+process parts. to support this we present in this paper an approach that
+merges two business process models which are depicted as event-driven
+process chains into a single process model without restricting the be-
+havior that was possible in both the original models. the resulting model
+can serve as a starting point for further process optimization. the ap-
+proach has been implemented in the prom process mining framework.
+therefore, it can be used together with a wide range of other process
+mining and analysis techniques.
+key words: epc, process alignment, process model integration
+1 introduction
+mergers, take-overs, or acquisitions even of huge cooperations are common head-
+lines in today's news. across all businesses { from airlines to banks, from the
+computer to the food industry { cooperations join forces not only to gain market
+shares and thus to use economies of scale, but also to cut costs through synergy
+e®ects. to achieve this, the combined company aims at reducing duplicate de-
+partments or operations by merging the business processes of the companies.
+especially secondary and supporting processes like purchasing, invoicing, or
+hr processes are good candidates for this as they are executed similarly among
+companies. however, they are hardly identical. thus, merging such similar busi-
+ness processes still requires a process analysis of the as-is processes, an identi-
+¯cation and mapping of identical tasks among the processes, and ¯nally based
+on this knowledge the creation of an integrated business process applicable for
+both of the merging corporations.
+in this paper, we focus on this last aspect by providing an algorithm that
+integrates two process models into one simple process model which still allows for
+the behavior possible in any of the original models. traditionally, such a merge
+of business process models is performed \in the mind of the process analyst",
+i.e. the process analysts builds a new process model after comparing the input
+models manually. while building such a new, integrated model from scratchallows for neglecting all aspects which are considered as irrelevant for the new
+process by the process analysts, it comes with the risk that some aspects of the
+one or the other process are accidentally neglected. this then might prevent the
+performance of some process parts which are essential for the products of one
+of the companies. by integrating the original process models automatically such
+that all the behavior depicted in the original models remains possible, this risk
+can be minimized. process analysts are then not burdened with the integration
+of the control-°ow of the models, but can rather use the integrated model as
+starting point for an optimization of the process.
+to make the resulting process models easily understandable to business ana-
+lysts, we based our work on event-driven process chains (epcs), a common, and
+easy-to-understand process modelling language [12], also supported by commer-
+cial process modelling tools like aris from ids scheer [13] or microsoft visio.
+we therefore start this paper in the next section with a formal de¯nition of
+epcs as a prerequisite for the merge algorithm. afterwards section 3 describes
+the algorithm to merge multiple epcs through merging graphs depicting the
+relations between the epcs' functions as well as analyzes the behavioral impli-
+cations of the merge. the algorithm's implementation within the prom process
+mining framework is then depicted in section 4. the paper ends with a brief
+description of related work and with drawing some conclusions.
+2 prerequisites
+event-driven process chains (epcs) basically consist of three node types,
+namely events, functions and logical connectors, which are connected by directed
+arcs as depicted in figure 1. events are passive elements depicting prerequisites
+for or results from the execution of functions which are the active elements.
+the logical connectors determine the control-°ow behavior in case the
+control-°ow is split up into or joined from several parallel or alternative exe-
+cution branches. if a connector of an epc splits the control-°ow up and is of
+type xor and has nsuccessors this means that at runtime one out of its n
+succeeding arcs is followed. if the connector is of type ^and has nsucceeding
+arcs, then all nof them are followed. if the split connector is of type _, any
+mout of the nsucceeding arcs can be triggered while mcan have any value
+between 1 and n. thus, the ^and the xor connectors are specializations of
+the_connector, i.e. an _connector allows for the same triggering of succeeding
+paths and thus for the same behavior as an xor connector, it allows for the
+same behavior as an ^connector, but it also allows for additional behaviors. if a
+connector joins the control-°ow, it behaves in a similar fashion. this means, an
+^connector requires input from all incoming arcs to forward the case, an xor
+connector requires the input just from just one incoming arc to forward a case,
+and an _connector requires the input from a number of incoming arcs which is
+determined at run-time. thus an _connector can join the control-°ow behavior
+in the same way as an ^connector and in the same way as an xor connector,
+but also as a partial synchronizer.
+2quote
+flight
+^quote
+accomodation
+prepare and submit
+travel form
+xcheck
+travel form
+x
+check and update
+or drop travel request
+x forward travel request
+xtravel required
+^
+quotes available travel request approved
+travel form submitted request processedchange requestedfig. 1. an epc { hexagons depict events, rectangles depict functions, and circles
+depict connectors
+after it has been triggered by a travel request, the process in figure 1 thus
+requires both an accommodation quote and a °ight quote. both quotes need
+to be available before the process can pass the subsequent ^connector and
+can continue with the preparation and submission of the travel form. after the
+form has been checked, it can either be accepted or a change can be requested
+{ as indicated by the xor connector subsequent to the \check travel form"
+function. if a change is requested, a choice exists if the form is either updated
+or dropped. if it is updated, it re-joins the control-°ow as if it would have been
+submitted as a new travel form. if it is dropped, there is no need for further
+processing. if the travel request is accepted, it is forwarded to the clearing center
+and the processing of the request ¯nishes as well.
+the following formal epc de¯nitions are in line with the de¯nitions in [9]:
+de¯nition 1 (epc). an event-driven process chain is a ¯ve-tuple (e; f; c; l; a ):
+{eis a ¯nite (non-empty) set of events,
+{fis a ¯nite (non-empty) set of functions,
+{cis a ¯nite set of connectors,
+{l2c! f^ ;xor ;_gis a function which maps each connector onto a con-
+nector type,
+{aµ(e£f)[(f£e)[(e£c)[(c£e)[(f£c)[(c£f)[(c£c)
+is a set of arcs.
+although de¯nition 1 already shows that arcs of an epc cannot connect two
+events or two functions directly, a well-formed epc has to satisfy some further
+requirements. to formalize them, we need to de¯ne some additional notations.
+3de¯nition 2 (epc notations). let epc = (e; f; c; l; a )be an event-driven
+process chain.
+{n=e[f[cis the set of nodes of epc,
+{forn2n:
+{²n=fmj(m; n)2agis the set of input nodes, and
+{n²=fmj(n; m)2agis the set of output nodes,
+{cj=fc2cj j ²cj ¸2gis the set of join connectors,
+{cs=fc2cj jc² j ¸ 2gis the set of split connectors,
+{a directed path pfrom a node n1to a node nkis a sequence hn1; :::; n kisuch
+that(ni; ni+1)2afor1·i·k¡1.
+{cefµcsuch that c2cefif and only if there is a path p=hn1; n2; :::; n k¡1; nki
+such that n12e; n ;:::; n k¡12c; n k2f, and c2 fn2; :::; n k¡1g,
+{cfeµcsuch that c2cfeif and only if there is a path p=hn1; n2; :::; n k¡1; nki
+such that n12f; n;:::; n k¡12c; n k2e, and c2 fn2; :::; n k¡1g,
+{ceeµcsuch that c2ceeif and only if there is a path p=hn1; n2; :::; n k¡1; nki
+such that n12e; n ;:::; n k¡12c; n k2e, and c2 fn2; :::; n k¡1g,
+{cffµcsuch that c2cffif and only if there is a path p=hn1; n2; :::; n k¡1; nki
+such that n12f; n;:::; n k¡12c; n k2f, and c2 fn2; :::; n k¡1g.
+we use the set of input and output nodes to de¯ne that each event is at
+maximum preceded by one input node and at maximum succeeded by one output
+node while each function has exactly one input and one output node. further
+on, each well-formed epc needs at least one start event that is not preceded
+by any other node and one end event that is not succeeded by any other node.
+connectors must have at least one input and one output node. they can also
+have several input nodes or several output nodes, but not both at the same time.
+to ensure this, we use the sets cjandcsand require that they partition the set
+of connectors cinto on the one hand a set of connectors that split the control-
+°ow up, and on the other hand a set of connectors that join the control-°ow.
+finally, we use directed paths to limit the set of routing constructs that can be
+constructed using connectors. in a well-formed epc there should be no paths
+connecting two events or two functions only via connector nodes in between.
+this also means that each connector should be either on paths from events to
+functions only or on paths from functions to events only. altogether, well-formed
+epcs can be formalized as follows:
+de¯nition 3 (well-formed epc). a well-formed event-driven process chain
+(e; f; c; l; a )satis¯es the following requirements:
+1.the sets e,f, and care pairwise disjoint, i.e. e\f=;,e\c=;, and
+f\c=;,
+2.for each e2e:j ²ej ·1andje² j · 1,
+3.there is at least one event estart2e such that j ²estartj= 0,
+4.there is at least one event eend2e such that jeend² j= 0,
+5.for each f2f:j ²fj= 1andjf² j= 1,
+6.for each c2c:j ²cj ¸1andjc² j ¸ 1,
+47.cjandcspartition c, i.e. cj\cs=;andcj[cs=c,
+8.ceeandcffare empty, i.e. cee=;andcff=;,
+9.cefandcfepartition c, i.e. cef\cfe=;andcef[cfe=c.
+3 the merge algorithm
+in the following we aim at merging multiple well-formed epcs into a single
+well-formed epc such that the behavior that is possible according to the new
+epc, is at least the behavior that was possible in each of the original epcs.
+the behavior of an epc is the order in which the epc's functions can be
+executed as the functions represent the \active" behavior. two epcs represent
+the same behavior if all the orders in which the functions of one of the epcs
+can be executed are also possible in the second epc and vice versa. for our
+purposes of providing a model which serves as the starting point for further
+process optimization we further on prefer a compact and clear model (i.e. less
+model elements and arcs) and therefore accept if this is on the expense of allowing
+some additional behavior that was not possible in any of the original epcs. this
+means, the resulting model may allow for more behavior than the sum of the
+parts' behaviors. hence, the merge algorithm generalizes.
+to preserve the behavioral character of initial, i.e. the ¯rst executed, and
+¯nal, i.e. last executed, functions we require in the following that the initial and
+¯nal functions of the two epcs are unique among the two models. otherwise it
+would be possible that the merge algorithms incorporates functions which are
+¯rst or last executed in one of the epcs into the process °ow of the other epc
+because the same function is executed somewhen in the middle of this other
+epc. if a pair of epcs does not have such unique initial or ¯nal functions, a
+unique dummy function not representing any real behavior can simply be added
+in front of the initial functions and after the ¯nal functions of the original epcs.
+without any behavioral meaning, the dummy function simply guarantees the
+presence of a unique entry point of the process and thus preserves the behavioral
+requirements of initial or ¯nal functions.
+the algorithm we suggest for merging two epcs conducts the merge in three
+phases. at ¯rst we reduce the original epcs to their active behavior, i.e. to their
+functions, and represent them in form of models which we call function graphs .
+afterwards, the behavior represented by the two resulting function graphs is
+merged into a new function graph which represents the combined behavior. and
+last, the resulting function graph is then converted back into an epc.
+3.1 from epcs to function graphs
+a function graph is a reduction of an epc to its functions as sole nodes. the
+functions can be connected through directed arcs, meaning that the source func-
+tion of the arc can be executed before the target function. both a split type and
+ajoin type is assigned to each arc. both types can have either the value ^,xor ,
+or_. some examples for function graphs are given in the second row of figure 2.
+5de¯nition 4 (function graph). a function graph is a four-tuple (f; a; l j; ls):
+{fis a ¯nite (non-empty) set of functions,
+{aµ(f£f)is a set of arcs,
+{lj2a! f^ ;xor ;_gis a function which maps each arc onto a join relation
+type such that 8f1;f2;f32f((f1; f2)2a^(f3; f2)2a^lj(f1; f2) =^))
+(lj(f3; f2)6=xor ),
+{ls2a! f^ ;xor ;_gis a function which maps each arc onto a split relation
+type such that 8f1;f2;f32f((f1; f2)2a^(f1; f3)2a^lj(f1; f2) =^))
+(lj(f1; f3)6=xor ).
+the behavior of a function graph is as follows. after a completed execution,
+the functions in a function graph mark some outgoing arcs with tokens. which
+of the arcs are marked depends on the split types. if an arc has an ^split type,
+a token has to be added to this arc after the execution of its source function. in
+case of an xor split type, a token can only be added to the arc if none of the
+other arcs succeeding the source function receives a token at the same time. the
+_type depicts that the marking of the arc after the source function's execution is
+optional. however, if a function is the source of a set of arcs, at least one of these
+arcs must be marked with a new token after any of the function's executions.
+we require for the split types that a function is never the source of an arc of
+type^and of an arc of type xor at the same time. from a logical point of view,
+such type values would imply that the arc with the xor type could never be
+marked as the arc of type ^must always be marked with a token. that means,
+the arcs of type xor would never be followed and should thus be omitted.
+a
+epc 
+function graph abd    bad    cdpossible behavior:a)
+xor 
+v
+acd    cad    bcd    cbd possible behavior:xor v
+vvxor xor xor split
+join xor 
+possible behavior:
+ad    bd    cd
+abd bad cd    acd cad bcd 
+cbd    abcd   acbd   bacd 
+bcad    cabd    cbad possible behavior:xor 
+v
+adb    adc    abd    acd 
+ad    abd    acd    adb 
+adc   abcd   abdc   acbd 
+acdb    adbc    adcb possible behavior:
+possible behavior:ad    abc    acb possible behavior:
+possible behavior:xor v
+ad    ab ac 
+abc    acbv v xor 
+xor xor xor split
+join v v λ
+xor xor xor split
+join vvλxor xor xor split
+join b) c) d)
+fig. 2. the relation between epcs and function graphs
+6the execution of a (non-initial) function then depends on the tokens on its
+incoming arcs. the join types of the arcs determine when their joined target
+function can be executed. in case an arc is assigned the join type ^, the target
+function needs to consume a token from that arc when it is executed, i.e. for
+the function's execution this arc must be marked with at least one token. an
+arc of type xor means that the target function can be executed if this arc is
+marked with a token, independent of the markings of the other incoming arcs. in
+this case this token is then also the only token consumed during the function's
+execution. an _join type means that the consumption of a token from that
+arc is optional for the execution of its target function. in any case, however, a
+function with at least one incoming arc can only be executed if it consumes at
+least one token from one of its incoming arcs.
+for the join types we require that a function is never target of an arc of type
+^and of an arc of type xor at the same time. in such a case, the type values
+would imply that the function must always consume a token from the arc of type
+^and thus can never consume a token from the arc of type xor exclusively.
+as this means that these tokens would never be consumed, it is not necessary
+to produce them and the arc should be omitted.
+when transforming an epc into a function graph, the functions in the func-
+tion graph are the same functions as in the epc. every function in the function
+graph is connected by arcs to exactly those functions which could be reached in
+the epc through a path which does not pass any other function. the arcs' join
+and split types are calculated based on the values of the join/split connectors
+along the corresponding path in the epc. if no connectors exist along the path
+or if all these connectors are of type xor , the corresponding arc is assigned the
+type xor . if all the connectors are of type ^, the corresponding arc is assigned
+the type ^. otherwise the value _is assigned to the arc.
+de¯nition 5 (function graph from epc). let(e; f; c; l; a )be a well-
+formed epc. then (f; af; lf
+j; lf
+s)is a function graph with
+{af=f(x; y)2(f£f)j9z1;:::;z n2c[ehx; z1; :::; z n; yi 2a¤g1
+{lf
+j2af! f^ ;xor ;_gis a function which maps each arc onto a join rela-
+tion type as follows:
+lf
+j((x; y)) =8
+>>>><
+>>>>:xor if 8n¸08z1;:::;z n2c[ehx; z1; :::; z n; yi 2a¤) 8 1·i·n;zi2cj
+l(zi) =xor
+^ if8n¸18z1;:::;z n2c[ehx; z1; :::; z n; yi 2a¤) 8 1·i·n;zi2cj
+l(zi) =^
+_ otherwise,
+1a¤is the set of sequences over a, i.e,hz1; :::; z ni 2a¤if and only if 81·i<n(zi; zi+1)2
+a.
+7{lf
+s2af! f^ ;xor ;_gis a function which maps each arc onto a split rela-
+tion type as follows:
+lf
+s((x; y)) =8
+>>>><
+>>>>:xor if 8n¸08z1;:::;z n2c[ehx; z1; :::; z n; yi 2a¤) 8 1·i·n;zi2cs
+l(zi) =xor
+^ if8n¸18z1;:::;z n2c[ehx; z1; :::; z n; yi 2a¤) 8 1·i·n;zi2cs
+l(zi) =^
+_ otherwise.
+we use the two examples in ¯gures 2a and 2b to show the relation between
+the splits of the control °ow in an epc and in the function graph as well as
+the possible behaviors of these control-°ow splits. in both ¯gures we analyze the
+behavior that can happen after a single execution of a. if all the split connectors
+between two functions of an epc are of type ^, then the execution of the ¯rst
+function implies the execution of the second function as it is the case for functions
+aanddin figure 2a. the ^split type of the corresponding arc in the function
+graph therefore requires the marking of the arc after the execution of a. as this
+arc is the only incoming arc of d,drequires only this token for its execution.
+hence, dcan be executed after ain the function graph as in the epc. if all
+the split connectors between two functions of an epc are of type xor , then
+the execution of the ¯rst function implies the exclusive execution of the second
+function among all its subsequent functions. this is the case for functions aand
+din figure 2b. the corresponding function graph thus requires that after a's
+execution the arc to dis marked exclusively as indicated by its xor split type.
+if the path between two functions of an epc contains _connectors, or if
+it contains connectors of di®erent types, then the succeeding function might or
+might not be triggered. as an example, in the model in figure 2a either borc
+can follow a(but always in combination with d). within the function graph,
+this behavior is reproduced by assigning the split value _to the arc between a
+andband also to the arc between aandc. in this way, it is optional for each
+of these arcs if it is marked after a's execution. the function graph thus allows
+for executing borcafter aas the epc. but in addition to marking one of the
+two arcs, the function graph also allows marking both or none of them as the
+marking of an arc in a function graph is independent from the marking of other
+arcs. thus in addition to the behavior of the epc, also behaviors where both b
+andcor none of them follow aare possible in the function graph.
+figures 2c and 2d show the corresponding behavior relation for join connec-
+tors of an epc. here we analyze the behavior that leads to a single execution
+ofd. if all the connectors join the control °ow between two functions are of
+type^, then the ¯rst function always has to precede the second one, as e.g. in
+the case of functions canddin figure 2c. the corresponding arc's ^join type
+in the function graph also ensures that dcan only be executed after chas been
+executed and produced a token on this arc. in case all join connectors between
+two functions in an epc are of type xor , the ¯rst function always precedes the
+second one exclusively. functions canddin figure 2d provide an example for
+this. in the function graph an arc's xor join type implies exactly this behavior.
+the target function requires and exclusively consumes a token from that arc. in
+8case di®erent join connectors exist between two functions in an epc (or if there
+are only _connectors), there are several combinations of preceding function ex-
+ecutions possible before the execution of the succeeding function. the join type
+_in the corresponding function graph thus speci¯es that the consumption of
+tokens from each corresponding arc is optional for the execution of the target
+function. however, although this covers the behavior of the epc, it might also
+allow for executing the target function in cases for which this was not allowed
+in the epc.
+all in all this means that whenever the split or join type of an arc in the
+function graph is xor or^, the behavioral relation between those two functions
+corresponds to the one in the epc. when the split/join type is set to _the
+behavior of the epc is also covered by the function graph. then, however, also
+additional behavior might be possible.
+3.2 combining function graphs
+the goal of this paper is to merge process models (e.g. epcs) while preserving
+the original behavior. function graphs over-approximate these behaviors and are
+used as a tool to merge process models.
+two function graphs can be combined by merging the sets of functions, merg-
+ing the sets of arcs, and calculating the split and join types of the arcs based on
+the values in the two function graphs. when calculating the split and join types
+of an arc, it is needed to analyze if functions are succeeded or preceded by the
+same functions in both models. for this, let us ¯rst de¯ne shorthand notations
+for the preset and postset of a function in a function graph.
+de¯nition 6 (function graph notations). let(f; a; l j; ls)be a function
+graph. then is
+{prea2f!i p(f)such that prea(n) =fmj(m; n)2agthe preset of a
+function naccording to the set of arcs a, and
+{posta2f!i p(f)such that posta(n) =fmj(n; m)2agthe postset of a
+function naccording to the set of arcs a.
+if an arc is of split type xor in one of the two function graphs and does not
+exist in the other graph, or if it has type xor in both graphs, then the arc to
+the target function is either marked exclusively or not marked (a non-existent
+arc cannot be marked). this corresponds to the behavior of an xor split type
+which is thus assigned to the arc in the resulting function graph as well. the
+split type ^is only assigned to an arc if it either is of split type ^in both input
+function graphs or if it has the value ^in one of the input function graphs and
+there is no outgoing arc at all from the arc's source function in the other function
+graph. in case there is an ^split type assigned to the arc in one model and the
+arc does not exist in the other model, but the source function of the arc has
+other successor functions in the other model, the ^value cannot be assigned to
+the resulting arc because it would imply that the arc must always be marked
+in the resulting model. this con°icts with the model without the arc where a
+9non-existent arc can obviously not be marked. thus, in such cases the arc gets
+the more general split type _assigned as it gets in all other cases.
+the join types of arcs are calculated in line with the split types. thus, the
+corresponding line of argumentation also holds for the three join types of arcs. if
+an arc is of join type xor in one function graphs and does not exist in the other,
+or if it has type xor in both graphs, the arc is assigned the join type xor .
+the join type ^is assigned if the arc is either of split type ^in both function
+graphs or if it is of type ^in one of them and the arc's target function has no
+predecessors in the other function graph. in all other cases the arc is assigned
+join type _.
+de¯nition 7 (combining function graphs). two function graphs g1=
+(f1; a1; l1
+j; l1
+s),g2= (f2; a2; l2
+j; l2
+s)can be combined to a new function graph
+g3= (f1[f2; a1[a2; l3
+j; l3
+s)where:
+{l3
+s2(a1[a2)! f^ ;xor ;_gis a function which maps each arc onto a split
+relation type as follows:
+l3
+s((x; y)) =8
+>>>>>>>><
+>>>>>>>>:xor if (l1
+s((x; y)) =xor and (x; y)62a2)or
+(l1
+s((x; y)) =xor and l2
+s((x; y)) =xor )or
+((x; y)62a1andl2
+s((x; y)) =xor ),
+^ if(l1
+s((x; y)) =^and posta2(x) =;)or
+(l1
+s((x; y)) =^andl2
+s((x; y)) =^)or
+(posta1(x) =;andl2
+s((x; y)) =^),
+_ otherwise,
+{l3
+j2(a1[a2)! f^ ;xor ;_gis a function which maps each arc onto a join
+relation type as follows:
+l3
+j((x; y)) =8
+>>>>>>>><
+>>>>>>>>:xor if (l1
+j((x; y)) =xor and (x; y)62a2)or
+(l1
+j((x; y)) =xor and l2
+j((x; y)) =xor )or
+((x; y)62a1andl2
+j((x; y)) =xor ),
+^ if(l1
+j((x; y)) =^and prea2(y) =;)or
+(l1
+j((x; y)) =^andl2
+j((x; y)) =^)or
+(prea1(y) =;andl2
+j((x; y)) =^),
+_ otherwise.
+figure 3 shows an example for the arc values resulting from combining two
+function graphs. if an arc between two functions has the split type xor assigned
+(as, e.g., the arc between aandcin figure 3a), then this succeeding arc can be
+marked either exclusively or not at all after the execution of its source function.
+this behavior must be preserved in the resulting function graph. as there is no
+arc from atocin figure 3b, this function graph only requires that the arc
+between aandccannot be marked during execution which is covered by the
+opportunity not to mark the arc of the xor split type. thus the corresponding
+arc of the resulting function graph gets the type xor assigned. the same would
+hold if both input function graphs would require an xor split type here as this
+would still cover all possibilities allowed by the two input graphs.
+if, however, one model requires that the arc succeeding a function is exclu-
+sively marked after its execution (as the arc from atobin figure 3a) while the
+10c)
+v v
+xor split
+join xor 
+ab ac ad  abd adb aed ead 
+abed aebd aedb aced aecd 
+aedcedab  eabd eadb edac 
+eacd eadc possible behavior:vλ
+λ
+possible behavior:
+abd   adb   aebd   aedb
+eabd   eadb   abed xor vsplit
+join λb)
+λ
+λλa)
+ab    ac possible behavior:xor 
+xor split
+join xor 
+λ
+λfig. 3. combining two function graphs and the behavior possible according to each
+of the function graphs such that no tokens remain on the arcs
+other model allows for a combined marking of the arc with other arcs through
+an^or_split type (as in figure 3b), then the arc is assigned the split type _
+in the resulting model (see the arc from atobin figure 3c). in this way, both
+combining the marking of this arc with other arcs (as required by figure 3b) as
+well as its exclusive marking (as required by figure 3a) remains possible as long
+as none of the other arcs leaving the ¯rst function is assigned the split type ^.
+according to the de¯nition of function graphs, a single function that is the
+the source of an arc with split type xor cannot be source of an arc with type ^
+in the same graph. however, it is well possible that a function like function ain
+figure 3 is source of an arc of type xor in one of the merged function graphs
+(e.g., the arc to cin figure 3a) and in the other graph it is the source of an arc
+non-existent in the ¯rst graph which is of type ^(the arc to din figure 3b). in
+this case the function is the source of the arc between functions aanddwhich
+must obligatory be marked after a's execution in the function graph of b) while
+this arc is not part of the graph in a). thus, the marking of the arc cannot be
+made obligatory in the resulting model in c) because the obligatory marking of
+the arc would then con°ict with the behavior of the function graph in a) which
+did not ask for the marking of an arc between aandd. hence, in such cases
+the marking of the arc becomes optional by assigning it the _split type. in this
+way also the condition that functions cannot be succeeded by arcs of split type
+^and of split type xor at the same time is guaranteed.
+in case of the join type of the arc between aandd, there is no such function
+din the function graph of figure 3a and thus also no incoming arc to d. hence,
+the only way in which dcan be executed is depicted in figure 3b where it always
+requires a token on the arc from aas speci¯ed by the arc's ^join type. the
+resulting, corresponding arc in figure 3c can therefore preserve the ^join type.
+11as the _split and join types are less restrictive than the ^and the xor
+split/join types, using the _for an arc which had type ^or type xor in one
+of the initial function graphs not only allows for the same behavior as in the
+original graphs, but also for a number of additional behaviors that were not
+possible in any of the original graphs. the behavior depicted in figure 3 provides
+an example for this. the ¯gure shows the behavior required and possible such
+that ais executed at least once and such that no tokens remain on the arcs
+of the function graph. the behavior possible in both initial graphs is shown in
+boldface while the new behavior is shown using non-boldface characters.
+3.3 from function graphs to epcs
+a function graph can be transformed back into an epc. for this, we ¯rst gen-
+erate an epc where each non-initial function is preceded by a dedicated join
+connector and each non-¯nal function is succeeded by a dedicated split connector
+(see figure 4b). arcs connect these connectors in line with the arcs connecting
+the functions of the function graph via an event for each such arc. start events
+are directly connected to initial functions while ¯nal functions are directly con-
+nected to end events. the connector types are calculated for each connector
+based on the values of all arcs leaving or ending in the corresponding function
+in the function graph. if all arcs leaving a function in the function graph are
+of split type xor , the split connector of this function in the epc becomes an
+xor connector (as for function bin figure 4). if all arcs are of split type ^,
+it becomes an ^connector (as for ain figure 4). otherwise it becomes an _
+connector. in the same way the join connector before each function in the epc
+becomes an xor connector if all arcs pointing at this function in the function
+graph are of join type xor , it becomes an ^connector if the arcs are of join
+type^, and it becomes an _connector otherwise (as for ein figure 4).
+b) epc a) function graph 
+vv λxor 
+xor xor split
+join λ λ
+xor xor 
+λ λsplit
+join xor xor 
+xor 
+xor c) well-formed epc 
+xor 
+fig. 4. transforming a function graph back into an epc
+12de¯nition 8 (generating an epc from a function graph). a function
+graph (f; af; lf
+j; lf
+s)can be converted into an epc (e; f; cn
+j[cn
+s; l; a)as
+follows:
+{for all f2f:²f=fxj(x; f)2afg, and f²=fxj(f; x)2afg.
+{cn
+j=fcf
+jjf2f^ j ²fj ¸1gassigns a join connector to each function,
+{cn
+s=fcf
+sjf2f^ jf² j ¸ 1ggassigns a split connector to each function,
+{e=fe(f1;f2)j(f1; f2)2afg[fef
+startjf2f^²f=;g[f ef
+endjf2f^f²=;g
+is the set of events,
+{a=f(f; cf
+s)jf2f^cf
+s2cn
+sg [ f(cf
+j; f)jf2f^cf
+j2cn
+jg
+[ f(cf1
+s; e(f1;f2))j(f1; f2)2afg [ f(e(f1;f2); cf2
+j)j(f1; f2)2afg
+[ f(ef
+start; f)jf2f^ ²f=;g [ f (f; ef
+end)jf2f^f²=;g,
+{for all cf
+j2cn
+j:l(cf
+j) =8
+<
+:xor if 8x2f(x; f)2af)(lf
+j((x; f)) =xor )
+^ if8x2f(x; f)2af)(lf
+j((x; f)) =^
+_ otherwise,
+{for all cf
+s2cn
+s:l(cf
+s) =8
+<
+:xor if 8x2f(f; x)2af)(lf
+s((f; x)) =xor
+^ if8x2f(f; x)2af)(lf
+s((f; x)) =^
+_ otherwise.
+the epc generated in this way might not be well-formed because it can
+violate the requirement 7 of de¯nition 3. it may contain connectors which have
+only one incoming and at the same time only one outgoing arc (e.g., see functions
+b,c,d, and fin figure 4b). however, such connectors can simply be eliminated
+from the net by replacing each of these connectors with a direct arc from its
+predecessor node to its successor node (see figure 4c).
+de¯nition 9 (generating a well-formed epc from a function graph).
+if an epc (e¦; f¦; c¦; l¦; a¦)was derived from a function graph, it can be con-
+verted into a well-formed epc (e; f; c; l; a )as follows:
+{e=e¦,
+{f=f¦,
+{for all n2(e¦[f¦[c¦):²n=fmj(m; n)2a¦gis the set of input nodes,
+andn²=fmj(n; m)2a¦gis the set of output nodes,
+{c=fc2c¦j j ²cj ¸2_ jc² j ¸ 2g,
+{l2c! f^ ;_;xorgsuch that l(c) =l¦(c)for all c2c,
+{n0=e¦[f¦[c,
+{a= (a¦\(n0£n0))[ f(x; y)2n0£n0j9z1;:::;z n2(c¦nc)hx; z1; :::; z n; yi 2
+(a¦)¤g.
+when transforming a function graph into an epc, the connector values de-
+termining the possible behavior of the resulting epc are calculated from the
+split and join type values of the function graph's arcs. only if each arc leaving
+a function is assigned the split type xor , then also the corresponding epc
+connector determining the successors of the function in the epc is of type xor
+allowing for an exclusive choice of one of the succeeding functions. this corre-
+sponds exactly to the behavior possible in the function graph. if all these arcs are
+13of type ^, also the corresponding connector in the epc becomes an ^connector.
+again, the behavior of triggering all succeeding paths is in line with the behavior
+of the function graph. if the arcs are of type _or if there is a mixture of di®er-
+ent split types among the arcs leaving a function of a function graph, then the
+corresponding epc connector is assigned type _. the resulting behavior then
+corresponds to exactly the behavior if all the corresponding arcs of the function
+graph are of type _. each other combination of arc types in the function graph
+allows for a subset of this behavior. thus, by assigning the epc connector the
+type_, additional behavior might become possible in the epc compared to the
+behavior allowed in the function graph.
+the argumentation for the behavior allowed by join connectors in the result-
+ing epcs is in line with this behavior of the split connectors.
+all in all, in each of the merge algorithm's three steps the possible behavior
+of the input model(s) is at least preserved in the resulting model, but usually
+even extended with additional behavior. as explained in the introduction, we
+aim at \simple" models that preserve at least the original behavior over com-
+plex models that match exactly the behavior of the input models. thus, such an
+over-approximation is a desired outcome. for that reason, we also rather stick
+to the \simple" epc derived in the last transformation here although introduc-
+ing additional connectors to create an epc that preserves the behavior of the
+function graph more exactly would well be possible.
+4 tool support
+we have implemented the approach described in this paper as a plug-in of the
+prom process mining framework2(see figure 5 for a screenshot of prom). the
+prom framework integrates and enables the combined use of a wide variety of
+process mining techniques through more than 250 plug-ins [2]. by implementing
+the merge of epcs as a prom plug-in, it can be used and combined with existing
+mining plug-ins to create integrated process models from log ¯les and other
+models.
+before performing the actual merge of two selected epcs as described in this
+paper, the prom plug-in allows users to create a mapping between the functions
+of the two input epcs (see the top-right window in figure 5) as well as between
+their events. in this way, it can be avoided that di®erent names for the same
+functions or events (as e.g. de¯ned through ontology classes or caused by typos
+etc.) cause super°uous additional elements in the resulting model. to help the
+user with this mapping, the plug-in automatically suggests possible correspond-
+ing elements using a library provided by prom for matching identi¯ers.3
+after mapping the functions and events, the algorithm merges the two epcs
+in three phases as explained in this paper. as the behavior of a process model
+2seehttp://prom.sourceforge.net/ .
+3an illustrated description of how to use the epc merge plug-in can be found at
+http://www.floriangottschalk.de/epcmerge .
+14fig. 5. merging the epc from figure 1 with the epc depicted in the left using the
+epc merge's implementation in prom
+is determined by the order of executing its functions, the names of the events
+between the functions are irrelevant from a behavioral point of view and thus
+ignored in the algorithm presented in this paper. the algorithm simply creates
+new events when transforming the function graph back into an epc. however,
+for the depiction and understanding of the process, the event names are of course
+important. thus, after merging the two models, the plug-in re-names each event
+of the resulting model based on the event names of the corresponding event(s)
+in the original models. considering that the plug-in introduces unique initial
+functions before each start event in the original model, and unique ¯nal functions
+after each end event of the original models, an event is always located on a path
+between two functions. thus, each event in the resulting model can be named
+according to the event that is on the same path in the original models. whenever
+the events of the original epcs di®er, a choice between these di®ering events is
+added on the path instead of the single event.
+to illustrate the functionality of the prom plug-in, consider the left window
+in figure 5 which shows another epc for a travel approval process. this model
+is merged with the process from figure 1 (which is also shown in small on the
+lower right of figure 5) to illustrate our approach. in this process, reservations
+are made directly before the travel form is ¯lled in and submitted. the travel is
+15quote
+accomodation
+quotes available
+prepare and submit
+travel form
+xcheck
+travel form
+x
+check and update
+or drop travel requestxforward
+travel request
+xquote
+flight
+quotes availablemake
+reservations
+reservations succesful
+archive
+travel requestchange requested travel request approvedtravel required
+v
+travel request rejected v
+travel form submitted request processedfig. 6. the epc resulting from merging the epcs from ¯gures 1 and 5
+afterwards either approved and the form forwarded to the clearing center or re-
+jected and the form is archived. while the functions \prepare and submit travel
+form", \check travel form", and \forward travel request" can be mapped to
+equivalent functions in the epc from figure 1, the functions \archive travel
+request" and \make reservations" cannot be mapped to any corresponding func-
+tion (upper-right of figure 5).
+the epc resulting from this merge is shown in figure 6. in the integrated
+model, an _connector allows in the beginning for both the request of quotes
+for accommodation and °ights as in the model from figure 1 as well as for
+making directly a reservation as in figure 5. due to the use of the _connector
+even solely quoting a °ight or combining such a quote with a reservation of an
+accommodation would in contrast to the original models be possible according
+to this new model. while in each of the original models the check of the travel
+form could result in an acceptance of the travel request, the alternative to this
+was a rejection in one of the models, while it was the request for a change in the
+other model. thus, the new merged model in figure 6 allows for a choice of one
+of these three options.
+5 related work
+process models like epcs are used to provide abstract views on the process
+behavior of complex systems. as various models are usually inconsistent [10]
+even if they are intended to depict the same behavior, several frameworks to
+merge such models and align the depicted system descriptions are suggested in
+literature [4, 10, 11]. a concrete, but not implemented algorithm for merging
+epcs is suggested in [8]. while our goal is to merge several epcs depicting
+di®erent processes that are executed similarly, the goal of [8] is to integrate
+di®erent views on the same process. for that reason the algorithm of [8] tries to
+synchronize di®erent behavior while our approach provides a choice between the
+varying behavior.
+16besides as a model, behavior can also be represented as a state-transition
+system which explicitly shows each state the whole system can be in and how it
+can change between these states. the synthesis of such state-based models into
+petri nets by using minimal regions is, e.g, presented in [6] and implemented in
+tools such as petrify [5]. also prom provides several region-based approaches [2].
+the merge of transition systems and properties of such a merge of behavior are
+discussed in [4, 14].
+furthermore, the behavior of a system can be represented as traces which
+consist of a log entry for every action that has happened. various process mining
+approaches have been suggested to generate process models from such a set
+of behavioral traces (e.g. [1, 3, 7]). while originally intended to discover the
+behavior of one system, these techniques can also discover a process model that
+covers the behavior of several systems if they are provided with a combined set
+of traces from all the relevant systems.
+6 conclusions
+in this paper we have shown an approach to merge two epcs into a single
+epc that preserves all the behavior possible in the original epcs, but that
+may also allow for additional behavior. for this, we reduce epcs to function
+graphs that represent an abstraction of the behavior of the epcs and unify such
+function graphs. in this way the only expensive calculation during the merge is
+re-calculating the connector values between the functions which is only required
+locally. thus, an e±cient implementation is possible.
+by implementing the algorithm within the prom process mining framework,
+it can now be used in combination with a wide range of other techniques helping
+users in constructing process models for existing systems. while in some cases,
+the additional behavior compared to the original models which is made possible
+by this approach might be undesired, usually the goal of process analysts when
+merging process models is to quickly align various depictions of the same or
+similar processes. the resulting model is then just the starting point for further
+process optimizations. thus, a simple model which guarantees the behavior of
+the original models, is usually more desired in such cases than a complex model
+which tries to match the behavior exactly. for this reason, we also refrained
+from encoding behavioral information available during the merge more exactly
+in longer chains of epc connectors.
+while we depicted this approach using epcs, the same approach should be
+applicable to other business process modelling languages that support _splits
+and joins of the control °ow. in our approach we focused on preserving the
+behavior that was possible in the original epcs, but neglected if this behavior
+or the behavior that we created additionally during the merge is desirable and
+sound behavior. in future research we thus have to show how the merged models
+should be post-processed by process analysts in order to derive optimal and
+executable business processes for merging corporations.
+17references
+1.w.m.p. van der aalst, a.k. alves de medeiros, and a.j.m.m. weijters. genetic
+process mining. in 26th international conference on applications and theory of
+petri nets (icatpn 2005) , volume 3536 of lncs , pages 48{69. springer, 2005.
+2.w.m.p. van der aalst, b. van dongen, c. gä unther, r. mans, a.k. alves de
+medeiros, a. rozinat, v. rubin, m. song, h.m.w. verbeek, and a.j.m.m. wei-
+jters. prom 4.0: comprehensive support for real process analysis. in petri nets
+and other models of concurrency icatpn 2007 , volume 4546 of lncs , pages
+484{494. springer, 2007.
+3.w.m.p. van der aalst, b.f. van dongen, j. herbst, l. maruster, g. schimm, and
+a.j.m.m. weijters. work°ow mining: a survey of issues and approaches. data
+and knowledge engineering , 47(2):237{267, 2003.
+4.g. brunet, m. chechik, s. easterbrook, s. nejati, n. niu, and m. sabetzadeh. a
+manifesto for model merging. in gamma '06: proceedings of the 2006 international
+workshop on global integrated model management , pages 5{12, new york, ny,
+usa, 2006. acm.
+5.j. cortadella, m. kishinevsky, a. kondratyev, l. lavagno, and a. yakovlev. pet-
+rify: a tool for manipulating concurrent speci¯cations and synthesis of asyn-
+chronous controllers. ieice transactions on information and systems , e80-
+d(3):315{325, 1997.
+6.j. cortadella, m. kishinevsky, l. lavagno, and a. yakovlev. synthesizing petri
+nets from state-based models. in iccad '95: proceedings of the 1995 ieee/acm
+international conference on computer-aided design , pages 164{171, washington,
+dc, usa, 1995. ieee computer society.
+7.b. van dongen and w.m.p. van der aalst. multi-phase mining: aggregating
+instances graphs into epcs and petri nets. in proceedings of the second in-
+ternational workshop on applications of petri nets to coordination, work°ow
+and business process management , pages 35{58. florida international university,
+miami, fl, usa, 2005.
+8.j. mendling and c. simon. business process design by view integration. in
+business process management workshops , volume 4103 of lncs , pages 55{64.
+springer, 2006.
+9.m. rosemann and w.m.p. van der aalst. a con¯gurable reference modelling
+language. information systems , 32(1):1{23, march 2007.
+10.m. sabetzadeh and s. easterbrook. view merging in the presence of incomplete-
+ness and inconsistency. requirements engineering , 11(3):174{193, 2006.
+11.m. sabetzadeh, s. nejati, s. easterbrook, and m. chechik. a relationship-driven
+framework for model merging. in mise '07: proceedings of the international
+workshop on modeling in software engineering , pages 2{8, washington, dc, usa,
+2007. ieee computer society.
+12.k. sarshar and p. loos. comparing the control-flow of epc and petri net from
+the end-user perspective. in 3rd international conference on business process
+management (bpm 2005) , volume 3649 of lncs , pages 434{439, nancy, france,
+september 2005. springer.
+13.a.-w. scheer. aris toolset: a software product is born. information systems ,
+19(8):607{624, december 1994.
+14.s. uchitel and m. chechik. merging partial behavioural models. sigsoft soft-
+ware engineering notes , 29(6):43{52, 2004.
+18

@@ -1,0 +1,1324 @@
+39
+monitoring business constraints with the event calculus
+marco montali , free university of bozen-bolzano
+fabrizio m. maggi , eindhoven university of technology
+federico chesani , university of bologna
+paola mello , university of bologna
+wil m. p . van der aalst , eindhoven university of technology
+today, large business processes are composed of smaller, autonomous, interconnected sub-systems, achiev-
+ing modularity and robustness. quite often, these large processes comprise software components as well
+as human actors, they face highly dynamic environments and their sub-systems are updated and evolve
+independently of each other. due to their dynamic nature and complexity, it might be difﬁcult, if not impos-
+sible, to ensure at design-time that such systems will always exhibit the desired/expected behaviors. this, in
+turn, triggers the need for runtime veriﬁcation and monitoring facilities. these are needed to check whether
+the actual behavior complies with expected business constraints, internal/external regulations and desired
+best practices. in this work, we present mobucon ec, a novel monitoring framework that tracks streams of
+events and continuously determines the state of business constraints. in mobucon ec, business constraints
+are deﬁned using the declarative language declare. for the purpose of this work, declare has been suit-
+ably extended to support quantitative time constraints and non-atomic, durative activities. the logic-based
+language event calculus (ec) has been adopted to provide a formal speciﬁcation and semantics to declare
+constraints, while a light-weight, logic programming-based ec tool supports dynamically reasoning about
+partial, evolving execution traces. to demonstrate the applicability of our approach, we describe a case study
+about maritime safety and security and provide a synthetic benchmark to evaluate its scalability.
+categories and subject descriptors: d.1.6 [ programming techniques ]: logic programming; d.2.5
+[software engineering ]: testing and debugging - monitors; f.3.2 [ logics and meanings
+of programs ]: semantics of programming languages - process models
+general terms: languages, management, veriﬁcation
+additional key words and phrases: business constraints, declarative process models, event calculus, run-
+time veriﬁcation, monitoring, operational decision support, process mining
+1. introduction
+today’s systems typically operate in dynamic, complex and interconnected environ-
+ments. larger systems are composed of smaller systems and evolve over time, be-
+coming different from their initial design: e.g., sub-systems could be updated inde-
+this research has been carried out as a part of the poseidon project at thales, under the responsibility of
+the embedded systems institute (esi) and partially supported by the dutch ministry of economic affairs -
+bsik program. it has been also partially supported by the netherlands organization for scientiﬁc research
+(nwo) - “visitors travel grant” initiative and by the eu project fp7-ict acsi (257593).
+author’s addresses: m. montali works at the krdb research centre for knowledge and data, free univer-
+sity of bozen-bolzano. e-mail: montali@inf.unibz.it. f. m. maggi is with the institute of computer science at
+the university of tartu. e-mail: f.m.maggi@ut.ee. f. chesani and p. mello are with the department of com-
+puter science and engineering (disi), university of bologna. e-mail: name.surname@unibo.it. w. m. p. van
+der aalst works at the department of mathematics & computer science, eindhoven university of technol-
+ogy. e-mail: w.m.p.v.d.aalst@tue.nl.
+permission to make digital or hard copies of part or all of this work for personal or classroom use is granted
+without fee provided that copies are not made or distributed for proﬁt or commercial advantage and that
+copies show this notice on the ﬁrst page or initial screen of a display along with the full citation. copyrights
+for components of this work owned by others than acm must be honored. abstracting with credit is per-
+mitted. to copy otherwise, to republish, to post on servers, to redistribute to lists, or to use any component
+of this work in other works requires prior speciﬁc permission and/or a fee. permissions may be requested
+from publications dept., acm, inc., 2 penn plaza, suite 701, new york, ny 10121-0701 usa, fax +1 (212)
+869-0481, or permissions@acm.org.
+c2010 acm 1539-9087/2010/03-art39 $15.00
+doi: http://dx.doi.org/10.1145/0000000.0000000
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:2 m. montali et al.
+pendently of each other or small parts of the system could slightly change interfaces
+and interaction patterns, etc. such systems need to deal with dynamic environments,
+where many unexpected events can happen, thus creating situations that are not pos-
+sible to foresee at design time. moreover, in many cases human actors also take part
+in processes, together with software components. all these characteristics make it dif-
+ﬁcult to ensure that such large systems behave as expected.
+nevertheless, organizations need to guarantee the correct and safe execution of pro-
+cesses. for example, new legislation is forcing organizations to put more emphasis on
+compliance to internal/external regulations. moreover, there is a continuous pressure
+to meet deadlines and improve response times. consequently, the number of accept-
+able systems’ behaviors is reduced by such requirements. we use the term (business)
+constraint [montali 2010] to refer to any rule that speciﬁes or constrains the set of
+acceptable behaviors. some constraints can be enforced by an explicit and machine-
+interpretable model representing the acceptable execution ﬂows for one system in iso-
+lation. however, it is unreasonable to think that all constraints can be incorporated in
+such executable description. first, the integration of diverse and heterogeneous con-
+straints would quickly make models unreadable and tricky. this would become even
+more critical when the system behavior is modeled using procedural, workﬂow-like ap-
+proaches, as business constraints are inherently declarative [pesic and van der aalst
+2006; montali et al. 2010]. secondly, business constraints often target uncontrollable
+aspects, such as activities carried out by internal entities working in an autonomous
+way (e.g., people) or by external components, independently from the system itself.
+given that such business constraints cannot be directly incorporated at design time
+into the system, it would be sufﬁcient that they are satisﬁed by the system when it
+is enacted. obviously, this is possible only if information about the running system
+is tracked, stored and made available for analysis. fortunately, as argued by van der
+aalst et al. [2010], this is the case for the majority of today’s systems: detailed informa-
+tion about the system dynamics and, in particular, the executed activities is typically
+stored and made available in high-quality event logs. this enables the application of
+process mining techniques [van der aalst 2011], to “evaluate all events in a business
+process and do so while it is still running”. the runtime aspect is of particular im-
+portance: noncompliant state of affairs could indicate wrong/dangerous situations or
+fraud; hence, they must be promptly detected, to generate suitable alerts and trigger
+recovery or compensation mechanisms. the application of process mining techniques
+to monitor and guide running cases is referred to as operational (decision) support
+[van der aalst et al. 2010], and it is a relatively new area. operational support helps
+business practitioners in the evaluation of all relevant factual data, not only of se-
+lected samples, and works in a “push-button” way. it can be used to check conformance,
+predict the future and recommend what to do next. in the context of this work, we fo-
+cus on the ﬁrst task, proposing a novel veriﬁcation framework, called mobucon ec
+(monitoring business constraints with event calculus), able to dynamically monitor
+streams of events characterizing the process executions (i.e., running cases) and check
+whether the constraints of interest are currently satisﬁed or not.
+the realization of a business constraints monitor poses two key requirements. on
+the one hand, the monitoring framework must be able to capture the complexity of
+business constraints, providing at the same time faithful, correct and founded results.
+to this end, there is a need for expressive languages to suitably deﬁne business con-
+straints: such languages must have a formal and precise semantics and should be
+equipped with sound reasoning algorithms and tools. on the other hand, the moni-
+tor must produce such results in a timely fashion, being the analysis carried out on-
+the-ﬂy, during the system execution. these requirements ask for a suitable trade-off
+between expressiveness and tractability. in this respect, mobucon ec relies on de-
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:3
+clare , a declarative language for business constraints [pesic and van der aalst 2006].
+to meet the expressiveness requirements, we focus on an extended version of declare
+constraints, supporting durative actions and quantitative time aspects, such as de-
+lays and deadlines [montali et al. 2010; montali 2010]. we do not tackle data-related
+aspects, but they can be seamlessly incorporated in our approach. here, we provide de-
+clare with a formal semantics based on the event calculus (ec) [kowalski and sergot
+1986; shanahan 1999]. the ec is a logic-based, expressive framework that allows us
+to model complex knowledge bases dealing with events and properties (ﬂuents) whose
+truth value evolves over time. hence, it is able to declaratively represent and rea-
+son about how the events that characterize the execution of a process instance affect
+the “state” of declare constraints. monitoring is then carried out using a light-weight,
+logic programming-based ec axiomatization for dynamically reasoning about partial
+and evolving traces [bragaglia et al. 2012], thus meeting the performance require-
+ment. this is achieved by suitably evolving the seminal idea of cached event calculus
+(cec), ﬁrstly proposed by chittaro and montanari [1996].
+unlike approaches that bind the notion of constraint violation to logical inconsis-
+tency (thus halting when the ﬁrst violation is encountered), through the formalization
+of “constraint instances”, mobucon ec provides continuous support , without interrupt-
+ing its functioning even after a violation. this is highly desirable, because the moni-
+tored system evolves in an autonomous manner and there is no guarantee that it will
+halt when a violation is encountered.
+to demonstrate the potential of our approach, we discuss two different case studies.
+the ﬁrst one focuses on a real process in the context of maritime safety and secu-
+rity, where extended declare constraints are used to declaratively state the allowed
+behaviour of vessels that cross a speciﬁc area. the second case study focuses on an ex-
+tensive synthetic benchmark with randomly generated constraint models and traces:
+the aim is to assess the feasibility, performance and scalability of mobucon ec. mobu-
+con ec has been fully implemented inside prom [verbeek et al. 2010], the most widely
+used process mining framework. version 6.1 of prom embeds an operational decision
+support infrastructure. mobucon ec exploits this infrastructure to monitor any system
+whose dynamics is represented by event streams.
+in summary, in this work we introduce the formalization of time-aware declare con-
+straints and non-atomic activities using the ec and the application of our reactive
+reasoner to the setting of process monitoring: this is our scientiﬁc contribution. more-
+over, this work introduces the mobucon ec framework and discuss its application to
+real cases as well as synthetic benchmark with randomly generated constraint models
+and traces.
+the remainder is organized as follows. sections 2 and 3 provide some preliminar-
+ies, introducing the declare framework and the ec. section 4 discusses how declare
+constraints and process execution traces can be formalized as an ec theory. section 5
+deals with the mobucon ec implementation and its evaluation. an overview of related
+work and a conclusion complete the paper.
+2. the declare notation
+we provide a brief introduction to declare. for a comprehensive description of the lan-
+guage, we refer the interested reader to [pesic and van der aalst 2006; pesic et al. 2007;
+pesic 2008; montali 2010]. declare is a language for the constraint-based ,declarative
+speciﬁcation of processes. instead of rigidly deﬁning the control ﬂow, it focuses on the
+(minimal) set of rules that must be satisﬁed in order to correctly execute the process. it
+hence accommodates ﬂexibility by design , providing a set of modeling abstractions that
+suitably mediate between control and ﬂexibility. differently from procedural speciﬁca-
+tions, where activities can be interconnected by means of sequence patterns, mixed
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:4 m. montali et al.
+with constructs that explicitly tackle the splitting and merging of control ﬂows, de-
+clare provides a number of control-independent business constraints to interconnect
+activities. it is possible to use constraints referring to the future or to the past, as well
+as constraints that do not impose any ordering among activities. furthermore, declare
+models are open : any activity can be freely executed, unless it is explicitly stated oth-
+erwise by means of a constraint. on the one hand, openness guarantees ﬂexibility: all
+the executions that do not violate any constraint are implicitly allowed. on the other
+hand, to tune the degree of openness supported by the model, suitable abstractions are
+dedicated to capture not only what is required, but also what is forbidden. in this way,
+the modeler is not bound to explicitly enumerate the acceptable executions and models
+remain compact: they specify desired/undesired events, leaving unconstrained all the
+executions that are neither mandatory nor forbidden.
+even though concurrency constructs are not explicitly present in declare, concur-
+rency is natively supported: as long as the stakeholders involved in a process instance
+behave within the boundaries imposed by the business constraints, they are free to
+choose the most appropriate way of executing activities (including the case in which
+they are executed in parallel).
+2.1. declare models
+adeclare model is composed of a set of business constraints, which, in our case, are
+used to monitor the execution of an external, uncontrollable process. constraints are
+attached to one or more activities and are used at execution time to deﬁne the ac-
+ceptable executions of the corresponding activity instances. in the basic setting, each
+activity represents an atomic unit of work and is therefore traced by means of a single
+event occurring at some time point during the execution of a case. in the following, we
+ﬁrst give an overview of declare constraints applied over atomic activities and then we
+discuss how non-atomic activities can be seamlessly treated by our approach.
+a declare model is typically designed in two steps. first, the relevant activities of the
+application domain are elicited and inserted into the model. at this stage, the model is
+completely unconstrained and the activities can be performed an arbitrary number of
+times, in whatever order. then, declare constraints are added to capture the business
+constraints of the system, leading to a partially closed model: only those executions
+that comply with constraints are now accepted.
+2.2. constraints
+to support several application domains, ranging from closed, prescriptive settings
+to ﬂexible, adaptive ones, declare supports a rich (extensible) set of business con-
+straints. they are grouped into four families: existence ,choice ,relation and negation
+constraints. existence constraints are unary cardinality constraints expressing how
+many times an activity can or must be executed. for example, the declare model
+2::
+get info0
+publish info
+contains two existence constraints: existence 2 , specifying that activity get info must
+be executed at least twice and absence , stating that activity publish info cannot be
+executed. such constraints are parametric in the actual numbers; in the general case,
+existence n states that the involved activity must be executed at least ntimes, while
+absence n states that the involved activity can be executed at most n 1times. choice
+constraints are an extension of existence constraints that tackles multiple activities
+at the same time; more speciﬁcally, they are n-ary constraints expressing that one or
+more activities must be executed, choosing them from a set of possible alternatives.
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:5
+table i. some declare relation constraints, together with their corresponding negated version
+a     bresponded existence when ais
+executed, bmust be executed either
+before or afterwardsa     k bresponded absence ifais exe-
+cuted, bcan never be executed in
+the same case
+a   ibresponse every time ais exe-
+cuted, bmust be eventually exe-
+cuted afterwardsa   ik bnegation response when ais ex-
+ecuted, bcannot be executed after-
+wards
+a= = =ibalternate response every time a
+is executed, bmust be consequently
+executed, before a further occur-
+rence of aa= = =ik bnegation alternate response ifa
+is executed twice, bcannot be exe-
+cuted between the two occurrences
+ofa
+a= = = ibchain response every time ais
+executed, bmust be executed nexta= = = ik bnegation chain response every
+time ais executed, bcannot be exe-
+cuted next
+relation constraints are binary constraints requiring the execution of some “target”
+activity when some other “source” activity is executed. the source activity is graphi-
+cally identiﬁed using a “bullet” notation. every time the source activity of a relation
+constraint is executed, the constraint requires the execution of another (target) activ-
+ity. as shown in table i, depending on the constraint type, additional requirements
+may be imposed on the target activity, making the constraint harder or softer.
+relation constraints cover many possible qualitative temporal relationships among
+two distinct activities: responded existence does not impose any ordering, response re-
+quires an “after” ordering, while precedence (not shown in table i, but included in
+fig. 1) imposes a “before” ordering. note that declare, in its basic version, only sup-
+ports a qualitative notion of time: constraints could specify the expected relative posi-
+tions among two event occurrences, but they cannot express metric distances between
+them. later in the paper, we overcome this limitation.
+another important aspect of the language is that relation constraints can be gener-
+alized in such a way that multiple source or target activities can be interconnected by
+a single constraint. in this case, the constraint is called a branching constraint. the
+semantics of branching corresponds to disjunction among event occurrences, which
+translates in the following behavior: a branching on the source side means that the
+constraint triggers whenever one of the source activities is executed, whereas a branch-
+ing on the target side implies that the constraint is satisﬁed by the (proper) execution
+of any target activity. for example, a branching chain response with aas source and b
+andcas targets is satisﬁed if, whenever ais executed, one among bandcis executed
+next. this shows that constraints with a branching target involve an implicit choice .
+negation constraints are the negative version of relation constraints: they forbid the
+execution of some activity when a certain state of affairs is reached. table i shows
+the correspondence between some relation constraints and their negative counterpart;
+the parallel clearly attests that each negation constraint forbids the presence of an
+activity, while the same activity is expected by the corresponding positive constraint.
+notice also that negation constraints can branch as well, with the same disjunctive
+semantics adopted for relation constraints.
+fig. 1 shows a sample process modeled in declare. it deals with the ﬂexible man-
+agement of an order. a customer has the possibility of adding items, submitting the
+order to the seller and paying it. the seller, in turn, handles the delivery of orders and
+of the corresponding payment receipts. the execution of activities is governed by con-
+straints, which implicitly identify the acceptable courses of execution. in particular, an
+order can be submitted only if at least one item has been chosen ( precedence (1) ) and
+no further items can be chosen after having submitted an order ( negation response ).
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:6 m. montali et al.
+deliver orderpayordersubmitorderchooseitemsend receiptnegation responseprecedence (1)precedence (2)responded existenceresponse
+fig. 1 . an order management process in declare
+an order can be paid only if it has been previously submitted ( precedence (2) ) and the
+payment triggers two expectations: the order must be delivered either before or after-
+wards ( responded existence ) and a receipt must be consequently sent as well ( response ).
+this example shows the ﬂexibility of declare: the same model accommodates many
+possible executions. for example, it is acceptable that a case is ended by the customer
+before submitting an order or after having submitted an order without paying it (but
+when the order is paid, the seller is expected to deliver the order and the receipt).
+hence, trace choose item!choose item!submit order is compliant with the model.
+trace choose item!submit order!choose item is instead noncompliant: it violates
+thenegation response constraint. thanks to the loose nature of the responded existence
+constraint, the model seamlessly supports the situation in which the seller waits for
+the payment before delivering the order, but also the case in which an order is delivered
+before the payment (trusted customer) or even without the payment (free gifts orders).
+finally, notice that it is possible to execute deliver order andsend receipt an arbitrary
+number of times, even without executing other activities. these particular executions
+are meant to support multiple attempts of such activities, as well as to support cases
+in which a “gift” order is autonomously delivered by the company or where another
+receipt is sent again for an order that was previously delivered.
+2.3. extending declare with metric constraints and non-atomic activities
+the basic declare approach has been extended with non-atomic activities, quantitative
+time constraints, task data and data-aware conditions [pesic 2008; montali 2010; mon-
+tali et al. 2010; montali et al. 2013]. in this work, we focus on the ﬁrst two extensions,
+showing how they can be formalized in the ec for monitoring purposes. the approach
+can be easily extended to incorporate data-aware conditions as well (see section 7).
+non-atomic, durative activities are activities whose execution spans over a time pe-
+riod and is driven by multiple event occurrences. their incorporation in the language
+requires three steps: (i)the identiﬁcation of the atomic events characterizing the exe-
+cution of an activity; (ii)the deﬁnition of the activity lifecycle , i.e., a description of the
+acceptable orderings in which such events may occur; (iii)an extension of the graphi-
+cal notation so as to properly handle non-atomic activities. in this paper, we adopt the
+simple activity lifecycle proposed by pesic [2008] for declare, but the approach is able
+to cover more complex lifecycles as well. in the lifecycle considered here, each activity
+is associated to a start event ( sfor short), marking the beginning of the activity, and
+to a consequent completion (cfor short) or cancelation (xfor short) event, respectively
+marking the proper or premature termination of the activity. we can graphically ex-
+tend the notation of declare activities with “ports” that explicitly account for these
+three event types, as shown in fig. 2. in this way, the modeler can attach constraints
+to any of such ports. this makes it possible to model ﬁne-grained constraints such as
+“when activity aiscompleted , then activity bmust be eventually started ” or “activity c
+cannot be canceled until activity aiscompleted ”. these three event types are connected
+by the following lifecycle constraints:
+—activity termination - every start event must be eventually followed by a corre-
+sponding single completion or cancelation event;
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:7
+aascx
+fig. 2 . representation of atomic and non-atomic activities
+—completion consistency - every completion event must be preceded by a correspond-
+ingsingle start event;
+—cancelation consistency - every cancelation event must be preceded by a correspond-
+ingsingle start event.
+the lifecycle does not only impose a suitable ordering among events, but also requires
+a one-to-one matching between every start event and a consequent completion or can-
+celation one. in other words, events must be properly correlated to each other.
+as illustrated by our case study in section 5, it is common for business constraints to
+incorporate metric time aspects, such as delays anddeadlines . as proposed in [montali
+et al. 2010], time-ordered constraints can be augmented with metric time aspects, by
+annotating them with two numerical values that delimit the time span inside which
+the triggered constraints have effect. this time span is interpreted as relative with
+respect to the time at which the source activity of the constraint is executed. we can,
+e.g., extend the order management process shown in fig. 1 to state that when an order
+is paid, the receipt must be sent between 2 and 4 time units after the payment. the
+response constraint looks, in this case, as follows:
+pay order(2;4)
+   isend receipt
+where 2and4represents the delay and deadline associated to the response constraint.
+3. the event calculus
+we provide an overview of the event calculus (ec), which is the formal framework
+underlying mobucon ec. in particular, we introduce the calculus, describe its main
+primitives (called the ec ontology) and then sketch the problem of monitoring ec
+speciﬁcations, relating it to deductive reasoning.
+3.1. a brief introduction to the ec
+in 1986, kowalski and sergot [kowalski and sergot 1986] proposed the ec as a gen-
+eral framework to reason about time, events and change, overcoming the inadequacy
+of time representation in classical logic. ec adopts an explicit representation of time,
+accommodating both qualitative and quantitative time constraints. furthermore, it is
+based on (a fragment of) ﬁrst-order logic, thus providing great expressiveness (such as
+variables and uniﬁcation). the three fundamental concepts are that of event , happen-
+ing at a point in time and representing the execution of some action and of properties
+whose validity varies as time ﬂows and events occur; such properties are called ﬂuents .
+an ec speciﬁcation is constituted by two theories, each containing a set of axioms:
+— a general (domain-independent) theory axiomatizing the meaning of the predicates
+supported by the calculus, i.e., the so called the ec ontology ;
+— a domain theory that exploits the predicates of the ec ontology to formalize the
+speciﬁc system under study in terms of events and their effects on ﬂuents . our
+domain theory is focused on the formalization of the declare language.
+starting from the seminal work of kowalski and sergot, a number of ec dialects have
+been proposed [sadri and kowalski 1995] and a plethora of domain-independent theo-
+ries have been developed to formalize them and provide reasoning capabilities. in this
+work, we abstract away from the domain-independent theory and limit ourselves to
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:8 m. montali et al.
+table ii. the basic event calculus ontology
+initially(f) fluent fholds in the initial state happens(e, t) eoccurs at time t
+initiates(e, f, t) event einitiates ﬂuent fat time t holds at(f, t) fholds at time t
+terminates(e, f, t) event eterminates ﬂuent fat time t
+describe the predicates provided by the ec ontology. since the majority of ec-based
+approaches rely on the horn clause fragment of ﬁrst-order logic with negation as fail-
+ure [clark 1978], we make use of prolog as the speciﬁcation language.
+3.2. the ec ontology
+shanahan [1999] intuitively characterizes the ec as “a logical mechanism that infers
+what is true when , given what happens when andwhat actions do ”. these are the three
+aspects tackled by the ec ontology, which contains the predicates shown in table ii.
+“what actions do” is the domain knowledge about actions and their effects. it is
+expressed inside the domain theory and captures how the execution of actions (i.e., the
+occurrence of events) impacts the state of ﬂuents. in the ec terminology, the capability
+of an event to make a ﬂuent true (false respectively) at some time is formalized by
+stating that the event initiates (terminates ) the ﬂuent. more speciﬁcally, when an event
+eoccurs at time t, so that initiates (e;f; t)andfdoes not already hold at time t, then
+ecauses fto hold. in this case, we say that fisdeclipped at time t. there is also
+the possibility to express that some ﬂuent holds in the initial state, using the initially
+predicate. conversely, if terminates (e; f; t )and fholds at time t, then ecauses fto not
+hold anymore, i.e., fisclipped at time t. given two timestamps t1andt2, we say that
+(t1; t2]is amaximal validity interval (mvi) for a given ﬂuent fif(t1; t2]is a maximal
+time window in which funinterruptedly holds, i.e., fis declipped at time t1and then
+uninterruptedly holds until it is clipped at time t2. note that ﬂuents still hold when
+they are clipped, but they do not hold at the time they are declipped, i.e., maximal
+validity intervals are left-open and right-closed.
+“what happens when” is the execution trace of a (possibly partial) instance of the
+system under study, where “partial” means that it can contain a preﬁx of the full trace.
+an execution trace is a set of occurred events. the basic forms of the ec assume that
+events are atomic, i.e., bound to a single time point. in particular, an execution trace
+is a set of binary, ground happens facts, listing the occurrences of events and their
+corresponding timestamps. as for timestamps, the ec adopts a time structure with a
+minimal element, usually associated to time point 0, which represents the initial state
+of the system. since event occurrences are associated to discrete timestamps, we use
+natural numbers ( n0) to represent time values. the mapping of a real timestamp to a
+corresponding number depends on the chosen time granularity (such as msecs or day).
+e.g., by choosing msecs as the time granularity, each timestamp tcould be mapped to
+the number of milliseconds between 1/1/1970 00:00 and t.
+the combination of the domain knowledge and a concrete execution trace leads to in-
+fer “what is true when”, i.e., the intervals during which ﬂuents hold. the holds at(f; t)
+predicate of the ec ontology is speciﬁcally used to test whether fholds at time t.
+3.3. ec domain theories
+an ec domain theory exploits the predicates of the ec ontology in order to formalize
+how domain-speciﬁc events affect domain-speciﬁc ﬂuents. in our setting, such theory is
+constituted by a logic program whose clauses deﬁne the initial state of the system and
+relate the occurrence of events with the initiation and termination of ﬂuents, possibly
+providing a set of conditions that should be met to effectively declip or clip them. as
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:9
+events' effects[initiates/terminates]validity of ﬂuents[holds_at]ecabductive reasoninginitial state[initially]trace[happens]
+(a)
+events' effects[initiates/terminates]ecbackward reasoninginitial state[initially]trace[happens]validity of ﬂuents[holds_at] (b)
+events' effects[initiates/terminates]ecreactive reasoninginitial state[initially]partial trace[happens]
+evolution of ﬂuents[holds_at] (c)
+fig. 3 . abductive, backward and reactive reasoning in the ec setting
+usual, variables are universally quantiﬁed with scope the entire clause. hence, the
+prolog fact initiates (e; f; t )1states that event einitiates fat every time (with the
+proviso that fis not already holding; in this case, ehas no effect). a simple yet non-
+trivial example of ec theory is provided in the following example.
+example 3.1.let us consider a system with a single payment event, used to in-
+form the system that some monetary transaction has occurred: pay(p)represents a
+transaction of peuros. we would like to infer, timepoint by timepoint, the total amount
+of exchanged euros. in the ec, we can answer this question by introducing a ﬂuent
+tot(v)to represent that the current total amount corresponds to vand by exploiting
+the following ec theory to capture how payment events affect the total amount:
+initially (tot(0)):
+terminates (pay(p); tot(ov); t):
+initiates (pay(p); tot(nv); t) holds at(tot(ov); t)^nv=ov+p:
+the ﬁrst clause models that the total amount is initially 0. the second clause states
+that when a payment event occurs, the currently computed total (old value ov) ceases
+to hold. the third one updates the total amount by initiating a new ﬂuent whose
+amount (new value nv) corresponds to the current amount ovplus the paid euros p.
+these clauses are speciﬁed using variables, instantiated when speciﬁc payment events
+occur, with ground values for the payment. using this modeling pattern, we can rep-
+resent a sort of “multi-valued” ﬂuents in the ec: the domain theory above represents
+the correlation between payment events and the current value of the totﬂuent.
+3.4. reasoning about ec theories
+two main reasoning tasks are usually exploited in the ec setting: abductive andde-
+ductive reasoning [shanahan 1999]. abductive reasoning (fig. 3(a)) starts from an ec
+domain theory plus a query representing a desired state of affairs (expressed as a con-
+junction of [:]holds atpredicates), and seeks a sample trace that respects the domain
+theory while achieving that state of affairs. conversely, deductive reasoning takes an
+external trace and combines it with an ec domain theory, inferring the validity inter-
+vals of ﬂuents. more speciﬁcally, the main purpose of deductive reasoners is to answer
+queries that ask about the validity of ﬂuents at some time point(s), expressed using
+conjunctions of [:]holds atpredicates. a special case is the one in which the user is
+interested in knowing the evolution of allﬂuents up to a certain time point, to recon-
+struct the overall past and current “global” state of the system. we denote this query as
+theglobal validity query. deductive reasoning is typically carried out in a goal-oriented
+fashion, starting from the query and reasoning backward (fig. 3(b)).
+1which corresponds to clause initiates (e; f; t ) true.
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:10 m. montali et al.
+totstartpay(50) 3pay(70) 7
+fig. 4 . the evolution of a (multi-valued) ﬂuent, as depicted by mobucon ec
+in our work, we are interested in exploiting the ec as a monitoring framework,
+which requires a reasoning paradigm able to account for a dynamic, evolving domain.
+indeed, monitoring focuses on a running execution, which cannot be described by a
+single, complete trace, but by a stream of event occurrences. moreover, there is no
+explicit query, because the purpose is to track the running execution, inferring how
+the occurring events impact on the evolution of ﬂuents. implicitly, monitoring asks for
+the evolution of all ﬂuents up to the time at which a new event is incorporated and
+processed by the monitor. therefore, monitoring calls for reactive reasoning (fig. 3(c)),
+i.e., for incrementally reasoning on the validity of ﬂuents by revising and extending
+the produced result as new event occurrences get to be known.
+one could think that reactive reasoning can be simply reduced to an iterative appli-
+cation of backward reasoning, where the query is always bound to the global validity
+query and reasoning is triggered every time a new event is received. while this ap-
+proach would in principle work, it is computationally intractable: reasoning must be
+restarted from scratch every time the trace is updated, completely forgetting the pre-
+viously calculated result. as customary in the reasoning about action literature, every
+time a new event is processed, typically only a “small” portion of the entire system’s
+state is affected, while a large extent of such state is maintained unaltered. hence,
+the lack of incremental capabilities makes backward deductive reasoning practically
+inapplicable even for small-size problems.
+chittaro and montanari [1996] studied this issue in the context of active temporal
+databases, where the dynamic acquisition of new facts changes the validity of timed
+data. in particular, they showed the inefﬁciency of deductive reasoners when dealing
+with such kinds of update and proposed an alternative reasoning paradigm, which
+caches the computed results for future use. they developed a prolog-based cached
+ec (cec), an incremental reasoner that caches the mvis of ﬂuents and revises them
+every time a new set of facts is added to the database. mobucon ec adopts the cec-
+inspired implementation described in [bragaglia et al. 2012] for monitoring ec-based
+speciﬁcations (see section 5.1).
+example 3.2.let us consider the ec theory described in ex. 3.1 and a speciﬁc
+stream of events. we use the notation restto represent the result computed for
+the global validity query for the (possibly partial) trace t. the result is expressed
+as the set of all ﬂuent mvis so far. at the beginning of the execution, cec in-
+fers that a total value of 0 has an mvi spanning from time point 0 to an unknown
+future time point ( 1if the execution remains quiescent). using notation f(t1;t2]to
+state that ﬂuent fhas an mvi starting from t1and ending in t2, we thus have:
+res;=ftot(0)(0;1]g. now suppose that a payment of 50 euros occurs at time 3. accord-
+ing to the ec theory, the current total value of 0 is clipped and a new total amount of 50
+is declipped: resfhappens (pay(50);3)g=ftot(0)(0;3]; tot(50) (3;1]g. finally, another payment
+event of 70 euros happens at time 7 and cec extends the previously computed result
+as follows: resfhappens (pay(50);3);happens (pay(70);7)g=ftot(0)(0;3]; tot(50) (3;7]; tot(120) (7;1]g.
+fig. 4 shows how mobucon ec visualizes the evolution of the multi-valued ﬂuent. for
+convenience, all the mvis related to different total values are grouped together, thus
+giving an intuitive idea of how values change over time.
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:11
+4. formalizing declare constraints in the event calculus
+in this section, we show how the ec can be used to formalize declare. as mentioned in
+section 2.3, this formalization overcomes limitations of the classical ltl-based formal-
+ization such as the metric time extension and the formalization of the activity lifecycle.
+we discuss the representation of process execution traces and then focus on declare
+constraints. the core idea of the formalization is to capture the evolution of multiple
+constraint instances , created and manipulated by the occurring events. this enables
+a ﬁne grained assessment of “how well” a running process instance is complying with
+the constraint model under study.
+4.1. process execution traces
+many systems that support the execution of multi-party interactions and activities
+provide logging capabilities. this is true, for example, for all the mainstream process-
+aware information systems [van der aalst 2011]. on the one hand, each organization
+is characterized by its own speciﬁc events, whose semantics and content depend on
+the domain and whose format is determined by the underlying information system.
+on the other hand, all systems share a set of common abstractions, including notions
+such as the ones of execution trace and event. throughout this work, we will rely on
+a small number of such abstractions, which are widespread across different domains.
+they correspond to the notions in xes2, a standard format proposed by the ieee task
+force on process mining commonly used for the representation of event logs. in par-
+ticular, a trace is constituted by events that characterize the execution of activities,
+marking, in particular, the execution steps of activity lifecycle’s instances ( activity in-
+stances for short). each event contains an event type , an event identiﬁer , the name of
+the involved activity and the timestamp at which the event has occurred. the event
+type corresponds to e(“executed”) for atomic activities. for non-atomic activities, it
+matches with one of the characteristic lifecycle event types ( sfor “start”, xfor “cance-
+lation”, cfor “completion”).
+a process execution trace can be then formalized in the ec by means of happens
+predicates. more speciﬁcally, a process execution trace tis a ﬁnite set of facts of the
+form happens (ev(id; type; a ); t), where idis an event identiﬁer, type2fe; s; x; cgis the
+event type, ais an activity name, and tis a timestamp. note that, by default, traces are
+interpreted as partial traces, i.e., as traces that could possibly be extended in the future
+with new event occurrences. however, it could also be the case that a speciﬁc execu-
+tion of the process under study eventually reaches an end, i.e., that the trace becomes
+a closed, complete trace. for this purpose, a special casecomplete atomic activity is im-
+plicitly included in each declare model and its (only) execution marks the termination
+of the process instance. we assume, in the following, that traces are well-formed. an
+ec tracetiswell-formed iftispartial (happens (ev(;; case complete );)62t) ort
+istotal , i.e., one and only one casecomplete event belongs to tandcasecomplete is
+the last event occurrence in t: all other events have a timestamp less than the one of
+casecomplete .
+4.2. formalizing the activity lifecycle
+the formalization of event occurrence and trace is not sufﬁcient to capture the execu-
+tion of instances of non-atomic activities. indeed, when an event occurs, it must obey
+to the activity lifecycle described in section 2.3. if this is not the case, a monitoring
+error must be reported and, at the same time, it must be ensured that such event
+does not affect the status of any constraint attached to the corresponding activity. in
+2http://www.xes-standard.org/
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:12 m. montali et al.
+active(id)initialcompleted(id)canceled(id)s,idc,idx,iderror(id)s,id or case_completec,id or x,ids,id or c,id or x,ids,id or c,id or x,ids,id or c,id or x,id
+fig. 5 . a simple lifecycle for non-atomic activities using a correlation identiﬁer and including an error state
+fact, we assume that only “correct” event occurrences have an impact on constraints.
+the rationale behind this choice comes from the observation that an error in the ac-
+tivity lifecycle is a critical misbehavior that is caused either by a severe design error
+or by a problem in the logging infrastructure. in both cases, the logged information is
+unreliable and it would be unfair to use it for judging compliance.
+to tackle this issue, we introduce a set of ec rules that formalize the lifecycle shown
+in fig. 5, where transitions are mapped to events and ﬂuents represent the active ,
+completed andcanceled states. an important feature of our approach is that the evolu-
+tion of an activity execution through its lifecycle state is done on a per-instance basis.
+in other words, we foresee the possibility that the same activity is executed multiple
+times in the same process instance. this requires the ability to track multiple, possibly
+parallel evolutions of the same activity lifecycle and in particular to distinguish and
+correlate those events that belong to the same lifecycle, by properly binding each can-
+celation/completion event to the corresponding previous start one. the separation of
+activity instances and the identiﬁcation of their lifecycle is important for our purposes
+because, as we will see in section 4.3, each of them could impact the prescribed con-
+straints in a different way, once quantitative temporal conditions or other data-aware
+conditions are taken into account.
+to realize such a correlation mechanism, we make use of the event identiﬁer and
+consider two events to be part of the same activity lifecycle if their activity name and
+event identiﬁer are equal. we then employ ﬂuent lstate(i(id; a); s)to model that the
+instance identiﬁed by idof activity ais currently in state s. the activity is instantiated
+every time a start event occurs, using the event identiﬁer attached to the start event
+as an identiﬁer for the activity instance. the evolution of the instance through the
+lifecycle is then tracked by following the structure described in section 4.1. an event
+occurrence advances some activity instance if it refers to that activity and contains
+the same identiﬁer. without such correlation mechanism, when two start events of the
+same activity are followed by a completion, it would not be possible to decide which of
+the two active instances has been completed.
+let us ﬁrst focus on the portion of the lifecycle dealing with the correct transitions,
+i.e., the ones that do not lead to an error state. to this purpose, we introduce and
+deﬁne three “inferred” event occurrences, which are not explicitly contained in the ex-
+ecution trace. they are used to conceptually identify the situation in which a possible
+start/completion/cancelation event correctly leads to start, complete or cancel an activ-
+ity instance. such inferred events will be used in the formalization of declare, in order
+to guarantee the aforementioned principle that only event occurrences that respect the
+activity lifecycle constraints can affect the constraints to be monitored. a further set
+of axioms is used to bind the inferred events to the corresponding state transitions.
+this means that, whenever an event is tracked, but it does not lead to generate a cor-
+responding internal inferred event, then the status of all constraints is not affected at
+all. it is worth noting that the following axioms show the ability of the ec to deﬁne
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:13
+event occurrences in terms of other event occurrences, a l `a complex event processing
+(cep) [luckham 2001; artikis and paliouras 2009].
+axiom 1(effective start ).an activity instance is effectively started by a start
+event occurrence, provided that the same event occurrence did not happen in the past
+(this case is managed by axiom 4 below):
+happens (start(id; a ); t) happens (ev(id; s; a ); t)
+^:happens (ev(id; s; a ); tp)^tp< t:
+the effective start triggers a creation of the corresponding activity instance, transferring
+the identiﬁer and placing the instance in the active state:
+initiates (start(id; a ); lstate(i(id; a ); active ); t):
+axiom 2(effective completion ).an activity instance with name aand iden-
+tiﬁer idis effectively completed at time tif a completion event matching with aand
+idoccurs at some time t, such that the activity instance is active at time t.
+happens (compl (id; a ); t) happens (exec(id; c; a ); t)
+^holds at(lstate(i(id; a ); active ); t):
+the effective completion triggers a transition to the completed state:
+terminates (compl (id; a ); lstate(i(id; a ); active ); t):
+initiates (compl (id; a ); lstate(i(id; a ); completed ); t):
+axiom 3(effective cancelation ).the effective cancelation of an activity in-
+stance mirrors the axioms used for effective completion.
+happens (cancel (id; a ); t) happens (exec(id; x; a ); t)
+^holds at(lstate(i(id; a ); active ); t):
+terminates (cancel (id; a ); lstate(i(id; a ); active ); t):
+initiates (cancel (id; a ); lstate(i(id; a ); canceled ); t):
+beside the three aforementioned states, we introduce a further set of rules used to
+identify undesired situations, which correspond to a transition to a special error state
+used for monitoring purposes. the transitions to the error state correspond to the ones
+shown in fig. 5. observe that some error conﬁgurations capture the functionality of in-
+stance identiﬁers with respect to the pair constituted by activity name and event type.
+this principle guarantees that two active instances of the same activity necessarily
+have distinct identiﬁers.
+axiom 4(error state ).any event occurrence causing an error has the effect of
+terminating the current state (provided that it is not already in an error state):
+terminates (ev; l state(i(id; a ); s); t) holds at(lstate(i(id; a ); s); t)^s6=error
+^initiates (ev; l state(i(id; a ); error ); t):
+completion and cancelation events cause an error if they occur when the corresponding
+activity instance is notactive:
+initiates (ev(id; c; a ); lstate(i(id; a ); error ); t) :holds at(lstate(i(id; a ); active ); t):
+initiates (ev(id; x; a ); lstate(i(id; a ); error ); t) :holds at(lstate(i(id; a ); active ); t):
+the start event causes an error if the corresponding activity instance has been already
+activated in the past, by means of another start event that refers to the same activity
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:14 m. montali et al.
+start1,s,foo2,s,foo2,c,foo1,x,foo3,c,foo4,s,foo1,s,foocase_completefoo
+fig. 6 . sample evolutions of four instances of activity “foo” (event timestamps are not shown)
+and is associated to the same identiﬁer:
+initiates (ev(id; s; a ); lstate(i(id; a ); error ); t) happens (ev(id; s; a ); tp)^tp< t:
+a last source of error is determined by the execution of a casecomplete event when the
+activity instance is still active, which is in fact a temporary state.
+initiates (ev(; e; case complete ); lstate(i(id; a );error ); t) 
+holds at(lstate(i(id; a ); active ); t):
+fig. 6 shows the outcome produced by applying the ec-based formalization of the ac-
+tivity lifecycle on a simple execution trace. the same activity is executed four times,
+showing three possible errors as well as a correct execution.
+4.3. business constraint instances and their states
+monitoring business constraints amounts to computing how the event occurrences that
+characterize the execution of a process instance affect the evolution of constraints
+states over time. our approach is inspired by existing approaches for runtime veri-
+ﬁcation using temporal logics and enactment of declare models. however, unlike these
+approaches we take into account the notion of non-atomic activities and of metric time.
+on the one hand, bauer et al. [2007] introduced a framework for the runtime veriﬁca-
+tion of linear temporal logic formulae, where formulae are associated to one among
+four distinct states: (i) permanent satisfaction (the process instance is compliant with
+the formula); (ii) temporary satisfaction (the process instance is currently compliant
+with the formula, but it is still possible to violate it in the future); (iii) permanent vi-
+olation (the process instance is not - and will not be - compliant with the formula);
+(iv) temporary violation (the process instance is currently violating the formula, but
+it is still possible to comply with it in the future). on the other hand, pesic et al.
+[2007] introduced an enactment environment for declare, with a similar approach to
+the one of [bauer et al. 2007]. in this environment, at each time every constraint is
+associated to one among three states: two correspond to permanent and temporary
+violation, while the third ( fulﬁllment ), is used to represent temporary or permanent
+satisfaction, attesting that the current trace is compliant with the constraint.
+we start from this latter approach, using the term pending to denote a constraint
+that is temporarily violated. the rationale behind this choice is that a temporarily vi-
+olated constraint expects the execution of a speciﬁc activity to become satisﬁed. how-
+ever, a major difference between mobucon ec and the two aforementioned approach
+relies in the differentiation between constraints and their instances. while in [bauer
+et al. 2007; pesic et al. 2007] the described states are used to track the evolution of
+constraints over time, in mobucon ec each constraint can be associated to multiple
+instances , each of which follows an independent evolution. as the following examples
+highlight, some constraints are active from the beginning of the execution and follow
+a unique evolution as events occur, while other constraints are characterized by mul-
+tiple, parallel and independent instances.
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:15
+example 4.1.let us consider a generic existence constraint stating that activity a
+must be executed at least ntimes. it is initially in a pending state, waiting for nexecu-
+tions of activity a. when the n-th execution of aoccurs, it becomes satisﬁed . conversely,
+if the case reaches an end and the constraint is still pending, it becomes violated .
+example 4.2.let us consider a metric response constraint, with aandbsource and
+target activity respectively and associated to delay mand deadline n. the constraint
+is triggered every time activity ais completed, expecting the start of a consequent b
+occurring inside the desired time interval [m; n]. such a time interval is grounded on
+the basis of the time at which aoccurred. to capture this behavior, every execution
+ofastarts a new, separate constraint instance. each instance is placed in a pending
+state, waiting for the occurrence of binside the time interval obtained by combining the
+time at which aoccurred and the constraint’s time window. in particular, an instance
+created at time tbecomes satisﬁed if bis executed inside [t+m; t+n]or violated if the
+actual deadline t+nexpires and the instance is still pending.
+the two examples intuitively introduce the notion of constraint instance , with exis-
+tence being a single-instance constraint and response being a multiple-instance one.
+in ex. 4.2, this is due to the presence of metric time constraints, which require to rec-
+ognize the difference even between multiple occurrences of the same activity, because
+of the difference between their timestamps. more generally, the notion of constraint
+instance resembles the one of activity instance: as different executions of the same
+activity inside a business process determine separate instances of that activity, each
+one grounded in a speciﬁc context (data, timestamp, . . . ), so it can trigger multiple
+instances of the same constraint.
+summarizing, each constraint instance represents the application of the constraint
+in a particular context. since we limit our analysis to activities and temporal aspects,
+the contextual information for event occurrences and constraint instances is composed
+of the name of the executed activity and its timestamp. technically, we associate a
+global unique identiﬁer to each modeled constraint and use term i(id; a; t )to denote
+the instance of constraint identiﬁed by idthat has been created by the execution of
+activity aat time t. we use the arbitrary constant start as a placeholder for the activity
+identiﬁer for those instances that are active from the beginning of execution, such
+as the case of ex. 4.1. the approach can be seamlessly generalized by adding to the
+context the other relevant pieces of information (resource, data, . . . ). according to the
+discussion above, at each time point, every constraint instance can be in one among
+the following states:
+—pending (pend for short), a transient state representing the fact that the constraint
+is waiting for the occurrence of one event (possibly, one among many events) and is
+hence temporarily violated;
+—satisﬁed (satfor short), a transient or permanent state indicating that the current
+execution trace is compliant with the constraint;
+—violated (violfor short) is a permanent state attesting that the instance has been
+violated by the execution trace.
+to represent these states, we rely on a (multi-valued) ﬂuent state(i; s), where iis the
+constraint instance and sthe current state of i, with s2fpend; sat; violg. for example,
+state(i(id; a; t ); pend )represents the fact that instance i(id; a; t )is currently pending .
+4.4. constraints formalization
+we now describe the axiomatization of constraints semantics as an ec theory. since
+the semantics focuses on the creation and state transitions of constraints’ instances in
+response to event occurrences, we ﬁrst deﬁne a set of supporting predicates for state
+manipulation. the ﬁrst two rules deal with the creation of an instance, placing it in
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:16 m. montali et al.
+the speciﬁed state, either at the beginning of the execution or when some event occurs:
+initially (state(i; s)) initstate(i; s):
+initiates (ev; state (i; s); t) creation (ev; t; i; s ):
+thecurstate predicate is deﬁned to test the current state of an instance:
+curstate(i; s; t ) holds at(state(i; s); t):
+a group of two rules is used to capture state transitions. a transition from state s1to
+state s2is executable only if the instance is currently in state s1, and it is applied by
+terminating the ﬂuent associated to s1and initiating the one bound to s2.
+terminates (ev; state (i; s1); t) trans (ev; t; i; s 1; s2)^curstate(i; s1; t):
+initiates (ev; state (i; s2); t) trans (ev; t; i; s 1; s2)^curstate(i; s1; t):
+let us now describe how the machinery discussed so far can be used to formalize some
+key declare constraints. the axiomatization of complex declare models can be found
+in the benchmark ﬁles (see section 5.3). each constraint is formalized by means of a
+set of ec axioms. two constraints of the same kind share the “form” of such axioms,
+customized with its speciﬁc activities and parameters. the formalization of an entire
+declare model consists of the union of axioms used to formalize each one of its con-
+straints. in the following, we assume that the activities involved in the constraints are
+non-atomic and we make use of the inferred lifecycle events formalized in section 4.2
+to make sure that the state of constraints is affected only by those events that ﬁt into
+the activity lifecycle constraints. the same formalization can be applied to atomic ac-
+tivities as well, by just considering their single event type.
+4.4.1. existence. let us consider an existence constraint of the form
+an..*
+identiﬁed by idand stating that activity amust be completed at least ntimes. follow-
+ing ex. 4.1, it can be formalized by means of three axioms, respectively managing the
+creation, fulﬁllment and violation of the unique instance associated to the constraint.
+axiom 5(existence creation ).each existence constraint is associated to a sin-
+gle instance, created and put in the pending state when the case is started:
+initstate(i(id; start; 0); pend ):
+axiom 6(existence fulfillment ).a pending existence constraint instance be-
+comes satisﬁed when the n-th execution of the involved event type (in our case the com-
+pletion of a) occurs:
+trans (compl (; a); t; i(id; start; 0); pend; sat ) hap(compl (; a); n; t ):
+where hap(ev; n; t )tests whether evoccurred ntimes before or at tand it is obviously
+called by abstracting away from the speciﬁc event identiﬁer3:
+hap(ev; n; t ) findall (;(happens (ev; t p); tpt); l)^length (l; n):
+a violation of the existence constraint is detected when it is pending and a
+casecomplete event is received. this attests that the case has reached an end and,
+3the prolog predicate ndall (objects; goal; list )produces the list of all objects that satisfy goal , while
+length (l; n )is true if nis the length of list l.
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:17
+consequently, that no further event will occur to move the instance from the pending
+to the satisﬁed state. this observation does not only hold for the existence constraint,
+but it captures the inherent semantics of the pending state and is therefore applied
+toanyconstraint instance in the pending state, independently from the constraint it
+belongs to. indeed, a constraint instance is pending if it is waiting for the occurrence of
+some event and such an expectation cannot be fulﬁlled anymore if the case is complete.
+axiom 7(semantics of pending ).when the case reaches an end, all pending
+instances are declared as violated: trans (ev(; e; case complete ); t; i(;;); pend; viol ):
+4.4.2. absence. let us now consider an absence constraint, identiﬁed by idand mod-
+eling that activity acannot be canceled ntimes (i.e., it can be canceled at most n 1
+times). like existence constraints, each absence is associated to a single instance. the
+instance is initially put in the satisﬁed state and it persists in that state unless the
+target activity is executed ntimes, leading to its violation.
+axiom 8(absence creation ).each absence constraint is associated to a unique
+instance, created and put in the satisﬁed state when the case is started:
+initstate(i(id; start; 0); sat):
+axiom 9(absence violation ).the active absence constraint instance becomes
+violated when the n-th occurrence of the forbidden event (in our case, the cancelation of
+activity a) is received:
+trans (canc(; a); t; i(id; start; 0); sat; viol ) hap(canc(; a); n; t ):
+it is worth noting that absence constraint instances are never pending. in fact, they do
+not place any (positive) expectation concerning the occurrence of some event.
+4.4.3. metric response. we consider the following “prototypical” response constraint
+s1s2sk...t1t2tl...[m,n]
+it includes branches (i.e., the presence of multiple sources and targets) and quantita-
+tive time constraints. we use again idto identify the constraint. the meaning of the
+constraint is: whenever one of the source activities is completed at some time t, one
+of the target activities must be started between mandntime units after t. to deal
+with branching response constraints, we make use of the member predicate4: instead
+of directly checking if an activity is the source or target of a response constraint, we
+test if it belongs to the set of sources [s1; : : : ; s k]or targets [t1; : : : ; t l].
+axiom 10(response creation ).a new instance of the response constraint is cre-
+ated every time some activity ais completed and ais one of the sources. the instance is
+put in the pending state, waiting for a future suitable execution of a target activity.
+creation (compl (; a); t; i(id; a; t ); pend ) member (a;[s1; : : : ; s k]):
+a pending instance becomes satisﬁed if a target activity is executed afterwards, within
+the time boundaries associated to the instance. we use the curstate predicate to ob-
+tain the actual timestamp value contained in the instance context (which corresponds
+to the time at which the instance was created). such reference point is then suitably
+4member (el; l )is true if list lcontains el.
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:18 m. montali et al.
+combined with the constraint’s delay mand deadline n, determining the time win-
+dow inside which the target event (in our case, the starting event of one of the target
+activities) is expected to occur.
+axiom 11(response fulfillment ).a pending response instance becomes sat-
+isﬁed when one of its target activities is started, at a time that falls within the actual,
+expected time window.
+trans (start(; b); t; i(id; a; t i); pend;sat ) curstate(i(id; a; t i); pend; t )
+^member (b;[t1; : : : ; t l])^inside future (ti; m; n; t ):
+where inside future (ref; v 1; v2; t)is used to test whether tis contained in the time
+window ranging from ref+v1toref+v2:
+inside future (ref; v 1; v2; t) t1isref+v1^t2isref+v2^tt1^tt2:
+when mis not speciﬁed (no delay), we consider it to be 0, while when nis not speciﬁed
+(no deadline), we consider it to be virtually 1. this speciﬁc case can be seamlessly
+treated by interpreting 1as a special constant “inf”, providing alternative deﬁnitions
+for the inside future predicate.
+the last two axioms deal with the violation of a response instance. two possible
+undesired situations may arise: either the instance is pending and the case reaches
+an end (this behavior is already captured by axiom 7) or the instance is pending but
+its actual associated deadline is expired. both cases identify a state of affairs where
+no possible future evolution exists, such that the pending instance will be eventually
+satisﬁed. the deadline expiration case must be managed only when the constraint is
+associated to an actual value for the deadline. in particular, this situation is handled
+with a best effort approach: since the ec has no intrinsic notion of the ﬂow of time, but
+“extracts” the current time from the occurring events, a deadline expiration is detected
+at the ﬁrst following time at which some event occurs.
+axiom 12(response violation due to deadline expiration ).a response
+instance becomes violated if it is still pending after the maximum time at which a target
+activity is expected to be executed.
+trans (; t; i(id; a; t i); pend; viol ) curstate(i(id; a; t i); pend; t )^after future (ti; n; t ):
+where after future (ref; v; t )checks whether the deadline of vtime units after refis
+expired at time t, also dealing with the special case in which vcorresponds to1:
+after future (ref; v; t ) v6=inf^tdisref+v^t > t d:
+4.4.4. metric chain response. let us consider the same prototypical constraint used
+in section 4.4.3, but now employing a chain response instead of a simple response.
+this constraint can be formalized as an extension of the response constraint. more
+speciﬁcally, all the axioms discussed in section 4.4.3 are maintained and an additional
+axiom is introduced. this axiom poses the additional requirement that the target ac-
+tivity must be executed next to the source one, i.e., between the execution of the source
+and the target all other events are forbidden.
+axiom 13(chain response violation due to intermediate event ). a
+pending instance of chain response becomes violated if an event related to a non-target
+activity occurs.
+trans (start(; x); t; i(id; a; t i); pend; viol ) :member (x;[t1; : : : ; t l]):
+trans (compl (; x); t; i(id; a; t i); pend; viol ) :member (x;[t1; : : : ; t l]):
+trans (cancel (; x); t; i(id; a; t i); pend; viol ) :member (x;[t1; : : : ; t l]):
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:19
+5. implementation and evaluation
+our monitoring approach has been implemented and evaluated in two ways: (1) us-
+ing a real-life case study to illustrate its usefulness and (2) a set of experiments that
+use synthetic data to evaluate its performance. along the ﬁrst line, we describe how
+mobucon ec has been fruitfully applied in the domain of maritime safety and security.
+in particular, the case study deals with monitoring a vessel in a speciﬁc area using
+a sensor network, which detects and shares events characterizing a “change of state”
+in the vessel’s behavior. it shows that mobucon ec can successfully target a variety
+of systems beyond classical workﬂow and process-aware management systems. after
+showing the usefulness of our approach, we shift attention to various experiments
+that have been carried out to study the reaction time of the reasoner as the number of
+events grows and the number of constraints to be monitored increases.
+5.1. implementation
+the current implementation of mobucon ec is composed of four modules:
+(1)ec module , the core reasoner of the tool, containing a light-weight axiomatization
+of cec (see section 3.4) written in standard prolog [bragaglia et al. 2012].
+(2)formalization module , which translates a declare model into an ec theory.
+(3)information exchange module , which delivers events to the reasoner and receives
+the newly computed result.
+(4)feedback module , which provides an intuitive feedback to the user, showing the
+evolution of each constraint instance.
+the reasoning module of mobucon ec is written in standard prolog, hence virtually
+any prolog engine can be used to perform the computations. we experimented with two
+alternative solutions. the ﬁrst relies on tuprolog (tuprolog.alice.unibo.it) and its main
+advantage is that, being developed completely in java, it can be seamlessly integrated
+inside java software, such as prom; the main drawback is that its performance can-
+not still compete with mainstream prolog systems. the other solution relies on yap
+(yap.sourceforge.net), one of the highest-performance state of the art prolog engines.
+unlike tuprolog, yap cannot be directly invoked from java code, but requires an
+intermediate bridge (such as interprolog5).
+hence, mobucon ec can come in different ﬂavors, from the pure reasoner (just a
+prolog theory consisting of cec, the formalization of constraints and a set of facts de-
+scribing the execution trace to be analyzed) to a full prototype equipped with a user
+interface and integrated inside the version 6.1 of the well-known prom process mining
+framework [verbeek et al. 2010].6prom 6.1 natively provides an operational support
+(os) service, which accommodates techniques for runtime process monitoring, recom-
+mendations and predictions. as sketched in fig. 7, the os service takes care of receiv-
+ing tcp/ip streams of event occurrences from an external system. each request from
+the external system must come with a process and a case identiﬁer. in this way, the os
+support can handle multiple running cases at the same time, correlating each incoming
+event to the corresponding stream. each os provider encapsulates the business logic
+of a speciﬁc os functionality, while the os service mediates the interaction between
+providers and the external system. mobucon ec exploits this infrastructure and is im-
+plemented as a monitoring os provider. each instance of mobucon ec is associated to
+a declare model, which can be loaded from the xml ﬁle produced by the declare editor
+[pesic et al. 2007].7in order to facilitate testing and exploitation of mobucon ec, two
+5http://www.declarativa.com/interprolog/
+6a stand-alone tester can be found at http://www.inf.unibz.it/ montali/tools.html
+7http://www.win.tue.nl/declare/
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:20 m. montali et al.
+promosservice
+provider
+event logbusiness constraintsprocessmodelsprovider
+provider
+responserequesttcp/ipos clientpais
+fig. 7 . operational support in prom 6
+client prototypes have been developed, one accepting the realtime acquisition of events
+and the other loading traces from event logs.
+5.2. case study: monitoring the behavior of a vessel
+our case study has been conducted in the context of poseidon [maggi et al. 2012], a
+project partially supported by the dutch ministry of economic affairs under the bsik
+program. in poseidon, we have closely collaborated with practitioners from the sector
+of maritime safety and security.
+the case study is about monitoring the behavior of vessels as they move inside a cer-
+tain maritime area. each vessel has an on-board ais (automatic identiﬁcation system
+[international telecommunications union 2001]) transponder that uses several mes-
+sage types and reporting frequencies to broadcast information about the vessel. an
+ais receiver collects these broadcasted ais messages and produces a tcp/ip stream of
+messages. these messages contain information such as the maritime vessel identiﬁer
+(mmsi ), the navigational status of the vessel and its ship type. this is the information
+that can be used to monitor the behavior of the vessel. in particular, when monitoring
+a vessel using the broadcasted stream of ais messages, events correspond to changes
+in the navigational status of the vessel: moored ,under way using engine ,aground ,at
+anchor ,not under command ,constrained by her draught ,restricted maneuverability ,
+etc. every change in the navigational status is associated to a single timestamp, thus
+we represent the transition into some navigational status as an atomic activity.
+each vessel is monitored separately from the others, hence, a case is constituted
+by the sequence of events that refer to the same mmsi number. vessels are expected
+to behave differently on the basis of their ship type, i.e., for each ship type, only se-
+quences conforming to speciﬁc constraints are allowed. some constraints also involve
+metric time constraints that the event stream must satisfy, e.g., when a change in the
+vessel’s navigational status is expected to occur within a given interval of time. these
+constraints are loosely-structured and only limit the behavior of the vessels without
+explicitly describing how they should operate. therefore, the compliant behaviors can
+be successfully represented using declare. more speciﬁcally, the ﬁrst step of our ex-
+perimentation has been the construction of a declare model representing the observed
+behavior of every possible ship type, such as passenger orcargo ship . these models can
+be extracted using process discovery techniques as presented in [maggi et al. 2012]. in
+particular, we have enriched the declare models presented in [maggi et al. 2012] with
+quantitative time constraints that have been empirically assessed by analyzing the
+behavior of the monitored vessels under ideal conditions. in general, our approach
+can be applied to monitor the behavior of a system (in this case a vessel) evaluating
+the overall system health on the basis of the number of anomalies detected. for this
+experimentation, the stream of ais messages has been recorded in an event log. ex-
+periments have been carried out by loading an excerpt of the log (corresponding to a
+period of one week) in mobucon ec, using a time granularity of seconds.
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:21
+not under commandaground001..*1..*[3600,10800][32400,39600]mooredunder way using engine
+fig. 8 . expected behavior for vessel type passenger ship. time granularity: seconds
+5.2.1. passenger ships. the expected behavior of a passenger ship is tackled by the de-
+clare model shown in fig. 8. events aground andnot under command must never oc-
+cur. moreover, the vessel’s behavior must show a regular alternation of events moored
+andunder way using engine (modeled with chain response constraints in the model).
+the monitored passenger ships are required to go back and forth between two re-
+sorts. together with domain experts, we have estimated that each journey must take
+more than 9 hours (32400 secs.) and less than 11 hours (39600 secs.). hence, con-
+straint chain response([under way using engine], [moored]) is bound to this time win-
+dow. moreover, for constraint chain response([moored], [under way using engine]) we
+specify a delay of 1 hour (3600 secs.) and a deadline of 3 hours (10800 secs.) considering
+the time that each ship must spend in a harbor (for refueling, restocking etc.).
+fig. 9 shows the results for the monitoring of a speciﬁc case (i.e., of a speciﬁc ves-
+sel) with respect to the declare model in fig. 8. the interface groups together all the
+instances referring to the same constraint, under the name of the constraint itself.
+the evolution of each constraint can be visualized in a summarized version, highlight-
+ing the number of instances and giving a combined ﬂavor of their contributions or in
+a detailed way, which separately shows the evolution of each instance. the instance
+related to constraint absence([not under command], 1) and the instance related to con-
+straint absence([aground], 1) are always satisﬁed because in the stream of messages,
+events not under command and aground never occur. the instance related to con-
+straint existence([under way using engine], 1) is initially pending (because it is waiting
+for the occurrence of at least one event under way using engine ). when at 06-01-2007
+02:00:02 under way using engine occurs, this instance becomes satisﬁed. constraint
+existence([moored], 1) has a similar behavior.
+fig. 9 also shows the thirteen instances related to constraint chain response([under
+way using engine], [moored]) (delay: 9 hours, deadline: 11 hours). every instance cor-
+responds to a different occurrence of event under way using engine . note that, in this
+speciﬁc case, each instance of the constraint corresponds to a period of time spent by
+the considered vessel under way using engine, i.e., for a different journey. the con-
+straint speciﬁes that when under way using engine occurs, it must be immediately
+followed by moored . this is always the case except for the last occurrence of under way
+using engine where the instance remains pending (instance 13). this is due to the fact
+that the considered data, being extracted from a larger event log, is not still complete.
+however, also when under way using engine is directly followed by moored , it may be
+still too early or too late. in fact, only in instances 2, 3, 4, 5, 8, 10 and 11 event under
+way using engine is followed by moored complying with the deﬁned temporal speciﬁ-
+cations. in contrast, in instance 1, event moored occurs after less than 9 hours (after
+7 hours and 55 minutes). in instances 6, 7, 9 and 12 event moored occurs after more
+than 11 hours (after 11 hours and 6 minutes, after 11 hours and 8 minutes, after 11
+hours and 25 minutes and after 11 hours and 33 minutes respectively). similar pat-
+terns can be found for constraint chain response([moored], [under way using engine])
+(delay: 1 hour, deadline: 3 hours). in this case, every instance corresponds to a different
+occurrence of moored , i.e., to a period of time spent by the vessel in a harbor.
+the top of fig. 9 shows the evolution of a metric measuring the overall system health
+over time. this metric provides a global indication about “how much” the running
+case is complying with the declare model. different metrics can be easily plugged into
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:22 m. montali et al.
+fig. 9 . monitoring of a passenger ship
+mobucon ec. the basic information needed by the metrics, namely the number of vio-
+lated, pending and satisﬁed constraint instances, can be easily obtained from the rea-
+soner. e.g., the number vof violated instances at time tcan be obtained by issuing the
+query findall (; cur state(; viol; t ); l)^length (l; v). by binding tto a speciﬁc value
+t, the query returns the number of instances violated at time t, whereas by leaving t
+variable, it returns the total number of violated instances so far.
+the study of effective compliance metrics is outside from the scope of this paper.
+sophisticated metrics can be designed, e.g., exploiting metric times or giving different
+weights to the declare constraints. here, we use a simple but signiﬁcant metric, which
+computes the system health by considering the number of violated ( #viol) and satisﬁed
+(#sat) instances while ignoring the pending ones (being not yet clear whether they will
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:23
+not under command001..*[0,172800]constrainted by her draughtunder way using engine0restrictedmanoeuvrability1..*moored1..*at anchor[0,25200][0,86400]
+fig. 10 . expected behavior for vessel type cargo ship having a cargo of type “hazard pollutant a”
+be violated or satisﬁed). in particular, at some time tthe system health corresponds to
+1when #viol(t) + # sat(t) = 0 and to 1 #viol(t)
+#viol(t)+#sat(t)otherwise. as can be seen, in
+this case the system health is quite homogeneous and slightly varies around 0.86.
+5.2.2. cargo ships. the normative behavior for the ship type cargo ship is represented
+by the declare model in fig. 10. in the remainder, we refer to this as simply a cargo
+ship (although there are multiple cargo types). events constrained by her draught ,
+restricted maneuverability andnot under command must never occur. moreover, event
+at anchor must be followed by under way using engine . a cargo ship can anchor for
+at most 7 hours, therefore we specify a deadline of 25200 secs. for constraint chain
+response([at anchor], [under way using engine]) . event moored must also be followed
+byunder way using engine and considering that a cargo ship cannot be moored in a
+harbor more than 24 hours, we specify a deadline of 86400 secs. for constraint chain
+response([moored], [under way using engine]) . finally, event under way using engine
+can be followed by at anchor ormoored . we express this behavior by using a branched
+chain response constraint. we have also estimated that each journey of a cargo can
+take up to 2 days. therefore, we specify a deadline of 172800 secs. for constraint chain
+response([under way using engine], [moored, at anchor]) .
+fig. 11 shows the monitoring of message streams received from two cargo ships.
+5.3. benchmark and performance assessment
+for the practical application of our approach, the performance of mobucon ec is of the
+utmost importance: unlike classical process mining approaches, monitoring requires
+short-term feedback every time the current state of affairs evolves and new event oc-
+currences are acquired. since we are interested in evaluating the performance of our
+ec-based approach, we focus on the core monitoring task, that is, on the reasoning
+engine per s `e, without considering the interaction among components inside prom nor
+the time spent for visualization. this is why we chose yap to carry out our evaluation.
+for the evaluation, we have set up a generator of declare models8. it requires a set of
+conﬁguration parameters that target the size and structure of the model: given
+— a setaof activity names,
+— a ﬂag selecting atomic vs non-atomic activities,
+— the length lof the trace to be monitored,
+— the number nof constraints to be included in the model,
+— the minimum/maximum cardinality cassociated to existence constraints,
+— the maximum branching factor bof relation/negation constraints,
+— the minimum delay dand maximum deadline dfor timed constraints,
+the generator produces a self-contained prolog test theory containing the axiomatiza-
+tion of cec and of activity lifecycle constraints, a randomly generated trace of levent
+occurrences of the atomic activities in a(or their ports, in the non-atomic case) and the
+ec-based formalization of nrandomly generated constraints attached to activities in
+a, tuned according to the parameters b,dandd. we used this generator to produce
+8the generator code and the benchmarks are available at http://www.inf.unibz.it/ montali/tools.html
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:24 m. montali et al.
+(a)
+ (b)
+fig. 11 . monitoring two cargo ships: the health of ship (a) drops to 0.77; the one of (b) varies from 0.83 to 1
+two benchmarks, one for atomic and one for non-atomic activities. the ﬁrst bench-
+mark contains 1000 tests dealing with declare models with atomic activities, tuned
+withjaj= 10,l= 1000 ,c= 5,b= 3,d= 0andd= 50. these values were artiﬁcially
+tuned to reﬂect reasonable models and to focus our evaluation on the most critical pa-
+rameters, namely the number of constraints and the length of the trace. it is worth not-
+ing that our approach is insensitive to some parameters. for example, the values for d
+anddonly contribute to determine the average number of violated/satisﬁed instances
+of timed relation constraints, but the corresponding checks do not depend on the actual
+values (since they are tested using prolog arithmetic built-in functionalities). a simi-
+lar observation holds for the number of activities as well, since their names are strings
+tested for uniﬁcation in the prolog clauses. the benchmark contains 10 groups of tests
+by increasing the number of constraints in the model (with n= 10;20; : : : ; 100). each
+group contains 100 tests obtained by combining 10 randomly generated traces with 10
+randomly generated models. tests are run by simulating the incremental acquisition
+of the event occurrences contained in the trace (ordered according to their timestamps)
+and measuring the latency time required by the reasoner to produce the updated mon-
+itoring result after each event. the obtained average results are reported in fig. 12.
+they attest the scalability of mobucon ec and its feasibility in dealing with models of
+real-life size. in fact, the 1000-th event is processed in less than 100 msecs for models
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:25
+0"50"100"150"200"250"300"
+0"50"100"150"200"250"300"350"400"450"500"550"600"650"700"750"800"850"900"950"reac%on(%me((ms)(processed(events((#)(102030405060708090100
+#"constraints1000
+fig. 12 . performance of mobucon ec using a set of randomly generated benchmarks with atomic activities
+0"50"100"150"200"250"300"350"400"450"500"550"
+0"100"200"300"400"500"600"700"800"900"reac%on(time((ms)(processed(events((#)(0"50"100"150"200"250"300"350"400"450"500"550"
+0"100"200"300"400"500"600"700"800"900"reac%on(time((ms)(processed(events((#)(1050#"constraints10010001000processed"events"(#)
+fig. 13 . performance of mobucon ec using a set of randomly generated benchmarks with non-atomic ac-
+tivities (for readability, on the right we report only three sets of tests out of the ten shown on the left)
+containing up to 50 constraints and for large models with 100 constraints, still less
+than 300 msecs are required to update the monitoring result.
+the second benchmark consists of 250 tests, generated in the same way (and with
+the same parameters) as for the ﬁrst benchmark, but with non-atomic activities. these
+tests were organized in groups of 25, where each group contained from 10to100
+constraints. under the non-atomic activities assumption, the generator produces con-
+straints that are randomly attached to one of the three ports associated to the selected
+activity. an important issue is, in this case, to generate “reasonable” traces, i.e., traces
+for which events can occur out-of-order (violating the lifecycle constraints), but where
+the majority of activities are executed properly. we solved this problem by bookkeeping
+the pair activity name and id attached to each start event, then randomly extracting
+such pairs so as to generate a consequent cancel/complete event. the average results
+for each group of tests are reported in fig. 13. the ﬂuctuation of the plotted values is
+due to the fact that the processing time is much less for those events that only trig-
+ger the evolution of a corresponding activity lifecycle, without affecting the status of
+constraints. the average processing time for a model containing up to 50 constraints
+does not exceed 170 msecs for any event in the trace, while, for a large model with 100
+constraints, it reaches a maximum peak of 550 msecs.
+6. related work
+the problem of runtime veriﬁcation and monitoring is omnipresent and has been in-
+vestigated in different research communities. similar problems have been studied in
+a variety of application domains ranging from runtime checking of software execution
+and hardware systems to self-adaptive and service-oriented applications. due to this
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:26 m. montali et al.
+diversity, comparing the existing approaches is difﬁcult. in fact, each of them is suit-
+able for speciﬁc application scenarios. for this reason, we will focus our discussion on
+the description of the characteristics of the existing techniques and on their conceptual
+differences with respect to the approach presented in this paper.
+spanoudakis and mahbub [2006] present a framework for monitoring the compli-
+ance of a bpel-based service compositions with assumptions expressed by the user
+or with behavioral properties that are automatically extracted from the composition.
+the ec is exploited to monitor the actual behavior of interacting services and to re-
+port different kinds of violations. farrell et al. [2005] focus on the application of the
+ec to track the normative state of contracts. they formalize the deontic notions of
+obligation, power and permission, propose an xml-based dialect of the ec to model
+contractual statements and dynamically reason upon contract events reporting viola-
+tions and diagnostics about the reached state of affairs. these proposals exploit ad-
+hoc event processing algorithms to manipulate events and ﬂuents, written in java.
+hence, differently from mobucon ec they do not have an underlying formal basis and
+they cannot take advantage of the expressiveness and computational power of logic
+programming, such as uniﬁcation and backtracking.
+as described in section 5.1, mobucon ec is based on logic programming and ex-
+ploits a lightweight axiomatization of the cec by chittaro and montanari [1996]. an
+alternative reactive but purely declarative axiomatization of the ec has been pro-
+posed in [chesani et al. 2010], exploiting an abductive logic programming-based proof
+procedure for runtime compliance checking. a comparison of these two approaches, to-
+gether with a performance evaluation showing that the axiomatization used by mobu-
+con ec outperforms the original axiomatization of cec, is contained in [bragaglia
+et al. 2012]. the application of our ec-based approach for monitoring service chore-
+ographies [chesani et al. 2009] constitutes a preliminary investigation of the ec-based
+axiomatization of declare proposed in this work. here, we have extended it with the
+notion of constraint instances and their states, providing a more systematic support
+for quantitative time constraints and system health evaluation.
+a plethora of authors have investigated the use of temporal logics – linear tempo-
+ral logic (ltl) in particular – as a declarative language for specifying properties to
+be veriﬁed at runtime9. ltl semantics for ﬁnite traces needs to be adapted to reﬂect
+that reasoning cannot always provide a deﬁnitive answer, but must be open to the
+acquisition of new events and to handle partial, ﬁnite traces. consequently, also the
+veriﬁcation techniques must be revised. for example, giannakopoulou and havelund
+[2001] present an approach to ltl runtime checking, where the standard ltl to b ¨uchi
+automata conversion technique is modiﬁed to deal with ﬁnite traces. the algorithm
+produces a ﬁnite state automaton that is then used as observer of the system’s be-
+havior. bauer et al. [2011] introduce a three-valued semantics (with truth values true,
+false and inconclusive ) for ltl or timed ltl properties on ﬁnite traces. these truth
+values strictly resemble the satisﬁed ,violated andpending values adopted by mobucon
+ec to characterize the state of constraint instances.
+when compared with these approaches, mobucon ec supports quantitative time
+constraints, non-atomic activities with identiﬁer-based correlation and can be ex-
+tended with data-aware conditions. furthermore, techniques based on ﬁnite-trace ltl
+usually associate the notion of violation to the one of logical inconsistency and are
+therefore not suitable for continuous support. an exception to this is [maggi et al.
+2011], where the automaton constructed for monitoring carries speciﬁc information
+that can be used to realize different recovery strategies for continuous support. an ad-
+vantage of techniques relying on automata is their efﬁciency: their most expensive step
+9see http://runtime-veriﬁcation.org/
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:27
+is the automaton construction, which is done before the execution and can be greatly
+optimized [westergaard 2011]. furthermore, they are not only able to check whether
+the current trace is compliant with the given ltl speciﬁcation, but also to identify
+whether unavoidable violations will occur in the future. when it comes to declare, this
+ability is exploited to identify whether the interplay of two or more constraints will
+surely lead to a future violation [maggi et al. 2012]. our ec-based approach is not
+able to foresee these violations: it treats each constraint separately from the others.
+as described in section 4.1, we assume that the monitored execution traces contain
+event identiﬁers that can be used for correlation, to detect multiple executions of the
+same activity. as we have seen, this is of utmost importance for the proper assessment
+of compliance and the consequent computation of overall “system health” metrics. in
+[pauw et al. 2005], correlation mechanisms are used to realize an intuitive and com-
+prehensive visualization framework for analyzing web service executions. such mech-
+anisms are not only used to provide ﬁne-grained information about each web service
+transaction separately, but also to identify “chatty” communications, where repetitions
+of the same web service invocations are detected to show potential bottlenecks and sug-
+gest potential design improvements. however, as pointed out in [dustdar and gombotz
+2006], there are cases in which process/activity instances are not directly present in
+the event logs of the system. for example, correlation identiﬁers are not present in
+standard web service logging facilities. how to tune the logging infrastructure and
+obtain the necessary correlation information is outside from the scope of this work.
+however, mobucon ec can beneﬁt of all approaches that aim to achieve correlation in
+settings where it is not directly provided. in the web service setting, correlation can be
+obtained by tuning the system so as to account for the needed “process information”
+[dustdar and gombotz 2006], e.g., by means of ws-addressing or the strategies in
+[nezhad et al. 2011]. although [nezhad et al. 2011] focuses on process instance-based
+correlation, i.e., on the isolation of all event occurrences that refer to the same process
+instance, we believe that a similar approach can be adopted also for activity instances.
+7. discussion and conclusion
+we have presented mobucon ec, a non-intrusive framework for monitoring systems
+whose dynamics is characterized by means of event streams. the framework is based
+on a business constraint language that extends declare with metric temporal condi-
+tions and non-atomic, durative activities. the event calculus (ec) is used to formalize
+the constraints to be monitored. one of the key advantages of logic-based approaches is
+the separation between declarative knowledge ( what is the problem about) and control
+aspects ( how to solve it). by exploiting mobucon ec, declare constraints can be for-
+malized without specifying how to concretely monitor them. furthermore, as long as
+the ec ontology does not change, different ec reasoners can be seamlessly applied to
+deal with alternative forms of reasoning, without affecting the proposed formalization.
+it is interesting to note the relation between runtime veriﬁcation and ﬁniteness of
+traces. at each time point, a running execution is characterized by a ﬁnite trace. how-
+ever, it is an evolving trace, extended each time another event is observed. this process
+could potentially continue forever. from the modeling point of view, this means that
+the declare diagrams could contain cyclic relationships, accounting for expected situa-
+tions that must be repeatedly achieved. this is illustrated by the passenger and cargo
+ship models shown in figs. 8 and 10. no ﬁnite trace will fully comply with them: at
+least one of their chain response constraints would be pending (if the trace is partial) or
+violated (if the trace is complete). this has no impact on reasoning, which is triggered
+by the occurrence of new events, checking the partial ﬁnite trace stored so far.
+currently, we are extending our approach in different directions, incorporating data,
+resources (i.e., activity originators) and also recovery and compensation mechanisms to
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.39:28 m. montali et al.
+be instantiated in the case of a violation. for recovery and compensation, we will rely
+on the preliminary proposal made in [chesani et al. 2009], where the violations are
+reiﬁed as special events. making declare data-aware is instead concerned with aug-
+menting activities and constraints with additional information and conditions about
+involved data and resources (beside lifecycle events and timestamps) [montali 2010].
+technically, the framework here presented provides the basis for this kind of exten-
+sion: to accommodate data, lifecycle events and the “context” of each constraint in-
+stance must be extended with the activity data (such as, e.g., the price of an order),
+while the ec axioms modeling the state transitions of constraints can exploit these
+additional data to include further conditions (e.g., that the order’s price cannot exceed
+a given threshold). consider, e.g., an extended response constraint between two activi-
+tiesaandb, with the additional requirement that the originator (i.e., the responsible
+resource) of bmust be different than the one of ato satisfy the constraint (this is a form
+of “four-eyes principle”). by introducing the originator as an additional parameter of
+the lifecycle events, the response creation axiom 10 becomes
+creation (compl (; a; o ); t; i(id;[a; o]; t); pend ) member (a;[a]):
+the presence of oin the contextual information of the created instance can then be
+used in the response fulﬁllment axiom (axiom 11 in section 3), to trigger the corre-
+sponding state transition only if bis executed by an originator o2different from o:
+trans (start(; b; o 2); t; i(id;[a;o]; ti); pend; sat ) curstate(i(id;[a; o]; ti); pend; t )
+^member (b;[b])^o26=o^inside future (ti; m; n; t ):
+this form of data-aware extension has been recently pursued in [montali et al. 2013].
+another active research line concerns a comprehensive comparison of compliance
+monitoring approaches, to assess their functionalities and performance. although
+there is a ﬂourishing literature on monitoring approaches tailored to the measure-
+ment of quantitative indicators such as key performance indicators, we are interested
+in monitoring compliance with complex business constraints. in this respect, we are
+currently producing a literature review on compliance monitoring approaches, so as
+to devise a framework for the systematic qualitative comparison of compliance moni-
+toring functionalities. a quantitative evaluation of the state of the art is still difﬁcult
+because most of the approaches are not supported by publicly available software tools,
+and due to the lack of shared benchmarks. an interesting matter of investigation will
+therefore be to check whether the synthetic benchmarks adopted in this work can con-
+stitute the basis for this quantitative comparison.
+acknowledgments
+the authors would like to thank arjan mooij for his valuable hints and comments on the paper.
+references
+artikis , a. and paliouras , g. 2009. behaviour recognition using the event calculus. in proceedings of
+aiai . springer.
+bauer , a., l eucker , m., and schallhart , c. 2007. the good, the bad, and the ugly, but how ugly is
+ugly? in proceedings of rv . lncs. springer.
+bauer , a., l eucker , m., and schallhart , c. 2011. runtime veriﬁcation for ltl and tltl. acm trans-
+action on software engineering methodologies .
+bragaglia , s., c hesani , f., m ello , p., m ontali , m., and torroni , p. 2012. logic programs, norms
+and action . lncs. springer, chapter reactive event calculus for monitoring global computing appli-
+cations.
+chesani , f., m ello , p., m ontali , m., and torroni , p. 2009. veriﬁcation of choreographies during exe-
+cution using the reactive event calculus. in proceedings of ws-fm . lncs. springer, 55–72.
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.monitoring business constraints with the event calculus 39:29
+chesani , f., m ello , p., m ontali , m., and torroni , p. 2010. a logic-based, reactive calculus of events.
+fundamenta informaticae 1-2.
+chittaro , l. and montanari , a. 1996. efﬁcient temporal reasoning in the cached event calculus. com-
+putational intelligence 12 .
+clark , k. l. 1978. negation as failure. in logic and data bases . plenum press, 293–322.
+dustdar , s. and gombotz , r. 2006. discovering web service workows using web services interaction
+mining. international journal of business process integration and management .
+farrell , a. d. h., s ergot , m. j., s all´e, m., and bartolini , c. 2005. using the event calculus for
+tracking the normative state of contracts. cooperative information systems 2-3.
+giannakopoulou , d. and havelund , k. 2001. automata-based veriﬁcation of temporal properties on
+running programs. in proceedings of ase . ieee computer society.
+international telecommunications union 2001. technical characteristics for a universal shipborne auto-
+matic identiﬁcation system using time division multiple access in the vhf maritime mobile band . in-
+ternational telecommunications union. recommendation itu-r m.1371-1.
+kowalski , r. a. and sergot , m. j. 1986. a logic-based calculus of events. new generation computing .
+luckham , d. 2001. the power of events: an introduction to complex event processing in distributed en-
+terprise systems . addison-wesley.
+maggi , f. m., b ose, r. p. j. c., and van der aalst , w. m. p. 2012. efﬁcient discovery of understandable
+declarative models from event logs. in caise , j. ralyt ´e, x. franch, s. brinkkemper, and s. wrycza,
+eds. lecture notes in computer science series, vol. 7328. springer-verlag, berlin, 270–285.
+maggi , f. m., m ontali , m., w estergaard , m., and van der aalst , w. m. p. 2011. monitoring business
+constraints with linear temporal logic: an approach based on colored automata. in proceedings of bpm .
+springer.
+maggi , f. m., m ooij , a. j., and van der aalst , w. m. p. 2012. analyzing vessel behavior using process
+mining . chapter poseidon book. to appear.
+maggi , f. m., w estergaard , m., m ontali , m., and van der aalst , w. m. p. 2012. runtime veriﬁca-
+tion of ltl-based declarative process models. in proceedings of rv . lncs. springer.
+montali , m. 2010. speciﬁcation and veriﬁcation of declarative open interaction models: a logic-based
+approach . lnbip series, vol. 56. springer.
+montali , m., c hesani , f., m aggi , f. m., and mello , p. 2013. towards data-aware constraints in de-
+clare. in proceedings of sac . to appear.
+montali , m., p esic , m., van der aalst , w. m. p., c hesani , f., m ello , p., and storari , s. 2010.
+declarative speciﬁcation and veriﬁcation of service choreographies. acm transactions on the web 1.
+nezhad , h. r. m., s aint -paul, r., c asati , f., and benatallah , b. 2011. event correlation for process
+discovery from web service interaction logs. vldb journal .
+pauw, w., l ei, m., p ring , e., v illard , l., a rnold , m., and morar , j. 2005. web services navigator:
+visualizing the execution of web services. ibm systems journal .
+pesic , m. 2008. constraint-based workﬂow management systems: shifting controls to users. ph.d. thesis,
+beta research school for operations management and logistics, eindhoven.
+pesic , m., s chonenberg , h., and van der aalst , w. m. p. 2007. declare: full support for loosely-
+structured processes. ieee computer society.
+pesic , m. and van der aalst , w. m. p. 2006. a declarative approach for ﬂexible business processes
+management. in proceedings of bpm workshops . lncs. springer.
+sadri , f. and kowalski , r. a. 1995. variants of the event calculus. in proceedings of iclp . mit press.
+shanahan , m. 1999. the event calculus explained. in artiﬁcial intelligence today: recent trends and
+developments . lncs. springer.
+spanoudakis , g. and mahbub , k. 2006. non-intrusive monitoring of service-based systems. cooperative
+information systems 3, 325–358.
+van der aalst , w. m. p. 2011. process mining - discovery, conformance and enhancement of business
+processes . springer.
+van der aalst , w. m. p., van hee, k. m., van der werf, j. m. e. m., and verdonk , m. 2010. auditing
+2.0: using process mining to support tomorrow’s auditor. ieee computer 43, 3.
+verbeek , e., b uijs , j., van dongen , b., and van der aalst , w. 2010. prom 6: the process mining
+toolkit. in proceedings of bpm .
+westergaard , m. 2011. better algorithms for analyzing and enacting declarative workﬂow languages
+using ltl. in proceedings of bpm . springer.
+acm transactions on embedded computing systems, vol. 9, no. 4, article 39, publication date: march 2010.

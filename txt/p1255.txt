@@ -1,0 +1,412 @@
+an event data extraction approach from sap
+erp for process mining
+alessandro berti1;2, gyunam park1, majid raei1, and wil van der aalst1;2
+1process and data science group (pads), rwth aachen university, germany
+2fraunhofer gesellschaft, institute for applied information technology (fit),
+sankt augustin, germany
+abstract. the extraction, transformation, and loading of event logs
+from information systems is the rst and the most expensive step in
+process mining. in particular, extracting event logs from popular erp
+systems such as sap poses major challenges, given the size and the struc-
+ture of the data. open-source support for etl is scarce, while commercial
+process mining vendors maintain connectors to erp systems supporting
+etl of a limited number of business processes in an ad-hoc manner. in
+this paper, we propose an approach to facilitate event data extraction
+from sap erp systems. in the proposed approach, we store event data in
+the format of object-centric event logs that eciently describe executions
+of business processes supported by erp systems. to evaluate the feasi-
+bility of the proposed approach, we have developed a tool implementing
+it and conducted case studies with a real-life sap erp system.
+keywords: sap ·etl ·process mining ·object-centric event logs
+1 introduction
+process mining is a branch of data science including techniques to discover process
+models from event data, so-called process discovery , check the compliance of
+data against the process models, so-called conformance checking , and enhance
+process models with constraints/information coming from the event logs, so-
+called enhancement . such techniques have been adopted by various domains,
+including healthcare, manufacturing, and logistics. the rst step of applying
+the techniques is to extract event logs from the target information systems, e.g.,
+enterprise resource planning (erp) systems. this usually requires a connection
+to the database(s) supporting the information system. afterward, the extracted
+event log undergoes pre-processing steps to resolve various data quality issues,
+including incomplete information, noise, etc. these steps are usually called etl
+(extraction, transformation, and load). the etl phase is usually the most
+time-consuming part of a process mining project [12].
+erp systems contain valuable data based on which process mining techniques
+provide insights regarding the underlying real-life business processes. in partic-
+ular, the sap erp system has a signicant share in the erp market (22.5%
+in 2017, gartner). extracting data from an sap erp system is particularlychallenging as it involves many dierent tables/objects. due to its complexity,
+support to extracting event data from the sap erp system has only been limited
+to commercial vendors, e.g., celonis and processgold, which requires extensive
+interaction with domain experts. moreover, the logs extracted by such extractors
+suer from convergence/divergence problems [1]. this is due to the necessity to
+specify a case notion . a case notion is a criteria to group events that belongs to
+the same execution of a business process. in erp systems, dierent case notions
+can be used for the same data. for example, in a procure-to-pay process, we
+could specify as case notion the order, the single item of the order, the delivery,
+the invoice, or the payment.
+this paper proposes a novel approach to guide and ease the extraction of
+event logs from sap erp. the approach consists of two phases, i.e., 1) building
+graph of relations and 2) extracting object-centric event logs. we propose to use
+object-centric event logs (ocel) as intermediate storage to collect the events
+extracted from dierent tables. ocel does not require the specication of a case
+notion. therefore, it provides exible and comprehensive event data extraction.
+ocel can be used with object-centric process mining (ocpm) techniques
+or attened to traditional event logs by selecting a case notion out of objects.
+the proposed approach has been implemented as a prototypical extractor and
+evaluated using an sap erp system.
+the rest of the paper is organized as follows. section 2 presents some back-
+ground knowledge. section 3 presents the proposed approach. section 4 presents
+a prototypal software implementing the ideas proposed in this paper. section 5
+evaluates the processes extracted by the prototypal software on top of an edu-
+cational sap instance. section 6 presents the related work on extracting and
+analyzing event logs from sap.
+2 background
+this section presents some background knowledge on ocel, convergence/diver-
+gence problems, and sap systems.
+2.1 object-centric event logs
+traditional event logs in process mining have events associated with a single
+case/process execution. these event logs, extracted from information systems,
+suer from convergence/divergence problems [1]. we have a convergence problem
+when the same event is duplicated among dierent instances. this happens, for
+example, in an order-to-cash process, when item is considered as the case notion,
+and an event of order creation can be associated with several items. we have a
+divergence problem when several instances of the same activity happen in a case
+while not being causally related. this happens, for example, in an order-to-cash
+process, when order is considered as the case notion, and several instances of the
+same item-related activity are contained in the same order.
+ocel relax the assumption that an event is associated with a single case.
+instead, in an ocel an event can be related to several objects, where everyobject is associated with a type. this results in a more natural way to extract
+event data from a modern information system. for example, in erp systems,
+the event of order creation can currently involve an order document and several
+items. this resolves the convergence problem (since we do not need to duplicate
+the events anymore) and the divergence problems (since activities related to
+items of an order are not associated with the case of the general order).
+recently, the ocel standard3has been proposed as the mainstream format
+for storing object-centric event logs [5]. the format is supported by dierent im-
+plementations and libraries in various programming languages, e.g., java (prom
+framework) and python. ocel can be used to discover object-centric process
+models [2, 3], which describe the lifecycle of dierent object types and their
+interactions. moreover, conformance checking can be done on multiple object
+types [2].
+2.2 sap: entities and relationships
+fig. 1: core entities of sap erp systems in uml 2.0 class diagram
+in a broader sense, sap erp can be seen as a document management system.
+therefore the concept of document is particularly important. fig. 1 introduces
+the document and its relevant entities and relationships among them, using uml
+2.0 class diagram. first, a document represents a core business object, including
+orders, deliveries, and payments. each document contains a master item and
+detail items . for instance, a delivery document contains a delivery master item,
+corresponding to an order, and multiple delivery detail items, corresponding to
+materials in the order. a master table is a collection of the same type of master
+items, whereas a detail table is a collection of the same type of detail items. for
+3http://www.ocel-standard.org/instance, ekko as a master table contains purchase order master items. ekpo
+as a detail table contains purchase orders detail items.
+both master and detail items contain a various number of attribute values , e.g.,
+the total cost of a document or the cost of a single item. each attribute belongs
+to a domain that encodes the type of information reported by the attribute, e.g.,
+creation date and posting date of a document share the same domain because
+they are both dates.
+3 extracting event data from sap erp: approach
+figure 2 describes an overview of our proposed approach to extract ocel from
+sap erp systems. it consists of two phases: 1) building graph of relations
+(gor) and 2) extracting ocel. the former aims to construct a graph that
+describes all relevant tables of a business process. there are well-known business
+processes in sap erp, e.g., purchase to pay (p2p) and order to cash (o2c).
+for such business processes, target tables, where we extract event data regarding
+the process, are already known, e.g., ekko ,rbkp ,ekbe for p2p and vbak ,
+bkpf for o2c. however, most business processes in an organization are mostly
+unknown and, thus, require the identication of relevant tables.
+based on the gor, we extract ocel by connecting them to the underlying
+database of sap erp systems. to this end, we rst preprocess records of tables
+described in the gor. next, we dene activity concepts relevant to the target
+business process using the relevant tables. finally, based on the activity concept,
+we extract event data from the relevant tables.
+fig. 2: overview of extracting object-centric event logs from sap erp systems3.1 building graphs of relations
+figure 3 shows the conceptual model of three gors, each of which corresponds
+to a business process. a gor is an undirected connected graph where the nodes
+are sap tables containing the potentially interesting information and the edges
+show a relation among two tables based on a joint eld/column. the node in the
+center of a gor is a master table that is most relevant to the target process. the
+distance of each node from the master table shows the relevancy of the information
+contained in the corresponding table to the tables of interest and consequently
+to the corresponding type of process. dierent colors in a gor indicate dierent
+classes of tables. each class has a unique way of dening activity concepts. as
+a result, dierent gors may be connected to each other. below are the steps to
+construct gors:
+joint tables
+relations to external processes
+direct connections between master tables
+process type (ifit is known ) master table
+p2p
+o2c
+unknownekko
+vbak
+xxx
+……
+vbak ekkoxxx
+fig. 3: conceptual model of graph of relations (gors)selecting master tables a gor is built upon a master table relevant to a
+business process to analyze. in this work, we consider relevant master tables as
+users' input.
+identifying relevant tables based on the given master table, we need to
+identify relevant tables to the master tables. such tables become the candidates
+for constructing the gor. three dierent main approaches may be taken: manual ,
+automatic , and hybrid .
+{in the manual approach, the identication is conducted by domain experts
+who understand business processes and the technical details of sap systems.
+in addition, the domain expert may provide a data schema to explain the
+entities and relationships among them.
+{in the automatic approach, the identication is made automatically by ex-
+ploiting existing information in the system. for instance, using the table
+dd03vv , one can extract the relationships between the tables.
+{finally, the hybrid approach exploits both manual and automated techniques.
+for instance, the data schema from domain experts can provide an initial set
+of relevant tables, which will be improved by including more relevant tables
+with the help of automatically generated relationships.
+classifying tables the last step is the classication of the identied tables
+into dierent classes. in the following, we describe ve dierent classes.
+{aow table describes the status of objects that compose the target business
+process. it explains the creation, deletion, and update of such objects, e.g.,
+vbfa explains the status of objects that are associated with the order-to-
+cash (o2c) process.
+{atransaction table describes the execution of transactions (tcode) in sap
+systems.
+{achange table describes the changes in objects of the target business process,
+e.g., cdhdr and cdpos are primary change tables.
+{arecord table stores relevant attributes of objects of the target business
+process, e.g., the table ekko contains the relevant attributes of purchase
+order documents.
+{adetail table stores the relationships between dierent entities, e.g., the table
+ekpo stores the connection between purchase requisitions and purchase
+orders.
+3.2 extracting object-centric event logs
+in this subsection, we explain how ocel are extracted using gors. the extrac-
+tion consists of four main steps; pre-processing ,dening activity concept ,dening
+object types and connecting entries .pre-processing sap tables contain a lot of data related to dierent companies
+or groups in the same company (multi-tenant system). moreover, when invoic-
+ing/accounting tables are considered, documents are organized by their scal
+year. a pre-processing step must be performed to extract an event log of reason-
+able size, containing the desired behavior and a coherent set of information since
+document identiers can be replicated across dierent organizations. to this end,
+the union of all the elds in the primary keys of the tables is considered, and for
+some of them, a ltering query is executed, e.g., on a specic company code or a
+specic scal year.
+dening object types during the extraction, the entries of the master tables
+are transformed into events, having the columns as event attributes. moreover,
+the values of all the columns except the dates and the numbers become objects
+of the object type given by the column's name.
+dening activity concept to extract event data from gors, we take a
+divide-and-conquer approach. we rst extract event data from each table and
+then combine them. the rst step of extracting event data from each table is
+to dene the activity concept. in the following, we explain how the activity is
+dened in each class of tables.
+{each row in ow tables contains a current document number, a previous
+document number, the type of the current document, and the type of the
+previous document. for instance, considering vbeln as the domain, vbeln,
+vbelv, vbtyp n, and vbtyp v in the vbfa table contain respectively
+the current document number, the previous document number and the current
+and previous document types. we dene activities as the type of the current
+documents, i.e., the value in vbtyp n.
+{each row in transaction tables contains a transaction code. we transform the
+transaction code into human-readable formats using the tstct table, e.g.,
+va02 is transformed to change order, which becomes the activity name.
+{each row in record tables describes the properties of an object. all the rows of
+the record tables are associated with the same activity, e.g., create document
+[...]for all the rows in ekko.
+{for change tables, we suggest three approaches: (1) transaction codes used
+for changes are transformed into activities, (2) fields, updated after changes,
+are converted into activities, e.g., price changed , and (3) we consider both
+old and new elds' values and dene activities, e.g., postpone delivery , by
+comparing old and new values of delivery dates.
+connecting entries in this step, the information of the detail tables is used
+to enrich events. for example, if an entry of the table rseg, containing detailed
+information about invoices, associates an invoice identier with an order identier,
+every event associated with the invoice identier is also associated with the order
+identier in the subsequent step.fig. 4: a gor built on our sap ides instance on the p2p process. detail tables are
+colored by green, rkpf that is an additional record tables is colored by pink, and
+rbkp and bkpf that are additional transaction tables are colored by yellow.
+4 extracting event data from sap erp: tool
+we implemented a tool in the python3 language, available in the github reposi-
+tory; https://github.com/javert899/sap-extractor . the tool is available as
+a web application implemented using the flask framework and can be launched
+with the command; python main.py . the web application can be accessed at
+the address; http://localhost:5000/new_extractor.html . first, the extrac-
+tor asks the parameters of connection to the database supporting the sap erp
+instance. then, it provides both a list of object classes contained in the database
+and a list of pre-congured sets of tables related to the mainstream processes.
+the next step is the construction of the gor, which permits extending the set of
+tables. the following step is about pre-providing the values for the primary keys
+of the included tables, e.g., the client used during the connection and the scal
+year. after this step, the identication of the type of tables and the extraction
+occurs, which permits obtaining an ocel, that can be attened to a traditional
+event log or analyzed using object-centric techniques such as the ones provided
+inhttps://github.com/javert899/sap-extractor .
+5 assessment
+this section proposes an assessment of the proposed techniques on top of an sap
+erp ides system. in particular, we will target the extraction of the well-known
+purchase to pay (p2p) system. a p2p process involves dierent steps including
+approval of a purchase requisition ,placement of a purchase order ,invoicing from
+a supplier , and payment . therefore, it involves dierent tables in the sap system.
+5.1 building a graph of relations
+selecting master tables the rst step in the tool is selecting a candidate
+table related to the process. in this case, we start from ekko that is one of the
+main tables in the p2p process and contains the master information. in building
+the gor, represented in fig. 4, several other tables that are connected to ekkoare found. given the vast number of tables contained in sap, we applied a simple
+ltering based on the number of entries in each table to show the main nodes in
+the gor.
+identifying relevant tables figure 4 shows other tables containing event
+data meaningful to extract an event log for the p2p4. the user needs to specify
+the tables to include along with the original set of tables. the gor is therefore
+updated5. in our implementation, the master tables related to the detail tables
+are automatically included in the set6.
+classifying tables the tool needs to categorize the tables in the set between
+master tables and detail tables, as the master tables contain event data, while
+detail tables contain the connection between dierent entities:
+{some tables are recognized as transactions tables: rbkp (containing the
+transactions related to the invoices) and bkpf (containing the transaction
+related to the payments).
+{some tables are recognized as record tables: eban (in which a record is a
+purchase requisition), ekko (in which a record is an order document), and
+rkpf (in which a record is a reservation).
+{some tables are recognised as detail tables: ekpo ,ekpa ,eket ,ekbe ,
+bseg ,rseg ,resb7.
+5.2 extracting object-centric event logs
+in this section, we will explain the main steps of the log extraction process,
+including the denition of the object types and the activity concept for the
+extraction, and the connection between the entries given the information of the
+detail tables. since we did not perform a pre-processing step, we will not assess
+the step here.
+4including ekbe, containing goods/invoice receipts, bseg, containing detail table
+for payments, rseg, containing detail data for invoices, rkpf, including inventory
+management data, ekpo, containing the detailed information about the purchase
+orders, ekpa, containing the partner roles in purchasing, and eket, containing
+the scheduling agreement. we can see that the eban table, containing purchase
+requisition data, has not been included because of the ltering applied on the number
+of entries. however, it would be found by the method if the threshold is set to a lower
+value so that we will include it in the following steps.
+5the set of tables to extract include: ekko, ekpo, ekpa, eket, ekbe, bseg,
+bkpf, rseg, rbkp, rkpf, resb, eban.
+6this means that bkpf, the master table of bseg, containing the master data about
+the payments, and rbkp, the master table of rseg, containing the master data
+about the invoices, are included.
+7because their primary key is contained in the primary key of ekko (for ekpo,
+ekpa, eket, ekbe), bkpf ,rbkp andrkpf respectively.dening object types starting from the choices on the gor and the iden-
+tication of the type of tables, it is possible to extract dierent object types,
+including banfn-banfn (purchase requisition), infnr-infnr (purchasing
+record), ebeln-ebeln (purchase order), belnr-re belrn (the invoice
+number), belnr-belnr d(the payment number), and awkey-awkey (a
+generic object type containing the id of the object in sap).
+dening activity concept the activity concept is dened as follows:
+{for the record tables, a unique activity is dened for all the events, that
+iscreate document (tabname) (where tabname is the name of the
+corresponding record table, so it can be eban/ekko/rkpf).
+{for the transaction tables, the activity is given by the transaction code8.
+mainstream transactions occurring are enter incoming invoice ,enter incom-
+ing payment ,enter outgoing payment .
+connecting entries the detail tables are used to enrich the entries extracted
+from the master tables as follows:
+{bseg provides a connection from the payments to the purchase order items.
+{rseg connects the invoices to the purchase order items.
+{ekpo provides a connection of the purchase order items to the corresponding
+purchase requisition.
+{ekpa and eket contain detailed information that does not provide mean-
+ingful links to other tables in the set. ekbe is a peculiar type of detail table,
+as it contains the information about goods/invoice receipts, so it could be
+seen as a master table. still, it also links the purchase order items with the
+invoices through the goods/invoice receipts.
+6 related work
+this section presents the related work on data extraction from erp systems for
+process mining purposes.
+data extraction and pre-processing from sap erp in [6], an approach
+to extract traditional event logs from sap erp is proposed. the set of relevant
+business objects is identied, and the related tables and their relations are iden-
+tied. a limitation is that the construction of the document ow is manual. in
+[7], the authors address the pre-processing challenges to extract event logs from
+sap erp by using tools such as evs model builder. in [4], an ontology-driven
+approach for the extraction of event logs from relational databases is proposed,
+in which the user can express semantic queries which are then translated to rela-
+tional queries. in [8], the eects of some decisions on the quality of the resulting
+event log are analyzed. in particular, the context of event log extraction from
+erp system is considered.
+8using the description of the transaction contained in the table tstct.artifact-centric models on erp systems in [10], an approach to discover
+artifact-centric models from erp systems is proposed. the approach is split into
+two main parts: 1) identifying a set of artifacts, extracting a traditional event
+log, and a model of its lifecycle; 2) discovering the interactions between artifacts.
+the set of tables to extract needs to be decided by the user and the specication
+of the activity concepts is not described in this work.
+in [9], object-centric event logs (in the xoc format) are extracted from the
+dollibar erp system. these logs have been used to generate an object-centric
+behavioral constraints (ocbc) model. however, ocbc/xoc are not scalable.
+openslex meta-models in [11], a meta-model is proposed to ease the ex-
+traction of process mining event logs from information systems supported by
+relational databases. the instances of the openslex meta-model can be built
+from dierent types of database logs (redo logs, sap change tables). hence, the
+meta-model is generic and not tailored to the peculiar features of an sap erp
+system. the main problem is that the extraction of an event log requires a case
+notion's specication, which leads to convergence/divergence problems.
+enterprise-grade connectors several commercial vendors of process mining
+solutions oer enterprise-grade connectors to sap, that are able to ingest and
+process millions of events. notable examples in the current landscape are celonis9,
+signavio10, lana11, uipath12.
+7 conclusion
+in this paper, we proposed a generic approach to extract event logs from sap
+erp, which exploits the relationships between tables in sap to build graphs of
+relations (gors) and obtains object-centric event logs (ocel) using gors.
+figure 2 summarizes our approach. by storing extracted event data into ocel,
+we permit the specication of multiple case notions, avoiding the convergence/-
+divergence problems and simplifying the extraction process. an open-source tool
+implementing the approach and a case study on an educational sap instance
+have been presented, showing the feasibility of identifying the relationships be-
+tween dierent tables of the p2p process and extracting corresponding ocel.
+as future work, we plan to deploy our approach on dierent instances of sap
+systems running in real businesses to explore the connection between gors and
+underlying processes and to discover unknown processes. moreover, we should
+further assess how good the extraction of a typical sap process is in comparison
+to commercial-grade extractors.
+9https://www.celonis.com/solutions/systems/sap
+10https://www.signavio.com/products/process-intelligence/
+11https://lanalabs.com/en/migration-to-sap-s-4-hana-with-lana/
+12https://docs.uipath.com/process-mining/docs/introduction-to-sap-connectorreferences
+1. van der aalst, w.m.: object-centric process mining: dealing with divergence and
+convergence in event data. in: international conference on software engineering
+and formal methods. pp. 3{25. springer (2019)
+2.van der aalst, w.m., berti, a.: discovering object-centric petri nets. fundamenta
+informaticae 175(1-4), 1{40 (2020)
+3.berti, a., van der aalst, w.m.: extracting multiple viewpoint models from relational
+databases. in: 8th international symposium on data-driven process discovery and
+analysis (simpda). pp. 24{51. springer international publishing (2018)
+4.calvanese, d., montali, m., syamsiyah, a., van der aalst, w.m.p.: ontology-driven
+extraction of event logs from relational databases. in: reichert, m., reijers, h.a.
+(eds.) business process management workshops - bpm 2015, 13th international
+workshops, innsbruck, austria, august 31 - september 3, 2015, revised papers.
+lecture notes in business information processing, vol. 256, pp. 140{153. springer
+(2015). https://doi.org/10.1007/978-3-319-42887-1 12,https://doi.org/10.1007/
+978-3-319-42887-1\_12
+5.ghahfarokhi, a.f., park, g., berti, a., van der aalst, w.m.p.: ocel: a standard
+for object-centric event logs. in: bellatreche, l., dumas, m., karras, p., matulevicius,
+r., awad, a., weidlich, m., ivanovic, m., hartig, o. (eds.) new trends in database
+and information systems. vol. 1450, pp. 169{175. springer (2021)
+6.van giessel, m.: process mining in sap r/3: a method for applying process mining to
+sap r/3. eindhoven university of technology, eindhoven, the netherlands (2004)
+7.ingvaldsen, j.e., gulla, j.a.: preprocessing support for large scale process mining
+of sap transactions. in: international conference on business process management.
+pp. 30{41. springer (2007)
+8.jans, m., soer, p.: from relational database to event log: decisions with qual-
+ity impact. in: teniente, e., weidlich, m. (eds.) business process management
+workshops - bpm 2017 international workshops, barcelona, spain, september
+10-11, 2017, revised papers. lecture notes in business information processing,
+vol. 308, pp. 588{599. springer (2017). https://doi.org/10.1007/978-3-319-74030-
+046,https://doi.org/10.1007/978-3-319-74030-0\_46
+9.li, g., de murillas, e.g.l., de carvalho, r.m., van der aalst, w.m.: extracting
+object-centric event logs to support process mining on databases. in: international
+conference on advanced information systems engineering. pp. 182{199. springer
+(2018)
+10.lu, x., nagelkerke, m., van de wiel, d., fahland, d.: discovering interacting
+artifacts from erp systems. ieee transactions on services computing 8(6), 861{
+873 (2015)
+11.de murillas, e.g.l., van der aalst, w.m., reijers, h.a.: process mining on databases:
+unearthing historical data from redo logs. in: international conference on business
+process management. pp. 367{385. springer (2016)
+12.van eck, m.l., lu, x., leemans, s.j., van der aalst, w.m.: pm2: a process min-
+ing project methodology. in: international conference on advanced information
+systems engineering. pp. 297{313. springer (2015)

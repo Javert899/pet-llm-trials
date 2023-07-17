@@ -1,0 +1,590 @@
+remaining time prediction for processes with
+inter-case dynamics?
+mahsa pourbafrani1, shreya kar1, sebastian kaiser2, and wil m. p. van der
+aalst1
+1chair of process and data science, rwth aachen university, germany
+fmahsa.bafrani,shreya.kar,wvdaalst g@pads.rwth-aachen.de
+2lmu munich, germany, fsebastian.kaiser@stat.uni-muenchen.de g
+abstract. process mining techniques use event data to describe busi-
+ness processes, where the provided insights are used for predicting pro-
+cesses' future states ( predictive process monitoring ).remaining time
+prediction of process instances is an important task in the eld of pre-
+dictive process monitoring (ppm). existing approaches have two key
+limitations in developing remaining time prediction models (rtm): (1)
+the features used for predictions lack process context, and the created
+models are black-boxes. (2) the process instances are considered to be
+in isolation, despite the fact that process states, e.g., the number of run-
+ning instances, inuence the remaining time of a single process instance.
+recent approaches improve the quality of rtms by utilizing process con-
+text related to batching-at-end inter-case dynamics in the process, e.g.,
+using the time to batching as a feature. we propose an approach that
+decreases the previous approaches' reliance on user knowledge for discov-
+ering ne-grained process behavior. furthermore, we enrich our rtms
+with the extracted features for multiple performance patterns (caused
+by inter-case dynamics), which increases the interpretability of models.
+we assess our proposed remaining time prediction method using two
+real-world event logs. incorporating the created inter-case features into
+rtms results in more accurate and interpretable predictions.
+keywords: process mining, predictive process monitoring, remaining
+time prediction, inter-case dynamics behavior.
+1 introduction
+remaining time prediction approaches learn from historical process executions
+and build prediction models for running process instances, i.e., cases, based on
+the extracted features from the event data. many approaches have been sug-
+gested to solve the remaining time prediction problem [17]. however, most pro-
+posed approaches have considerably high prediction errors. based on [17], the
+best performing model using an lstm neural network [10] showed a prediction
+?funded by the deutsche forschungsgemeinschaft (dfg, german research foundation) under
+germany's excellence strategy { exc 2023 internet of production- project id: 390621612. we
+also thank the alexander von humboldt (avh) stiftung for supporting our research.2 m. pourbafrani et al.
+fig. 1: our proposed framework for inter-case-aware rtms. patterns are discovered after detecting
+uncertain segments, i.e., segments causing high prediction errors due to inter-case dynamics. rtms
+are trained using the extracted features from the patterns within uncertain segments.
+error of 178.4 days on average for the road trac management (rf) event
+log [9]. these approaches also only consider control-ow-related aspects of pro-
+cesses and individual case properties, i.e., intra-case properties, while making
+predictions [12]. a process also has other dimensions associated with it [13].
+for instance, specic rules determining scheduling and assignment of limited re-
+sources, queuing mechanism, and decision logic in the process create inter-case
+dependencies within the performance of process instances. moreover, most of the
+eort put into this research area has focused on applying new predictive model-
+ing techniques, which create black-box prediction models. considering inter-case
+along with intra-case process features in rtms increases the explainability, in-
+terpretability, and accuracy of the prediction [8]. therefore, we aim to improve
+the quality of rtms and introduce more interpretability in the predictions. the
+accuracy of a rtm which is unaware of inter-case behavior is substantially im-
+pacted if cases in a process segment, i.e., a pair of related activities, are processed
+in a batch, first-in-first-out (fifo), or other patterns. the prediction accu-
+racy decreases as a case passes through such segments indicating that rtm is
+uncertain about the underlying process behavior in such segments. we call these
+process segments uncertain segments. therefore, recognizing all uncertain seg-
+ments and translating their various inter-case patterns of process execution into
+features for training rtms increases prediction quality.
+in this paper, we present a three-step approach for developing inter-case
+dynamics aware rtms: (1) identifying process segments that cause high predic-
+tion errors due to inter-case dynamics, i.e., uncertain segments. (2) discovering
+insights about the underlying patterns, e.g., batching , that leads to inter-case de-
+pendencies within the detected segments. (3) transforming derived insights into
+features and incorporating them in rtms to improve the quality of predictions.
+for instance, the waiting time for the batching in a segment is transformed into
+a feature and introduced into the rtm. we evaluate the prediction errors of
+rtms without incorporating inter-case dependencies, such as batching behavior
+in a process segment, as shown in figure 1, and identify uncertain segments that
+involve inter-case dynamics. we continue by extracting the features associated
+with the observed patterns in the uncertain segments.
+we introduce preliminaries and the related work in section 2. in section 3,
+we present our main approach. we evaluate the approach in section 4 using real
+event logs, and section 5 concludes this work.
+2 preliminaries and related work
+in this section, we introduce the necessary concepts and related work required
+to understand the approach presented in this paper.inter-case-dynamics-aware rtm 3
+2.1 related work
+rtm approaches can be classied into three broad categories [17]. process aware
+approaches make predictions using explicit process model representations such as
+transition system [1]. process agnostic approaches typically use machine learning
+(ml) methods [14] to make predictions. recent process agnostic approaches
+predominantly make use of sophisticated neural network architectures like lstm
+[16] and explainable ai methods [5] to develop rtms. hybrid approaches like [11]
+combine capabilities of both categories by exploiting transition systems that are
+annotated using a machine learning algorithm. however, most approaches across
+all three categories only consider the intra-case perspective for predictions.
+rtm approaches based on queuing models [15] and supervised learning [14]
+utilized the inter-case dimension in predictions. they create features on the basis
+of queuing theory like case priority and open cases of similar type. however,
+these approaches assume fifo queuing behavior throughout the entire process.
+two recent ppm approaches [3, 8] use performance spectra [2] to learn inter-
+case dynamics present in the process without any prior assumption. denisov et
+al. [3] presented a novel approach to predict the aggregated performance of non-
+isolated cases that utilize performance-related features. klijn et al. [8] presented
+a novel rtm approach that is aware of batching-at-end dynamics. in this paper,
+we extend the process agnostic rtm approach presented in [8] by considering
+inter-case dynamics caused by non-batching ,batching-at-start patterns too. we
+use and improve the ne-grained error analysis technique proposed in [8] to
+identify inter-case dynamics by limiting manual intervention.
+2.2 rtm background
+rtm approaches predict the remaining time to completion of an ongoing process
+instance, i.e., case, based on process execution data of completed cases. process
+execution of a completed case is recorded as a non-empty sequence of events
+(e), i.e.,=he1;::;e niortrace. an event log lis a set of completed traces. let
+a;t;ebe the universe of activities (event classiers), timestamps and events.
+each event e2econsists of mandatory and additional attributes. let anbe the
+set of attribute names. for an2an, we dene # an(e) as the value of attribute
+anfor evente. an event ehas mandatory attributes timestamp # t(e)2tat
+whicheoccurs and activity # act(e)2athat occurs during e.
+we rst need to understand the general steps to develop a rtm described
+in [17]. in the oine or training phase, the rst step is to prepare the input
+data, i.e., event log. since a rtm makes prediction for incomplete traces, it
+trains on prexes extracted from traces in l. a prex is extracted by tak-
+ing the rst k2nevents from a completed trace ( =he1;::;e ni) using function
+hdk()=he1;::;e ki;kn. the resulting prexes are collectively known as a pre-
+x loglofl. therefore, data preparation includes cleaning the data, creating
+a prex log and feature engineering. features like weekday orsojourn time are
+extracted from event data and categorical features are encoded.
+a rtm can be instantiated based on three main parameters, methods for
+grouping similar prexes into buckets, prex encoding methods, and used predic-4 m. pourbafrani et al.
+tion techniques. for instance, rtm =(p;a;x ) represents that the model's prex
+bucketing method is based on similar prex lengths ( p), the encoding method
+is aggregating data of all prex events ( a), and ml algorithm is xgboost ( x).
+after training, the models are tuned using techniques like hyperparameter op-
+timization. finally, the optimal model's prediction accuracy is evaluated using
+aggregated metrics, e.g., mean absolute error (mae).
+2.3 performance spectrum with error progression
+to identify process segments subject to high prediction errors due to inter-case
+dynamics, klijn et al. [8] introduced a visual analysis technique, performance
+spectrum with error progression (pswep) . it uses the performance spectrum
+(ps) [2], which maps the performance of each case passing through a segment
+over time. a process segment ( a;b)2aa can be dened as any two successive
+steps in the process, e.g., a step from activity ato activityb. for traces of form
+h:::;ei;ei+1;:::i, where # act(ei)=a;#t(ei)=ta;#act(ei+1)=b, and# t(ei+1)=tb, we
+observe an occurrence of a segment ( a;b) from time tatotb. each occurrence
+of segment ( a;b) representing a case is plotted in a ps as a line from ( ta;a)
+to (tb;b). in pswep, segment occurrences within a ps are classied based on
+the error progression of the case while passing through the segment. let pbe
+the set of predictions made on test data using rtm . each prediction prk2p
+corresponds to a prediction made for prex hdk()=he1;::;e kiat point of pre-
+diction # act(ek)=akandtprk=#t(ek), i.e., the time moment of prediction.
+fig. 2: pswep for (add penalty (ap), send
+for credit collection (sc)) in rf: error de-
+crease (red), error increase (blue).yprkandyprkdenote the actual and
+predicted outcomes of prk. to measure
+the error progression of segment occur-
+rence (ak;ak+1) linked to , the predic-
+tion errors at akandak+1are compared.
+the dierence in relative absolute errors
+drae (raek;rae k+1) =raek raek+1
+withraek=jyprk yprkj=yprkis measured. if the prediction error decreases for
+a segment occurrence, i.e., drae > 0 this plotted line is colored red in the
+pswep. if the prediction error increases, i.e., drae < 0 the line is colored
+blue. figure 2 shows pswep of segment (apply penalty (ap), send for credit
+collection (sc)) in the rf event log.
+3 approach
+in this section, we will discuss the main approach proposed to develop an inter-
+case-dynamics-aware rtm. in section 3.1, we discuss the proposed techniques to
+automatically identify uncertain segments. in section 3.2, we discuss the process
+of identifying and deriving insights about inter-case dynamics. finally, in section
+3.3, we propose ways to create inter-case features by utilizing derived insights.
+3.1 detecting uncertain segments
+measuring uncertainty of a process segment to identify uncertain seg-
+ments, we need to measure the uncertainty of each process segment. to do so, weinter-case-dynamics-aware rtm 5
+table 1: error progression for the occurrence of segments
+linked to predictions.
+case
+idprex tprkyprkyprkrae segment draeerror
+progression
+c1hai 1 6 100.667
+c1ha; bi 2 5 20.600 (a; b)0.007 decrease
+c1ha; b; ci 4 3 20.333 (b; c)0.267 decrease
+c1ha; b; c; di4 3 20.333 (c; d) 0 same
+c1ha; b; c; d; ei7 0 01 (d; e) 1 increase
+c2hai 311 140.272
+c2ha; bi 5 9 140.555 (a; b) 0:283 increase
+c2ha; b; ci 14 2 30.500 (b; c)0.055 decreasetable 2: measuring uncertainty of
+each segment by aggregating its
+occurrences to calculate observa-
+tions ,decrease cases , and increase
+cases .
+segment observationsdecrease
+casesincrease
+cases
+(a; b) 2 1 1
+(b; c) 2 2 0
+(c; d) 1 1 0
+(d; e) 1 0 1
+rst measure the drae (section 2.3) of individual segment occurrences linked
+to predictions made using rtm on test data. table 1 shows an example of how
+individual predictions are aligned with segment occurrences and the error pro-
+gression of each occurrence is classied. a decrease in error, i.e., drae > 0
+for a case passing through segment ( a;b) implies that after the occurrence of
+activitybthe remaining time prediction improves. this decrease could indicate
+some uncertainty between activity aandb, which gets resolved after activity
+bcompletes. an increase in error implies that after the occurrence of activity
+b, the prediction model becomes more unsure about how the partial trace will
+proceed. if prediction error remains the same, i.e., drae =0, there is no clear
+indication of uncertainty within the process segment. we can either ignore such
+rare cases or include them as error decrease , where we consider the latter.
+based on above insights, we use three aggregated metrics to quantify uncer-
+tainty of segments. for each segment ( s) linked top, we measure (1) observa-
+tions or total occurrences linked to sinp, (2) decrease cases or total occurrences
+linked toswithdrae0, and (3) increase cases or total occurrences linked
+toswithdrae < 0. table 2 is the result of applying the above aggregations
+to occurrences of segments found in table 1.
+selecting the most uncertain segments we dene a mapping function us:
+nr ![0;1] to select a subset of process segments for which inter-case features
+could be created (equation 1). the inputs are the number of observations ( o) and
+the ratior=d=max (1;i) of decrease cases ( d) to increase cases ( i) for segment s
+(as shown in table 2). output 1 indicates the segment is highly uncertain. note
+that ideal candidates for uncertain segments are those where decrease cases are
+almost the same or more than increase cases, i.e., their ratio should be greater
+than some threshold tr. the threshold for the number of observations ( tobs)
+indicates the occurrences of the segments. these thresholds can be set for each
+process individually.
+us(o;r) =(
+1 ifotobsand round (r)tr
+0otherwise(1)
+letsgbe the set of all segments in a process and sgstart be the set of
+starting segments. therefore, we apply ustos2sgnsgstart based on some tr
+andtobsand select set of segments ufor whichus(o;r)=1. removing starting
+activities in traces is due to the fact that the rtm has too little information,6 m. pourbafrani et al.
+and the prediction error is likely to decrease when the second activity occurs.
+we use the rf event log [9] as the running example. first, predictions are
+made on the last 20% (temporally split) of the event log using a rtm, here
+rtm =(p;a;x ). then, these predictions are used to measure the uncertainty of
+each process segment and usis applied to all non-starting segments. we set
+tr=1 andtobs> , e.g.,tobs=2stdwhere;std are the mean and standard
+deviation of segment occurrences. the selected uncertain segments are (send
+fine (sf), insert fine notication (if)), (insert fine notication (if), add
+penalty (ap)) and (add penalty (ap), send for credit collection (sc)) . the
+details of selecting the most uncertain segments presented here3.
+3.2 identifying inter-case dynamics in uncertain segments
+in order to diagnose causes for uncertainty within segments, rst, we visualize
+the performance of cases within the process segment using pswep (section 2.3).
+after that, the observed patterns in the performance spectrum are compared to
+a taxonomy [2] to identify underlying process behavior that causes inter-case
+patterns within the process segment. we explain the process of deriving insights
+for the uncertain segments identied in the running example.
+in the shown pswep of ( sf; if ) in fig. 3 (left), two patterns, batching-
+at-start and non-batching fifo behavior are identied. these are elementary
+patterns related to the order of case arrival. we notice uncertainty (as shown
+by the red lines) for non-batched cases. therefore, rtm is currently not aware
+that non-batched cases are processed much faster than batch ones. batched
+cases within the segment (fig. 3) are also classied using red. the uncertainty
+concerning these cases is caused by the prediction model's lack of awareness
+about batching-at-start dynamics. the order of lines in pswep of ( ap; sc )
+presented before in fig. 2 clearly shows that the inter-case pattern is caused
+bybatching-at-end . the prediction model is currently unaware of this inter-case
+dynamic within the process segment. in pswep of ( if; ap ) in fig. 3 (right),
+we observe a fifo with a constant time pattern in the order of case arrival. the
+performance of a case is strongly correlated to the previous case that passed
+through the segment. we also know that there are two possible activities, add
+penalty (ap) orinsert date appeal to prefecture (id) , that can occur after
+insert fine notication (if) and the time that cases wait within the segments is
+signicantly dierent. therefore, incorrectly assuming the path of a case arrives
+atifimpacts the remaining time prediction. we are able to predict the path
+by observing the recent performance of cases in ( if; ap ) and (if; id ) w.r.t.
+inter-case dependencies. lastly, across three segments, we observe changing the
+density of lines indicating varying workloads.
+based on the above derived insights, we dene the abbreviated inter-case pat-
+tern(s) identied for segments ( sf; if );(if; ap ) and (ap; sc ) asr1=non 
+batching; batch (s),r2=non batching andr3=batch (e) respectively.
+3https://www.pads.rwth-aachen.de/go/id/qcekn/lidx/1inter-case-dynamics-aware rtm 7
+/uni00000028/uni00000055/uni00000055/uni00000052/uni00000055/uni00000003/uni00000033/uni00000055/uni00000052/uni0000004a/uni00000055/uni00000048/uni00000056/uni00000056/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000049/uni00000052/uni00000055/uni00000003/uni00000036/uni00000048/uni00000051/uni00000047/uni00000003/uni00000029/uni0000004c/uni00000051/uni00000048/uni00000010/uni0000002c/uni00000051/uni00000056/uni00000048/uni00000055/uni00000057/uni00000003/uni00000029/uni0000004c/uni00000051/uni00000048/uni00000003/uni00000031/uni00000052/uni00000057/uni0000004c/uni00000049/uni0000004c/uni00000046/uni00000044/uni00000057/uni0000004c/uni00000052/uni00000051
+/uni00000028/uni00000055/uni00000055/uni00000052/uni00000055/uni00000003/uni00000033/uni00000055/uni00000052/uni0000004a/uni00000055/uni00000048/uni00000056/uni00000056/uni0000004c/uni00000052/uni00000051/uni00000003/uni00000049/uni00000052/uni00000055/uni00000003/uni0000002c/uni00000051/uni00000056/uni00000048/uni00000055/uni00000057/uni00000003/uni00000029/uni0000004c/uni00000051/uni00000048/uni00000003/uni00000031/uni00000052/uni00000057/uni0000004c/uni00000049/uni0000004c/uni00000046/uni00000044/uni00000057/uni0000004c/uni00000052/uni00000051/uni00000010/uni00000024/uni00000047/uni00000047/uni00000003/uni00000053/uni00000048/uni00000051/uni00000044/uni0000004f/uni00000057/uni0000005c
+fig. 3: pswep for segments (send fine (sf), insert fine notication (if)) (left), and (insert
+fine notication (if), add penalty (ap)) (right) in the rf event log.
+table 3: the created inter-case features for segment predictions ( c=fcs; cs1; cs2; cs3g) and wait-
+ing time ( w) within uncertain segments for the rf event log.
+case id activity timestamp ...cscs1cs2cs3w y
+n71924 sf 09-17 08:00 ...1 1 0 01154258.7 39229200.0
+s120874 ap 05-09 08:00 ...1 0 1 02808000.3 28080000.0
+s86803 sf 11-03 09:00 ...1 1 0 01212661.0 36115200.0
+s57422 sc 01-10 09:00 ...0 0 0 0 0.0 0.0
+s70222 cf 09-29 08:00 ...0 0 0 0 0.040438800.0
+3.3 inter-case feature creation
+as the running example shows, ignoring inter-case dynamics results in high pre-
+diction errors for prexes expected to pass through segment s2u. therefore,
+we need to provide the rtm information about a prex being subject to inter-
+case pattern rdetected in uncertain segment sprior to the occurrence of the
+segment. we use these insights to develop inter-case features.
+section 
+3.5
+training 
+/ 
+offline 
+phase
+testing 
+/ 
+runtime 
+phase
+retrain 
+rtm
+event 
+log 
+w. 
+inter-case 
+features
+section 
+3.4
+event 
+log
+event 
+log
+fig. 4: the overview of feature creation process
+for rf event log with uncertain segments s1,
+s2ands3.consider the running example with
+three uncertain segments s1,s2, ands3
+with inter-case pattern(s) r1,r2and
+r3, respectively, we dene the following
+inter-case features: (1) cs2f0;1g, to in-
+dicate if a prex passes through an un-
+certain segment s2u, (2)cs12f0;1g, to
+indicate that the prex passes through
+s1with inter-case pattern(s) r1, (3)
+cs22f0;1g, to indicate that prex
+passes through s2with inter-case pat-
+tern(s)r2, (4)cs32f0;1g, to indicate that prex passes through s3with inter-
+case pattern(s) r3, and (5)w, to indicate the waiting time of the prex in s2u,
+as a result of inter-case pattern(s) r. as a result of the feature creation step
+for the running example, table 3 is generated showing inter-case features. these
+features are used to train an inter-case-dynamics-aware rtm. feature yis the
+target feature, i.e., remaining time to completion.
+creating inter-case features for an ongoing case at run-time requires its own
+prediction models. we need a model ( ns) to predict inter-case features related
+to segment prediction and waiting time prediction model ( tms;r) for each un-
+certain segment s2uwith inter-case pattern(s) r. figure 4 gives an overview of
+the steps involved in creating the models (oine) and utilization of these models
+to create inter-case features (at run-time). this process is the extended version
+of the presented feature-creation in [8].
+3.4 predicting the next segment
+classiernsshould determine if a prex passes through segment s2uat the
+point of prediction. to build ns, we build a classier for the next activity8 m. pourbafrani et al.
+prediction using [18] and modify the outcome to predict the value of segment
+prediction inter-case features. let hdk() be the input prex with last activity
+aforns. if the next activity predicted is b, we say that the prex passes
+through segment ( a;b) at the point of prediction. if ( a;b)2u, thencs=1, else
+we set it to 0. if cs=1, we set the value of the boolean variable representing
+the prex passing through segment ( a;b) as 1. therefore, if predicted ( a;b)=s1,
+thencs1=1,cs2=0, andcs3=0. the collective set of predicted features using
+nsis calledc.
+3.5 predicting waiting time
+fig. 5: illustration of a single instance for
+tms;rto learn waiting time for case c1using
+performance-related features extracted from sh
+and relevant individual properties of c1.in this section, we present general
+steps to create a waiting time pre-
+diction model ( tms;r) that predicts
+how long a case stays in a segment
+swith inter-case patterns r. con-
+sider a case c1arriving at segment
+s=(a;b) at timeta(fig 5). because of
+inter-case dynamics, the waiting time
+wofc1will depend on the perfor-
+mance of other cases in relevant seg-
+ments in some recent time interval, i.e.,
+historic spectrum ( sh) [3] and relevant individual properties (intra-case fea-
+tures). the intra-case feature of c1and performance seen within shcan be
+encoded as feature vector x1::xnusing insights gained about rwithins.
+this allows us to formulate the waiting time prediction problem as a supervised
+learning problem: w=f(x1::xn) +", where function fpredictswfromx1::xn.
+to learnf, we create training samples using the sliding window method and
+apply a ml method like lightgbm [6] that tries to minimize prediction error
+". table 4 shows sample data used to train a tms;rfor(if, ap) .
+table 4: sample data for training waiting
+time prediction model ( tms;r) for uncertain
+segment ( if; ap ) with pattern r=non 
+batching .
+starting
+casesending
+casespending
+caseswl w
+60 37 60 5183000.0 5184000.0
+14 10 14 5184000.0 5184000.0
+19 17 18 5187000.0 5187000.0waiting time prediction for non-
+batching dynamics in section 3.1, we
+learned that wof a case in ( if;ap ) is in-
+uenced by r=non batching and vary-
+ing workload in segments ( if;ap ) and
+(if;ad ). to derive workload related con-
+text, we dene hinshas the period be-
+tween arrival of c1and the last case before
+it and derive: (1) starting cases or the number of cases that started (arrived at
+the segment) in period h, (2) ending cases or the number of cases that com-
+pleted (exited the segment) in period hand (3) pending cases or the number of
+cases that have started within period hand will complete in the future. since,
+performance of a case in ( if;ap ) strongly depends on the previous case, we
+also extract last waiting time ( wl), e.g., table 4.inter-case-dynamics-aware rtm 9
+waiting time prediction for batching-at-start dynamics wof a case
+c1 arriving at (sf, if) will depend on r=batch (s);non batching and varying
+workload within the segment. therefore, shcontains only segment (sf, if) . to
+learn performance related to r=non batching and the workload, we include
+features presented in section 3.5. to include features related to r=batch (s), we
+extract features related to the previous batch [7] with batching moment bml:
+(1) least (wmin) and longest waiting time ( wmax) in previous batch, (2) previous
+batch size and batch size percentile , (3) mean and standard deviation of ibct
+orinter batch case completion time , which is the time dierence between the
+completion times of two successive cases in the batch and (4) batch type , which
+distinguishes batches with less than 2 observations that behave like simultaneous
+batches, and (5) cia orcase inter-arrival time which the time between arrival
+ofc1and the case before it. we also include relevant intra-case features resource,
+expense, points and weekday, month, hour of previous batch. duration or the
+waiting time of the case in the previous segment is also included to distinguish
+batched and non-batched cases. however, learning case-specic wis dicult
+because batching-at-start cases proceed randomly, i.e., not in the order they
+arrived at the batch. to avoid learning this random behavior, we propose building
+atms;rthat predicts the average of expected waiting times for all cases that
+arrive along with c1. hence, the training data will be prepared by extracting the
+above-mentioned features and then aggregating (calculating mean) feature values
+for instances that correspond to cases arriving simultaneously in the segment.
+waiting time prediction for batching-at-end dynamics (ap,sc) con-
+tains inter-case dynamics caused by r=batch (e) and varying workload. to con-
+sider the varying workload across the segment, we include the features presented
+in section 3.5. to learn batching related performance, we extract features wmin,
+wmaxandcia described in previous section. additionally, we include: (1) tlb: or
+the time elapsed since the occurrence of the last batch, (2): the mean and stan-
+dard deviation of ibia (inter-case arrival rate) which is the dierence between
+the arrival times of two successive cases in the batch. we also include intra-case
+features month and weekday .
+4 evaluation
+4.1 experimental setup
+we evaluate the proposed approach on two real-life event logs: the rf event
+log [9] and bpic'20 event log [4]. we implemented inter-case feature creation and
+pswep in python, which is publicly available4. to train and test rtms, we use
+the benchmark implementation for rtm approaches5[17]. first, we make predic-
+tions withrtm =(p;a;x ) for both event logs to identify uncertain segments and
+their patterns. the uncertain segments identied from rf event log are (sf, if) ,
+(if, ap) and(ap, sc) with inter-case pattern(s) r1=non batching; batch (s),
+4https://github.com/karshreya98/inter_case_aware_rtm
+5https://github.com/verenich/time-prediction-benchmark10 m. pourbafrani et al.
+table 5: weighted average mae (in days) of dierent rtm models with dierent bucketing, encoding
+and ml methods, e.g., ( p; a; x ), while using no inter-case features i(;) and with the created inter-case
+features using segment predictions i(c;w).
+(p; a; x )(p; l; x )(c; a; x )(c; l; x )(p; l; r )(c; a; r )(c; l; r )(s; l; x )
+rf i(;)212.60 209.69 210.32 208.59 221.39 221.05 221.53 203.29
+i(c;w)187.65 179.78 201.17 179.34 191.06 205.87 190.63 179.78
+bpic'20 i(;)3.68 3.66 3.87 3.62 3.85 3.90 3.72 3.66
+i(c;w)3.58 3.57 3.81 3.53 3.69 3.70 3.65 3.48
+r2=non batching andr3=batch (e), respectively. the two identied uncertain
+segments from bpic'20 event log are (declaration final approved by admin-
+istration (df), request payment (rp)) and (request payment (rp), payment
+handled (ph)) . the inter-case pattern(s) identied for segments (df, rp) and
+(rp, ph) arer1=non batching; batch (s), andr2=batch (e) respectively. to
+create inter-case features, we implement nsusing [18] and follow steps described
+in section 3.5 to create tms;rmodels using lightgbm [6]. predictions are made
+with dierent bucketing prexes, encoding prex events, and ml methods. we
+consider prex bucketing methods to be grouping by prex lengths ( p), using a
+clustering algorithm ( c) or grouping all prexes in a single bucket ( s). common
+prex encoding methods include data of only last prex event ( l) or aggregating
+data of all prex events ( a), and apply ml models, xgboost ( x) or random forest
+(r) to the input encoded feature vectors. the following input congurations are
+used: (1)i(;): event log with no inter-case features, (2) i(c;w): event log with
+inter-case features created using actual segment prediction c, and (3)i(c;w):
+event log with inter-case features created using segment prediction made using
+ns. we use 80% and 20% (by temporally splitting) of the event logs for training
+and testing the rtms. to measure overall prediction accuracy, we measure the
+weighted average mae [17] of all predictions pmade on test data.
+4.2 results
+table 6: mae (in days) for dierent congurations ( i) with
+the similar lengths bucketing ( p), aggregating events data
+for encoding prex events ( a), and xgboost ( x) as the ml
+method, rtm = (p; a; x ).pkis the set of all predictions for
+prexes of length k.
+rf i(;)i(c;w)i(c;w)bpic'20 i(;)i(c;w)i(c;w)
+pk=2176.37 107.85 106.74pk=3 4.03 3.84 4.06
+pk=3227.38 189.22 200.02pk=4 2.64 2.22 2.23
+pk=4202.92 123.19 171.11pk=5 1.07 0.98 0.97table 5 shows that using
+inter-case features leads to an
+increase in performance for
+all 8 combinations of bucket-
+ing prexes, encoding prex
+events, and ml methods in
+rtms against baseline i(;).
+for the rf event log, we see that prediction error decreases by a maximum
+of 14:26% and a minimum of 4 :27% for methods ( p;l;x ) and (c;a;x ), respec-
+tively, with i(c;w). for the bpic'20 event log, we observe a maximum de-
+crease of 5:12% and a minimum decrease of 1 :55% in weighted average mae
+for methods ( c;a;r ) and (c;a;x ), respectively. since bpic'20 is a smaller event
+log with fewer cases subject to the identied inter-case patterns, the overall re-
+duction in prediction error is smaller. the most accurate predictions for the
+rf event log obtained using i(c;w) with (c;l;x ), has a mae 0.6 days less
+than the benchmark result [17]. however, our approach's privilege is that these
+predictions can be interpreted more easily because of the inter-case features.inter-case-dynamics-aware rtm 11
+(p,a,x) (p,l,x) (c,a,x) (c,l,x) (p,l,r) (c,a,r) (c,l,r) (s,l,x)5101520253035% change in prediction accuracy 
+ against i()
+es[8]
+lightgbm
+fig. 6: comparing prediction results for rf
+(p,a,x) (p,l,x) (c,a,x) (c,l,x) (p,l,r) (c,a,r) (c,l,r) (s,l,x)0510152025% change in prediction accuracy 
+ against i()
+es[8]
+lightgbm
+fig. 7: comparing prediction results for bpic'20in our approach, inter-case fea-
+tures are primarily included for pre-
+xes passing through uncertain seg-
+ments which occur at some step k
+of the process. therefore, we look at
+mae of predictions made for all pre-
+xes of relevant length k, i.e.,pkp.
+segments ( sf; if ), (if; ap ) and
+(ap; sc ) of the rf event log occur
+predominantly at step k= 2,k= 3
+andk= 4 of the process respectively.
+segments (df; rp ) and (rp; ph )
+of the bpic'20 log occur predominantly at steps k= 3 andk= 4;5 respectively.
+table 6 shows us the results for predictions made using rtm = (p;a;x ). for the
+rf event log, the prediction error decreases by 39%, 12% and 15% for p2;p3
+andp4, respectively using i(c;w) over baseline. for bpic'20, error decreases
+up to 15% and 9% for p4andp5, respectively, when using i(c;w). however, the
+mae ofp3is slightly higher for conguration i(c;w) compared to i(;) . this
+is because of incorrect segment predictions for (df, rp) made bynswhich is
+proven by the results of i(c;w). figures 6 and 7 compare the batching-at-end
+aware predictions made using inter-case features created in our approach that
+uses lightgbm [6]) and previous approach [8] that uses exponential smoothing
+(es). we measure the increase/decrease in performance of p4made using dif-
+ferent combination of rtms over their respective baselines. we compare only
+predictions at k=4 for both logs where uncertain segments with batching-at-end
+dynamics occur. figure 6 shows that, our approach performs better than pre-
+vious approach in 5 of the 8 input conguration ( i) for batched cases in rf
+event log. figure 7 shows that for the batched cases in bpic'20 log, our method
+performs better for all the congurations.
+5 conclusion
+we presented an approach to systematically discover a subset of uncertain pro-
+cess segments with inter-case dynamics that cause high prediction errors. con-
+trary to previous approaches, our designed function for detecting the subset
+of uncertain segments, limited the manual intervention to the identication of
+inter-case patterns within these segments. using visual analysis, we identied and
+gained insights about inter-case pattern(s) within uncertain segments. in partic-
+ular, we gained insights into non-batching (fifo and unordered), batching-at-
+start, and batching-at-end inter-case patterns. subsequently, we included these
+insights in remaining time predictions by transforming them into the inter-case
+features. for instance, there is a maximum increase in overall prediction per-
+formance by 14.2% for rf event-log. since there is no standardized process to
+create a ml model for inter-case feature creation, our proposed approach is also
+sensitive to user interpretation. yet, it provides more interpretability to rtms.
+note that despite an overall decrease in prediction error, some prexes were heav-12 m. pourbafrani et al.
+ily over-predicted or under-predicted. therefore, the next step is to improve the
+prediction models and leverage routing probability derived from stochastic pro-
+cess models. it improves the inter-case feature creation for segment prediction.
+another possible path is to make rtm aware of non-case-related aspects, e.g.,
+resources dependencies.
+references
+1. van der aalst, w.m.p., schonenberg, m., song, m.: time prediction based on
+process mining. information systems 36(2), 450{475 (2011)
+2. denisov, v., fahland, d., van der aalst, w.m.p.: unbiased, ne-grained description
+of processes performance from event data. in: business process management (2018)
+3. denisov, v., fahland, d., van der aalst, w.m.p.: predictive performance monitor-
+ing of material handling systems using the performance spectrum. in: international
+conference on process mining (icpm). pp. 137{144. ieee (2019)
+4. van dongen, b.f.: \bpi challenge 2020: domestic declarations dataset (2020)
+5. galanti, r., coma-puig, b., de leoni, m., carmona, j., navarin, n.: explainable
+predictive process monitoring. in: (icpm). pp. 1{8. ieee (2020)
+6. ke, g., meng, q., finley, t., wang, t., chen, w., ma, w., ye, q., liu, t.y.: light-
+gbm: a highly ecient gradient boosting decision tree. p. 3149{3157. nips'17
+7. klijn, e., fahland, d.: performance mining for batch processing using the perfor-
+mance spectrum. in: business process management workshops (2019)
+8. klijn, e.l., fahland, d.: identifying and reducing errors in remaining time predic-
+tion due to inter-case dynamics. in: (icpm). pp. 25{32. ieee (2020)
+9. de leoni, m.m., mannhardt, f.: road trac ne management process (2015)
+10. navarin, n., vincenzi, b., polato, m., sperduti, a.: lstm networks for data-aware
+remaining time prediction of business process instances. 2017 ieee symposium
+series on computational intelligence (ssci) pp. 1{7 (2017)
+11. polato, m., sperduti, a., burattin, a., de leoni, m.: time and activity sequence
+prediction of business process instances. computing 100(2018)
+12. pourbafrani, m., van der aalst, w.m.p.: extracting process features from event
+logs to learn coarse-grained simulation models. in: caise 2021. pp. 125{140 (2021).
+https://doi.org/10.1007/978-3-030-79382-1 8
+13. pourbafrani, m., jiao, s., van der aalst, w.m.p.: simpt: process improvement
+using interactive simulation of time-aware process trees. in: rcis 2021. lecture
+notes in business information processing, vol. 415, pp. 588{594. springer (2021).
+https://doi.org/10.1007/978-3-030-75018-3 40
+14. senderovich, a., di francescomarino, c., ghidini, c., jorbina, k., maggi, f.m.:
+intra and inter-case features in predictive process monitoring: a tale of two dimen-
+sions. in: business process management, vol. 10445, pp. 306{323. cham (2017)
+15. senderovich, a., weidlich, m., gal, a., mandelbaum, a.: queue mining for delay
+prediction in multi-class service processes. information systems 53, 278{295 (2015)
+16. tax, n., verenich, i., la rosa, m., dumas, m.: predictive business process mon-
+itoring with lstm neural networks 10253 , 477{492 (2017)
+17. verenich, i., dumas, m., rosa, m.l., maggi, f.m., teinemaa, i.: survey and cross-
+benchmark comparison of remaining time prediction methods in business process
+monitoring. acm 10(4), 1{34 (2019)
+18. wang, j., yu, d., liu, c., sun, x.: outcome-oriented predictive process monitoring
+with attention-based bidirectional lstm neural networks. in: icws. pp. 360{367
+(2019)

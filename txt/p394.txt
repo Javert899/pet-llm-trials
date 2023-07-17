@@ -1,0 +1,1525 @@
+mining process models with non-free-choice
+constructs
+lijie wen1, wil m.p. van der aalst2, jianmin wang1, and jiaguang sun1
+1school of software, tsinghua university, 100084, beijing, china
+wenlj00@mails.tsinghua.edu.cn, fjimwang,sunjg g@tsinghua.edu.cn
+2eindhoven university of technology
+p.o. box 513, 5600 mb eindhoven, the netherlands
+w.m.p.v.d.aalst@tue.nl
+abstract. process mining aims at extracting information from event
+logs to capture the business process as it is being executed. process min-
+ing is particularly useful in situations where events are recorded but
+there is no system enforcing people to work in a particular way. con-
+sider for example a hospital where the diagnosis and treatment activi-
+ties are recorded in the hospital information system, but where health-
+care professionals determine the \care°ow". many process mining ap-
+proaches have been proposed in recent years. however, in spite of many
+researchers' persistent e®orts, there are still several challenging problems
+to be solved. in this paper, we focus on mining non-free-choice constructs,
+i.e., situations where there is a mixture of choice and synchronization.
+although most real-life processes exhibit non-free-choice behavior, exist-
+ing algorithms are unable to adequately deal with such constructs. using
+a petri-net-based representation, we will show that there are two kinds
+of causal dependencies between tasks, i.e., explicit and implicit ones.
+we propose an algorithm that is able to deal with both kinds of depen-
+dencies. the algorithm has been implemented in the prom framework
+and experimental results shows that the algorithm indeed signi¯cantly
+improves existing process mining techniques.
+1 introduction
+today's information systems are logging events that are stored in so-called \event
+logs". for example, any user action is logged in erp systems like sap r/3,
+work°ow management systems like sta®ware, and case handling systems like
+flower. classical information systems have some centralized database for log-
+ging such events (called transaction log or audit trail). modern service-oriented
+architectures record the interactions between web services (e.g., in the form of
+soap messages). moreover, today's organizations are forced to log events by na-
+tional or international regulations (cf. the sarbanes-oxley (sox) act [49] that is
+forcing organizations to audit their processes). as a result of these developments,
+there is an abundance of process-related data available. unfortunately, today's
+organizations make little use of all of the information recorded. buzzwords such2 lijie wen et al.
+as bam (business activity monitoring), bom (business operations manage-
+ment), bpi (business process intelligence) illustrate the interest in techniques
+that extract knowledge from event logs. however, most organizations are still
+unaware of the possibilities that exist and most of software solutions only o®er
+basic tools to measure some key performance indicators.
+process mining aims at a more ¯ne grained analysis of processes based on
+event logs [11, 13, 26, 56]. the goal of process mining is to extract information
+about processes from these logs [11]. we typically assume that it is possible to
+record events such that (i) each event refers to a task(i.e., a well-de¯ned step
+in the process also referred to as activity ), (ii) each event refers to a case (i.e.,
+a process instance), (iii) each event can have a performer also referred to as
+originator (the person executing or initiating the task), (iv) events have a times-
+tamp , (v) events can have associated data, and (vi) events are totally ordered.
+moreover, logs may contain transactional information (e.g., events refereing to
+the start, completion, or cancellation of tasks).
+in process mining, we distinguish three di®erent perspectives: (1) the process
+perspective, (2) the organizational perspective and (3) the case perspective. the
+process perspective focuses on the control-°ow, i.e., the ordering of tasks. the goal
+of mining this perspective is to ¯nd a good characterization of all possible paths,
+e.g., expressed in terms of a petri net, an event-driven process chain (epc,
+[37]), or a uml activity diagram. the organizational perspective focuses on the
+originator ¯eld, i.e., which performers are involved and how are they related.
+the goal is to either structure the organization by classifying people in terms of
+roles and organizational units or to show relations between individual performers
+(i.e., build a social network). the case perspective focuses on properties of cases.
+cases can be characterized by their path in the process or by the originators
+working on a case. however, cases can also be characterized by the values of the
+corresponding data elements. for example, if a case represents a replenishment
+order, it is interesting to know the supplier or the number of products ordered.
+for each of the three perspectives there are both discovery approaches and
+conformance checking approaches . discovery aims at deriving a model without a-
+priori knowledge, e.g., the construction of a petri net, social network, or decision
+tree based on some event log. conformance checking assumes some a-priori model
+and compares this model with the event log. conformance checking [48] is not
+used to discover a model but aims at discovering discrepancies between the model
+and a log.
+figure 1 shows a small part of a log in the mxml format (center of ¯gure)
+[27]. this is the format used by the prom (process mining) framework [26]. using
+the promimport tool one can convert event logs from the following systems:
+eastman work°ow, flower, peoplesoft, sta®ware, websphere, apache http
+server, cpn tools, cvs, and subversion to mxml [27]. the prom framework
+is a plugable environment where it is easy to add new process mining approaches
+or other types of analysis. figure 1 shows only 5 of the more than 70 plugins
+available in prom 3.0. as shown, the plug-ins focus on all di®erent perspectives
+and on both discovery and conformance. each of the screenshots shows a plug-inmining process models with non-free-choice constructs 3
+  …
+<proc essinstance id="62" des cription="" >
+<audi ttrailentry>
+<workflowmodelelement>invite reviewers</workflowmodelele ment>
+<eventtype>start</eventtype>
+<timestamp>2006-10-11t00:00:00.000+01:00</timestamp>
+<originator>mike</originator>
+</audittrailentry>
+<audittrailentry>
+<wo rkflowmo delelement>invite reviewe rs</workflowmo deleleme nt>
+<even ttype>complete</even ttype>
+<time stamp>20 06-10-11t00:00:00.000+01:00</timesta mp>
+<orig inator>mike </orig inator>
+</audittrailentry>
+<audittrailentry>
+<data>
+<attribute name="result">accept </at tribute>
+</data>
+<workflowmodelelement>get review 1</workflowmodeleleme nt>
+<even ttype>complete</even ttype>
+<time stamp>20 06-10-11t00:00:00.000+01:00</timesta mp>
+<orig inator>carol</originato r>
+</audittraile ntry>
+<audittrailentry>
+<data>
+<attribute name="result">reject </attribute>
+</data>
+<workflowmodelelement>get review 2</workflowmodeleleme nt>
+<eventtype>complete</eventtype>
+<timestamp>2006-10-16t00:00:00.000+01:00</timestamp>
+<orig inator>sam</origina tor>
+</audittraile ntry>
+<audittrailentry>
+<workflowmodelelement>time-out 3</workflowmodelelemen t>
+<eventtype>complete</eventtype>
+<timestamp>2006-10-18t00:00:00.000+01:00</timestamp>
+<originator/>
+</audittrailentry>
+...
+social network miner: by
+monitoring e.g. the transfer of
+work dependencies between
+people (originat ors) are
+establishedconformance checker : by
+comparing a process model and
+the log deviations are identified
+fragment of log in terms of
+mxml:the eventlog is used as a
+startin g point for process mining
+alpha miner:by establishing
+causal dependencies a process
+model is constructed
+yawl conversion:discovered
+process models can be converted
+to yawl and executed using the
+yawl workflo w enginemulti-phase miner: using a two
+step approach process models
+can be discovered and exported
+to aris and aris ppm
+fig. 1. overview of process mining illustrated by the di®erent plug-ins in prom working
+on the mxml log shown in the center4 lijie wen et al.
+working on the log in the center of the diagram. only a fragment of the log is
+shown (the whole log contains information from 100 cases each having dozens
+of events). the alpha miner was one of the ¯rst process mining algorithms able
+to deal with concurrency, it focuses on discovery in the process perspective. the
+multi-phase miner uses a two-step approach to discover process models (in epc
+or petri net format) that exploits the so-called \or connector" construct to be
+more robust than the alpha miner. the social network miner focuses on discovery
+in the organizational perspective. the conformance checker [48] in prom detects
+discrepancies between some model and a log. using prom it is possible to import
+from and export to a variety of tools. for example, it is possible to import/export
+models from/to cpn tools, aris, and yawl, i.e., it is possible to use cpn
+tools to do simulations [40] and the work°ow management system yawl [6] is
+able to enact any process model discovered with one of the mining algorithms
+in prom (including the algorithm presented in this paper).
+prom has been used in various domains, e.g., governmental agencies, munic-
+ipalities, hospitals, erp systems, etc. in this paper, we will not discuss concrete
+applications. nevertheless, it is important to see the wide application possibilities
+of process mining. consider for example the diagnosis and treatment processes in
+a hospital . today's hospital information systems record a variety of events (e.g.,
+blood tests, operations, appointments, x-rays, etc.). however, hospital managers
+are only provided with data at the level of an individual patient or at an ag-
+gregated level (e.g., the number of knee operations). somehow, current hospital
+information systems completely miss the notion of a process , i.e., each patient
+is seen as a unique case. to improve service and to use the hospital resources
+more e±ciently, it is important to analyze the care°ows , i.e., typical diagnosis
+and treatment trajectories, in more detail. process mining can be used for this
+purpose. another example, is the monitoring of webservices in an e-business
+setting . languages such as bpel and cdl have been proposed to describe the
+way services can interact from a behavioral perspective, e.g., abstract bpel [16]
+can be used to describe business protocols. as shown in [4, 48] tools such as prom
+can be used to do conformance testing in this setting, i.e., verifying whether one
+or more parties stick to the agreed-upon behavior by observing the actual behav-
+ior, e.g., the exchange of messages between all parties. note that it is possible to
+translate bpel business protocols to petri nets and to relate soap messages
+to transitions in the petri net. as a result, the prom conformance checker can
+be used to quantify ¯tness [48] (whether the observed behavior is possible in the
+business protocol). of course the soap messages exchanged between the web-
+services can also be used to directly discover the actual behavior of each party.
+these two examples illustrate the wide applicability of process mining.
+this paper focuses on process discovery and is related to plugins such as the
+alpha miner and the multi-phase miner in figure 1 [11, 13, 26, 56]. we will ab-
+stract from the organizational perspective and the case perspective and focus on
+the discovery of process models. as a representation we will use petri nets [24,mining process models with non-free-choice constructs 5
+25].3as indicated in [41], one of the main problems of existing process mining
+approaches is their inability of discovering non-free-choice processes . non-free-
+choice processes contain a mixture of synchronization and choice, i.e., synchro-
+nization and choice are not separated which may create implicit dependencies .
+existing algorithms have no problems discovering explicit dependencies but typ-
+ically fail to discover implicit dependencies. note that the term \free-choice"
+originates from the petri net domain, i.e., free-choice petri nets are a subclass
+of petri nets where transitions consuming tokens from the same place should
+have identical input sets [24]. many real-life processes do not have this property.
+therefore, it is important to provide techniques able to successfully discover
+non-free-choice processes. this paper proposes a new algorithm (named ®++) to
+discover non-free choice petri nets.
+the remainder of this paper is organized as follows. section 2 reviews related
+work and argues that this work extends existing approaches in a signi¯cant way.
+section 3 gives some preliminaries about process mining. section 4 lists the
+sample process models that current mining algorithms can not handle. section 5
+de¯nes explicit and implicit dependencies between tasks and gives all cases in
+which implicit dependencies must be detected correctly. section 6 gives three
+methods for detecting implicit dependencies. in section 7, we propose the algo-
+rithm ®++for constructing process models. experimental results are given in
+section 8. section 9 concludes the paper.
+2 related work
+the work proposed in this project proposal is related to existing work on process-
+aware information systems [28], e.g., wfm systems [5, 36, 38] but also erp,
+crm, pdm, and case handling systems [14].
+clearly, this paper builds on earlier work on process mining. the idea of
+applying process mining in the context of work°ow management was ¯rst intro-
+duced in [15]. a similar idea was used in [23]. cook and wolf have investigated
+similar issues in the context of software engineering processes using di®erent ap-
+proaches [21]. in [19, 20], they extend the previous work. a technique to ¯nd the
+points in the system that demonstrate mutually exclusive and synchronized be-
+havior is presented in [19]. the emphasis is on how to discover thread interaction
+points in a concurrent system. in [20], the techniques based on a probabilistic
+analysis of the event traces are presented to discover patterns of concurrent be-
+havior from these traces of work°ow events. besides immediate event-to-event
+dependencies, these techniques are also able to infer some high order dependen-
+cies as well as one-task and two-task loops. however, only direct dependencies
+between events are considered and indirect ones which we call implicit dependen-
+cies are not involved at all. herbst and karagiannis address the issue of process
+mining in the context of work°ow management using an inductive approach [34].
+3note that we use this as an internal representation. in the context of prom it is easy
+to convert this to other format such as epcs [37] that can be loaded into the aris
+toolset [51] or yawl models that can be enacted by the yawl work°ow engine [6].6 lijie wen et al.
+they use stochastic task graphs as an intermediate representation and gener-
+ate a work°ow model described in the adonis modeling language. the mined
+work°ow model allows tasks having duplicate names and captures concurrency.
+the®algorithm [13] theoretically constructs the ¯nal process model in wf-
+nets, which is a subset of petri nets. this algorithm is proven to be correct for a
+large class of processes, but like most other techniques it has problems in dealing
+with noise and incompleteness. therefore, more heuristic approaches have been
+developed [55, 56] and, recently, also genetic approaches have been explored and
+implemented [7]. the topic of process mining is also related to the synthesis of
+models and systems from sequence diagrams (e.g., uml sequence diagrams or
+classical message sequence diagrams) [33, 39]. note that the tool used in this
+paper (prom) also allows for the synthesis of sequence diagrams. it is also inter-
+esting to note the relationship between process mining and classical approaches
+based on ¯nite state automata [18, 17, 45, 46]. the main di®erence between these
+approaches and process mining such as it is considered in this paper is the no-
+tion of concurrency and explicit dependencies. clearly it is possible to translate
+a ¯nite state automata into a petri net. however, either the petri net is very
+large and has no concurrent transitions or the theory of regions [29] is needed to
+fold the petri net. the latter approach is often not realistic because it requires
+the observation of all possible execution sequences.
+process mining is not limited to the control-°ow perspective. for example,
+in [10] it is shown that event logs can be used to construct social networks [52,
+54].
+the notion of conformance has also been discussed in the context of security
+[9], business alignment [2], and genetic mining [7]. in [48] it is demonstrated how
+conformance can be de¯ned and describes the corresponding prom plugin. the
+notion of conformance de¯ned in [48] will be used in this paper when we evaluate
+our algorithm. it is important to note that the notion of equivalence in the
+context of process mining is quite di®erent from the normal setting [8]. although
+many researchers have worked on classical notions of equivalence (e.g., trace
+equivalence, bisimulation, branching bisimulation, etc.), most of the existing
+notions are not very useful in this context. first of all, most equivalence notions
+result in a binary answer (i.e., two processes are equivalent or not). this is not
+very helpful, because, in real-life applications, one needs to di®erentiate between
+slightly di®erent models and completely di®erent models. second, not all parts
+of a process model are equally important. there may be parts of the process
+model that are rarely activated while other parts are executed for most process
+instances. clearly, these should be considered di®erently. we do not elaborate
+on this in the paper, however, the tools and algorithms described in this paper
+can use the notions de¯ned in [8] and thus address the problems. also related is
+the work presented in [30] were the process mining approach needs to deal with
+the aim of deriving a model which is as compliant as possible with the log data,
+accounting for ¯tness (called completeness) and also behavioral appropriateness
+(called soundness).mining process models with non-free-choice constructs 7
+process mining can be seen in the broader context of business (process)
+intelligence (bpi) and business activity monitoring (bam). in [31, 32, 50] a bpi
+toolset on top of hp's process manager is described. the bpi toolset includes
+a so-called \bpi process mining engine". in [43] zur muehlen describes the
+pisa tool which can be used to extract performance metrics from work°ow
+logs. similar diagnostics are provided by the aris process performance manager
+(ppm) [35]. the latter tool is commercially available and a customized version
+of ppm is the sta®ware process monitor (spm) [53] which is tailored towards
+mining sta®ware logs.
+for more information on process mining we refer to a special issue of com-
+puters in industry on process mining [12] and a survey paper [11].
+starting point for the approach described in this paper is ®algorithm [13].
+improvements of the basic ®algorithm have been proposed in [41, 42] and [57,
+58]. in [41], the limitations of the ®algorithm are explored and an approach
+to deal with short-loops is proposed. the resulting algorithm, named ®+, is
+described in [42]. in this paper, we take the ®+algorithm as a starting point
+and extend it to deal with non-free-choice constructs as well as detect implicit
+dependencies between tasks. in [57], an approach is proposed to explicitly exploit
+event types. but this requires a start and complete event for each activity. the
+work done in this paper is an extension of the work presented in [58]. in that
+paper, the authors only give theorems to detect implicit dependencies between
+tasks and do not involve eliminating redundant implicit dependencies as well as
+giving the algorithm for constructing the ¯nal process model.
+3 preliminaries
+in this section, we give some de¯nitions used throughout this paper. first, we
+introduce a process modeling language (wf-nets) and its relevant concepts.
+then we discuss the notion of an event log in detail and give an example. finally,
+we give a very brief introduction to the classical ®algorithm [13].
+3.1 wf-net
+in this paper, wf-nets are used as the process modeling language [1]. wf-nets
+form a subset of petri nets [24, 25]. note that petri net provides a graphical
+but formal language designed for modeling concurrency. moreover, petri nets
+provide all kinds of routings supported by a variety of process-aware information
+systems (e.g., wfm, bpm, erp, pdm, and crm systems) in a natural way.
+wf-nets are petri nets with a single source place (start of process) and a single
+sink place (end of process) describing the life-cycle of a single case (process
+instance). in this paper, we will only consider sound wf-nets, i.e., wf-nets
+that once started for a case can always complete without leaving tokens behind.
+as shown in [1], soundness is closely related to well-known concepts such as
+liveness and boundedness [24, 25].8 lijie wen et al.
+figure 2 gives an example of a work°ow process modeled in wf-net. this
+model has a non-free-choice construct. the transitions (drawn as rectangles)
+t1,t2,¢¢¢,t5represent tasks and the places (drawn as circles) p1,p2,¢¢¢,p6
+represent causal dependencies. a place can be used as pre-condition and/or post-
+condition for tasks. the arcs (drawn as directed edges) between transitions and
+places represent °ow relations. in this process model, there is a non-free-choice
+construct, i.e., the sub-construct composed of p3,p4,p5,t4andt5. for t4and
+t5, their common input set is not empty but their input sets are not the same.
+p 1t 1
+t 2p 2 t 3 p 5t 4
+t 5p 6p 3
+p 4
+fig. 2. an example of a work°ow process in wf-net
+we adopt the formal de¯nitions and properties (such as soundness and safe-
+ness) of wf-net and swf-net from [1, 13]. some related de¯nitions (such as
+implicit place), properties and ¯ring rules about petri nets are also described
+there.
+in this paper, we demand that each task (i.e., transition) has an unique
+name in one process model. however, each task can appear multiple times in
+one process instance for the presence of iterative routings.
+3.2 event log
+as described in section 1 the goal of process mining is to extract information
+about processes from transactional event logs. in the remainder of this paper,
+we assume that it is possible to record events such that (i) each event refers to a
+task (i.e., a well-de¯ned step in the process), (ii) each event refers to a case (i.e.,
+a process instance), and (iii) events are totally ordered. note that the mxml
+format [27] mentioned in section 1 and used by prom [26] can store much more
+information (cf. timestamps, originators, transactional information, data, etc.).
+however, the algorithm presented in this paper does not need this additional
+information. clearly, most information systems (e.g., wfm, erp, crm, pdm
+systems) will o®er this minimal information in some form [13].
+by sorting all the events in an event log by their process identi¯er and com-
+pletion time, we can assume that an event has just two attributes, i.e., task name
+and case identi¯er. table 1 gives an example of an event log.
+this log contains information about two cases. the log shows that for case
+1,t1,t3andt4are executed. for case 2, t2,t3andt5are executed. in fact,
+no matter how many cases there are in the event log, there are always only two
+distinct event traces, i.e., t1t3t4andt2t3t5. thus for the process model shown
+in figure 2, this event log is a minimal and complete one. here we adopt the
+de¯nitions of (event) trace and event log from [13].mining process models with non-free-choice constructs 9
+table 1. an event log for the process shown in figure 2
+case id task name case id task name
+1 t1 2 t2
+1 t3 2 t3
+1 t4 2 t5
+3.3 the classical ®algorithm
+as indicated in the introduction, many process mining approaches have been
+developed in recent years. most of the classical approaches use simple process
+models such as ¯nite state automata. the ®algorithm was one of the ¯rst ap-
+proaches to take concurrency into account (i.e., explicit causal dependencies and
+parallel tasks). moreover, unlike many other theoretical approaches, a weaker
+form of completeness was assumed.
+the®algorithm starts by analyzing the event log and then construct various
+dependency relations. to describe these relations we introduce the following
+notations. let wbe an event log over t, i.e., wµt¤. let a; b2t:
+{a >wbi® there is a trace ¾=t1t2t3: : : tnandi2 f1; : : : ; n ¡1gsuch that
+¾2wandti=aandti+1=b,
+{a!wbi®a >wbandb6>wa,
+{a#wbi®a6>wbandb6>wa, and
+{akwbi®a >wbandb >wa.
+consider some event log w=fabcd; acbd; aed g. relation >wdescribes
+which tasks appeared in sequence (one directly following the other). clearly,
+a > wb,a > wc,a > we,b > wc,b > wd,c > wb,c > wd,
+ande > wd. relation !wcan be computed from >wand is referred to as
+the(direct) causal relation derived from event log w.a!wb,a!wc,
+a!we,b!wd,c!wd, and e!wd. note that b6!wcbecause
+c > wb. relation kwsuggests concurrent behavior, i.e., potential parallelism.
+for log wtasks bandcseem to be in parallel, i.e., bkwcandckwb. if two
+tasks can follow each other directly in any order, then all possible interleavings
+are present and therefore they are likely to be in parallel. relation # wgives
+pairs of transitions that never follow each other directly. this means that there
+are no direct causal relations and parallelism is unlikely.
+based on these relations, the ®algorithm starts constructing the correspond-
+ing petri net. the algorithm assumes that two tasks aandb(i.e, transitions)
+are connected through some place if and only if a!wb. if tasks aandbare
+concurrent, then they can occur in any order, i.e., amay be directly followed by
+bor vice versa. therefore, the ®algorithm assumes that tasks aandbare con-
+current if and only if akwb. ifx!waandx!wb, then there have to be places
+connecting xandaon the one hand and xandbon the other hand. this can
+be one place or multiple places. if akwb, then there should be multiple places to
+enable concurrency, i.e., both aandbare triggered by xthrough separate places.
+if on the other hand a#wb, then there should be a single place to ensure that10 lijie wen et al.
+only one branch is chosen. this way it is possible to decide on the nature of a
+split. similarly, one can decide on the nature of a join and this way construct
+the entire petri net. it should be noted that the ®algorithm can deal with much
+more complicated structures than a simple and/xor-split/join. for example,
+it is possible to start things in parallel and make a choice at the same time.
+although the ®algorithm is able to deal with various forms of concurrency,
+it typically has problems correctly discovering implicit dependencies. these de-
+pendencies stem from a particular use of the non-free choice construct in petri
+nets. for example, the ®algorithm is unable to discover figure 2 based on ta-
+ble 1. the reason is that t1is never directly followed by t4and that t2is never
+directly followed by t5. hence, t16!wt4andt26!wt5(because t16>wt4
+andt26>wt5) and the model discovered by the ®algorithm is the wf-net
+without places p3andp4. the resulting petri net is sound but allows for too
+much behavior. this is only one example where the ®algorithm fails to capture
+an implicit dependency. as we will show in the next section, there are many
+types of implicit dependencies that are even more di±cult to handle. yet this is
+crucial because these behaviors occur in many real-life processes.
+4 problems
+to illustrate the di±culties of mining process models with non-free-choice con-
+structs, we give some situations in which current process mining algorithms
+usually fail. see figure 3 below. there are three wf-nets in the ¯gure, i.e., n1,
+n2andn3. all nets in the left part are the original nets, while others in the
+right part are their corresponding mined nets using ®-algorithm. here the ®-
+algorithm is chosen because it is the basis for the approaches described in this
+paper. the mining results of other process mining algorithms are structurally
+similar. for convenience, the mining results of n1,n2andn3are called n0
+1,n0
+2
+andn0
+3respectively.
+before we discuss the wf-nets n1,n2,n3,n0
+1,n0
+2andn0
+3shown in fig-
+ure 3, it is important to consider di®erent notions of \correctness" in the context
+of process mining. in real-life situations, the real process is often not known a-
+priori (i.e., it exists but is not made explicit). therefore, it is di±cult to judge the
+correctness of the mining result. in [48] notions such as ¯tness and appropriate-
+ness are de¯ned in the context of conformance checking. however, to determine
+the quality of a process mining technique in a more scienti¯c setting, ¯tness
+and appropriateness are not very convenient because they compare an event log
+and the \discovered model" rather than the \real model" and the \discovered
+model". moreover, given a log it is fairly easy to ¯nd over-generalized or over-
+speci¯c models that can regenerate the observed behavior (see [48] for examples).
+therefore, we want to compare some a-priori model with the a-posteriori (i.e.,
+discovered) model. (even though the a-priori model is not known in most real-
+life applications.) moreover, given some a-priori model we will not assume that
+we are able to observe all possible execution sequences, instead we use occam's
+razor , i.e., \one should not increase, beyond what is necessary, the number ofmining process models with non-free-choice constructs 11
+ia
+bcd
+eo ia
+bcd
+eo n 1
+ia
+cb
+de
+go
+fn 2
+ia
+cb
+de
+go
+f
+a c bd e
+i on 3
+a c bd e
+i o
+fig. 3. three pairs of process models: the models on the left contain non-free-choice
+constructs and cannot be discovered by traditional algorithms while the models on the
+right are the (incorrect) models generated by the ®/®+algorithm
+entities required to explain anything" (william of ockham, 14th century). note
+that it would be unrealistic to assume that all possible ¯ring sequences are
+present in the log. first of all, the number of possible sequences may be in¯-
+nite (in case of loops). second, parallel processes typically have an exponential
+number of states and, therefore, the number of possible ¯ring sequences may be
+enormous. finally, even if there is no parallelism and no loops but just nbinary
+choices, the number of possible sequences may be 2n. therefore, we will use a
+weaker notion of completeness. we will de¯ne such a notion in section 6 but in
+the meanwhile we assume some informal notion of correctness.
+after discussing di®erent notions of \correctness" in the context of process
+mining, we return to the wf-nets shown in figure 3. n1,n2,n3are the wf-
+nets on the left-hand side, each representing some a-priori model. n0
+1,n0
+2and
+n0
+3are the corresponding models on the right-hand side, each representing the
+discovered model by applying classical algorithms such as the ®or®+algorithm
+let us consider the ¯rst wf-net shown in figure 3. there is a non-free-choice
+between dandeinn1, i.e., the choice is not made by dorethemselves, but
+is decided by the choice made between aandb. first, there is a free choice
+between aandb. after one of them is chosen to execute, cis executed. finally,
+whether doreis chosen to execute depends on which one of aandbhas
+been executed. the minimal and complete event log of n1can be represented
+asfacd ,bceg. although the mining result n0
+1is a sound wf-net, it is not
+behaviorally equivalent with n1. the join places connecting aanddas well as
+bandeare missing in n0
+1. thus the minimal and complete event log of n0
+1is12 lijie wen et al.
+facd; ace; bcd; bce g. compared to n1,n0
+1can generate two additional
+event traces, i.e., ace andbcd . obviously, this is a \mining failure" that
+should be avoided. in order to mine wf-nets with such feature, the mining
+algorithm must remember all the choices made in the net and investigate the
+relations between each pair of them later. the di±culty focuses on how to ¯nd all
+the choices between tasks from event log e±ciently and how to use the relations
+between each pair of these choices correctly.
+let us now consider the second wf-net shown in figure 3. there is a non-
+free-choice between banddas well as canddinn2. after ais executed,
+there are two tasks (i.e., eandc) enabled concurrently. on the one hand, if e
+is chosen to execute ¯rst, b,canddwill be enabled concurrently. in the next
+step, either dwill be executed or candbwill be executed concurrently. on
+the other hand, if cis chosen to execute ¯rst, there will be no choice to be made
+later. one of the minimal and complete event logs of n2can be represented
+asfaedfg; aecbfg; acefbg; aebcfg; acfebg g. although n2is a
+sound wf-net, its mining result n0
+2is not a sound one. two join arcs (i.e., the
+arc from the place connecting aandctodand the arc from dto the place
+connecting bandg) are missing in n0
+2. ifdis executed at some time, there
+will be a deadlock at g¯nally. here another \mining failure" occurs. the causal
+relation between aanddas well as dandgis not detected from the event
+log by the ®-algorithm. the di±culty is how to detect similar causal relations
+between tasks from event logs to make the mining result sound and behaviorally
+equivalent with the original net.
+finally, we consider the third wf-net shown in figure 3. there is a non-
+free-choice between canddinn3. after ais executed, banddcan be
+executed concurrently. before cis executed, the sequence decan be executed
+any number of times. cis only enabled when bhas been executed and dis just
+enabled. one of the minimal and complete event logs of n3can be represented
+asfabc; abdec; adbec; adedebc g. here n3is a sound wf-net, its
+mining result n0
+3is not sound either. one causal relation (i.e., from atoc) is
+missing in n0
+3. after aandbare executed successively, the net blocks. here
+again a \mining failure" surfaces. such undetected causal relations should be
+mined correctly by the newcome mining algorithms.
+in summary, the essence of such mining failure is that some causal relations
+between tasks are not detected from event logs by current process mining algo-
+rithms. almost all the process mining algorithms today determine the possible
+causal relations between two tasks, e.g., aandb, if and only if the subsequence
+aboccurs in some event trace at least once. causal relations detected from event
+logs using similar idea can be considered to have a dependency distance of one.
+in wf-nets, such as n1,n2andn3shown in figure 3, there are causal rela-
+tions between tasks with longer (i.e., more than one) dependency distance. in
+this paper, we try to tackle such issues listed above in some extent.mining process models with non-free-choice constructs 13
+5 dependency classi¯cation
+to distill a process model with non-free-choice constructs from event logs cor-
+rectly, there must be a way to mine all the dependencies (i.e., causal relations)
+between tasks without mistakes. as research results show, not all dependencies
+can be mined from event logs directly by current process mining algorithms [41].
+in fact, there are two kinds of dependencies between tasks in wf-nets, i.e., ex-
+plicit and implicit ones. an explicit dependency , which is also called direct depen-
+dency , re°ects direct causal relationships between tasks. an implicit dependency ,
+which is also called indirect dependency , re°ects indirect causal relationships be-
+tween tasks. to clarify the di®erences between both classes of relationships, the
+corresponding formal de¯nitions are given below.4
+de¯nition 1 (explicit dependency). letn= (p; t; f )be a sound wf-net
+with input place i and output place o. for any a; b2t, there is an explicit
+dependency between a and b i®:
+1.connective: a² \ ² b6=;, and
+2.successive: there is some reachable marking s2[n;[i]isuch that (n; s)[ai
+and(n; s¡ ²a+a²)[bi.
+de¯nition 2 (implicit dependency). letn= (p; t; f )be a sound wf-net
+with input place i and output place o. for any a; b2t, there is an implicit
+dependency between a and b i®:
+1.connective: a² \ ² b6=;,
+2.disjunctive: there is no reachable marking s2[n;[i]isuch that (n; s)[aiand
+(n; s¡ ²a+a²)[bi, and
+3.reachable: there is some reachable marking s2[n;[i]isuch that (n; s)[aiand
+there is some reachable marking s02[n; s¡ ²a+a²isuch that (n; s0)[bi.
+as figure 2 shows, p2together with its surrounding arcs re°ects explicit
+dependencies between t1andt3as well as t2andt3. while p3together with its
+surrounding arcs re°ects an implicit dependency between t1andt4. if there are
+only explicit dependencies between tasks in a process model with non-free-choice
+constructs, most process mining algorithms, such as the ®algorithm etc., can
+mine it correctly. otherwise, existing process mining algorithms have problems
+\discovering" implicit dependencies.
+now we investigate what characteristics a process model with implicit depen-
+dencies may have. assume that there is an implicit dependency between aand
+b. once ais executed, there must be some other tasks before bto be executed.
+after that, bis to be executed. there is never any chance that bcan directly
+follow ain some trace, because the \dependence distance" is at least two. so
+the implicit dependency between aandbhas no chance to be detected directly,
+using classical approaches such as the >relation in the ®algorithm. a typical
+fragment of a process model with an implicit dependency is shown in figure 4.
+4we assume the reader to be familiar with the formal de¯nition of petri nets in terms
+of a three tuple ( p; t; f ) and related notations. for the reader not familiar with
+these notation we refer to [1, 3].14 lijie wen et al.
+a p 2 p 3 b nc p 1
+fig. 4. characteristics of a process model with an implicit dependency
+let us assume that in figure 4 subnet nccontains at least one task. it
+takes tokens from p2and puts tokens into p3. in a general case, there may be
+more complicated relationships between ncand the rest of the process model.
+however, only the simplest case is considered while other cases can be converted
+to this case easily (simply extending nc). therefore, we need not consider the
+cases where some tasks outside of nctake p2as their input place or p3as
+their output place. furthermore, if there are no other tasks connected to p1,
+p2andp3,p1becomes an implicit place. implicit places do not in°uence the
+behavior of a process model, i.e., they can be removed without changing the set
+of reachable states. clearly no mining algorithm is able to detect these places.
+although their addition is harmless, we prefer mining algorithms that avoid
+constructing implicit places. note that not all implicit dependencies correspond
+to implicit places. therefore, we consider extensions of the basic case shown in
+figure 4. these extensions add arcs to p1,p2, and p3. in total we will consider
+seven extensions. these are shown in figure 5. for example, figure 5(a) extends
+figure 4 by adding input arcs to p2and output arcs to p3. note that each of
+the \patterns" depicted in figure 5 may appear in a sound wf-net.
+in the remainder, we will show that it is possible to successfully mine pro-
+cesses embedding one or more of the patterns shown in figure 5. using existing
+algorithms such as the ®algorithm [13, 42], the wf-net (a) shown in figure 5
+cannot be discovered, i.e., place p1and its surrounding arcs will not be mined
+correctly. for (b) and (g), place p1may be replaced by two or more places. for
+(c) and (e), the arc ( p1,b) will be omitted. for (d) and (f), the arc ( a,p1) will
+be omitted.
+in this paper, we will consider three cases:
+1.the situation described by patterns (b) and (g) in figure 5, where the ®
+algorithm incorrectly replaces place p1by two or more places.
+2.the situation described by patterns (c), (d), (e) and (f), where the ®algo-
+rithm misses the arc between aandp1(a; p 1) orp1andb(p1; b).
+3.the situation described by pattern (a) where place p1is not discovered at
+all.
+in the next section, we will show how these three cases can be detected.
+6 detecting implicit dependencies
+from the previous sections, it is obvious that the detection of implicit dependen-
+cies is the most important factor for mining process models with non-free-choicemining process models with non-free-choice constructs 15
+a p 2 p 3 b nc p 1
+a p 2 p 3 b nc p 1
+a p 2 p 3 b nc p 1a p 2 p 3 b nc p 1
+(a) (b)
+(c) (d)
+a p 2 p 3 b nc p 1
+a p 2 p 3 b nc p 1a p 2 p 3 b nc p 1
+(e) (f)
+(g)
+fig. 5. sound sub-wf-nets with implicit dependencies: (1) patterns (b) and (g) will
+be mined incorrectly because the ®algorithm will create two places for p1, (2) patterns
+(c), (d), (e) and (f) will be mined incorrectly because the ®algorithm will miss some
+arcs, and (3) pattern (a) will be mined incorrectly because the ®algorithm will not
+¯nd place p1.16 lijie wen et al.
+constructs correctly. in this section, we will introduce three methods to tackle
+the three problems illustrated by figure 5 in detail. there exists a one-to-one
+relationship between the three methods and the above three cases of implicit
+dependencies.
+to detect explicit dependencies between tasks, we adopt the ®algorithm
+[13, 42]. some de¯nitions, such as >w,!w, #w,kw, etc., are also borrowed
+from there with some modi¯cations. based on these basic ordering relations,
+we provide some additional new de¯nitions for advanced ordering relations. the
+de¯nition of one-loop-free work°ow net directly adopts the de¯nition with the
+same name presented in [42].
+de¯nition 3 (ordering relations). let n=(p,t,f) be a one-loop-free work-
+°ow net and w be an event log over t. let a,b 2t:
+{a4wbi® there is a trace ¾=t1t2t3: : : tnandi2 f1; : : : ; n ¡2gsuch that
+¾2wandti=ti+2=aandti+1=b,
+{a >wbi® there is a trace ¾=t1t2t3: : : tnandi2 f1; : : : ; n ¡1gsuch that
+¾2wandti=aandti+1=b,
+{a!wbi®a >wband ( bwaora4wborb4wa),
+{a#wbi®awbandbwa,
+{akwbi®a >wbandb >waand:(a4wborb4wa),
+{acwbi®a#wband there is a task c such that c2tandc!waand
+c!wb,
+{abwbi®a#wband there is a task c such that c2tanda!wcand
+b!wc,
+{aàwbi®awband there is a trace ¾=t1t2t3: : : tnandi; j2 f1; : : : ; n g
+such that ¾2wandi < j andti=aandtj=band for all k2 fi+
+1; : : : ; j ¡1gsatisfying tk6=aandtk6=band:(tkcwaortkbwa), and
+{aâwbi®a!wboraàwb.
+the de¯nitions of 4w,>wand # ware the same as those de¯ned in [42].
+de¯nitions of !wandkware a little di®erent. given a complete event log of
+a sound swf-net [13, 42] and two tasks aandb,a4wbandb4wamust both
+come into existence. but for a one-loop-free event log of a sound wf-net, it is
+not always true. now we will turn to the last ¯ve new de¯nitions. relation cw
+corresponds to xor-split while relation bwcorresponds to xor-join. relation
+àwrepresents that one task can only be indirectly followed by another task.
+relation âwrepresents that one task can be followed by another task directly
+or indirectly. consider the event log shown in table 1, it can be represented as
+string sets, i.e., ft1t3t4,t2t3t5g. from this log, the following advanced ordering
+relations between tasks can be detected: t1bwt2,t4cwt5,t1àwt4and
+t2àwt5.
+to improve the correctness of a mining result, the quality of its correspond-
+ing event log is especially signi¯cant. although other ordering relations can be
+derived from >w,àwis a little special. >wre°ects relations with the length
+of one, while àwis a relation whose length is two or more. they are both used
+in the following de¯nition.mining process models with non-free-choice constructs 17
+de¯nition 4 (complete event log). letn= (p; t; f )be a sound wf-net
+andwbe an event log of n.wis complete i®:
+{for any event log w0ofn:>w0µ>w,4w0µ 4 wandàw0µà w, and
+{for any t2t: there is a ¾2wsuch that t2¾.
+in this paper we assume perfect information: (i) the log must be complete (as
+de¯ned above) and (ii) the log is noise free (i.e., each event registered in the log
+is correct and representative for the model that needs to be discovered). some
+techniques to deal with incompleteness and noise will be discussed later.
+based on the above ordering relations de¯ned in de¯nition 3. some implicit
+ordering relations re°ecting implicit dependencies can be derived.
+de¯nition 5 (implicit ordering relations). letwbe a complete event log
+andn= (p; t; f ) =®+(w)be a mined wf-net from wusing the ®+algorithm.
+leta; b2t:
+{a7!w1bi®a6>wband there is a task c2tsuch that there are two
+di®erent places p1; p22psuch that p1; p22 ²canda2 ²p1anda62 ²p2and
+b2p2²and there is no task t2 ²p2such that tâwaortkwa,
+{a7!w21bi®aàwbandja² j>1and there is a task b02tsuch that
+bcwb0and there is a place p2a²such that there is no task t2p²such that
+tâwbortkwband there is a task t02p²such that t0âwb0ort0kwb0,
+{a7!w22bi®aàwbandj ²bj>1and there is a task a02tsuch that
+abwa0and there is a place p2 ²bsuch that there is no task t2 ²psuch that
+aâwtorakwtand there is a task t02 ²psuch that a0âwt0ora0kwt0,
+{a7!w2i®a7!w21bora7!w22b, and
+{a7!w3bi® there are two tasks a0; b02tsuch that a² \a0² 6=áand
+²b\ ²b06=áandaàwbanda6àwb0anda06àwbanda0àwb0and
+²bµ ²b0[ f²tja6àwt^a0àwt^(b0kwt_b0âwt)^ ²b\ ²t6=ág.
+first of all, we try to detect implicit dependencies from an event log of a
+process model with a sub-wf-net similar to figure 5(b) and (g). 7!w1insures
+that once there is a place connecting two successive tasks in the mined model
+and the latter task has more than one input place, the latter task can always
+have chance to be executed directly following the former task.
+secondly, we try to detect implicit dependencies from an event log of a process
+model with a sub-wf-net similar to figure 5(c) to (f). 7!w2insures that once
+a task takes tokens from one of multiple parallel branches, it together with its
+parallel tasks must consume tokens from other branches too.
+finally, we try to detect implicit dependencies from an event log of a pro-
+cess model with a sub-wf-net similar to figure 5(a). 7!w3insures that if two
+exclusive tasks (i.e., involved in an xor-join) lead to di®erent sets of parallel
+branches and these two sets together with their tasks satisfy certain conditions,
+the mined wf-net is still sound.18 lijie wen et al.
+7 mining algorithm
+in this section, we ¯rst analyze the interrelationships among the three implicit
+ordering relations proposed in the previous section. then, we introduce two re-
+duction rules for eliminating those implicit ordering relations leading to redun-
+dant implicit dependencies. then, we give the mining algorithm named ®++for
+constructing process models with non-free-choice constructs involving implicit
+dependencies. finally, we brie°y discuss the complexity of the ®++algorithm.
+7.1 interrelationships among the three implicit ordering relations
+the three implicit ordering relations proposed in the previous section are not
+independent of each other. there are a total of 3! = 6 kinds of interrelationships
+among them. with the help of these interrelationships, the correct sequence of
+detecting these relations can be identi¯ed naturally.
+first, we will clarify the in°uence of 7!w2and7!w3on7!w1. see figure 6,
+we assume that 7!w2will be treated as !wbefore detecting 7!w1. here a
+has two input places, i.e., p2andp3. after detecting 7!w1,t7!w1bwill be
+detected and there will be an arc connecting tandp3. clearly, the sub-wf-net
+is not sound in this case. here we get a conclusion that detecting 7!w2should
+not be executed before detecting 7!w1. similarly, detecting 7!w3should not be
+executed before detecting 7!w1either.
+t
+p 2 y 2 'y 2p 1 y 1 nc b p 3
+a
+fig. 6. example for the in°uence of 7!w2on7!w1
+secondly, we will clarify the in°uence of 7!w1and7!w2on7!w3. from the
+essence of 7!w1, we can see that it does not produce any new bworcworder-
+ing relation. while 7!w3fully involves all these two kinds of ordering relations
+between tasks. here we get a conclusion that 7!w1has no in°uence on 7!w3.
+on the contrary, 7!w2always produces new bworcwordering relations. so
+detecting 7!w3should not be executed before detecting 7!w2.
+finally, we will clarify the in°uence of 7!w1and7!w3on7!w2. the detection
+of7!w2depends on the parallel branches of some task and four kinds of advanced
+ordering relations (i.e., cw,bw,kwandâw). from the essence of 7!w1and
+7!w3, we can see that they do not a®ect any task's parallel branches and do
+not produce any new cw,bw,kworâwordering relation. here we get a
+conclusion that the detection of 7!w1or7!w3does not in°uence that of 7!w2.
+by now, we can identify the correct sequence of detecting the three kind
+of implicit ordering relations, i.e., 7!w1>7!w2>7!w3. when detecting these
+relations successively, the only important thing to remember is that all 7!w2
+relations must be treated as !wbefore detecting 7!w3.mining process models with non-free-choice constructs 19
+7.2 eliminating redundant implicit dependencies
+not all the implicit dependencies derived from the implicit ordering relations are
+meaningful to the mined process model. there may exist some implicit dependen-
+cies leading to implicit places, which are called redundant implicit dependencies .
+we will give two reduction rules to eliminate these implicit dependencies (i.e.,
+eliminating the corresponding implicit ordering relations) in this subsection.
+figure 7 shows the ¯rst kind of mined wf-net involving redundant implicit
+dependencies. here p2is an implicit place caused by a7!w2ethat needs to be
+eliminated.
+a
+dcp 1
+bf h
+g
+ep 2
+fig. 7. the ¯rst kind of mined wf-net involving redundant implicit dependencies
+therefore, we need a reduction rule to eliminate this kind of redundant im-
+plicit dependencies after detecting 7!w2. we do this by eliminating the corre-
+sponding implicit ordering relations. this reduction rule named rule 1 is for-
+malized as follows.
+8a;b;c2twa7!w2b^a7!w2c^bâwc)a67!w2c
+8a;b;c2twa7!w2c^b7!w2c^aâwb)a67!w2c(1)
+figure 8 shows the second kind of mined wf-net involving redundant implicit
+dependencies. here either p2orp3is an implicit place caused by a7!w3hor
+d7!w3hrespectively.
+a
+bcd
+e fp 1
+gh
+i jp 3p 2
+fig. 8. the second kind of mined wf-net involving redundant implicit dependencies
+therefore, we need a reduction rule to eliminate this kind of redundant im-
+plicit dependencies after detecting 7!w3. as figure 8 shows, either p2orp3can
+be eliminated but they should not be both eliminated. here we prefer to elimi-
+nate the implicit dependencies with longer distances according to the transitive
+closure of all the basic implicit dependencies. this reduction rule named rule 2
+is formalized as follows.
+8a;b2tw(a7!w3b^ 9t1;¢¢¢;tn2tw(n¸1^a7!w3t1^ ¢¢¢ ^ tn7!w3b))
+)a67!w3b(2)20 lijie wen et al.
+consider again the wf-net shown in figure 8, p2will be eliminated after
+applying rule 2. here a7!w3his not a basic implicit dependency. it can be
+decomposed into a7!w3dandd7!w3h. in this example, a7!w3dand
+d7!w3hare both basic implicit dependencies. the goal of this reduction rule
+is just to eliminate all non-basic implicit dependencies while keep the basic ones.
+7.3 constructing process models
+by now, all the explicit and implicit dependencies can be detected correctly. it
+is necessary to give an algorithm that constructs the ¯nal mined process model.
+the solution to tackle length-one loops in sound wf-nets and some mining steps
+are borrowed from [42] with some modi¯cation. all the related ordering relations
+come from de¯nition 3.
+the algorithm - called ®++- to mine sound wf-nets with non-free-choice
+constructs is formalized as follows. note that the function eliminatetask (¾; t)
+maps any event trace ¾to a new one ¾0without the occurrence of a certain
+transition t[42]. also note that eliminaterdbyrule1 andeliminaterdbyrule2
+eliminate redundant implicit dependencies in any dependency set by applying
+rule 1 and 2 respectively.
+de¯nition 6 (mining algorithm ®++).letwbe a loop-complete event log
+over t. the ®++(w)is de¯ned as follows.
+1.tlog=ft2tj9¾2wt2¾g
+2.l1l=ft2tlogj9¾=t1t2¢¢¢tn2w;i2f1;2;¢¢¢;ngt=ti¡1^t=tig
+3.t0=tlog¡l1l
+4.xw=f(a; b; c )jaµt0^bµt0^cµl1l^8a2a8c2c(a >wc^:(c4w
+a))^8b2b8c2c(c >wb^:(c4wb))^8a2a8b2ba,wb^8a1;a22aa1#wa2^
+8b1;b22bb1#wb2g
+5.lw=f(a; b; c )2xwj8(a0;b0;c0)2xwaµa0^bµb0^cµc0)
+(a; b; c ) = (a0; b0; c0)g
+6.w¡l1l=;
+7.for each ¾2wdo:
+(a)¾0=¾
+(b)for each t2l1ldo:
+i.¾0:=eliminatetask (¾0; t)
+(c)w¡l1l:=w¡l1l[¾0
+8.idw1=f(a; b)ja2t0^b2t0^a7!w1bg
+9.(pw¡l1l; tw¡l1l; fw¡l1l) =®(w¡l1l)
+10.treat each a7!w1b2idw1asa!wbandidw2=f(a; b)ja2t0^b2
+t0^a7!w2bg
+11.idw2:=eliminaterdbyrule 1(idw2)
+12.xw=f(a[a2; b[b2)jp(a;b)2pw¡l1l^a2[b26=;^a\a2=;^b\b2=
+; ^ 8 a2a8b2b2(a7!w1b_a7!w2b)^ 8a2a28b2b[b2(a7!w1b_a7!w2
+b)^8a12a8a22a2(a2#wa1^a26àwa1)^8b12b8b22b2(b1#wb2^b16àwb2)g
+13.yw=f(a; b)j((a; b)2xw_p(a;b)2pw¡l1l)^8(a0;b0)2xw_p(a0;b0)2pw¡l1l
+(aµa0^bµb0)(a; b) = (a0; b0))gmining process models with non-free-choice constructs 21
+14.treat each a7!w2b2idw2asa!wbandidw3=f(a; b)ja2t0^b2
+t0^a7!w3bg
+15.idw3:=eliminaterdbyrule 2(idw3)
+16.xw=f(a; b)jaµt0^bµt0^ 8a2a8b2ba7!w3b^ 8a1;a22aa1#wa2^
+8b1;b22bb1#wb2g
+17.zw=f(a; b)2xwj8(a0;b0)2xwaµa0^bµb0)(a; b) = (a0; b0)g
+18.pw=fp(a;b)j(a; b)2yw[zwg ¡ f p(a;b)j9(a0;b0;c0)2lwa0=a^b0=
+bg [ fp(a[c;b[c)j(a; b; c )2lwg
+19.tw=tw¡l1l[l1l
+20.fw=f(a; p(a;b))j(a; b)2pw^a2ag[f(p(a;b); b)j(a; b)2pw^b2bg
+21.®++(w) = (pw; tw; fw)
+the ®++works as follows. steps 1 to 3 are directly borrowed from [42]. in
+steps 4 and 5, the places connecting length-one-loop transitions are identi¯ed
+and included in lw. then all length-one-loop transitions are removed from the
+input log wand the new input log w¡l1lto be processed by the ®algorithm
+is derived (steps 6 and 7). in step 8, all the implicit ordering relations 7!w1in
+w¡lllare detected. in step 9, the ®algorithm discovers a wf-net based on
+w¡l1land the ordering relations as de¯ned in de¯nition 3. in steps 10 to 13,
+all the places involving 7!w1and7!w2relations are derived and included in
+yw. first, all the implicit dependencies 7!w2inw¡lllare detected once all
+the7!w1inidw1have been treated as !w(step 10). then rule 1 is applied
+to reduce the redundant implicit dependencies in idw2(step 11). at last, all
+the places involving the ¯rst two kinds of implicit dependencies are derived from
+pw¡l1lwhile the other places in pw¡l1lare retained (steps 12 and 13). in
+steps 14 to 17, all the places involving 7!w3relations are derived and included
+inzw. first, all the 7!w2inidw2are treated as !wand all the implicit
+dependencies 7!w3inw¡lllare detected (step 14). then rule 2 is applied to
+reduce the redundant implicit dependencies in idw3(step 15). at last, all the
+places involving the third kind of implicit dependency are derived based on these
+7!w3relations (steps 16 and 17). in steps 18 to 20, all the places in the mined
+wf-net are gathered and the length-one-loop transitions are added to the net
+and all the arcs of the net are derived too. the wf-net with non-free-choice
+constructs as well as length-one-loops and implicit dependencies is returned in
+step 21.
+7.4 complexity of the ®++algorithm
+to conclude this section, we consider the complexity of the ®++algorithm. for
+a complex process model, its complete event log may be huge containing millions
+of events. fortunately, the ®++algorithm is driven by relations >w,4wand
+àw. the time it takes to build relations >w,4wandàwis linear in the
+size of the log. moreover, we only require the log to be complete with respect
+to these relations, i.e., we do not need logs that capture all possible traces. the
+complexity of the remaining steps in the ®++algorithm is exponential in the
+number of tasks. however, note that the number of tasks is typically less than22 lijie wen et al.
+100 and does not depend on the size of the log. therefore, the complexity is not
+a bottleneck for large-scale application [13].
+practical experiences show that process models of up to 22 tasks based on
+logs of about half a million events can be analyzed within one minute on a
+standard computer. in the next section we will give an example of this size.
+based on real-life logs we also experienced that the ®++algorithm is typically
+notthe limiting factor. the real limiting factor is the visualization of the model
+and the interpretation of the model by the analyst. although the ®++algorithm
+is able to construct much larger models, people have problems comprehending
+such models (especially when the layout is machine generated). therefore, prom
+o®ers an extensive set of ¯ltering mechanisms to collapse part of the process into
+a single node or to abstract from less frequent paths and tasks.
+8 experimental evaluation
+this section discusses the experimental evaluation of the ®++algorithm. first
+we brie°y discuss the implementation in prom, followed by the evaluation cri-
+teria we have used. then, in section 8.3, we discuss an evaluation based on 40
+arti¯cial examples. in section 8.4, we describe an evaluation based on 22 more
+realistic processes speci¯ed in protos in the context of several student projects.
+these evaluations show that the ®++algorithm is performing remarkably well
+compared to other approaches. nevertheless, also the ®++algorithm has some
+limitations as discussed in section 8.5.
+8.1 implementation in prom
+the®++algorithm has been implemented as a prom plug-in and can be down-
+loaded from www.processmining.org. as shown in section 1, prom is a general
+process mining framework [26]. it takes an event log in the standard xml format
+(mxml) as input and uses a process mining plug-in to mine a process model
+from that log. a screenshot of prom is shown in figure 9. the screenshot shows
+the petri net constructed by the ®++algorithm. the screenshot also shows that
+the result can be automatically translated to an event-driven process chain
+(epc, [37, 51]) and that the result can be analyzed for soundness. in fact the
+result can be exported to tools such as cpn tools, aris, yawl, aris ppm,
+yasper, epc tools, wo°an, etc.
+the®++plug-in of prom has been applied to several real-life logs and smaller
+arti¯cial logs. some of these experiments are reported in the remainder.
+8.2 evaluation criteria
+so far we have been using mainly visual inspection of the models to see wether
+they are correct. this works well for small examples and can be used to also
+address the qualitative aspects of the ®++algorithm. however, there are also
+some problems related to this visual inspection. for example, two wf-nets maymining process models with non-free-choice constructs 23
+fig. 9. a screenshot of prom showing the result of applying the ®++algorithm
+have a completely di®erent structure but have exactly the same behavior. note
+that many researchers have worked on di®erent notions of equivalence that only
+look at the behavior and not the structure (e.g., trace equivalence, bisimulation,
+branching bisimulation, etc.). these notions are in principle useful, however,
+they are not tailored towards process mining. for example, they typically only
+provide a \yes/no" answer while some models are more similar than others,
+i.e., we would like to quantify the di®erence. moreover, not the initial model, but
+the behavior in the context of the notion of completeness being used is relevant.
+if one assumes a stronger notion of completeness, the models should be more
+similar than when using a very coarse notion of completeness. because of these
+problems we heavily rely on the notions of conformance de¯ned in [47, 48] (in
+addition to visual inspection).
+the starting point for conformance checking is the presence of both an ex-
+plicit process model, describing how some process should be executed according
+to the model, and some kind of event log, giving insight into how it was actually
+carried out. this means that not two process models are compared but a pro-
+cess model is compared with a log. in this paper, we typically generate logs from
+wf-nets, however, in reality the model is often unknown and the log is the only
+thing available . this makes conformance checking a much more appropriate tool
+for checking the quality of a mining algorithm.
+we have identi¯ed two dimensions of conformance, ¯tness andappropriate-
+ness [48]. fitness relates to the question whether the process behavior observed
+complies with the control °ow speci¯ed by the process model, while appropriate-
+ness can be used to evaluate whether the model describes the observed process
+in a suitable way (cf. occam's razor as discussed earlier). in this paper we will24 lijie wen et al.
+use three metrics: f(i.e., ¯tness), ab(i.e., behavioral appropriateness) and as
+(i.e., structural appropriateness) as de¯ned in [48].
+the ¯rst metric, f, is determined by replaying the log in the model, i.e., for
+each case the \token game" is played as suggested by the log. for this, the replay
+of every log trace starts with marking the initial place in the model and then
+the transitions that belong to the logged events in the trace are ¯red one after
+another. while doing so, one counts the number of tokens that had to be created
+arti¯cially (i.e., the transition belonging to the logged event was not enabled and
+therefore could not be successfully executed ) and the number of tokens that were
+left in the model (they indicate that the process has not properly completed ).
+only if there were neither tokens left nor missing, the ¯tness measure evaluates
+to 1:0, which indicates 100 % ¯tness. in other words, ¯tness re°ects the extent
+to which the log traces can be associated with execution paths speci¯ed by
+the process model. thus if f= 1 then the log can be parsed by the model
+without any error. appropriateness re°ects the degree of accuracy in which the
+process model describes the observed behavior (i.e., behavioral appropriateness ),
+combined with the degree of clarity in which it is represented (i.e., structural
+appropriateness ). for all the three metrics, their values are between 0.0 and 1.0.
+when evaluating the given logs and the mined models, the following evaluation
+criteria are used:
+{for any mined model and the corresponding log, the value of f(i.e., ¯tness)
+should be as close to 1.0 as possible.
+{only if fis close to 1 :0, one should consider as(i.e., structural appropri-
+ateness). if the ¯tness is good, higher values asare desirable. however, as
+does not need to be 1 and should be considered as a relative value (a log
+describing complex behavior cannot have a simple model).
+{similar comments hold for ab(i.e., structural appropriateness). one should
+only consider this metric if the ¯tness is good ( fis close to 1 :0). also ab
+should be considered to be a relative measure, i.e., the value indicates how
+\speci¯c" the model is.
+the above evaluation criteria can also be used to compare two mined models
+by di®erent mining algorithms from the same log. we will show this usage in
+the following two subsections in detail. if the original models are present, an
+alternative way of evaluating the mined models is just comparing the two mod-
+els manually. for smaller arti¯cial examples, manual countercheck is feasible
+enough. but for larger examples, the above evaluation criteria are recommended
+to be used.
+8.3 evaluation based on smaller arti¯cial logs
+instead of showing large real-life models, we ¯rst focus on smaller arti¯cial ex-
+amples that demonstrate the fact that ®++signi¯cantly improves existing ap-
+proaches such as the classic ®algorithm.
+to illustrate the capabilities of the ®++plug-in, we ¯rst show some experi-
+mental results for models with implicit dependencies.mining process models with non-free-choice constructs 25
+figure 10(a) shows an original wf-net. one of its complete work°ow log
+isfabc; abdec; adbec; adebc; abdedec g. after applying ®+algo-
+rithm on this log, the mined model is similar to figure 10(b) except for the two
+dotted arcs. based on this net and the corresponding log, a7!w1cis detected.
+thus p1andp2should be merged together. the resulting mined model will be
+the same as the original one, i.e., the ®++algorithm is able to correctly discover
+processes such as the one shown in figure 10(a).
+a c bd e
+a c bd e
+p 1 p 2
+(a) (b)
+fig. 10. detecting implicit dependency relation 7!w1
+figure 11 shows the e®ect of detecting 7!w2. the wf-nets excluding the
+dotted arcs are mined by ®+algorithm. the dotted arcs correspond to the de-
+tected implicit dependency relation 7!w2. thus the wf-nets in figure 11 can all
+be discovered correctly by the ®++algorithm. for figure 11(a), the correspond-
+ing complete work°ow log is fabce; acbe; ade g. from this log, no implicit
+dependency is detected. for figure 11(b), the corresponding complete work°ow
+log isfacfbge; afcbge; afbcge; afbgce; afdge g. from this log,
+implicit dependencies a7!w2dandd7!w2eare detected. for figure 11(c),
+the corresponding complete work°ow log is facd; bce; afce; acfe g. from
+this log, implicit dependencies a7!w2dandb7!w2eare detected. for fig-
+ure 11(d), the corresponding complete work°ow log is fabc; abde; adbe g.
+from this log, implicit dependency a7!w2cis detected.
+a c bd ea e
+cb
+d a
+cb
+df
+eg
+a
+bcd
+ef(a) (b)
+(c) (d)
+fig. 11. detecting implicit dependency relation 7!w2
+figure 12 shows the e®ect of detecting 7!w3. all the implicit dependencies
+in the wf-nets are detected successfully from the corresponding logs. for fig-
+ure 12(a), the corresponding complete work°ow log is facd; ace; bcd; bce g.
+from this log, no implicit dependency is detected. if the log changes to facd;26 lijie wen et al.
+bceg, implicit dependencies a7!w3dandb7!w3ecan be detected. for fig-
+ure 12(b), the corresponding complete work°ow log is facfd; afcd; bcge;
+bgce g. from this log, no implicit dependency is detected either. for fig-
+ure 12(c), the corresponding complete work°ow log is facd; bcfe; bfce g.
+from this log, implicit dependency a7!w3dis detected. for figure 12(d), the
+corresponding complete work°ow log is facebcd g. from this log, implicit
+dependencies a7!w3eandb7!w3dare detected.
+a
+bcd
+e fa
+bcd
+ea
+bcd
+e gf
+(a) (b)
+(c) (d)a
+bcd
+e
+fig. 12. detecting implicit dependency relation 7!w3
+figure 13(a) shows the e®ect of detecting 7!w2and7!w3successively. fig-
+ure 13(b) shows the e®ect of detecting 7!w1and7!w3successively. the mined
+wf-nets with implicit dependencies are the same as the original ones, i.e., the
+®++algorithm is able to correctly discover processes such as the ones shown
+in figure 13. for figure 13(a), the corresponding complete work°ow log is
+facdegh; acdgeh; acgdeh; bcdfh g. from this log, implicit depen-
+dencies c7!w2f,a7!w3e,a7!w3gandb7!w3fare detected. for fig-
+ure 13(b), the corresponding complete work°ow log is ffbg; abc; fdbeg;
+fbdeg; fdebg; adedebg; abdec g. from this log, implicit dependen-
+ciesa7!w1c,f7!w1g,a7!w3candf7!w3gare detected.
+a
+bc h
+ge
+fd
+(a) (b)a c bd e
+f g
+fig. 13. detecting implicit dependency relations 7!w2and7!w3as well as 7!w1and
+7!w3
+we have evaluated our approach using 40 arti¯cial examples and compared
+the results of the ®++algorithm with the classical ®algorithm. the correspond-
+ing complete logs are generated manually. in our set of 40 models, the maximummining process models with non-free-choice constructs 27
+number of tasks in an process model is less than 15 and the number of cases
+in one event log is less than 20. four of them do not have implicit dependen-
+cies between tasks (i.e., l5,l20,l21andl22). for this analysis we used both
+visual inspection (i.e., is the discovered model the same as the original) and
+the conformance metrics introduced before, i.e., f(¯tness), ab(behavioral ap-
+propriateness), and as(structural appropriateness). by directly comparing the
+original models and the discovered models, we can conclude that 38/40=95%
+percent mined models by the ®++algorithm are the same as the original ones.
+when mining from the complete logs, only two mining failures occurred: n6and
+n7are not rediscovered, whose complete logs are l39andl40respectively. this
+is remarkably better than that for the ®algorithm where the success rate is only
+4/40=10%.
+in addition to a direct comparison of the models, the di®erent metrics for
+testing conformance between the event log and the mined models (by ®++and
+®respectively) are computed. the detailed comparison result is listed in fig-
+ure 14. for the models whose metrics can not be computed successfully, the
+corresponding values are set to 0.4 to keep the chart clear.
+0.40.50.60.70.80.91.0
+1 3 5 7 9 11 13 15 17 19 21 23 25 27 29 31 33 35 37 39f(α++)
+ab(α++)
+as(α++)
+f(α)
+ab(α)
+as(α)
+fig. 14. comparison of mining results by ®++and®on complete logs generated from
+arti¯cial examples, i.e., fis the ¯tness value of the model, abdenotes behavioral
+appropriateness and asdenotes structural appropriateness
+from figure 14, we can see that the mining results for the ®++algorithm are
+remarkable better than those for the ®algorithm. for all the successful examples
+(i.e., having optimal ¯tness), the values of fandabfor the conformance between
+the complete logs and the mined models by the ®++algorithm are greater than
+those for the conformance between the complete logs and the mined models by
+the®algorithm. the values for fare all 1.0 and the values for abare typically
+at least 0.8. the values of asfor the ®++algorithm is often a bit smaller than
+those for the ®algorithm. the reason is that the numbers of nodes in the mined
+models by the ®++algorithm is often higher than those of nodes in the mined
+models by the ®algorithm. the detected implicit dependencies by the ®++
+algorithm are correctly re°ected by these additional places and arcs.28 lijie wen et al.
+8.4 evaluation based on real-life logs
+the above experimental results show that our algorithm is powerful enough to
+detect implicit dependencies between tasks. now we use a more realistic example
+given in figure 15 to show the applicability of the ®++algorithm. this process
+model was discovered based on a log containing 29502 event traces (i.e., cases)
+and 416586 events. in the resulting model there are 26 di®erent tasks. it takes
+about one minute for the ®++algorithm to discover the model shown in fig-
+ure 15. the dotted arcs re°ect the implicit dependencies between tasks detected
+by the ®++algorithm, i.e., contact outsource organization 7!w2send bill ,repair
+car on the spot rsm 7!w2send bill andrepair car on the spot asm 7!w2send
+bill.
+register 
+call loop up 
+customer info contact nearest 
+service location decide 
+outsourcing 
+contact outsource 
+organization 
+make bill 
+send bill 
+customer pays 
+within 3 weeks 
+archive no payment 
+within 3 weeks 
+send bill 
+again select service 
+mechanic go to customer 
+rsm 
+go to customer 
+asm check car for 
+defects rsm 
+check car for 
+defects asm 
+tow away 
+car asm 
+tow away 
+car rsm give 
+replacement car repair 
+car repair car on 
+the spot asm 
+repair car on 
+the spot rsm 
+make 
+appointment pick 
+up car 
+return car to 
+customer return 
+replacement car 
+fig. 15. a realistic example of repairing car including implicit dependencies
+the process model shown in figure 15 is taken from a set of 22 realistic
+process models . these models were constructed by students in group projects
+where they had to model real life business processes. each of the models has a size
+and complexity comparable to figure 15. the processes were modeled using the
+tool protos [44]. protos is the most widely used business process modeling tool in
+the netherlands. currently it is used by about 1500 organizations in more thanmining process models with non-free-choice constructs 29
+20 countries, e.g., more than half of all municipalities within the netherlands use
+protos for the speci¯cation of their in-house business processes. in each of the
+group projects a di®erent real-life case was selected and the students modeled
+the corresponding processes. it is important to note that none of the authors was
+involved in the modeling of these processes. these models were automatically
+transferred to the simulation tool cpn tools [22]. by using the promimport tool
+(promimport.sourceforge.net), the simulation logs of cpn tools were converted
+into mxml logs. all of the steps were carried out automatically without passing
+any explicit process information into the logs. we used the logs of these 22
+realistic process models to evaluate the ®++algorithm. each of these logs was
+complete and for each of the 22 logs the ®++algorithm was able to discover
+the corresponding process model correctly . the conformance testing results are
+shown in table 2. all the implicit dependencies between tasks hidden in the
+logs (i.e., l2,l4,l5,l7,l8,l9andl21) are detected successfully by the ®++
+algorithm.
+table 2. conformance testing results of real-life examples: fis the ¯tness value of the
+model, abdenotes behavioral appropriateness, asdenotes structural appropriateness,
+noc is the number of cases, noe is the number of events, and not is the number of
+tasks
+l1l2 l3l4 l5 l6l7 l8 l9 l10 l11
+f1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0
+ab 0.954 0.982 0.977 0.987 0.980 0.986 0.972 0.980 0.971 0.986 0.991
+as 0.622 0.569 0.581 0.571 0.571 0.549 0.593 0.575 0.595 0.583 0.583
+noc 100 103 100 29502 104 103 104 110 111 100 101
+noe 834 5673 1388 416586 1284 4561 1552 1559 1005 1323 1386
+not 21 31 16 26 22 26 30 25 20 26 26
+l12 l13 l14 l15 l16 l17 l18 l19 l20l21 l22
+f1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0 1.0
+ab 0.988 0.947 0.982 0.986 0.985 0.979 0.985 0.984 0.913 0.953 0.908
+as 0.542 0.686 0.590 0.582 0.563 0.625 0.583 0.553 0.510 0.595 0.513
+noc 102 101 100 100 105 100 100 100 147 106 123
+noe 3727 978 577 100331 1117 2107 1330 871 4780 1019 2115
+not 24 22 21 37 25 28 19 24 24 20 18
+the results in table 2 show that the ®++algorithm is performing very well
+on these real-life examples, e.g., all models have a ¯tness of 1. we would like to
+stress that these processes have not been modeled by any of the authors, i.e., in
+di®erent student projects where students had to model realistic work°ows these
+models were designed.
+we also applied the ®++algorithm to several other real-life logs. we have
+mxml logs from various organizations (ranging from hospitals and governmen-
+tal organizations to a manufacturer of wafer steppers). these experiences show
+that the ®++algorithm is able to discover a suitable model as long as there is
+no noise and the log is complete.30 lijie wen et al.
+8.5 limitations
+despite the successful application of the ®++algorithm to many arti¯cial and
+real-life event logs, not all sound wf-nets can be successfully derived from their
+corresponding event logs. in the remainder of this section, we discuss some ex-
+ceptional situations in which the ®++algorithm fails.
+consider the two sound wf-nets n4andn5shown in figure 16. their de-
+rived nets n0
+4andn0
+5shown in the shadow are not the same as the original.
+forn4, one of its complete event logs is fabce; acbe; abddce g. after
+applying ®++algorithm on that log, n0
+4is derived. there is an implicit depen-
+dency between aanddas well as between dandeinn4. the task dis
+involved in both a length-one-loop and two implicit dependencies. in de¯nition
+6, it is assumed that none task in length-one-loop is involved in any implicit
+dependency. thus the places connected to dcan not be detected correctly in
+steps 4 and 5 of the de¯nition. the mined net n0
+4is not a wf-net because d
+is not connected. the behavior of n0
+4is not the same as that of n4either. for
+n5, similar thing happens. there are two implicit dependencies between aand
+das well as between handeinn5. although n0
+5is a sound wf-net, it is not
+behavioral equivalent with n5. although mining such wf-nets is di±cult, it is
+possible to correctly mine them using the ®++algorithm after a minor modi-
+¯cation. according to de¯nition 5, a7!w2dandd7!w2ecan be detected
+from the log of n4as well as a7!w2dandh7!w2efrom that of n5. with
+this minor modi¯cation, the ®++algorithm is still powerful enough to mine such
+wf-nets correctly based on de¯nitions 3 and 5.
+i a
+cb
+d e o i a
+cb
+d e o n 4
+a
+cb
+df
+e
+gh
+io
+n 5 a
+cb
+df
+e
+gh
+io
+fig. 16. wf-nets with length-one-loops involving implicit dependencies
+there are also a few wf-nets which could not be derived from their com-
+plete event logs correctly even after the ®++algorithm is modi¯ed as discussed
+before. maybe some more advanced ordering relations introduced in the future
+can handle these cases. see n6andn7in figure 17. their derived nets using
+the®++algorithm are not sound any more. for n6, one of its complete event
+logs is fabdehfi; adbehfi; acdfgei; adcfgei g. although there
+are many choices to make in n6, only the choice between bandcis free-choice.
+in one event trace, once borcis chosen to execute, the remaining executionmining process models with non-free-choice constructs 31
+sequence is determined. the ordering relations between hande,gandf,e
+andg, and fandhare too di±cult for any of today's mining algorithm. for
+n7, one of its complete event logs is fabce; acdf; adbg g. all generated
+event traces are based upon the choice between b,candd. the ordering rela-
+tions between bandb,candc,dandd,aande,aandf, and aandg
+are even more di±cult to mine.
+iab
+cde
+fg
+hio
+iab
+c
+de
+f
+go
+n 6 n 7
+fig. 17. sample wf-nets leading to mining failure
+the above examples refer to rather complex structures that are di±cult to
+mine but at the same time are rather rare. more important problems from a
+practical point of view are issues related to noise and completeness. the®++
+heavily relies on a particular notion of completeness, i.e., if two tasks can follow
+one another they should follow one another at least once in the entire log. note
+that this is a much weaker notion of completeness than used by the classical
+approaches (which typically require completeness in terms of sequences). never-
+theless, even our weaker form of completeness is not realistic in case there is a
+lot of possible concurrency. this is not so much a problem of the ®++algorithm,
+i.e., it reveals a fundamental problem related to process mining. this problem is
+that it is impossible to discover behavior that did not yet happen because the ob-
+servation period was too short. the other problem is the problem of noise. noise
+may refer to exceptions of incorrectly logged events. the only way to address
+this is to ¯lter away less frequent behavior. prom o®er a wide variety of ¯lters
+and plug-ins able to deal with noise. nevertheless, the problem is similar to the
+problem of completeness. how to distinguish regular from irregular behavior?
+therefore, both issues suggest a more interactive form of process mining where
+an analyst is guiding the process mining algorithms to deal with incompleteness
+and noise.
+9 conclusion and future work
+process mining o®ers a new and exciting way to extract valuable information
+from event logs. in this paper, we have focused on process discovery, i.e., deriving
+a process model able to explain the observed behavior. this is interesting in
+many domains, e.g., discovering care°ows in hospitals, monitoring web services,
+following maintenance processes, analyzing software development processes, etc.
+although several process discovery techniques have been developed, implemented32 lijie wen et al.
+and applied successfully, they are unable to correctly mine certain processes.
+all of the existing techniques have problems dealing with implicit dependencies
+that may result from processes exhibiting non-free-choice behavior. since real-life
+processes have such implicit dependencies, it is a highly relevant problem.
+this paper describes an approach that is able to successfully mine a cer-
+tain class of implicit dependencies, i.e., some non-free-choice petri nets can be
+discovered correctly. hence, it is a considerable improvement over existing ap-
+proaches. the resulting ®++algorithm has been implemented and tested on
+a wide variety of logs, i.e., real-life logs and arti¯cial logs. the approach has
+been evaluated by applying the ®++algorithm to 40 arti¯cial examples and 22
+realistic process models and using di®erent evaluation criteria ranging from vi-
+sual inspection to quantitative notions of conformance (e.g., the ¯tness value f).
+these experimental evaluations show that the approach is indeed able to detect
+implicit dependencies between tasks.
+our future work will focus on the application of the ®++algorithm to
+more real-life processes. some techniques to deal with incompleteness should
+be explored. moreover, we also want to address other open problems in the
+process-mining domain, e.g., invisible tasks (e.g., the skipping of tasks that is
+not recorded), duplicate tasks (i.e., di®erent tasks in the model cannot be dis-
+tinguished in the log), noise (e.g., dealing with exceptional behavior or incorrect
+logs), etc. in fact, we invite other researchers and tool developers to join us in
+this endeavor. the prom framework provides a plugable open-source environ-
+ment which makes it easy to develop alternative process mining algorithms.
+acknowledgements
+the authors would like to thank ton weijters, boudewijn van dongen, ana
+karla alves de medeiros, anne rozinat, christian gä unter, eric verbeek, min-
+seok song, ronny mans, laura maruster, monique jansen-vullers, hajo reijers,
+michael rosemann, huub de beer, peter van den brand, andriy nikolov, wouter
+kunst, martijn van giessel et al. for their on-going work on process mining tech-
+niques. we also thank eit, stw, and nwo for supporting the development of
+the prom framework, cf. www.processmining.org.
+this work is supported by the 973 project of china (no. 2002cb312006) and
+the project of national natural science foundation of china (no. 60373011).
+references
+1.w.m.p. van der aalst. the application of petri nets to work°ow management.
+the journal of circuits, systems and computers , 8(1):21{66, 1998.
+2.w.m.p. van der aalst. business alignment: using process mining as a tool for
+delta analysis. in j. grundspenkis and m. kirikova, editors, proceedings of the 5th
+workshop on business process modeling, development and support (bpmds'04) ,
+volume 2 of caise'04 workshops , pages 138{145. riga technical university, latvia,
+2004.mining process models with non-free-choice constructs 33
+3.w.m.p. van der aalst. business process management demysti¯ed: a tutorial on
+models, systems and standards for work°ow management. in j. desel, w. reisig,
+and g. rozenberg, editors, lectures on concurrency and petri nets , volume 3098
+oflecture notes in computer science , pages 1{65. springer-verlag, berlin, 2004.
+4.w.m.p. van der aalst, m. dumas, c. ouyang, a. rozinat, and h.m.w. verbeek.
+choreography conformance checking: an approach based on bpel and petri
+nets (extended version). bpm center report bpm-05-25, bpmcenter.org, 2005.
+5.w.m.p. van der aalst and k.m. van hee. work°ow management: models, methods,
+and systems . mit press, cambridge, ma, 2002.
+6.w.m.p. van der aalst and a.h.m. ter hofstede. yawl: yet another work°ow
+language. information systems , 30(4):245{275, 2005.
+7.w.m.p. van der aalst, a.k. alves de medeiros, and a.j.m.m. weijters. genetic
+process mining. in g. ciardo and p. darondeau, editors, applications and theory
+of petri nets 2005 , volume 3536 of lecture notes in computer science , pages
+48{69. springer-verlag, berlin, 2005.
+8.w.m.p. van der aalst, a.k. alves de medeiros, and a.j.m.m. weijters. process
+equivalence: comparing two process models based on observed behavior. in
+s. dustdar, j.l. faideiro, and a. sheth, editors, international conference on busi-
+ness process management (bpm 2006) , volume 4102 of lecture notes in computer
+science , pages 129{144. springer-verlag, berlin, 2006.
+9.w.m.p. van der aalst and a.k.a. de medeiros. process mining and security:
+detecting anomalous process executions and checking process conformance. in
+n. busi, r. gorrieri, and f. martinelli, editors, second international workshop
+on security issues with petri nets and other computational models (wisp 2004) ,
+pages 69{84. star, servizio tipogra¯co area della ricerca, cnr pisa, italy, 2004.
+10.w.m.p. van der aalst and m. song. mining social networks: uncovering interac-
+tion patterns in business processes. in j. desel, b. pernici, and m. weske, editors,
+international conference on business process management (bpm 2004) , volume
+3080 of lecture notes in computer science , pages 244{260. springer-verlag, berlin,
+2004.
+11.w.m.p. van der aalst, b.f. van dongen, j. herbst, l. maruster, g. schimm, and
+a.j.m.m. weijters. work°ow mining: a survey of issues and approaches. data
+and knowledge engineering , 47(2):237{267, 2003.
+12.w.m.p. van der aalst and a.j.m.m. weijters, editors. process mining , special
+issue of computers in industry, volume 53, number 3. elsevier science publishers,
+amsterdam, 2004.
+13.w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. work°ow mining:
+discovering process models from event logs. ieee transactions on knowledge
+and data engineering , 16(9):1128{1142, 2004.
+14.w.m.p. van der aalst, m. weske, and d. grä unbauer. case handling: a new
+paradigm for business process support. data and knowledge engineering ,
+53(2):129{162, 2005.
+15.r. agrawal, d. gunopulos, and f. leymann. mining process models from work-
+°ow logs. in sixth international conference on extending database technology ,
+pages 469{483, 1998.
+16.t. andrews, f. curbera, h. dholakia, y. goland, j. klein, f. leymann, k. liu,
+d. roller, d. smith, s. thatte, i. trickovic, and s. weerawarana. business process
+execution language for web services, version 1.1. standards proposal by bea
+systems, international business machines corporation, and microsoft corpora-
+tion, 2003.34 lijie wen et al.
+17.a.w. biermann and j.a. feldman. a survey of results in grammatical inference.
+in s. watanabe, editor, frontiers of pattern recognition , pages 31{54. academic
+press, 1972.
+18.a.w. biermann and j.a. feldman. on the synthesis of finite-state machines from
+samples of their behavior. ieee transaction on computers , 21:592{597, 1972.
+19.j.e. cook and z. du. discovering thread interactions in a concurrent system.
+journal of systems and software , 77(3):285{297, 2005.
+20.j.e. cook, z. du, c. liu, and a.l. wolf. discovering models of behavior for
+concurrent work°ows. computers in industry , 53(3):297{319, 2004.
+21.j.e. cook and a.l. wolf. discovering models of software processes from event-
+based data. acm transactions on software engineering and methodology ,
+7(3):215{249, 1998.
+22.cpn group, university of aarhus, denmark. cpn tools home page.
+http://wiki.daimi.au.dk/cpntools/.
+23.a. datta. automating the discovery of as-is business process models: proba-
+bilistic and algorithmic approaches. information systems research , 9(3):275{301,
+1998.
+24.j. desel and j. esparza. free choice petri nets , volume 40 of cambridge tracts
+in theoretical computer science . cambridge university press, cambridge, uk,
+1995.
+25.j. desel, w. reisig, and g. rozenberg, editors. lectures on concurrency and petri
+nets, volume 3098 of lecture notes in computer science . springer-verlag, berlin,
+2004.
+26.b. van dongen, a.k. alves de medeiros, h.m.w. verbeek, a.j.m.m. weijters, and
+w.m.p. van der aalst. the prom framework: a new era in process mining tool
+support. in g. ciardo and p. darondeau, editors, application and theory of petri
+nets 2005 , volume 3536 of lecture notes in computer science , pages 444{454.
+springer-verlag, berlin, 2005.
+27.b.f. van dongen and w.m.p. van der aalst. a meta model for process mining
+data. in j. casto and e. teniente, editors, proceedings of the caise'05 workshops
+(emoi-interop workshop) , volume 2, pages 309{320. feup, porto, portugal,
+2005.
+28.m. dumas, w.m.p. van der aalst, and a.h.m. ter hofstede. process-aware infor-
+mation systems: bridging people and software through process technology . wiley
+& sons, 2005.
+29.a. ehrenfeucht and g. rozenberg. partial (set) 2-structures - part 1 and part 2.
+acta informatica , 27(4):315{368, 1989.
+30.g. greco, a. guzzo, l. pontieri, and d. sacc¶ a. mining expressive process models
+by clustering work°ow traces. in proc of advances in kowledge discovery and
+data mining, 8th paci¯c-asia conference (pakdd 2004) , pages 52{62, 2004.
+31.d. grigori, f. casati, m. castellanos, u. dayal, m. sayal, and m.c. shan. business
+process intelligence. computers in industry , 53(3):321{343, 2004.
+32.d. grigori, f. casati, u. dayal, and m.c. shan. improving business process qual-
+ity through exception understanding, prediction, and prevention. in p. apers,
+p. atzeni, s. ceri, s. paraboschi, k. ramamohanarao, and r. snodgrass, ed-
+itors, proceedings of 27th international conference on very large data bases
+(vldb'01) , pages 159{168. morgan kaufmann, 2001.
+33.d. harel, h. kugler, and a. pnueli. synthesis revisited: generating statechart
+models from scenario-based requirements. in formal methods in software and
+systems modeling , volume 3393 of lecture notes in computer science , pages 309{
+324. springer-verlag, berlin, 2005.mining process models with non-free-choice constructs 35
+34.j. herbst. a machine learning approach to work°ow management. in proceedings
+11th european conference on machine learning , volume 1810 of lecture notes in
+computer science , pages 183{194. springer-verlag, berlin, 2000.
+35.ids scheer. aris process performance manager (aris ppm): measure, ana-
+lyze and optimize your business process performance (whitepaper). ids scheer,
+saarbruecken, gemany, http://www.ids-scheer.com, 2002.
+36.s. jablonski and c. bussler. work°ow management: modeling concepts, architec-
+ture, and implementation . international thomson computer press, london, uk,
+1996.
+37.g. keller, m. nä uttgens, and a.w. scheer. semantische processmodellierung auf
+der grundlage ereignisgesteuerter processketten (epk). verä o®entlichungen des
+instituts fä ur wirtschaftsinformatik, heft 89 (in german), university of saarland,
+saarbrä ucken, 1992.
+38.f. leymann and d. roller. production work°ow: concepts and techniques .
+prentice-hall ptr, upper saddle river, new jersey, usa, 1999.
+39.h. liang, j. dingel, and z. diskin. a comparative survey of scenario-based to
+state-based model synthesis approaches. in proceedings of the 2006 interna-
+tional workshop on scenarios and state machines: models, algorithms, and tools
+(scesm06) , pages 5{12, new york, ny, usa, 2006. acm press.
+40.a.k. alves de medeiros and c.w. guenther. process mining: using cpn tools
+to create test logs for mining algorithms. in k. jensen, editor, proceedings of
+the sixth workshop on the practical use of coloured petri nets and cpn tools
+(cpn 2005) , volume 576 of daimi , pages 177{190, aarhus, denmark, october
+2005. university of aarhus.
+41.a.k.a. de medeiros, w.m.p. van der aalst, and a.j.m.m. weijters. work°ow
+mining: current status and future directions. in r. meersman, z. tari, and d.c.
+schmidt, editors, on the move to meaningful internet systems 2003: coopis,
+doa, and odbase , volume 2888 of lecture notes in computer science , pages
+389{406. springer-verlag, berlin, 2003.
+42.a.k.a. de medeiros, b.f. van dongen, w.m.p. van der aalst, and a.j.m.m. wei-
+jters. process mining for ubiquitous mobile systems: an overview and a concrete
+algorithm. in l. baresi, s. dustdar, h. gall, and m. matera, editors, ubiquitous
+mobile information and collaboration systems (umics 2004) , volume 3272 of
+lecture notes in computer science , pages 154{168. springer-verlag, berlin, 2004.
+43.m. zur mä uhlen and m. rosemann. work°ow-based process monitoring and con-
+trolling - technical and organizational issues. in r. sprague, editor, proceedings
+of the 33rd hawaii international conference on system science (hicss-33) , pages
+1{10. ieee computer society press, los alamitos, california, 2000.
+44.pallas athena. protos user manual . pallas athena bv, plasmolen, the nether-
+lands, 2004.
+45.r. parekh and v. honavar. an incremental interactive algorithm for regu-
+lar grammar inference. in international colloquium on grammatical inference:
+learning syntax from sentences (icgi 1996) , volume 1147 of lecture notes in
+computer science , pages 238{249. springer-verlag, berlin, 1996.
+46.r. parekh and v.g. honavar. learning dfa from simple examples. machine
+learning , 44(1-2):9{35, 2001.
+47.a. rozinat and w.m.p. van der aalst. conformance testing: measuring the fit
+and appropriateness of event logs and process models. in m. castellanos and
+t. weijters, editors, first international workshop on business process intelligence
+(bpi'05) , pages 1{12, nancy, france, september 2005.36 lijie wen et al.
+48.a. rozinat and w.m.p. van der aalst. conformance testing: measuring the fit
+and appropriateness of event logs and process models. in c. bussler et al., editor,
+bpm 2005 workshops , volume 3812 of lecture notes in computer science , pages
+163{176. springer-verlag, berlin, 2006.
+49.p. sarbanes, g. oxley, and et al. sarbanes-oxley act of 2002, 2002.
+50.m. sayal, f. casati, u. dayal, and m.c. shan. business process cockpit. in pro-
+ceedings of 28th international conference on very large data bases (vldb'02) ,
+pages 880{883. morgan kaufmann, 2002.
+51.a.w. scheer. aris: business process modelling . springer-verlag, berlin, 2000.
+52.j. scott. social network analysis . sage, newbury park ca, 1992.
+53.tibco. tibco sta®ware process monitor (spm). http://www.tibco.com, 2005.
+54.s. wasserman and k. faust. social network analysis: methods and applications .
+cambridge university press, cambridge, 1994.
+55.a.j.m.m. weijters and w.m.p. van der aalst. work°ow mining: discovering
+work°ow models from event-based data. in c. dousson, f. hä oppner, and
+r. quiniou, editors, proceedings of the ecai workshop on knowledge discovery
+and spatial data , pages 78{84, 2002.
+56.a.j.m.m. weijters and w.m.p. van der aalst. rediscovering work°ow models
+from event-based data using little thumb. integrated computer-aided engi-
+neering , 10(2):151{162, 2003.
+57.l. wen, j. wang, w.m.p. van der aalst, z. wang, and j. sun. a novel approach
+for process mining based on event types. beta working paper series, wp 118,
+eindhoven university of technology, eindhoven, 2004.
+58.l. wen, j. wang, and j. sun. detecting implicit dependencies between tasks from
+event logs. in x. zhou, x. lin, and h. lu et al., editors, the 8th asia-paci¯c web
+conference (apweb 2006) , volume 3841 of lecture notes in computer science ,
+pages 591{603. springer-verlag, berlin, 2006.

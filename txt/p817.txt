@@ -1,0 +1,1106 @@
+extracting event data from databases to
+unleash process mining
+wil m.p. van der aalst
+1architecture of information systems, eindhoven university of technology,
+p.o. box 513, nl-5600 mb, eindhoven, the netherlands.
+e-mail: w.m.p.v.d.aalst@tue.nl
+2international laboratory of process-aware information systems, national
+research university higher school of economics (hse),
+33 kirpichnaya street, moscow, russia.
+abstract. increasingly organizations are using process mining to under-
+stand the way that operational processes are executed. process mining
+can be used to systematically drive innovation in a digitalized world.
+next to the automated discovery of the real underlying process, there
+are process-mining techniques to analyze bottlenecks, to uncover hidden
+ineciencies, to check compliance, to explain deviations, to predict per-
+formance, and to guide users towards \better" processes. dozens (if not
+hundreds) of process-mining techniques are available and their value has
+been proven in many case studies. however, process mining stands or
+falls with the availability of event logs. existing techniques assume that
+events are clearly dened and refer to precisely one case (i.e. process
+instance) and one activity (i.e., step in the process). although there are
+systems that directly generate such event logs (e.g., bpm/wfm sys-
+tems), most information systems do not record events explicitly. cases
+and activities only exist implicitly. however, when creating or using pro-
+cess models \raw data" need to be linked to cases and activities. this
+paper uses a novel perspective to conceptualize a database view on event
+data. starting from a class model and corresponding object models it is
+shown that events correspond to the creation, deletion, or modication
+of objects and relations. the key idea is that events leave footprints by
+changing the underlying database . based on this an approach is described
+that scopes ,binds , and classies data to create \at" event logs that can
+be analyzed using traditional process-mining techniques.
+1 introduction
+the spectacular growth of event data is rapidly changing the business
+process management (bpm) discipline [2, 10, 20, 29, 35, 45, 53]. it makes
+no sense to focus on modeling, model-based analysis and model-based
+implementation without using the valuable information hidden in infor-
+mation systems [1]. organizations are competing on analytics and only
+organizations that intelligently use the vast amounts of data available
+will survive [5].today's main innovations are intelligently exploiting the sudden avail-
+ability of event data. out of the blue, \big data" has become a topic
+in board-level discussions. the abundance of data will change many jobs
+across all industries. just like computer science emerged as a new disci-
+pline from mathematics when computers became abundantly available,
+we now see the birth of data science as a new discipline driven by the tor-
+rents of data available in our increasingly digitalized world.3the demand
+fordata scientists is rapidly increasing. however, the focus on data anal-
+ysis should not obscure process-orientation. in the end, good processes
+are more important than information systems and data analysis. the
+old phrase \it's the process stupid" is still valid. hence, we advocate
+the need for process scientists that will drive process innovations while
+exploiting the internet of events (ioe). the ioe is composed of:
+{the internet of content (ioc): all information created by humans
+to increase knowledge on particular subjects. the ioc includes tra-
+ditional web pages, articles, encyclopedia like wikipedia, youtube,
+e-books, newsfeeds, etc.
+{the internet of people (iop): all data related to social interaction.
+the iop includes e-mail, facebook, twitter, forums, linkedin, etc.
+{the internet of things (iot): all physical objects connected to the
+network. the iot includes all things that have a unique id and a
+presence in an internet-like structure. things may have an inter-
+net connection or be tagged using radio-frequency identication
+(rfid), near field communication (nfc), etc.
+{the internet of locations (iol): refers to all data that have a spatial
+dimension. with the uptake of mobile devices (e.g., smartphones)
+more and more events have geospatial attributes.
+note that the ioc, the iop, the iot, and the iol partially overlap. for
+example, a place name on a webpage or the location from which a tweet
+was sent. see also foursquare as a mixture of the iop and the iol.
+it is not sucient to just collect event data. the challenge is to exploit
+it for process improvements. process mining is a new discipline aiming
+to address this challenge. process-mining techniques form the toolbox of
+tomorrow's process scientist. process mining connects process models
+and data analytics. it can be used:
+{to automatically discover processes without any modeling (not just
+the control-ow, but also other perspectives such as the data-ow,
+work distribution, etc.),
+{to nd bottlenecks and understand the factors causing these bottle-
+necks,
+{to detect and understand deviations, to measure their severity and
+to assess the overall level of compliance,
+{to predict costs, risks, and delays,
+{to recommend actions to avoid ineciencies, and
+{to support redesign (e.g., in combination with simulation).
+today, there are many mature process-mining techniques that can be
+directly used in everyday practice [1]. the uptake of process mining is
+3we use the term \digitalize" to emphasize the transformational character of digitized
+data.not only illustrated by the growing number of papers and plug-ins of the
+open source tool prom , there are also a growing number of commercial
+analysis tools providing process mining capabilities, cf. disco (fluxicon),
+perceptive process mining (perceptive software, before futura reect
+and bpmone by pallas athena), aris process performance manager
+(software ag), celonis process mining (celonis gmbh), processana-
+lyzer (qpr), interstage process discovery (fujitsu), discovery analyst
+(stereologic), and xmanalyzer (xmpro).
+despite the abundance of powerful process-mining techniques and suc-
+cess stories in a variety of application domains4, a limiting factor is the
+preparation of event data. the internet of events (ioe) mentioned ear-
+lier provides a wealth of data. however, these data are a not in a form
+that can be analyzed easily, and need to be extracted, rened, ltered,
+and converted to event logs rst.
+the starting point for process mining is an event log . each event in
+such a log refers to an activity (i.e., a well-dened step in some process)
+and is related to a particular case (i.e., a process instance ). the events
+belonging to a case are ordered and can be seen as one \run" of the
+process. event logs may store additional information about events. in
+fact, whenever possible, process-mining techniques use extra information
+such as the resource (i.e., person or device) executing or initiating the
+activity, the timestamp of the event, or data elements recorded with the
+event (e.g., the size of an order).
+if a bpm system or some other process-aware information system is used,
+then it is trivial to get event logs, i.e., typically the audit trail provided
+by the system can directly be used as input for process mining. however,
+in most organizations one encounters information systems built on top of
+database technology. the ioe depends on a variety of databases (classical
+relational dbmss or new \nosql" technologies). therefore, we provide
+adatabase view on event data and assume that events leave footprints
+by changing the underlying database. fortunately, database technology
+often provides so called \redo logs" that can be used to reconstruct
+the history of database updates. this is what we would like to exploit
+systematically.
+although the underlying databases are loaded with data, there are no ex-
+plicit references to events, cases, and activities. instead, there are tables
+containing records and these tables are connected through key relation-
+ships. hence, the challenge is to convert tables and records into event
+logs. obviously, this cannot be done in an automated manner.
+to understand why process-mining techniques need \at event logs" (i.e.,
+event logs with ordered events that explicitly refer to cases and activities)
+as input, consider any process model in one of the mainstream process
+modeling notations (e.g., bpmn models, bpel specications, uml ac-
+tivity diagrams, and workow nets). all of these notations present a
+diagram describing the life-cycle of an instance of the process (i.e., case)
+in terms of activities. hence, all mainstream notations require the choice
+of a single process instance (i.e., case) notion. notable exceptions are
+4for example, http://www.win.tue.nl/ieeetfpm/doku.php?id=shared:process_
+mining_case_studies lists over 15 successful case studies in industry.proclets [7] and artifacts [26], but these are rarely used and dicult to
+understand by end-users. therefore, we need to relate raw event data to
+process instances using a single well-dened view on the process. this
+explains the requirements imposed on event logs.
+in this paper, we focus on the problem of extracting \at event logs"
+from databases. first, we introduce process mining in a somewhat more
+detailed form (section 2). section 3 presents twelve guidelines for logging .
+they point to typical problems related to event logs and can be used to
+improve the recording of relevant events. although it is vital to improve
+the quality of logging, this paper aims to exploit the events hidden in
+existing databases. we use database-centric view on processes: the state
+of a process is reected by the database content. hence, events are merely
+changes of the database. in the remainder we assume that data is stored
+in a database management system and that we can see all updates of
+the underlying database. this assumption is realistic (see e.g. the redo
+logs of oracle). however, how to systematically approach the problem of
+converting database updates into event logs? section 4 introduces class
+and object models as a basis to reason about the problem. in section 5
+we show that class models can be extended with a so-called event model .
+the event model is used to capture changes of the underlying database.
+section 6 describes a three-step approach ( scope ,bind, and classify )
+to create a collection of at event logs. the results serve as input for
+conventional process-mining techniques. section 7 discusses related work
+and section 8 concludes this paper.
+2 process mining
+process mining aims to discover, monitor and improve real processes by
+extracting knowledge from event logs readily available in today's infor-
+mation systems [1].
+normally, \at" event logs serve as the starting point for process mining.
+these logs are created with a particular process and a set of questions
+in mind. an event log can be viewed as a multiset of traces . each trace
+describes the life-cycle of a particular case (i.e., a process instance ) in
+terms of the activities executed. often event logs store additional infor-
+mation about events. for example, many process-mining techniques use
+extra information such as the resource (i.e., person or device) executing
+or initiating the activity, the timestamp of the event, or data elements
+recorded with the event (e.g., the size of an order). table 1 shows a small
+fragment of a larger event log. each row corresponds to an event. the
+events refer to two cases (654423 and 655526) and have additional prop-
+erties, e.g., the registration for case 654423 was done by john at two
+past eleven on april 30th 2014 and the cost was 300 euro. an event may
+also contain transactional information, i.e., it may refer to an \assign",
+\start", \complete", \suspend", \resume", \abort", etc. action. for ex-
+ample, to measure the duration of an activity it is important to have a
+start event and a complete event. we refer to the xes standard [38] for
+more information on the data possibly available in event logs.
+flat event logs such as the one shown in table 1 can be used to conduct
+four types of process mining [1].table 1. a fragment of an event log: each line corresponds to an event.
+case id timestamp activity resource cost
+654423 30-04-2014:11.02 register request john 300
+654423 30-04-2014:11.06 check completeness of documents ann 400
+655526 30-04-2014:16.10 register request john 200
+655526 30-04-2014:16.14 make appointment ann 450
+654423 30-04-2014:11.12 ask for second opinion pete 100
+654423 30-04-2014:11.18 prepare decision pete 400
+654423 30-04-2014:11.19 pay ne pete 400
+655526 30-04-2014:16.26 check completeness of documents sue 150
+655526 30-04-2014:16.36 reject claim sue 100
+: : : : : : : : : : : : : : :
+{the rst type of process mining is discovery . a discovery technique
+takes an event log and produces a model without using any a priori
+information. process discovery is the most prominent process-mining
+technique. for many organizations it is surprising to see that existing
+techniques are indeed able to discover real processes merely based
+on example behaviors stored in event logs.
+{the second type of process mining is conformance . here, an existing
+process model is compared with an event log of the same process.
+conformance checking can be used to check if reality, as recorded in
+the log, conforms to the model and vice versa.
+{the third type of process mining is enhancement . here, the idea is to
+extend or improve an existing process model by directly using infor-
+mation about the actual process recorded in some event log. whereas
+conformance checking measures the alignment between model and
+reality, this third type of process mining aims at changing or ex-
+tending the a priori model. for instance, by using timestamps in
+the event log one can extend the model to show bottlenecks, service
+levels, and throughput times.
+{the fourth type of process mining is operational support . the key
+dierence with the former three types is that analysis is not done o-
+line, but used to inuence the running process and its cases in some
+way. based on process models, either discovered through process
+mining or (partly) made by hand, one can check, predict, or recom-
+mend activities for running cases in an online setting. for example,
+based on the discovered model one can predict that a particular case
+will be late and propose counter-measures.
+the prom framework provides an open source process-mining infras-
+tructure. over the last decade hundreds of plug-ins have been devel-
+oped covering the whole process-mining spectrum. prom is intended for
+process-mining experts. non-experts may have diculties using the tool
+due to its extensive functionality. commercial process-mining tools such
+asdisco ,perceptive process mining ,aris process performance man-
+ager,celonis process mining ,qpr processanalyzer ,fujitsu interstage
+process discovery ,stereologic discovery analyst , and xmanalyzer
+are typically easier to use because of their restricted functionality. these(b) disco (fluxicon) (a) prom
+(c) perceptive process mining (perceptive software) (d) celonis process mining (celonis gmbh)
+fig. 1. four screenshots of dierent tools analyzing the same event log.
+tools have been developed for practitioners, but provide only a fraction
+of the functionality oered by prom . figure 1 shows four screenshots of
+process-mining tools analyzing the same event log.
+in this paper, we neither elaborate on the dierent process-mining tech-
+niques nor do we discuss specic process-mining tools. instead, we focus
+on the event data used for process mining.
+3 guidelines for logging
+the focus of this paper is on the input side of process mining: event
+data. often we need to work with the event logs that happen to be
+available, and there is no way to inuence what events are recorded and
+how they are recorded. there can be various problems related to the
+structure and quality of data [1, 19]. for example, timestamps may be
+missing or too coarse (only dates). therefore, this paper focuses on the\input side of process mining". before we present our database-centric
+approach, we introduce twelve guidelines for logging . these guidelines
+make no assumptions on the underlying technology used to record event
+data.
+in this section, we use a rather loose denition of event data: events
+simply refer to \things that happen" and that they are described by ref-
+erences and attributes .references have a reference name and an identi-
+erthat refers to some object (person, case, ticket, machine, room, etc.)
+in the universe of discourse. attributes have a name and a value , e.g.,
+age=48 ortime=\28-6-2014 03:14:0" . based on these concepts we dene
+our twelve guidelines. to create an event log from such \raw events" (1)
+we need to select the events relevant for the process at hand, (2) events
+need to be correlated to form process instances, (3) events need to be
+ordered using timestamp information, and (4) event attributes need to
+be selected or computed based on the raw data (resource, cost, etc.).
+such an event log can be used as input for a wealth of process-mining
+techniques.
+the guidelines for logging ( gl1 -gl12 ) aim to create a good starting
+point for process mining.
+gl1 reference and attribute names should have clear semantics, i.e.,
+they should have the same meaning for all people involved in creat-
+ing and analyzing event data. dierent stakeholders should interpret
+event data in the same way.
+gl2 there should be a structured and managed collection of reference
+and attribute names. ideally, names are grouped hierarchically (like
+a taxonomy or ontology). a new reference or attribute name can
+only be added after there is consensus on its value and meaning.
+also consider adding domain or organization specic extensions (see
+for example the extension mechanism of xes [38]).
+gl3 references should be stable (e.g., identiers should not be reused
+or rely on the context). for example, references should not be time,
+region, or language dependent. some systems create dierent logs de-
+pending on the language settings. this is unnecessarily complicating
+analysis.
+gl4 attribute values should be as precise as possible. if the value does
+not have the desired precision, this should be indicated explicitly (e.g.,
+through a qualier). for example, if for some events only the date
+is known but not the exact timestamp, then this should be stated
+explicitly.
+gl5 uncertainty with respect to the occurrence of the event or its refer-
+ences or attributes should be captured through appropriate qualiers.
+for example, due to communication errors, some values may be less
+reliable than usual. note that uncertainty is dierent from impreci-
+sion.
+gl6 events should be at least partially ordered. the ordering of events
+may be stored explicitly (e.g., using a list) or implicitly through an
+attribute denoting the event's timestamp. if the recording of times-
+tamps is unreliable or imprecise, there may still be ways to order
+events based on observed causalities (e.g., usage of data).gl7 if possible, also store transactional information about the event
+(start, complete, abort, schedule, assign, suspend, resume, withdraw,
+etc.). having start and complete events allows for the computation
+of activity durations. it is recommended to store activity references
+to be able to relate events belonging to the same activity instance.
+without activity references it may not always be clear which events
+belong together, which start event corresponds to which complete
+event.
+gl8 perform regularly automated consistency and correctness checks to
+ensure the syntactical correctness of the event log. check for missing
+references or attributes, and reference/attribute names not agreed
+upon. event quality assurance is a continuous process (to avoid
+degradation of log quality over time).
+gl9 ensure comparability of event logs over time and dierent groups
+of cases or process variants. the logging itself should not change over
+time (without being reported). for comparative process mining, it
+is vital that the same logging principles are used. if for some groups
+of cases, some events are not recorded even though they occur, then
+this may suggest dierences that do not actually exist.
+gl10 do not aggregate events in the event log used as input for the
+analysis process. aggregation should be done during analysis and
+not before (since it cannot be undone). event data should be as
+\raw" as possible.
+gl11 do not remove events and ensure provenance. reproducibility is
+key for process mining. for example, do not remove a student from
+the database after he dropped out since this may lead to mislead-
+ing analysis results. mark objects as not relevant (a so-called \soft
+delete") rather than deleting them: concerts are not deleted - they
+are canceled, employees are not deleted - they are red, etc.
+gl12 ensure privacy without losing meaningful correlations. sensitive
+or private data should be removed as early as possible (i.e., before
+analysis). however, if possible, one should avoid removing correla-
+tions. for example, it is often not useful to know the name of a
+student, but it may be important to still be able to use his high
+school marks and know what other courses he failed. hashing can
+be a powerful tool in the trade-o between privacy and analysis.
+the above guidelines are very general and aim to improve the logging
+itself. the main purpose of the guidelines is to point to problems related
+to the input of process mining. they can be used to better instrument
+software.
+after these general guidelines, we now change our viewpoint. we aim
+to exploit the hidden event data already present in databases. the con-
+tent of the database can be seen as the current state of one or more
+processes. updates of the database are therefore considered as the pri-
+mary events. this database-centric view on event logs is orthogonal to
+the above guidelines.4 class and object models
+most information systems do not record events explicitly. only process-
+aware information systems (e.g., bpm/wfm systems) record event data
+in the format shown in table 1. to create an event log, we often need to
+gather data from dierent data sources where events exist only implicitly.
+in fact, for most process-mining projects event data need to be extracted
+from conventional databases. this is often done in an ad-hoc manner.
+tools such as xesame [49] and promimport [34] provide some support,
+but still the event logs need to be constructed by querying the database
+and converting database records (row in tables) into events.
+moreover, the \regular tables" in a database only provide the current
+state of the information system. it may be impossible to see when a
+record was created or updated. moreover, deleted records are generally
+invisible.5taking the viewpoint that the database reects the current state
+of one or more processes, we dene all changes of the database to be
+events. below we conceptualize this viewpoint. building upon standard
+class and object models, we dene the notion of an event model . the
+event model relates coherent set of changes to the underlying database
+to events used for process mining.
+section 5 denes the notion of an event model. to formalize event models,
+we rst introduce and dene class and object models.
+aclass model denes a set of classes that may be connected through rela-
+tionships. uml class models [43], entity-relationship (er) models [25],
+object-role modeling (orm) models, etc. provide concrete notations
+for the basic class model used in this paper.
+denition 1 (unconstrained class model). assume vto be some
+universe of values (strings, numbers, etc.). an unconstrained class model
+is a tuple ucm = (c; a; r; val;key;attr;rel)such that
+{cis a set of class names,
+{ais a set of attribute names,
+{ris a set of relationship names ( c\r=;),
+{val2a!p(v)is a function mapping each attribute onto a set of
+values.6va=val(a)is a shorthand and denotes the set of possible
+values of attribute a2a,
+{key2c!p(a)is a function describing the set of key attributes of
+each class,
+{attr2c! p (a)is a function describing the set of additional
+attributes of each class (key (c)\attr(c) =;for any class c2c),
+{rel2r!(cc)is a function describing the two classes involved
+in a relation. let rel (r) = (c1; c2)for relationship r2r: rel 1(r) =c1
+and rel 2(r) =c2are shorthand forms to obtain the two individual
+classes involved in the relationship.
+5increasingly systems mark deleted objects as not relevant (a so-called soft delete)
+rather than deleting them. in this way all intermediate states of the database can be
+reconstructed. moreover, marking objects as deleted instead of completely removing
+them from the database is often more natural, e.g., concerts are not deleted { they
+are canceled, employees are not deleted { they are red, etc.
+6p(x) is the powerset of x, i.e., y2p(x) ifyx.figure 2 shows a class model with classes c=fc1; c2; : : : ; c 8gand rela-
+tionships r=fr1; r2; : : : ; r 8g. classes and relationships also have longer
+names, e.g., c1is the class \concert hall". we will use the shorter names
+for a more compact discussion. in this example, each class has a sin-
+gleton key, i.e., a single column serves as primary key. the keys are
+highlighted in figure 2 (darker color). for example, key(c1) =fhall idg
+andattr(c1) =fname ofhall;addressgare the two additional (non-key)
+attributes of class c1.rel(r4) = ( c5; c2), i.e., relation r4relates tickets
+(c5) to concerts ( c2). figure 2 also shows cardinality constraints. these
+are not part of the unconstrained class model. later we will dene con-
+strained class models (denition 4). however, before doing so, we need
+to introduce some more notations.
+band
+booking1 0..*
+active_since : date
+booking_id : booking_idband_name : nameconcert
+concert_date : dateconcert hall
+name_of_hall : name
+seat
+row_no : num
+seat_no : numticket
+customer
+customer_name : name
+address : addressaddress : address
+address : addresshall_id : hall_id
+customer_id : cust_idband_id : band_id concert_id : con_id
+seat_id : seat_idstart_time : time
+price : euro
+total_price : europayment
+amount : euro1..* 0..*
+1
+1..*1
+0..*
+1 0..*
+11..*
+1 0..* 0..1 0..*ticket_id : ticket_id
+0..*
+payment_id : pay_idr1
+(location)c1
+birth_date : datec2 c3
+c4 c5
+c6 c7 c8r3
+(belongs_to)r2
+(playing)
+r5
+(belongs_to)r4
+(for_concert)
+r6
+(belongs_to)
+r8
+(for_booking)r7
+(booking_by)additional constraint: 
+there cannot be two 
+tickets for the same seat 
+and same concert 
+additional constraint: the 
+total price of a booking 
+equals the sum of the 
+individual tickets  additional constraint: 
+there cannot be two 
+concerts on the same 
+day in the same concert 
+hall 
+fig. 2. example of a constrained class model.
+denition 2 (notations). let cm = (c; a; r; val;key;attr;rel)be
+an (unconstrained) class model.
+{mcm=fmap2a6!vj8a2dom (map )map(a)2vagis the set of
+mappings,7
+7f2x6!yis a partial function, i.e., the domain of fmay be any subset of x:
+dom(f)x.{kcm=f(c;mapk)2cmcmjdom(mapk) =key(c)gis the set of
+possible key values per class,
+{acm=f(c;mapa)2cmcmjdom(mapa) =attr(c)gis the set of
+possible additional attribute values per class,
+{ocm=f(c;mapk;mapa)2cmcmmcmj(c;mapk)2kcm^
+(c;mapa)2acmgis the set of objects,
+{rcm=f(r;map1;map2)2rmcmmcmj9c1;c22crel(r) =
+(c1; c2)^ f(c1;map1);(c2;map2)gkcmgis the set of potential
+relations.
+a class model implicitly denes a collection of possible object models .
+each class c2cmay have multiple objects and each relationship r2r
+may hold multiple concrete object-to-object relations.
+denition 3 (object model). let cm = (c; a; r; val;key;attr;rel)
+be an (unconstrained) class model. an object model of cm is a tuple
+om = (obj;rel)where objocmis a set of objects and rel rcmis
+a set of relations. uom(cm) =f(obj;rel)jobjocm^relrcmg
+is the set of all object models of cm .
+the cardinality constraints in figure 2 impose restrictions on object
+models. for example, a ticket corresponds to precisely one concert and
+each concert corresponds to any number of tickets (see annotations \1"
+and \0..*" next to r4). each ticket corresponds to precisely one booking
+and each booking refers to at least one ticket (see annotations \1" and
+\1..*" next to r6). in our formalizations we abstract from the actual
+notation used to specify constraints. instead, we assume a given set vom
+of valid object models satisfying all requirements (including cardinality
+constraints).
+denition 4 (constrained class model). aconstrained class model
+is a tuple cm = (c; a; r; val;key;attr;rel;vom )such that ucm =
+(c; a; r; val;key;attr;rel)is an unconstrained class model and vom 
+uom(ucm )is the set of valid object models . a valid object model
+om = (obj;rel)2vom satises all (cardinality) constraints including
+the following general requirements:
+{for any (r;mapk1;mapk2)2rel there exist c1,c2, mapa1, and mapa2
+such that rel (r) = (c1; c2)andf(c1;mapk1;mapa1);(c2;mapk2;mapa2)g
+obj , i.e., the referenced objects exist,
+{for anyf(c;mapk;mapa1);(c;mapk;mapa2)gobj : mapa1=mapa2,
+i.e., keys are indeed unique.
+all notations dened for unconstrained class models are also dened for
+constrained class models. for any valid object model om2vom it is
+ensured that relations refer to existing objects and that there are not
+two objects in the same class that have the same key values. moreover,
+all cardinality constraints are satised if om2vom .
+denition 4 abstracts from the concrete realization of object and class
+models in a database. however, it is easy to map any class model onto
+a set of related tables in a conventional relational database system. to
+do this foreign keys need to be added to the tables or additional tablesneed to be added to store the relationships. for example, one may add
+three extra columns to the table for c5(\ticket"): concert id(for the
+foreign key relating the ticket to a concert), seat id(for the foreign key
+relating the ticket to a seat), and booking id(for the foreign key relating
+the ticket to a booking). these columns realize respectively r4,r5, and
+r6. in the case of a many-to-many relationship an additional table needs
+to be added to encode the relations. in the remainder we abstract from
+the actual table structure, but it is obvious that the conceptualization
+agrees with standard database technology.
+5 events and their eect on the object model
+examples of widely used database management systems (dbmss) are
+oracle rdbms (oracle), sql server (microsoft), db2 (ibm), sybase
+(sap), and postgresql (postgresql global development group). all of
+these systems can store and manage the data structure described in def-
+inition 4. moreover, all of these systems have facilities to record changes
+to the database. for example, in the oracle rdbms environment, redo
+logs comprise les in a proprietary format which log a history of all
+changes made to the database. oracle logminer , a utility provided by
+oracle, provides methods of querying logged changes made to an ora-
+cle database. every microsoft sql server database has a transaction
+logthat records all database modications. sybase iq also provides a
+transaction log. such redo/transaction logs can be used to recover from
+a system failure. the redo/transaction logs will grow signicantly if there
+are frequent changes to the database. in such cases, the redo/transaction
+logs need to be truncated regularly.
+this paper does not focus on a particular dbms. however, we as-
+sume that through redo/transaction logs we can monitor changes to the
+database. in particular, we assume that we can see when a record is in-
+serted, updated, or deleted. conceptually, we assume that we can see the
+creation of objects and relations (denoted by ), the deletion of objects
+and relations (denoted by 	), and updates of objects (denoted by ).
+based on this we dene the set of atomic and composite event types .
+denition 5 (event types). let cm = (c; a; r; val;key;attr;rel;vom )
+be a constrained class model. et atomic =etadd;obj[etadd;rel[etdel;obj[
+etdel;rel[etupd;objis the set of atomic event types composed of the fol-
+lowing pairwise disjoint sets:
+{etadd;obj=f(; c)jc2cgare the event types for adding objects,
+{etadd;rel=f(; r)jr2rgare the event types for adding relations,
+{etdel;obj=f(	; c)jc2cgare the event types for deleting objects,
+{etdel;rel=f(	; r)jr2rgare the event types for deleting relations,
+and
+{etupd;obj=f(; c)jc2cgare the event types for updating objects.
+etcomposite (cm) =p(etatomic )nf;g is the set of all possible composite
+event types of cm .
+the atomic event type ( ; c5) denotes the creation of a ticket and ( ; r8)
+denotes the linking of a payment to a booking. when updating the ad-
+dress of a customer, the atomic event type ( ; c6) is expected to occur.when preparing for a new concert of an existing band in an existing con-
+cert hall, we may observe the composite event type f(; c2);(; r1);(; r2)g,
+i.e., creating a new object for the concert and relating it to the existing
+concert hall and band.
+the notion of atomic/composite event types naturally extends to con-
+crete atomic/composite events. for an object creation event ( ; c) we
+need to specify ( mapk;mapa), i.e., the new key and additional attribute
+values. for deleting a relation ( 	; r) we need to specify ( map1;map2),
+i.e., the key values of each of the two objects involved in the relation.
+denition 6 (events). let cm = (c; a; r; val;key;attr;rel;vom )
+be a constrained class model. eatomic =eadd;obj[eadd;rel[edel;obj[
+edel;rel[eupd;objis the set of atomic events composed of the following
+pairwise disjoint sets:
+{eadd;obj=f(; c;(mapk;mapa))j(c;mapk;mapa)2ocmg,
+{eadd;rel=f(; r;(map1;map2))j(r;map1;map2)2rcmg,
+{edel;obj=f(	; c;mapk)j(c;mapk)2kcmg,
+{edel;rel=f(	; r;(map1;map2))j(r;map1;map2)2rcmg,and
+{eupd;obj=f(; c;(mapk;mapa))j(c;mapk;mapa)2ocmg.
+ecomposite (cm) =p(eatomic )nf;g is the set of all possible composite
+events of cm . fprt2eatomic!etatomic is a function computing the
+footprint of an atomic event: fprt ((x; y; z )) = ( x; y)maps an atomic
+event (x; y; z )2eatomic onto its corresponding type (x; y)2etatomic .
+the footprint function is generalized to composite events, i.e., fprt 2
+ecomposite!etcomposite such that fprt (ce) =f(x; y)j(x; y; z )2ceg
+for composite event ce.
+eatomic is the set of atomic events. ecomposite (cm) is the set of non-empty
+composite events. fprttransforms atomic/composite events into the cor-
+responding types. for example, fprt((; r;(map1;map2))) = (; r).
+anevent model annotates a constrained class model with event types
+that refer to composite events. figure 3 shows an event model that has
+seven events. event en3models the deletion of a customer. the corre-
+sponding composite event type is f(	; c6)g. event en4models the adding
+of a concert. the corresponding composite event type is f(; c2);(; r1);(; r2)g.
+denition 7 (event model). let cm = (c; a; r; val;key;attr;rel;vom )
+be a constrained class model. an event model is a tuple em = (en;type;ve)
+where
+{en is a set of event names,
+{type2en!etcomposite (cm)is a function mapping each event
+name onto its composite event type,
+{veenecomposite (cm)is the set of valid events such that
+for any (en;ce)2ve: fprt (ce) = type(en). moreover, for any
+en2en there exists a ce such that (en;ce)2ve.
+events should be of the right type and for each event name there is at
+least one valid event. note that events may have varying cardinalities,
+e.g., one event may create ve objects of the same class.
+in denition 7, we require fprt(ce) =type(en). alternatively, one could
+weaken this requirements to ;6=fprt(ce)type(en). this would allowband
+booking1 0..*
+active_since : date
+booking_id : booking_idband_name : nameconcert
+concert_date : dateconcert hall
+name_of_hall : name
+seat
+row_no : num
+seat_no : numticket
+customer
+customer_name : name
+address : addressaddress : address
+address : addresshall_id : hall_id
+customer_id : cust_idband_id : band_id concert_id : con_id
+seat_id : seat_idstart_time : time
+price : euro
+total_price : europayment
+amount : euro1..* 0..*
+1
+1..*1
+0..*
+1 0..*
+11..*
+1 0..* 0..1 0..*ticket_id : ticket_id
+0..*
+payment_id : pay_idr1
+(location)c1
+birth_date : datec2 c3
+c4 c5
+c6 c7 c8r3
+(belongs_to)r2
+(playing)
+r5
+(belongs_to)r4
+(for_concert)
+r6
+(belongs_to)
+r8
+(for_booking)r7
+(booking_by)additional constraint: 
+there cannot be two 
+tickets for the same seat 
+and same concert 
+additional constraint: the 
+total price of a booking 
+equals the sum of the 
+individual tickets  additional constraint: 
+there cannot be two 
+concerts on the same 
+day in the same concert 
+hall 
+11..* 1en5
+create ticketsen4
+organize concert
+en3
+remove customeren1
+add customer
+en2
+update customer
+information1
+11..*11
+1
+en6
+make bookingen7
+handle payment
+111..*1..*
+1..*fig. 3. example of an event model.for the omission of certain events, e.g., in case the object already exists
+it does not need to be created. consider for example a new event en8
+with type(en8) =f(; c6);(; c7);(; r7)gthat creates a booking and
+the corresponding customer. if the customer is already in the database,
+the composite event cannot contain the creation of the customer object
+c6. instead of dening two variants of the same events (with or without
+creating a c6object), it may be convenient to dene one event that allows
+for both variations. case studies should show which requirement is more
+natural (strong versus weak event typing).
+here, we assume an event model to be given. the event model may be
+created by the analyst or extracted from the redo/transaction log of the
+dbms. we also assume that event occurrences (dened next) can be re-
+lated to events in the event model. future work aims at providing support
+for the semi-automatic creation of event models and further investigat-
+ing the relation with the redo/transaction logs in concrete systems like
+oracle.
+anevent occurrence is specied by an event name en, a composite event
+ce, and a timestamp ts. achange log is a sequence of such event oc-
+currences.
+denition 8 (event occurrence, change log). let cm = (c; a; r;
+val;key;attr;rel;vom )be a constrained class model and em = (en;type;ve)
+an event model. assume some universe of timestamps ts. e= ((en;ce);ts)2
+vets is an event occurrence . eo (cm;em) = vets is the
+set of all possible event occurrences. a change log l=he1; e2; : : : ; e ni
+is a sequence of event occurrences such that time is non-decreasing,
+i.e.,l=he1; e2; : : : ; e ni 2 (eo(cm;em))and ts itsjfor any
+ei= ((eni;cei);tsi)andej= ((enj;cej);tsj)with 1i < jn.
+next we dene the eect of an event occurrence, i.e., the resulting object
+model. if an event is not permissible, e.g., inserting an object for which
+an object with the same key already exists, the object model does not
+change.
+denition 9 (eect of an event). let cm = (c; a; r; val;key;
+attr;rel;vom )be a constrained class model and em = (en;type;ve)
+an event model. for any two object models om 1= (obj1;rel 1)and
+om 2= (obj2;rel 2)of cm and event occurrence e= (( en;ce); ts)2
+eo(cm;em), we denote om 1e!om 2if and only if
+{obj2=f(c;mapk;mapa)2obj1j(	; c;mapk)62ce^8map0(; c;(mapk;
+map0))62cegsf(c;mapk;mapa)2ocmj(; c;(mapk;mapa))2
+ce_(; c;(mapk;mapa))2ceg,
+{rel 2=f(r;map1;map2)2rel 1j(	; r;(map1;map2))62cegsf(r;map1;
+map2)2rcmj(; r;(map1;map2))2ceg, and
+{fom 1;om 2gvom .
+event eispermissible in object model om , notation om 1e!, if and
+only if there exists an om0such that ome!om0. if this is not the
+case, we denote ome
+6!, i.e., eis not permissible in om . if an event is
+not permissible, it will fail and the object model will remain unchanged.
+relatione)denotes the eect of event e. it is the smallest relation such
+that (a) ome)om0if ome!om0and (b) ome)om if ome
+6!.the event occurrence e= ((en;ce); ts) as a whole is successful or not.
+ifome
+6!, then nothing changes. the current denition of om 1e!is
+rather forgiving, e.g., it allows for the deletion of an object that does not
+exist. it only ensures that the result is a valid object model, but relations
+e!ande)can be made stricter if desired. note that the atomic events in
+ceoccur concurrently if eis successful, i.e., the events do not depend
+on each other.
+relatione)is deterministic, i.e., om 1e)om 2andom 1e)om 3implies
+om 2=om 3.
+denition 10 (eect of a change log). let cm = (c; a; r; val;key;
+attr;rel;vom )be a constrained class model, em = (en;type;ve)
+an event model, and om 02vom the initial valid object model. let
+l=he1; e2; : : : ; e ni2(eo(cm;em))be a change log. there exist ob-
+ject models om 1;om 2; : : : ; om n2vom such that
+om 0e1)om 1e2)om 2: : :en)om n
+hence, change log lresults in object model om nwhen starting in om 0.
+this is denoted by om 0l)om n.
+the formalizations above provide operational semantics for an abstract
+database system that processes a sequence of events. however, the goal
+is not to model a database system. instead, we aim to relate database
+updates to event logs that can be used for process mining. subsequently,
+we assume that we can witness a change log l=he1; e2; : : : ; e ni. it is easy
+to see atomic events. moreover, various heuristics can be used to group
+events into composite events (e.g., based on time, session id, and/or user
+id). denition 10 shows that this assumption allows us to reconstruct
+the state of the database system after each event, i.e., the object model
+om iresulting from eican be computed.
+6 approach: scope, bind, and classify
+process-mining techniques require as input a \at" event log and not
+a change log as described in denition 10. table 1 shows the kind of
+input data that process-mining techniques expect. such a conventional
+at event log is a collection of events where each event has the following
+properties:
+{ case id : each event should refer to a case (i.e., process instance). if
+an event is relevant for multiple cases, it should be replicated when
+creating event logs.
+{ activity : each event should be related to an activity. events refer to
+activity instances, i.e., occurrences of activities in the corresponding
+process model.
+{ timestamp : events within a case should be ordered. moreover,
+timestamps are not just needed for the temporal order: they are
+also vital for measuring performance.
+{next to these mandatory attributes there may be all kinds of optional
+event attributes. for example:resource : the person, machine or software component execut-
+ing the event.
+type : the transaction type of the event (start, complete, sus-
+pend, resume, etc.).
+costs : the costs associated with the event.
+customer : information about the person or organization for
+whom or which the event is executed.
+etc.
+dedicated process-mining formats like xes or mxml allow for the stor-
+age of such event data. to be able to use existing process-mining tech-
+niques we need to be able to extract at event logs and not a change log
+as dened in the previous section.
+letcm= (c; a; r; val;key;attr;rel;vom ) be a constrained class model,
+em= (en;type;ve) an event model, and om 02vom the initial valid
+object model. in the remainder we focus on the problem of converting
+a change log l=he1; e2; : : : ; e ni2(eo(cm;em))into a collection of
+conventional events logs that serve as input for existing process-mining
+techniques. given an event occurrence ei= (( eni;cei);tsi), one may
+convert it into a conventional event by taking tsias timestamp and eni
+as activity. however, an event occurrence needs to be related to zero or
+more cases and the change log may contain information about multiple
+processes. hence, several decisions need to be made in the conversion
+process. we propose a three-step approach: (1) scope the event data,
+(2)bind the events to process instances (i.e., cases), and (3) classify the
+process instances.
+6.1 scope: determine the relevant events
+the rst step in converting a change log into a collection of conventional
+events logs is to scope the event data. which of the event occurrences in
+l=he1; e2; : : : ; e niare relevant for the questions one aims to answer?
+one way to scope the event data is to consider a subset of event names
+ensen. recall that enare all event names in an event model. in
+figure 3, en=fen1;en2; : : : ; en7g. events may also be selected based
+on a time window (e.g., \all events executed after may 21st" or \all
+events belonging to cases that were complete in 2013") or the classes
+involved (e.g., \all events related to metallica concerts").
+6.2 bind: relate events to process instances
+process models always describe lifecycles of instances. for example, when
+looking at any bpmn, epc, or uml activity model there is the implicit
+notion of a process instance (i.e., case). the process model is instantiated
+once for each case, e.g., for an order handling process the activities always
+operate on a specic purchase order. the notion of process instances is
+made explicit in process-aware information systems, e.g., business pro-
+cess management (bpm) and workow management (wfm) systems.
+however, in most other systems the instance notion is implicit. moreover,
+the instance notion selected may depend on the questions one would liketo answer. consider for example figure 3. possible instance notions are
+concert, ticket, booking, customer, band, concert hall, seat, and pay-
+ment. one could construct a process describing the lifecycle of tickets.
+such a lifecycle is dierent from the lifecycle of a concert or booking.
+one could even consider discovering the lifecycle of chairs in a concert
+hall by taking seat ids as process instances.
+technically, we need to dene a set of process instances pi(cases) and re-
+late events to these instances: bindvespiwith ves=f(en;ce)2
+vejen2ensgthe subset of the valid events selected (without times-
+tamps). let pi2pibe a process instance and ei= ((eni;cei);tsi) an
+event occurrence: event eibelongs to case piif ((eni;cei);pi)2bind.
+note that bind is a relation and not a function. this way the same event
+occurrence may yield events in dierent process instances. for example,
+the cancelation of a concert may inuence many bookings.
+relation bind allows us to associate events to cases. this, combined with
+the timestamps and activity names, enables the construction of event
+logs.
+6.3 classify: relate process instances to processes
+after scoping and binding, we have a set of events related to process in-
+stances. since we can reconstruct the object model before and after each
+event occurrence, we can add all kinds of optional element attributes.
+hence, we can create a conventional event log with a rich set of attributes.
+however, as process-mining techniques mature it becomes interesting to
+compare dierent groups of process instances [3]. instead of creating one
+event log, it is often insightful to create multiple event logs. for example,
+to compare the booking process for two concerts we create two event logs
+and compare the process-mining results.
+to allow for comparative process mining , process instances are classied
+using a relation classpiclwith clthe set of classes. consider for
+example the study process of students taking a particular course. rather
+than creating one process model for all students, one could create (1) a
+process model for students that passed and a process model for students
+that failed, (2) a process model for male students and a process model for
+female students, or (3) a process model for dutch students and a process
+model for international students. note that classpicldoes not
+require a strict partitioning of the process instances, e.g., a case may
+belong to multiple classes.
+in [3], the notion of process cubes was proposed to allow for comparative
+process mining. in a process cube events are organized using dierent
+dimensions. each cell in the process cube corresponds to a set of events
+that can be used to discover a process model, to check conformance, or
+to discover bottlenecks. process cubes are inspired by the well-known
+olap (online analytical processing) data cubes and associated opera-
+tions such as slice, dice, roll-up, and drill-down [24]. however, there are
+also signicant dierences because of the process-related nature of event
+data. for example, process discovery based on events is incomparable
+to computing the average or sum over a set of numerical values. more-
+over, dimensions related to process instances (e.g. male versus femalestudents), subprocesses (e.g. group assignments versus individual assign-
+ments), organizational entities (e.g. students versus lecturers), and time
+(e.g. years or semesters) are semantically dierent and it is challenging
+to slice, dice, roll-up, and drill-down process-mining results eciently.
+as mentioned before, we deliberately remain at the conceptual level and
+do not focus on a particular dbms. however, the \scope, bind, and
+classify" approach allows for the transformation of database updates
+into events populating process cubes that can be used for a variety of
+process-mining analyses.
+7 related work
+the reader is referred to [1] for an introduction to process mining. al-
+ternatively, one can consult the process mining manifesto [36] for best
+practices and the main challenges in process mining. next to the auto-
+mated discovery of the underlying process based on raw event data, there
+are process-mining techniques to analyze bottlenecks, to uncover hidden
+ineciencies, to check compliance, to explain deviations, to predict per-
+formance, and to guide users towards \better" processes. dozens (if not
+hundreds) of process-mining techniques are available and their value has
+been proven in many case studies. for example, dozens of process dis-
+covery [1, 9, 11, 16, 32, 18, 22, 23, 27, 33, 39, 48, 51, 52] and conformance
+checking [6, 13, 14, 15, 21, 28, 33, 41, 42, 47, 50] approaches have been
+proposed in literature. however, this paper is not about new process-
+mining techniques but about getting the event data needed for all of
+these techniques. we are not aware of any work systematically transform-
+ing database updates into event logs. probably, there are process-mining
+case-studies using redo/transaction logs from database management sys-
+tems like oracle rdbms, microsoft sql server, ibm db2, or sybase
+iq. however, systematic tool support seems to be missing.
+the binding step in our approach is related to topic of event correla-
+tion which has been investigated in the (web) services [4]. in [8] and [17]
+various interaction and correlation patterns are described. in [44] a tech-
+nique is presented for correlating messages with the goal to visualize the
+execution of web services. also nezhad et al. [40] developed techniques
+for event correlation and process discovery from web service interaction
+logs.
+most closely related seem to be the work on artifact-centric process
+mining [12, 30, 31], process model repositories [46], event log extrac-
+tion ([49, 34]), and process cubes [3]. however, none of these approaches
+dene an event model on top of a class model.
+8 conclusion
+to drive innovation in an increasingly digitalized world, the \process sci-
+entist" needs to have powerful tools. recent advances in process mining
+provide such tools, but cannot be applied easily to selections of the inter-
+net of events (ioe) where data is heterogeneous and distributed. processmining seeks the \confrontation" between real event data and process
+models (automatically discovered or hand-made). the fteen case stud-
+ies listed on the web page of the ieee task force on process mining [37]
+illustrate the applicability of process mining. process mining can be used
+to check conformance, detect bottlenecks, and suggest process improve-
+ments. however, the most time-consuming part of process mining is not
+the actual analysis. most time is spent on locating, selecting, converting,
+and ltering the event data. the twelve guidelines for logging presented
+in this paper show that the input-side of process mining deserves much
+more attention. logging can be improved by better instrumenting sys-
+tems. however, we can also try to better use what is already there and
+widely uses: database systems. this paper focused on supporting the
+systematic extraction of event data from database systems .
+regular tables in a database provide a view of the actual state of the
+information system. for process mining, however, it is interesting to know
+when a record was created, updated, or deleted. taking the viewpoint
+that the database reects the current state of one or more processes,
+we dene all changes of the database to be events. in this paper, we
+conceptualized this viewpoint. building upon class and object models,
+we dened the notion of an event model. the event model relates changes
+to the underlying database to events used for process mining. based on
+such an event model, we dened the \scope, bind, and classify" approach
+that creates a collection of event logs that can be used for comparative
+process mining.
+in this paper we only conceptualized the dierent ideas. a logical next
+step is to develop tool support for specic database management systems.
+moreover, we would like to relate this to our work on process cubes [3]
+for comparative process mining.
+acknowledgements
+this work was supported by the basic research program of the national
+research university higher school of economics (hse) in moscow.
+references
+[1] w.m.p. van der aalst. process mining: discovery, conformance
+and enhancement of business processes . springer-verlag, berlin,
+2011.
+[2] w.m.p. van der aalst. business process management: a com-
+prehensive survey. isrn software engineering , pages 1{37, 2013.
+doi:10.1155/2013/507984.
+[3] w.m.p. van der aalst. process cubes: slicing, dicing, rolling up
+and drilling down event data for process mining. in m. song,
+m. wynn, and j. liu, editors, asia pacic conference on business
+process management (ap-bpm 2013) , volume 159 of lecture notes
+in business information processing , pages 1{22. springer-verlag,
+berlin, 2013.[4] w.m.p. van der aalst. service mining: using process mining to
+discover, check, and improve service behavior. ieee transactions
+on services computing , 6(4):525{535, 2013.
+[5] w.m.p. van der aalst. data scientist: the engineer of the future.
+in k. mertins, f. benaben, r. poler, and j. bourrieres, editors,
+proceedings of the i-esa conference , volume 7 of enterprise inter-
+operability , pages 13{28. springer-verlag, berlin, 2014.
+[6] w.m.p. van der aalst, a. adriansyah, and b. van dongen. re-
+playing history on process models for conformance checking and
+performance analysis. wires data mining and knowledge dis-
+covery , 2(2):182{192, 2012.
+[7] w.m.p. van der aalst, p. barthelmess, c.a. ellis, and j. wainer.
+proclets: a framework for lightweight interacting workow pro-
+cesses. international journal of cooperative information systems ,
+10(4):443{482, 2001.
+[8] w.m.p. van der aalst, a.j. mooij, c. stahl, and k. wolf. service
+interaction: patterns, formalization, and analysis. in m. bernardo,
+l. padovani, and g. zavattaro, editors, formal methods for web
+services , volume 5569 of lecture notes in computer science , pages
+42{88. springer-verlag, berlin, 2009.
+[9] w.m.p. van der aalst, v. rubin, h.m.w. verbeek, b.f. van don-
+gen, e. kindler, and c.w. g unther. process mining: a two-step
+approach to balance between undertting and overtting. soft-
+ware and systems modeling , 9(1):87{111, 2010.
+[10] w.m.p. van der aalst and c. stahl. modeling business processes:
+a petri net oriented approach . mit press, cambridge, ma, 2011.
+[11] w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. work-
+ow mining: discovering process models from event logs. ieee
+transactions on knowledge and data engineering , 16(9):1128{
+1142, 2004.
+[12] acsi. artifact-centric service interoperation (acsi) project home
+page. www.acsi-project.eu .
+[13] a. adriansyah, b. van dongen, and w.m.p. van der aalst. con-
+formance checking using cost-based fitness analysis. in c.h. chi
+and p. johnson, editors, ieee international enterprise computing
+conference (edoc 2011) , pages 55{64. ieee computer society,
+2011.
+[14] a. adriansyah, b.f. van dongen, and w.m.p. van der aalst. to-
+wards robust conformance checking. in m. zur muehlen and j. su,
+editors, bpm 2010 workshops, proceedings of the sixth workshop
+on business process intelligence (bpi2010) , volume 66 of lecture
+notes in business information processing , pages 122{133. springer-
+verlag, berlin, 2011.
+[15] a. adriansyah, n. sidorova, and b.f. van dongen. cost-based fit-
+ness in conformance checking. in international conference on ap-
+plication of concurrency to system design (acsd 2011) , pages 57{
+66. ieee computer society, 2011.
+[16] r. agrawal, d. gunopulos, and f. leymann. mining process models
+from workow logs. in sixth international conference on extend-
+ing database technology , volume 1377 of lecture notes in computer
+science , pages 469{483. springer-verlag, berlin, 1998.[17] a. barros, g. decker, m. dumas, and f. weber. correlation pat-
+terns in service-oriented architectures. in m. dwyer and a. lopes,
+editors, proceedings of the 10th international conference on fun-
+damental approaches to software engineering (fase 2007) , vol-
+ume 4422 of lecture notes in computer science , pages 245{259.
+springer-verlag, berlin, 2007.
+[18] r. bergenthum, j. desel, r. lorenz, and s. mauser. process min-
+ing based on regions of languages. in g. alonso, p. dadam, and
+m. rosemann, editors, international conference on business pro-
+cess management (bpm 2007) , volume 4714 of lecture notes in
+computer science , pages 375{383. springer-verlag, berlin, 2007.
+[19] r.p. jagadeesh chandra bose, r. mans, and w.m.p. van der aalst.
+wanna improve process mining results? it's high time we con-
+sider data quality issues seriously. in b. hammer, z.h. zhou,
+l. wang, and n. chawla, editors, ieee symposium on computa-
+tional intelligence and data mining (cidm 2013) , pages 127{134,
+singapore, 2013. ieee.
+[20] j. vom brocke and m. rosemann, editors. handbook on business
+process management , international handbooks on information sys-
+tems. springer-verlag, berlin, 2010.
+[21] t. calders, c. guenther, m. pechenizkiy, and a. rozinat. using
+minimum description length for process mining. in acm sympo-
+sium on applied computing (sac 2009) , pages 1451{1455. acm
+press, 2009.
+[22] j. carmona and j. cortadella. process mining meets abstract
+interpretation. in j.l. balcazar, editor, ecml/pkdd 210 , vol-
+ume 6321 of lecture notes in articial intelligence , pages 184{199.
+springer-verlag, berlin, 2010.
+[23] j. carmona, j. cortadella, and m. kishinevsky. a region-based
+algorithm for discovering petri nets from event logs. in business
+process management (bpm2008) , pages 358{373, 2008.
+[24] s. chaudhuri and u. dayal. an overview of data warehousing and
+olap technology. acm sigmod record , 26(1):65{74, 1997.
+[25] p.p. chen. the entity-relationship model: towards a unied view
+of data. acm transactions on database systems , 1:9{36, jan 1976.
+[26] d. cohn and r. hull. business artifacts: a data-centric approach
+to modeling business operations and processes. ieee data engi-
+neering bulletin , 32(3):3{9, 2009.
+[27] j.e. cook and a.l. wolf. discovering models of software processes
+from event-based data. acm transactions on software engineer-
+ing and methodology , 7(3):215{249, 1998.
+[28] j.e. cook and a.l. wolf. software process validation: quantita-
+tively measuring the correspondence of a process to a model. acm
+transactions on software engineering and methodology , 8(2):147{
+176, 1999.
+[29] m. dumas, m. la rosa, j. mendling, and h. reijers. fundamentals
+of business process management . springer-verlag, berlin, 2013.
+[30] d. fahland, m. de leoni, b. van dongen, and w.m.p. van der
+aalst. behavioral conformance of artifact-centric process mod-
+els. in a. abramowicz, editor, business information systems (bis2011) , volume 87 of lecture notes in business information process-
+ing, pages 37{49. springer-verlag, berlin, 2011.
+[31] d. fahland, m. de leoni, b. van dongen, and w.m.p. van der
+aalst. many-to-many: some observations on interactions in arti-
+fact choreographies. in d. eichhorn, a. koschmider, and h. zhang,
+editors, proceedings of the 3rd central-european workshop on ser-
+vices and their composition (zeus 2011) , ceur workshop pro-
+ceedings, pages 9{15. ceur-ws.org, 2011.
+[32] w. gaaloul, k. gaaloul, s. bhiri, a. haller, and m. hauswirth.
+log-based transactional workow mining. distributed and parallel
+databases , 25(3):193{240, 2009.
+[33] s. goedertier, d. martens, j. vanthienen, and b. baesens. robust
+process discovery with articial negative events. journal of ma-
+chine learning research , 10:1305{1340, 2009.
+[34] c. g unther and w.m.p. van der aalst. a generic import frame-
+work for process event logs. in j. eder and s. dustdar, editors,
+business process management workshops, workshop on business
+process intelligence (bpi 2006) , volume 4103 of lecture notes in
+computer science , pages 81{92. springer-verlag, berlin, 2006.
+[35] a.h.m. ter hofstede, w.m.p. van der aalst, m. adams, and n. rus-
+sell. modern business process automation: yawl and its support
+environment . springer-verlag, berlin, 2010.
+[36] ieee task force on process mining. process mining manifesto. in
+bpm workshops , volume 99 of lecture notes in business informa-
+tion processing . springer-verlag, berlin, 2011.
+[37] ieee task force on process mining. process mining case
+studies. http://www.win.tue.nl/ieeetfpm/doku.php?id=shared:
+process_mining_case_studies , 2013.
+[38] ieee task force on process mining. xes standard denition.
+www.xes-standard.org, 2013.
+[39] a.k. alves de medeiros, a.j.m.m. weijters, and w.m.p. van der
+aalst. genetic process mining: an experimental evaluation. data
+mining and knowledge discovery , 14(2):245{304, 2007.
+[40] h.r. montahari-nezhad, r. saint-paul, f. casati, and b. bena-
+tallah. event correlation for process discovery from web service
+interaction logs. vlbd journal , 20(3):417{444, 2011.
+[41] j. munoz-gama and j. carmona. a fresh look at precision in
+process conformance. in r. hull, j. mendling, and s. tai, editors,
+business process management (bpm 2010) , volume 6336 of lecture
+notes in computer science , pages 211{226. springer-verlag, berlin,
+2010.
+[42] j. munoz-gama and j. carmona. enhancing precision in process
+conformance: stability, condence and severity. in n. chawla,
+i. king, and a. sperduti, editors, ieee symposium on computa-
+tional intelligence and data mining (cidm 2011) , pages 184{191,
+paris, france, april 2011. ieee.
+[43] omg. unied modeling language, infrastructure and superstruc-
+ture (version 2.2, omg final adopted specication), 2009.
+[44] w. de pauw, m. lei, e. pring, l. villard, m. arnold, and j.f.
+morar. web services navigator: visualizing the execution of web
+services. ibm systems journal , 44(4):821{845, 2005.[45] m. reichert and b. weber. enabling flexibility in process-aware
+information systems: challenges, methods, technologies . springer-
+verlag, berlin, 2012.
+[46] m. la rosa, h.a. reijers, w.m.p. van der aalst, r.m. dijkman,
+j. mendling, m. dumas, and l. garcia-banuelos. apromore:
+an advanced process model repository. expert systems with ap-
+plications , 38(6):7029{7040, 2011.
+[47] a. rozinat and w.m.p. van der aalst. conformance checking of
+processes based on monitoring real behavior. information sys-
+tems, 33(1):64{95, 2008.
+[48] m. sole and j. carmona. process mining from a basis of regions. in
+j. lilius and w. penczek, editors, applications and theory of petri
+nets 2010 , volume 6128 of lecture notes in computer science , pages
+226{245. springer-verlag, berlin, 2010.
+[49] h.m.w. verbeek, j.c.a.m. buijs, b.f. van dongen, and w.m.p.
+van der aalst. xes, xesame, and prom 6. in p. soer and
+e. proper, editors, information systems evolution , volume 72 of
+lecture notes in business information processing , pages 60{75.
+springer-verlag, berlin, 2010.
+[50] j. de weerdt, m. de backer, j. vanthienen, and b. baesens. a
+robust f-measure for evaluating discovered process models. in
+n. chawla, i. king, and a. sperduti, editors, ieee symposium on
+computational intelligence and data mining (cidm 2011) , pages
+148{155, paris, france, april 2011. ieee.
+[51] a.j.m.m. weijters and w.m.p. van der aalst. rediscovering work-
+ow models from event-based data using little thumb. integrated
+computer-aided engineering , 10(2):151{162, 2003.
+[52] j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, and
+a. serebrenik. process discovery using integer linear program-
+ming. fundamenta informaticae , 94:387{412, 2010.
+[53] m. weske. business process management: concepts, languages,
+architectures . springer-verlag, berlin, 2007.

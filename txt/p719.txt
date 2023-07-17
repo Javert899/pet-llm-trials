@@ -1,0 +1,1082 @@
+discovering block-structured process models from
+event logs - a constructive approach
+s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+department of mathematics and computer science, eindhoven university of technology, p.o.
+box 513, nl-5600 mb, eindhoven, the netherlands
+abstract process discovery is the problem of, given a log of observed behaviour,
+ﬁnding a process model that ‘best’ describes this behaviour. a large variety of
+process discovery algorithms has been proposed. however, no existing algorithm
+guarantees to return a ﬁtting model (i.e., able to reproduce all observed behaviour)
+that is sound (free of deadlocks and other anomalies) in ﬁnite time. we present
+an extensible framework to discover from any given log a set of block-structured
+process models that are sound and ﬁt the observed behaviour. in addition we
+characterise the minimal information required in the log to rediscover a particu-
+lar process model. we then provide a polynomial-time algorithm for discovering
+a sound, ﬁtting, block-structured model from any given log; we give sufﬁcient
+conditions on the log for which our algorithm returns a model that is language-
+equivalent to the process model underlying the log, including unseen behaviour.
+the technique is implemented in a prototypical tool.
+1 introduction
+process mining techniques aim to extract information from event logs. for example,
+the audit trails of a workﬂow management system or the transaction logs of an enter-
+prise resource planning system can be used to discover models describing processes,
+organisations and products. the most challenging process mining problem is to learn a
+process model (e.g., a petri net) from example traces in some event log. many process
+discovery techniques have been proposed. for an overview of process discovery algo-
+rithms, we refer to [12]. unfortunately, existing techniques may produce models that
+are unable to replay the log, may produce erroneous models and may have excessive
+run times.
+which process model is ‘best’ is typically deﬁned with respect to several quality cri-
+teria. an important quality criterion is soundness. a process model is sound if and only
+if all process steps can be executed and some satisfactory end state is always reachable.
+in most use cases, an unsound process model can be discarded without considering the
+log that it should represent. another model quality criterion is ﬁtness. a model has per-
+fectﬁtness with respect to a log if it can reproduce all traces in the log. the quality
+criterion precision expresses whether the model does not allow for too much behaviour,
+generalisation expresses that the model will allow future behaviour that is currently
+absent in the log.[9] other model quality criteria exist, for which we refer to [21]. in
+this paper, we focus on soundness and ﬁtness, as so far no existing discovery algorithm
+guarantees to return a sound ﬁtting model in ﬁnite time.2 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+in addition to ﬁnite run time, there are other desirable properties of process discov-
+ery algorithms. in reality, the log was produced by some real-life process. the original
+process is rediscoverable by a process discovery algorithm if, given a log that contains
+enough information, the algorithm returns a model that is equivalent to the original pro-
+cess using some equivalence notion. for instance, language-rediscoverability holds for
+an algorithm that returns a model that is language-equivalent to the original model used
+to generate the log, and isomorphic-rediscoverability holds for an algorithm that returns
+a model that is isomorphic to (a representation of) the original model. the amount of
+information that is required to be in the log is referred to as log completeness , of which
+the most extreme case is total log completeness, meaning that all possible behaviour of
+the original process must be present in the log. a process discovery technique is only
+useful if it assumes a much weaker notion of completeness. in reality one will rarely
+see all possible behaviour.
+many process discovery algorithms [4,23,24,22,6,10,25,16,3,17,8,2] using differ-
+ent approaches have been proposed in the past. some techniques guarantee ﬁtness,
+e.g., [25], some guarantee soundness, e.g. [8], and others guarantee rediscoverability
+under some conditions, e.g., [4]. yet, there is essentially no discovery algorithm guar-
+anteeing to ﬁnd a sound, ﬁtting model in ﬁnite time for all given logs.
+in this paper, we use the block-structured process models of [8,2] to introduce a
+framework that guarantees to return sound and ﬁtting process models. this framework
+enables us to reason about a variety of quality criteria. the framework uses any ﬂavour
+of block-structured process models: new blocks/operators can be added without chang-
+ing the framework and with few proof obligations. the framework uses a divide and
+conquer approach to decompose the problem of discovering a process model for a log
+linto discovering nsubprocesses of nsublogs obtained by splitting l. we explore the
+quality standards and hard theoretically founded limits of the framework by character-
+ising the requirements on the log under which the original model can be rediscovered.
+for illustrative purposes, we give an algorithm that uses the framework and runs in
+polynomial time for any log and any number of activities. the framework guarantees
+that the algorithm returns a sound ﬁtting model. the algorithm works by dividing the
+activities of the log over a number of branches, such that the log can be split accord-
+ing to this division. we characterise the conditions under which the algorithm returns
+a model that is language-equivalent to the original process. the algorithm has been
+prototypically implemented using the prom framework [11].
+we start with an explanation of logs, languages, petri nets, workﬂow nets and pro-
+cess trees in section 3. in section 4 the framework is described. the class of models
+that this framework can rediscover is described in section 5. in section 6 we give an
+algorithm that uses the framework and we report on experimental results.
+2 related work
+a multitude of process discovery algorithms has been proposed in the past. we review
+typical representatives with respect to guarantees such as soundness, ﬁtness, rediscov-
+erability and termination. techniques that discover process models from ordering re-
+lations of activities, such as the algorithm [4] and its derivatives [23,24], guaranteediscovering process models constructively 3
+isomorphic-rediscoverability for rather small classes of models [5] and do not guaran-
+tee ﬁtness or soundness. semantics-based techniques such as the language-based re-
+gion miner [6,7], the state-based region miner [10], or the ilp miner [25] guarantee
+ﬁtness but neither soundness nor rediscoverability. frequency-based techniques such
+as the heuristics miner [22] guarantee neither soundness nor ﬁtness. abstraction-based
+techniques such as the fuzzy miner [16] produce models that do not have executable
+semantics and hence guarantee neither soundness nor ﬁtness nor any kind of rediscov-
+erability.
+genetic process discovery algorithms [3,17] may reach certain quality criteria if
+they are allowed to run forever, but usually cannot guarantee any quality criterion given
+ﬁnite run time. a notable exception is a recent approach [8,2] that guarantees soundness.
+this approach restricts the search space to block-structured process models, which are
+sound by construction; however, ﬁnding a ﬁtting model cannot be guaranteed in ﬁnite
+run time.
+the reﬁned process structure tree [19] is a parsing technique to ﬁnd block struc-
+tures in process models by which soundness can be checked [14], or an arbitrary model
+can be turned into a block-structured one (if possible) [18]. however, these techniques
+only analyse or transform a given model, but do not allow to construct a sound or ﬁtting
+model. the language-based mining technique of [7] uses regular expressions to pre-
+structure the input language (the log) into smaller blocks; this block-structuring of the
+log is then used during discovery for constructing a ﬁtting, though possibly unsound,
+process model.
+unsound models can be repaired to become sound by simulated annealing [15],
+though ﬁtness to a given log is not preserved. non-ﬁtting models can be repaired to be-
+come ﬁtting by adding subprocesses [13], though soundness is not guaranteed. hence,
+a more integrated approach is needed to ensure soundness and ﬁtness. in the following
+we will propose such an integrated approach building on the ideas of a restriction to
+block-structured models[2,8], and of decomposing the given log into block-structured
+parts prior to model construction.
+3 preliminaries
+logs. we assume the set of all process activities to be given. an eventeis the
+occurrence of an activity: e2. atracetis a possibly empty sequence of events:
+t2. we denote the empty trace with . aloglis a ﬁnite non-empty set of traces:
+l. for example,fha;b;ci;ha;c;bigdenotes a log consisting of two traces abc
+andacb, where for instance abcdenotes that ﬁrst aoccurred, then band ﬁnallyc. the
+sizeof a log is the number of events in it: jjljj=p
+t2ljtj.
+petri nets, workﬂow nets and block-structured workﬂow nets. apetri net is a bipartite
+graph containing places and transitions, interconnected by directed arcs. a transition
+models a process activity, a place models a part of the net. we assume the standard
+semantics of petri nets here, see [20]. a workﬂow net is a petri net having a single start
+place and a single end place, modeling the start and end state of a process. moreover,4 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+all nodes are on a path from start to end[4]. a block-structured workﬂow net is a hier-
+archical workﬂow net that can be divided recursively into parts having single entry and
+exit points. figure 1 shows a block-structured workﬂow net.
+process trees. aprocess tree is a compact abstract representation of a block-structured
+workﬂow net: a rooted tree in which leaves are labeled with activities and all other nodes
+are labeled with operators. a process tree describes a language, an operator describes
+how the languages of its subtrees are to be combined.
+we formally deﬁne process trees recursively. we assume a ﬁnite alphabet of
+activities and a setlof operators to be given. symbol  =2denotes the silent
+activity.
+–awitha2[fgis a process tree;
+–letm1;;mnwithn>0be process trees and let be a process tree operator,
+then(m1;:::;mn)is a process tree.
+there are a few standard operators that we consider in the following: operator 
+means the exclusive choice between one of the subtrees, !means the sequential ex-
+ecution of all subtrees, 	means the structured loop of loop body m1and alternative
+loop back paths m2;;mn, and^means a parallel (interleaved) execution as deﬁned
+below. please note that for 	,nmust be2.
+to describe the semantics of process trees, we deﬁne the language of a process tree
+mas a recursive monotonic function l(m), using for each operator a language join
+functionl:
+l(a) =fhaigfora2
+l() =fg
+l((m1;:::;mn)) =l(l(m1);:::;l(mn))
+each operatorhas its own language join function l. each function takes several
+logs and produces a new log: l: 2 2!2.
+l(l1;:::;ln) =[
+1inli
+!l(l1;:::;ln) =ft1t2tnj8i21n:ti2lig
+	l(l1;:::;ln) =ft1t0
+1t2t0
+2tmj8i:ti2l1^t0
+i2[
+2jnljg
+to characterise^, we introduce a set notation ft1;;tng'that interleaves the
+tracest1tn. we need a more complex notion than a standard projection function
+due to overlap of activities over traces.
+t2ft1;:::;tng',9(f:f1jtj]g!f (j;k)jjn^kjtjjg) :
+8i1<i2^f(i1) = (j;k1)^f(i2) = (j;k2) :k1<k2^
+8in^f(i) = (j;k) :t(i) =tj(k)discovering process models constructively 5
+wherefis a bijective function mapping each event of tto an event in one of the ti
+andt(i)is theithelement oft. for instance,ha;c;d;bi2fha;bi;hc;dig'. using this
+notation, we deﬁne ^l:
+^l(l1;:::;ln) =ftjt2ft1;;tng'^8i:ti2lig
+τb
+c
+de
+fg
+ha τ
+figure 1: a petri net, modiﬁed from [1, page 196]. the rectangle regions denote the
+process tree nodes in !(a;	(!(^((b;c);d);e);f);(g;h)).
+each of the process tree operators has a straightforward formal translation to a
+sound, block-structured workﬂow petri net [8,2]. for instance, the petri net shown in
+figure 1 corresponds to the process tree !(a;	(!(^((b;c);d);e);f);(g;h)). if
+one would come up with another process tree operator, soundness of the translation
+follows if the translation of the new process tree operator is sound in isolation. the
+four operators presented here translate to well-structured, free-choice petri nets; other
+operators might not.
+the size of a model mis the number of nodes in mand is denoted as jmj:
+jj= 1,jaj= 1 andj(m1;:::;mn)j= 1 +p
+ijmij. two process trees m=
+(m1;:::;mn)andm0=0(m0
+1;:::;m0
+n)areisomorphic if and only if they are
+syntactically equivalent up to reordering of children in the case of ,^and the non-
+ﬁrst children of	.
+ifmis a process tree and lis a log, then lﬁtsmif and only if every trace in l
+is in the language of m:ll(m). aﬂower model is a process tree that can produce
+any sequence of . an example of a ﬂower model is the model 	(;a1;:::;am)where
+a1am=.
+as additional notation, we write (l)and(m)for the activities occurring in log
+lor modelmrespectively, not including . furthermore, start (l),start (m)and
+end(l),end(m)denote the sets of activities with which log land modelmstart or
+end.
+4 framework
+in this section, we introduce a highly generic process discovery framework. this frame-
+work allows for the derivation of various process discovery algorithms with predeﬁned6 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+guarantees. then we prove that each model returned by the framework ﬁts the log and
+that the framework describes a ﬁnite computation, both for any set of process tree op-
+erators having a corresponding monotonic language join function.
+requirement on the process tree operators. the framework works independently
+of the chosen process tree operators. the only requirement is that each operator must
+have a sensible language join function l, such that the language of reﬂects the
+language join of its l.
+framework given a setlof process tree operators, we deﬁne a framework bto
+discover a set of process models using a divide and conquer approach. given a log l,b
+searches for possible splits of linto smaller l1ln, such that these logs combined
+with an operatorcan produce lagain. it then recurses on the found divisions and
+returns a cartesian product of the found models. the recursion ends when lcannot be
+divided any further. we have to give this algorithmic idea a little twist as splitting l
+into strictly smaller l1lncould prevent some models from being rediscovered, for
+instance in presence of unobservable activities. as a more general approach, we allow
+lto be split into sublogs having the same size as l. however, such splits that do not
+decrease the size of lmay only happen ﬁnitely often. for this, we introduce a counter
+parameter, which has to decrease if a non-decreasing log split is made. parameter 
+essentially bounds the number of invisible branches that the discovered model can have.
+functionbselect (l;)
+ifl=fgthen
+base fg
+else if9a2:l=fhaigthen
+base fag
+else
+base ;
+end if
+p select (l)
+ifjpj= 0then
+ifbase =;then
+returnf	(;a1;:::;am)wherefa1amg=(l)g
+else
+returnbase
+end if
+end if
+returnf(m1;:::;mn)j(;((l1;1);:::; (ln;n)))2p^8i:mi2b(li;i)g[
+base
+end function
+whereselect is a function that takes a log and returns a set of preferred log divi-
+sions, being tuples (;((l1;1);:::; (ln;n))), in whichis a process tree operator,
+liare logs and iare counter parameters. each returned tuple should:discovering process models constructively 7
+deﬁnition 1. for each tuple (;((l1;1);:::; (ln;n)))thatselect (l)returns, it
+must hold that
+l l(l1;:::;ln)^
+8i:jjlijj+i<jjljj+^
+8i:jjlijjjjljj^
+8i:i^
+8i:(li)(l)^
+2m
+^
+njjljj+
+in the remainder of this section, we will prove some properties that do not depend
+on a speciﬁc preference function select .
+theorem 2. assumingselect terminates,bterminates.
+proof. termination follows from the fact that in each recursion, jjljj+gets strictly
+smaller and that there are ﬁnitely many recursions from a recursion step. by con-
+struction of select ,(li)(l), and therefore is ﬁnite. by construction of p,
+njjljj+, so there are ﬁnitely many sublogs li. hence,select creates ﬁnitely
+many log divisions. therefore, the number of recursions is ﬁnite and hence btermi-
+nates. u t
+theorem 3. letlbe a set of operators and let lbe a log. then b(l)returns at least
+one process tree and all process trees returned by b(l)ﬁtl.
+proof. proof by induction on value of jjljj+. base cases:jjljj+= 1orjjljj+=
+2. then,lis eitherfgorfhaig. by code inspection, for these lb returns at least one
+process tree and all process trees ﬁt l.
+induction hypothesis: for all logs jjl0jj+0smaller thanjjljj+,b(l0;0)returns at
+least one process tree and all process trees that breturns ﬁtl0:8jjl0jj+0<jjljj+:
+jb(l0)j1^8m02b(l0) :l0l(m0).
+induction step: assume jjljj+>2and the induction hypothesis. four cases apply:
+–casel=fg, see base case;
+–casel=fhaig, see base case;
+–casepis empty,l6=fgandl6=fag. thenbreturns the ﬂower model
+f	(;a1;:::;am)wherea1am=(l)gand that ﬁts any log.
+–casepis nonempty, l6=fgandl6=fag. letm1mnbe models returned by
+b(l1;1);:::;b (ln;n)for some logs l1lnand some counters 1n.
+by construction of the p-selection step,8i:jjlijj+i<jjljj+. by the in-
+duction hypothesis, these models exist. as bcombines these models in a cartesian
+product,jb(l)j1. by the induction hypothesis, 8i:lil(mi). using the
+fact thatlis monotonic and the construction of m, we obtainl(l1;:::;ln)
+l((m1;:::;mn)) =l(m). by construction of p,l l(l1;:::;ln), and
+byl(l1;:::;ln)l(m), we conclude that ll(m). we did not pose any
+restrictions on m1mn, so this holds for all combinations of m1mnfrom
+the sets returned by b. u t8 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+5 rediscoverability of process trees
+an interesting property of a discovery algorithm is whether and under which assump-
+tions an original process can be rediscovered by the algorithm. assume the original
+process is expressible as a model m, which is unknown to us. given is a log lof
+m:ll(m).mis isomorphic-rediscoverable from lby algorithm bif and only
+ifm2b(l). it is desirable that lcan be as small as possible to rediscover m. in
+this section, we explore the boundaries of the framework bof section 4 in terms of
+rediscoverability.
+we ﬁrst informally give the class of original processes that can be rediscovered by
+b, and assumptions on the log under which this is guaranteed. after that, we give an
+idea why these sufﬁce to rediscover the model. in this section, the preference function
+select as used inbis assumed to be the function returning all log divisions satisfying
+deﬁnition 1. otherwise, the original model could be removed.
+class of rediscoverable models. any algorithm has a representational bias; bcan
+only rediscover processes that can be described by process trees. there are no further
+limitations:bcan rediscover every process tree. an intuitive argument for this claim
+is that as long as the log can be split into the parts of which the log was constructed,
+the algorithm will also make this split and recurse. a necessity for this is that the log
+contains ‘enough’ behaviour.
+log requirements. all process trees can be rediscovered given ‘enough’ traces in the
+log, where enough means that the given log can be split according to the respective
+process tree operator. intuitively, it sufﬁces to execute each occurrence of each activity
+inmat least once in l. given a large enough ,bcan then always split the log
+correctly.
+this yields the notion of activity-completeness . loglis activity-complete w.r.t.
+modelm, denotelam, if and only if each leaf of mappears inlat least once.
+formally, we have to distinguish two cases. for a model m0where each activity occurs
+at most once and a log l0,
+l0am0,(m0)(l0)
+in the general case, where some activity a2occurs more than once in m, we
+have to distinguish the different occurrences. for a given alphabet consider a reﬁned
+alphabet0and a surjective function f:0!, e.g.,0=fa1;a2;;b1;b2;g
+anda=f(a1) =f(a2) =,b=f(b1) =f(b2) =, etc. for a log l0and model
+m0over0, letf(l0)andf(m0)denote the log and the model obtained by replacing
+eacha20byf(a)2. using this notation, we deﬁne for arbitrary log land model
+m,
+lam,90;(f0:0!);m0;l0:f(l0) =l^f(m0) =m^l0am0;
+where each activity a20occurs at most once in m0.discovering process models constructively 9
+rediscoverability of models. in order to prove isomorphic rediscoverability, we need
+to show that any log lamcan be split by bsuch thatmcan be constructed, given a
+large enough .
+theorem 4. given a large enough , for each log land modelmsuch thatl
+l(m)andlamit holds that m2b(l).
+proof. proof by induction on model sizes. base case: jmj= 1. a model of size 1
+consists of a single leaf l. byll(m)^lam,lisflg. these are handled by the
+l=fgorl=fhaigclauses and hence can be rediscovered.
+induction hypothesis: all models smaller than mcan be rediscovered: 8jm0j<jmj^
+l0l(m)^l0am0:m02b(l0;0), for some number 0.
+induction step: assume jmj>1and the induction hypothesis. as jmj>1,m=
+(m1;:::;mn)for certain,nandm1mn. byl l(m)and deﬁnition of
+l(m), there exist l1lnsuch that8i:li l(mi),8i:liamiandl
+l(l1;:::;ln). by the induction hypothesis there exist 1nsuch that8i:mi2
+b(li;i). we choose to be large enough by taking = maxfn;1+1;:::;n+1g.
+by this choice of ,
+8i:jjlijj+i<jjljj+^i
+and
+njjljj+
+hold. by construction of l,
+8i:jjlijjjjljj
+byjmj>1and our deﬁnitions of l,!l,^land	l,ldoes not introduce new
+activities:
+8i:(li)(l)
+hence, (;((l1;1);:::; (ln;n)))2p. by the induction hypothesis, 8mi:mi2
+b(li). the models returned by b(li)will be combined using a cartesian product, and
+asm=(m1;:::;mn), it holds that m2b(l). u t
+this proof shows that it sufﬁces to pick to be the sum of the width and depth of the
+original model min order to rediscover mfrom an activity-complete log l.
+6 discovering process trees efﬁciently
+the framework of section 4 has a practical limitation: for most real-life logs, it is infea-
+sible to construct the full set p. in this section, we introduce an algorithm b0that is a
+reﬁnement of the framework b.b0avoids constructing the complete set p. the central
+idea ofb0is to compute a log split directly based on the ordering of activities in the log.
+we ﬁrst introduce the algorithmic idea and provide formal deﬁnitions afterwards. we
+conclude this section with a description of the classes of process trees that b0is able to
+language-rediscover and a description of our prototype implementation.10 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+d e
+fab
+c
+(a)g(l).
+b
+c
+d e
+f (b)g(l2)
+b
+c (c)g(l3).
+d e
+f (d)g(l4).
+figure 2: several directly-follows graphs. dashed lines denote cuts.
+6.1 algorithmic idea
+the directly-follows relation, also used by the -algorithm [4], describes when two
+activities directly follow each other in a process. this relation can be expressed in
+thedirectly-follows graph of a logl, writteng(l). it is a directed graph containing
+as nodes the activities of l. an edge (a;b)is present in g(l)if and only if some
+traceh;a;b;i exists inl. a node of g(l)is astart node if its activity is in
+start (l). we deﬁne start (g(l)) =start (l). similarly for end nodes in end(l),
+andend(g(l)). the deﬁnition for g(m)is similar. for instance, figure 2a shows the
+directly-follows graph of log l=fha;b;ci;ha;c;bi;ha;d;ei;ha;d;e;f;d;eig.
+the idea for our algorithm is to ﬁnd in g(l)structures that indicate the ‘domi-
+nant’ operator that orders the behaviour. for example, g(l)of fig 2a can be partitioned
+into two sets of activities as indicated by the dashed line such that edges cross the line
+only from left to right. this pattern corresponds to a sequence where the activities left
+of the line precede the activities right of the line. this is the decisive hint on how to split
+a given log when using the framework of section 4. each of the four operators ,!,
+	,^has a characteristic pattern in g(l)that can be identiﬁed by ﬁnding a partitioning
+of the nodes of g(l)intonsets of nodes with characteristic edges in between. the log
+lcan then be split according to the identiﬁed operator, and the framework recurses on
+each of the split logs. the formal deﬁnitions are provided next.
+6.2 cuts, components, cliques
+letg(l)be the directly-follows graph of a log l. ann-ary cutcofg(l)is a partition
+of the nodes of the graph into disjoint sets 1n. we characterise a different cut
+for each operator,!,	,^based on edges between the nodes.
+in aexclusive choice cut , eachihas a start node and an end node, and there is no
+edge between two different i6=j, as illustrated by figure 3(left). in a sequence cut ,
+the sets1nare ordered such that for any two nodes a2i;b2j;i<j , there
+is a path from atobalong the edges of g(l), but not vice versa; see figure 3(top). in a
+parallel cut , eachihas a start node and an end node, and any two nodes a2i;b2
+j;i6=jare connected by edges (a;b)and(b;a); see figure 3(bottom). in a loop cut ,
+1has all start and all end nodes of g(l), there is no edge between nodes of different
+i6=j;i;j > 1, and any edge between 1andi;i> 1either leaves an end node ofdiscovering process models constructively 11
+...sequence:
+...exclusive choice:
+...parallel:
+...loop:
+figure 3: cuts of the directly-follows graph for operators ,!,^and	.
+1or reaches a start node of 1; see figure 3(right). an n-ary cut is maximal if there
+exists no cut of gof whichnis bigger. a cut cisnontrivial ifn>1.
+leta b2gdenote that there exists a directed edge chain (path) from atobin
+g. deﬁnitions 5, 6, 7 and 8 show the formal cut deﬁnitions.
+deﬁnition 5. anexclusive choice cut is a cut1nof a directly-follows graph g,
+such that
+1.8i6=j^ai2i^aj2j: (ai;aj)=2g
+deﬁnition 6. asequence cut is an ordered cut 1nof a directly-follows graph g
+such that
+1.81i<jn^ai2i^aj2j:aj ai=2g
+2.81i<jn^ai2i^aj2j:ai aj2g
+3.ai2s(i)9j6=i^aj2j: (aj;ai)2g
+ai2e(i)9j6=i^aj2j: (ai;aj)2g
+8ai2e(i)^aj2s(i+1) : (ai;aj)2g
+deﬁnition 7. aparallel cut is a cut1nof a directly-follows graph gsuch that
+1.8i:i\start (g)6=;^i\end(g)6=;
+2.8i6=j^ai2i^aj2j: (ai;aj)2g^(aj;ai)2g
+deﬁnition 8. aloop cut is a partially ordered cut 1nof a directly-follows graph
+gsuch that
+1.start (g)[end(g)1
+2.8i6= 1^ai2i^a121: (a1;ai)2g)a12end(g)
+3.8i6= 1^ai2i^a121: (ai;a1)2g)a12start (g)
+4.816=i6=j6= 1^ai2i^aj2j: (ai;aj)=2g
+5.8i6= 1^ai2i^a12start (g) : (9a0
+121: (ai;a0
+1)2g),(ai;a1)2g
+6.8i6= 1^ai2i^a12end(g) : (9a0
+121: (a0
+1;ai)2g),(a1;ai)2g12 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+6.3 algorithm b0
+b0uses the framework bof section 4 by providing a select functionselectb0.selectb0
+takes a log and produces a single log division. recursion and base cases are still handled
+by the framework b. for, we will use the ﬁxed value 0.
+the function selectb0works by constructing the directly follows graph g(l)of
+the input log l. after that, the function tries to ﬁnd one of the four cuts characterised
+above. ifselectb0ﬁnds such a cut, it splits the log according to the cut and returns a
+log division corresponding to the cut. if selectb0cannot ﬁnd a cut, it returns no log
+division, and bwill produce the ﬂower model for l.
+we ﬁrst deﬁne selectb0followed by the functions to split the log which we illustrate
+by a running example. we conclude by posing a lemma stating that selectb0is a valid
+select function for the framework b.
+functionselectb0(l)
+if2l_9a2(l) :l=fhaigthen
+return;
+else ifc a nontrivial maximal exclusive choice cut cofg(l)then
+1;;n c
+l1;;ln exclusive choice split(l;(1;:::;n))
+returnf(;((l1;0);:::; (ln;0)))g
+else ifc a nontrivial maximal sequence cut cofg(l)then
+1;;n c
+l1;;ln sequence split(l;(1;:::;n))
+returnf(!;((l1;0);:::; (ln;0)))g
+else ifc a nontrivial maximal parallel cut cofg(l)then
+1;;n c
+l1;;ln parallel split(l;(1;:::;n))
+returnf(^;((l1;0);:::; (ln;0)))g
+else ifc a nontrivial maximal loop cut cofg(l)then
+1;;n c
+l1;;ln loopsplit(l;(1;:::;n))
+returnf(	;((l1;0);:::; (ln;0)))g
+end if
+return;
+end function
+using the cut deﬁnitions, selectb0divides the activities into sets 1n. after
+that,selectb0splits the log.
+the cuts can be computed efﬁciently using graph techniques. we will give an intu-
+ition: the exclusive choice cut corresponds to the notion of connected components. if
+we collapse both strongly connected components and pairwise unreachable nodes into
+single nodes, the collapsed nodes that are left are the s of the sequence cut. if both
+of these cuts are not present, then we remove every dual edge, and add double edges
+where there was no or a single edge present. in the resulting graph each connected com-
+ponent is aiof the parallel cut. if these cuts are not present, temporarily removing
+the start and end activities and computing the connected components in the resulting
+graph roughly gives us the loop cut. as shown in lemma 16 in appendix a, the orderdiscovering process models constructively 13
+in which the cuts are searched for is arbitrary, but for ease of proof and computation we
+assume it to be ﬁxed as described.
+we deﬁne the log split functions together with a running example.
+consider the log l=fha;b;ci;ha;c;bi;ha;d;ei;ha;d;e;f;d;eig.g(l)is shown
+in figure 2a which has the sequence cut fag;fb;c;d;e;fg. the log is then split by
+projecting each trace of lonto the different activity sets of the cut.
+function sequence split(l;(1;:::;n))
+8j:lj ftjjt1t2tn2l^8in^e2ti:e2ig
+returnl1;;ln
+end function
+in the example, s equence split(l;(fag;fb;c;d;e;fg)) =
+fhaig;fhb;ci;hc;bi;hd;ei;hd;e;f;d;eig. call the second log l2.g(l2)is shown in
+figure 2b and has the exclusive choice cut fb;cg;fd;e;fg. the log is then split by
+moving each trace of linto the log of the corresponding activity set.
+function exclusive choice split(l;(1;:::;n))
+8i:li ftjt2l^8e2t:e2ig
+returnl1;;ln
+end function
+in the example, e xclusive choice split(l2;(fb;cg;fd;e;fg)) =fhb;ci;hc;big;fhd;ei;hd;e;f;d;eig.
+call the ﬁrst log l3and the second log l4.g(l3)is shown in figure 2c and has the
+the parallel cutfbg;fcg. the log is split by projecting each trace for each activity set in
+the cut.
+function parallel split(l;(1;:::;n))
+8i:li ftjjjt2lg
+returnl1;;ln
+end function
+wheretjxis a function that projects trace tonto set of activities x, such that all
+events remaining in tjxare inx. in our example, p arallel split(l3;(fbg;fcg)) =
+fhbig;fhcig. the directly-follows graph of the log l4=fhd;ei;hd;e;f;d;eigis shown
+in figure 2d and has the loop cut fd;eg;ffg. the log is split by splitting each trace into
+subtraces of the loop body and of the loopback condition which are then added to the
+respective sublogs.
+function loopsplit(l;(1;:::;n))
+8i:li ft2jt1t2t32l^
+(ft2g)i^
+(t1=_(t1=h;a1i^a1=2i))^
+(t3=_(t3=ha3;i^a3=2i))g
+returnl1;;ln
+end function
+in our example, l oopsplit(l4;(fd;eg;ffg)) =fhd;eig;fhfig.
+framework bandselectb0together discover a process model from the log l=
+fha;b;ci;ha;c;bi;ha;d;ei;ha;d;e;f;d;eigas follows. the only exclusive choice cut
+forg(l)isfa;b;c;d;e;fg, which is a trivial cut. as we have shown before, a sequence14 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+cut forg(l)isfag;fb;c;d;e;fg. then,selectb0calls s equence split, which re-
+turns two sublogs: l1=fhaigandl2=fhb;ci;hc;bi;hd;ei;hd;e;f;d;eig. then,
+selectb0returnsf!;(l1;l2)g. after that,bconstructs the partial model m=!(b(l1);b(l2))
+and recurses.
+let us ﬁrst process the log l1.b(l1)setsbase tofag, andselectb0(l1)returns;.
+then,breturns the process tree a, with which the partially discovered model becomes
+m=!(a;b(l2)).
+forb(l2), exclusive choice split splits the log in l3=fhb;ci;hc;bigand
+l4=fhd;ei;hd;e;f;d;eig. the partially discovered model then becomes m=!(a;(b(l3);b(l4))).
+forb(l3), there is no nontrivial exclusive choice cut and neither a nontrivial se-
+quence cut. as we have shown before, p arallel split splitsl3intol5=fhbigand
+l6=fhcig.mbecomes!(a;(^(b(l5);b(l6));b(l4))).
+forb(l4), loopsplit splitsl4intol7=fhd;eigandl8=fhfig, such thatm
+becomes!(a;(^(b(l5);b(l6));	(l7;l8))).
+after one more sequence cut ( b(l7)) and a few base cases ( b(l5);b(l6);b(l7)),
+b0discovers the model !(a;(^(b;c);	(!(d;e);f))).
+b0adheres to basb0uses aselect function to use the framework, we need to prove
+thatselectb0only produces log divisions that satisfy deﬁnition 1.
+lemma 9. the log divisions of lthatselectb0returns adhere to deﬁnition 1.
+the proof idea of this lemma is to show that each of the clauses of deﬁnition 1 holds for
+the log division l1lnthatselectb0chooses, using a ﬁxed of 0:l l(l1;:::;ln),
+8i:jjlijj<jjljj,8i:(li)(l),2landnjjljj. for the detailed proof
+of this lemma, please refer to appendix a.
+6.4 language-rediscoverability
+an interesting property of a discovery algorithm is whether and under which assump-
+tions a model can be discovered that is language-equivalent to the original process.
+it can easily be inductively proven that b0returns a single process tree for any log
+l.b0language-rediscovers a process model if and only if the mined process model
+is language-equivalent to the original process model that produced the log: l(m) =
+l(b0(l))(we abuse notation a bit here), under the assumption that lis complete w.r.t.
+mfor some completeness notion. our proof strategy for language-rediscoverability will
+be to reduce each process tree to a normal form and then prove that b0isomorphically
+rediscovers this normal form. we ﬁrst deﬁne the log completeness notion, after which
+we describe the class of models that b0can language-rediscover. we conclude with a
+deﬁnition of the normal form and the proof.
+log completeness earlier, we introduced the notion of a directly-follows graph. this
+yields the notion of directly-follows completeness of a loglwith respect to a model
+m, written as ldfm:ldfm h;a;b;i 2 l (m)) h;a;b;i 2
+l^start (m)start (l)^end(m)end(l)^(m)(l). intuitively, the
+directly-follows graphs mmust be mappable on the directly-follows graph of l.discovering process models constructively 15
+please note that the framework does not require the log to be directly-follows com-
+plete in order to guarantee soundness and ﬁtness.
+class of language-rediscoverable models. given a model mand a generated com-
+plete logl, we prove language-rediscoverability assuming the following model restric-
+tions, where(m1;:::;mn)is a node at any position in m:
+1. duplicate activities are not allowed: 8i6=j:(mi)\(mj) =;.
+2. if=	, the sets of start and end activities of the ﬁrst branch must be disjoint:
+=	)start (m1)\end(m1) =;.
+3. no’s are allowed:8in:mi6=.
+a reader familiar with the matter will have recognised the restrictions as similar to
+the rediscoverability restrictions of the algorithm [4].
+normal form we ﬁrst introduce reduction rules on process trees that transform an
+arbitrary process tree into a normal form. the intuitive idea of these rules is to combine
+multiple nested subtrees with the same operator into one node with that operator.
+property 10.
+(m) =m
+(1;(2);3) =(1;2;3)
+!(1;!(2);3) =!(1;2;3)
+^(1;^(2);3) =^(1;2;3)
+	(	(m;1);2) =	(m;1;2)
+	(m;1;(2);3) =	(m;1;2;3)
+it is not hard to reason that these rules preserve language. a process tree on which these
+rules have been applied exhaustively is a reduced process tree. for a reduced process
+tree it holds that a) for all nodes (m1;:::;mn),n>1; b),!and^do not have a
+direct child of the same operator; and c) the ﬁrst child of a 	is not a	and any non-ﬁrst
+child is not an.
+language-rediscoverability our proof strategy is to ﬁrst exhaustively reduce the
+given model mto some language-equivalent model m0. after that, we prove that b0
+discoversm0isomorphically. we use two lemmas to prove that a directly-follows com-
+plete log in each step always only allows to 1) pick one speciﬁc process tree operator,
+and 2) split the log in one particular way so that m0is inevitably rediscovered.
+lemma 11. letm=(m1;:::;mn)be a reduced model that adheres to the model
+restrictions and let lbe a log such that ldfm. thenselectb0selects.16 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+the proof strategy is to prove for all operators in the order ,!,^,	that given a
+log directly-follows complete w.r.t. some (),will be the ﬁrst operator for which
+g(l)satisﬁes all cut criteria according to the order ,!,^,	in which they are
+checked inselectb0. for instance, for,g(l)cannot be connected and therefore will
+bwill select.
+lemma 12. for each reduced process tree m=a(withain) orm=, and a log
+lthat ﬁts and is directly-follows complete to m, it holds that m=b0(l).
+this lemma is proven by a case distinction on mbeing either ora2, and code
+inspection. for more details, see appendix a.
+lemma 13. letm=(m1;:::;mn)be a reduced process tree adhering to the
+model restrictions, and let lbe a log such that ll(m)^ldfm. letf(;((l1;0);:::; (ln;0)))g
+be the result of selectb0. then8i:lil(mi)^lidfmi.
+the proof strategy is to show for each operator that its cut returns the correct activity
+division. using that division, we prove that the s plit function returns sublogs valid for
+their submodels. we then show that each sublog produced by s plit produces a log that
+is directly-follows complete w.r.t. its submodel. see appendix a for details.
+using these lemmas, we prove language-rediscoverability.
+theorem 14. if the model restrictions hold for a process tree m, thenb0language-
+rediscoversm:l(m) =l(b0(l))for any loglsuch thatll(m)^ldfm.
+we prove this theorem by showing that a reduced version m0ofmis isomorphic to the
+model returned by b0, which we prove by induction on model sizes. lemma 12 proves
+isomorphism of the base cases. in the induction step, lemma 11 ensures that b0(l)
+has the same root operator as m, and lemma 13 ensures that the subtrees of m0are
+isomorphically rediscovered as subtrees of b0(l). for a detailed proof see appendix a.
+corollary 15. the process tree reduction rules given in property 10 yield a language-
+unique normal form.
+take a model mthat adheres to the model restrictions. let ll(m)^ldfm
+andm0=b0(l). letm00be another model adhering to the model restrictions and ﬁt-
+tingl. as proven in lemma 16 in appendix a, the cuts the algorithm took are mutually
+exclusive. that means that at each position in the tree, only two options exist that lead
+to ﬁtness: either the operator b0chose or a ﬂower model. by theorem 14, b0(l)never
+chose the ﬂower model. therefore, b0(l)returns the most-precise ﬁtting process tree
+adhering to the model restrictions. according to the deﬁnitions in [9], m0is a model
+of perfect simplicity and generalisation: m0contains no duplicate activities (simplic-
+ity) and any trace that can be produced by min the future can also be produced by
+m0(generalisation). by corollary 15 and construction of property 10, it is the smallest
+process tree model having the same language as well.
+6.5 tool support
+we implemented a prototype of the b0algorithm as the inductiveminer plugin of the
+prom framework [11], see http://www.promtools.org/prom6/. here, we sketch its run
+time complexity and illustrate it with a mined log.discovering process models constructively 17
+run time complexity. we sketch how we implemented b0as a polynomial algorithm.
+given a log l,b0returns a tree in which each activity occurs once, each call of b0
+returns one tree, and b0recurses on each node once, so the number of recursions is
+o(j(l)j). in each recursion, b0traverses the log and searches for a graph cut. in
+section 6.2, we sketched how directly-follows graph cuts can be found using stan-
+dard (strongly) connected components computations. the exclusive choice, parallel and
+loop cuts were translated to ﬁnding connected components, the sequence cut to ﬁnding
+strongly connected components. for these common graph problems, polynomial algo-
+rithms exist. b0is implemented as a polynomial algorithm.
+illustrative result. to illustrate our prototype, we fed it a log, obtained from [1, page
+195]:l=fha;c;d;e;hi;ha;b;d;e;gi;ha;d;c;e;hi;ha;b;d;e;hi;ha;c;d;e;gi;
+ha;d;c;e;gi;ha;b;d;e;hi;ha;c;d;e;f;d;b;e;h i;ha;d;b;e;gi;ha;c;d;e;f;b;d;e;h i;
+ha;c;d;e;f;b;d;e;g i;ha;c;d;e;f;d;b;e;g i;ha;d;c;e;f;c;d;e;h i;
+ha;d;c;e;f;d;b;e;h i;ha;d;c;e;f;b;d;e;g i;ha;c;d;e;f;b;d;e;f;d;b;e;g i;
+ha;d;c;e;f;d;b;e;g i;ha;d;c;e;f;b;d;e;f;b;d;e;g i;ha;d;c;e;f;d;b;e;f;b;d;e;h i;
+ha;d;b;e;f;b;d;e;f;d;b;e;g i;ha;d;c;e;f;d;b;e;f;c;d;e;f;d;b;e;g ig. the result of
+our implementation is m0=!(a;	(!(^((b;c);d);e);f);(h;g)). a manual in-
+spection reveals that this model indeed ﬁts the log.
+take an arbitrary model mthat could have produced lsuch thatlis directly-
+follows complete w.r.t. m. then by theorem 14, l(m) =l(m0).
+7 conclusion
+existing process discovery techniques cannot guarantee soundness, ﬁtness, rediscover-
+ability and ﬁnite run time at the same time. we presented a process discovery framework
+band proved that bproduces a set of sound, ﬁtting models in ﬁnite time. we described
+the conditions on the process tree operators under which the framework achieves this.
+the process tree operators ,!,^and	satisfy these conditions. however, the frame-
+work is extensible and could be applied to other operators, provided these satisfy the
+conditions. another way of positioning our work is that our approach is able to discover
+sometransitions in models for which the -algorithm fails.
+to make the framework even more extensible, it uses a to-be-given preference func-
+tionselect that selects preferred log divisions. soundness, ﬁtness and framework ter-
+mination are guaranteed for any select adhering to b. we showed that if the model
+underlying the log is a process tree, then bcan isomorphically-rediscover the model.
+to illustrate b, we introduced an algorithm b0that usesband returns a single
+process tree. b0works by dividing the activities in the log into sets, after which it
+splits the log over those sets. we proved that selectb0adheres tob, which guarantees
+us soundness, ﬁtness and framework termination for any input log. we proved that if
+the model underlying the log is representable as a process tree that has no duplicate
+activities, contains no silent activities and does not contain too-short loops, then b0
+language-rediscovers this model. the only requirement on the log is that it is directly-
+follows complete w.r.t. the model underlying it. we argued that b0returns the smallest,
+most-precise, most-general model adhering to the model restrictions, and runs in a time
+polynomial to the number of activities and the size of the log.18 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+future work. it might be possible to drop the model restriction 2 of section 6.4, which
+requires that the the sets of start and end activities of the leftmost branch of a loop
+operator must be disjoint, when length-two-loops are taken into account and a stronger
+completeness requirement is put on the log. moreover, using another strengthened com-
+pleteness assumption on the log, the no- restriction might be unnecessary. we plan on
+performing an empirical study to compare our b0algorithm to existing techniques.
+noise, behaviour in the log that is not in the underlying model, could be handled by
+ﬁltering the directly-follows relation, in a way comparable to the heuristics miner [22],
+before constructing the directly-follows graph.
+references
+1. van der aalst, w.: process mining: discovery, conformance and enhancement of business
+processes. springer (2011)
+2. van der aalst, w., buijs, j., van dongen, b.: improving the representational bias of process
+mining using genetic tree mining. simpda 2011 proceedings (2011)
+3. van der aalst, w., de medeiros, a., weijters, a.: genetic process mining. applications and
+theory of petri nets 2005 pp. 985–985 (2005)
+4. van der aalst, w., weijters, t., maruster, l.: workﬂow mining: discovering process models
+from event logs. knowledge and data engineering, ieee transactions on 16(9), 1128–1142
+(2004)
+5. badouel, e.: on the -reconstructibility of workﬂow nets. in: petri nets’12. lncs, vol.
+7347, pp. 128–147. springer (2012)
+6. bergenthum, r., desel, j., lorenz, r., mauser, s.: process mining based on regions of lan-
+guages. business process management pp. 375–383 (2007)
+7. bergenthum, r., desel, j., mauser, s., lorenz, r.: synthesis of petri nets from term based
+representations of inﬁnite partial languages. fundam. inform. 95(1), 187–217 (2009)
+8. buijs, j., van dongen, b., van der aalst, w.: a genetic algorithm for discovering process
+trees. in: evolutionary computation (cec), 2012 ieee congress on. pp. 1–8. ieee (2012)
+9. buijs, j., van dongen, b., van der aalst, w.: on the role of ﬁtness, precision, generalization
+and simplicity in process discovery. in: on the move to meaningful internet systems: otm
+2012, pp. 305–322. springer (2012)
+10. cortadella, j., kishinevsky, m., lavagno, l., yakovlev, a.: deriving petri nets from ﬁnite
+transition systems. computers, ieee transactions on 47(8), 859–882 (1998)
+11. van dongen, b., de medeiros, a., verbeek, h., weijters, a., van der aalst, w.: the prom
+framework: a new era in process mining tool support. applications and theory of petri nets
+2005 pp. 1105–1116 (2005)
+12. van dongen, b., de medeiros, a., wen, l.: process mining: overview and outlook of petri
+net discovery algorithms. transactions on petri nets and other models of concurrency ii
+pp. 225–242 (2009)
+13. fahland, d., van der aalst, w.: repairing process models to reﬂect reality. in: bpm’12.
+lncs, vol. 7481, pp. 229–245. springer (2012)
+14. fahland, d., favre, c., koehler, j., lohmann, n., v ¨olzer, h., wolf, k.: analysis on demand:
+instantaneous soundness checking of industrial business process models. data knowl. eng.
+70(5), 448–466 (2011)
+15. gambini, m., la rosa, m., migliorini, s., ter hofstede, a.: automated error correction of
+business process models. in: bpm’11. lncs, vol. 6896, pp. 148–165. springer (2011)
+16. g ¨unther, c., van der aalst, w.: fuzzy mining–adaptive process simpliﬁcation based on multi-
+perspective metrics. business process management pp. 328–343 (2007)discovering process models constructively 19
+17. de medeiros, a., weijters, a., van der aalst, w.: genetic process mining: an experimental
+evaluation. data mining and knowledge discovery 14(2), 245–304 (2007)
+18. polyvyanyy, a., garcia-banuelos, l., fahland, d., weske, m.: maxi-
+mal structuring of acyclic process models. the computer journal (2012),
+http://comjnl.oxfordjournals.org/content/early/2012/09/19/comjnl.bxs126.abstract
+19. polyvyanyy, a., vanhatalo, j., v ¨olzer, h.: simpliﬁed computation and generalization of the
+reﬁned process structure tree. in: ws-fm’10. lncs, vol. 6551, pp. 25–41. springer (2010)
+20. reisig, w., schnupp, p., muchnick, s.: primer in petri net design. springer-verlag new
+york, inc. (1992)
+21. rozinat, a., de medeiros, a., g ¨unther, c., weijters, a., van der aalst, w.: the need for a
+process mining evaluation framework in research and practice. in: business process man-
+agement workshops. pp. 84–89. springer (2008)
+22. weijters, a., van der aalst, w., de medeiros, a.: process mining with the heuristics miner-
+algorithm. technische universiteit eindhoven, tech. rep. wp 166 (2006)
+23. wen, l., van der aalst, w., wang, j., sun, j.: mining process models with non-free-choice
+constructs. data mining and knowledge discovery 15(2), 145–180 (2007)
+24. wen, l., wang, j., sun, j.: mining invisible tasks from event logs. advances in data and
+web management pp. 358–365 (2007)
+25. van der werf, j., van dongen, b., hurkens, c., serebrenik, a.: process discovery using inte-
+ger linear programming. applications and theory of petri nets pp. 368–387 (2008)
+a formal proofs
+proof (of lemma 9). lemma: the log divisions of lthatselectb0produces are valid
+forb.
+as we chose to be 0, we prove ﬁve clauses of the pselection step separately. let
+(;((l1;0);:::; (ln;0))) be the result of selectb0.
+–l l(l1;:::;ln). call the sets of activities resulting from the cut 1n.
+case=. by construction of e xclusive choice split and the fact thats
+ii=(l), everyt2lis in at least one li. hence,ls
+ili. by
+deﬁnition ofl,l l(l1;:::;ln).
+case=!. pick a trace t2l. dividet=t1t2tnzsuch that
+8i:(ftig) =iandzis as small as possible. for jtj= 0 andjtj= 1,zis
+trivially empty. towards contradiction, assume jtj>1andz6=. then there
+must be two activities aiandai+1somewhere in twithai2k,ai+12l
+andk > l . by deﬁnition of g(l),ai ai+12g(l)and therefore, by
+deﬁnition 6, lk. hence,zmust be empty and tcan be written as t1t2tn
+such that8i:(ftig) =(i). by construction of s equence split, and
+deﬁnition of!l,t2! l(l1;:::;ln)and hencel! l(l1;:::;ln).
+case=^. pick a trace t2l. by deﬁnition of p arallel split, eachli
+contains ati, being the projection of ttoi. obviously, for each tthere is a
+corresponding trace in ft1;:::;tng'. hence,l^ l(l1;:::;ln).
+case=	. pick a trace t2l. noting that  =2l, we apply case distinction
+on whethertconsists exclusively of activities in 1:
+case(ftg) =1. by construction of l oopsplit,l1containst.20 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+case(ftg)6=1. by deﬁnition 8, start (l)[end(l)1and
+therefore there exist tisuch thatt=t1t2t2m+1, such that8j:
+(ft2j+1g) =1. constraint 4 of deﬁnition 8 guarantees that no t2m0
+contains activities from two different i. then, l oopsplit puts allt2m
+in someli6=1intact and all l2m+1inl1intact.
+by deﬁnition of	l,t2	l(l1;:::;ln)and hencel	l(l1;:::;ln).
+–8i:jjlijj<jjljj. for eachi,icontains at mostj(l)j 1activities. therefore,
+there is an activity in (l)that is not in i. aslionly contains events from l,
+there is an event in lthat is not in liandp
+t2lijtj<p
+t2ljtj. hence,jjlijj<
+jjljj.
+–8i:(li)(l). by deﬁnition of g(l)and the cuts, no step introduces a new
+activity.
+–2l.is either,!,^or	, so2l.
+–njjljj. each8in:jij1. for each activity, there is at least one event in
+l. hence,njjljj. u t
+proof (of lemma 11). lemma: let m=(m1;:::;mn)be a reduced model that
+adheres to the model restrictions and let lbe a log such that ldfm. thenselectb0
+selects.
+let0be the operator returned by selectb0. letcbe the cut of g(l)according
+m1mn. apply case distinction on :
+case=. as there are no duplicate activities in mby model restriction 1, no
+trace inlcontains two activities ai2iandaj2jwithi6=j. thengcontains
+neither the path a bnor the path b aing(l). thencis a nontrivial exclusive
+choice cut of g(l)and hence,selectb0returns.
+case=!. aslis directly-follows complete, g(l)is connected and therefore
+selectb0does not return.
+take two submodels miandmjwithi < j . by semantics of!,g(l)only contains
+edges frommitowardsmj. asldfm,cis a nontrivial sequence cut of g(l)and
+hence,selectb0returns!.
+case=^. aslis directly-follows complete, g(l)is a single strongly con-
+nected component. therefore, selectb0does not select, and, due to the ﬁrst require-
+ment of!, also does not select !. take anymi. by model restriction 3, mican-
+not be language-equivalent to . asldfm, there must be traces in lthat start with
+start (mi)and there must be traces that end with end(mi), socsatisﬁes the ﬁst cut
+criterion. take two arbitrary sublogs miandmjsuch thati6=j. asldfm, there
+must be an edge from every node in end(mi)to every node in start (mj)and vice
+versa. therefore, csatisﬁes criteria 2 and is therefore a nontrivial parallel cut of g(l).
+hence,selectb0returns^.
+case=	. aslis directly-follows complete, g(l)is a single strongly connected
+component. therefore, selectb0selects neithernor!. we identify some clusters
+of nodes in g(l):s=start (l),e=end(l)andr=[i6=1(mi). by model
+restrictions 2 and 3, these are disjoint. as =	, there is no edge from any node in r
+to any node in e. then by constraint 2 of deﬁnition 7, eandrare in the same parallel
+branch^
+i. the same argument holds for sandr. hence,s,eandrare in the same
+^
+iand therefore start (l)[end(l)2^
+i. by constraint 1 of deﬁnition 7, there isdiscovering process models constructively 21
+no nontrivial parallel cut and selectb0does not select^.
+by model restriction 3, no mican produce the empty trace. then all traces in lstart and
+end with activities from m1, sostart (m) =start (m1)andend(m) =end(m1),
+andcsatisﬁes the ﬁrst cut criterion. the second and third criteria hold for cby the
+semantics of	. for any 16=i6=j6= 1, by the semantics of 	and model restriction
+2, no activity of mican directly follow any activity of mjand therefore the fourth
+criterion holds for c. criteria 5 and 6 follow from ldfm. hence,selectb0returns
+	. u t
+proof (of lemma 12). lemma: for each reduced process tree m=a(witha2)
+orm=, and a loglthat ﬁts and is directly-follows complete w.r.t. m, it holds that
+m=b0(l).
+apply case distinction on m.
+casem=. we assumed ll(m)andlcannot be empty, so lmust befg
+for somek. by code inspection, in framework b,base =fg. the function selectb0
+returns;, after which breturnsfg, which only containing model is isomorphic to m.
+casem=afor somea2. we assumed ldfm, solmust befhaig. by code
+inspection, in framework b,base =fag. the function selectb0returns;, after which
+breturnsfag, which only containing model is isomorphic to m.
+proof (of lemma 13). lemma: let m=(m1;:::;mn)be a reduced process tree
+adhering to the model restrictions, and let lbe a log such that ll(m)^ldfm.
+letf(;(l1;:::;ln))gbe the result of selectb0. then8i:lil(mi)^lidfmi.
+apply case distinction on :
+–case=. letg0(l)be the undirected version of g(l). by the reductions of
+property 10, no miis aitself. pick two activities ai2(mi)andaj2(mj),
+i6=j. by model restriction 1 and the semantics of , there is no t2lcontaining
+bothaiandajand there is no path ai aj2g0(l). hence,aiandajwill be split
+by a maximal exclusive choice cut. for any a0
+i2(mi)there exists a path ai 
+a0
+i2g0(l)(by semantics of!,^and	, andmiis no). hence,aianda0
+iwill
+not be split by the exclusive choice cut. hence, the maximal exclusive choice cut
+1ncorresponds to the division of activities over (m1)(mn). as the
+order of children of an node is irrelevant for isomorphism, we assume w.l.o.g. that
+8i:i=(mi). by construction of e xclusive choice split,8i:(li) =
+i=(mi).
+letinandt2li. by e xclusive choice split,t2l, thereforet2l(m)
+and by the semantics of ,9j:t2l(mj). as(li) =(mi), and(ftg)
+(li),mj=mi. hence,lil(mi).
+left to prove:8i:lidfmi. we prove the clauses of dfseparately:
+ 8a;b2^ha;b;i2l (mi) :ha;b;i2l0
+i. by the semantics
+ofand model restriction 1, we can safely restrict ourselves to aandbfrom
+(mi). leta;b2(mi)such thath;a;b;i2l (mi). by the seman-
+tics ofandldfm, there is at=h;a;b;i2lthat ﬁts this pattern.
+asaandbare from(mi),t2li.
+start (mi)start (li). fromldfmand the fact that mﬁtslwe derive
+thatstart (l) =start (m). by the semantics of ,start (mi)start (m),22 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+so for each activity a2start (mi)there is a trace t=ha;i 2l. by
+exclusive choice split,t2liand therefore a2start (li). hence,
+start (mi)start (li). a similar argument holds for end(mi)end(li).
+(mi)(li)was proven before.
+hence,8i:l0
+il(m0
+i)^l0
+idfm0
+i.
+–case=!. letai2(mi)andaj2(mj)withi < j . by semantics of
+!, there must be a path ai aj2g(l), andaj ai=2g(l). then, in a
+maximal sequence cut, aiandajwill be inlandkwithl<k . by the reduction
+rules of property 10, no miis a!itself. the directly-follows graphs of ^and	
+are single strongly connected components and the directly-follows graph of is
+disconnected, so each cluster g(mi)is not a chain itself. therefore, two activities
+ai;a0
+i2(mi)end up in the same k. hence, the sequence cut contains the
+correctnsets of activities:8i:(li) =(mi). pick anyinand pick any
+tracet2li. by s equence split there must be a trace t0tt002l, such that
+(ft0g)\(mi) =;=(ft00g)\(mi). by assumption, t0tt002m. then
+by semantics of!,tmust have been produced by mi. hence,lil(mi).
+left to prove:8i:lidfmi. we prove the clauses of dfseparately:
+ 8a;b2^ha;b;i2l (mi) :ha;b;i2li. eachmican be
+recognised as a cluster of nodes in g(m). consider an internal edge (a;b)
+in this cluster. as ldfm, there exists a trace t2lthat containsha;bi.
+sequence split splitstonly on positions corresponding to edges that are
+external to the cluster. hence, ha;biis in some trace in li.
+start (mi)start (li). asldfm, there is an edge in g(m)from ev-
+ery node in end(mi 1)to every node in start (mi). each trace in l0is cut
+in pieces on positions corresponding to these edges. hence, start (mi)
+start (li). a similar argument holds for end(mi)end(li).
+–case=^. letai2(mi)and let(mj)withi6=j. by semantics of^,g(l)
+has edges such that 8aj2(mj) : (ai;aj)2g. then in a maximal parallel
+cut,ai=2j. by semantics of ^,g(m)can be seen as a clique of completely
+connected clusters, such that each cluster is (mi)for somei. by the reduction
+rules of property 10, no miis a^itself. neithernor!produces a clique of
+completely connected clusters, so a maximal parallel cut of g(m)consists of the
+n(mi). w.l.o.g. it holds that 8i:(li) =(mi). pick anyinand pick
+any tracet2li. by construction of p arallel split, there must be a trace t02l
+such thattis a projection of t0. by assumption, t0l(m). by model restriction
+1, the activities of tint0can only be produced by mi. therefore, m0
+imust have
+producedtand hencelil(mi).
+left to prove:8i:lidfmi. we prove the clauses of dfseparately:
+ 8a;b2^ha;b;i 2 l (mi) :ha;b;i 2li. pick any two
+activitiesaandbsuch thatbdirectly-follows ainmi. asldfmand the fact
+thatmcan produce a trace ha;b;i, there must be a trace t2lsuch that
+t=ha;b;i. by construction of p arallel split, then there will be a
+traceha;b;i2li.
+start (mi)start (li). by semantics of^,start (mi)start (m). take
+aa2start (mi). asldfm, there must be a trace t2lthat starts with a.discovering process models constructively 23
+by p arallel split, then there must be a trace in lithat starts with a. hence,
+start (mi)start (li). a similar argument holds for end(mi)end(li).
+(mi)(li)was proven before.
+–case=	. by semantics of 	,g(m)can be seen as a loop having a body
+(m1)and mutually unconnected redo parts of (mi6=1). take two activities
+ai;a0
+i2(mi6=1). by the reduction rules of property 10, miis not aand there-
+foremiis connected. by semantics of 	, there is no edge (ai;ae)2g(m)for any
+ae2end(m)and no edge (as;ai)2g(m)for anyas2start (m). hence,ai
+anda0
+iwill end up in the same k. take two activities ai2(mi);aj2(mj)
+withi6=j. by semantics of 	, there cannot be a path ai aj2g0. hence,
+there cannot be an edge connecting iandjing(m). hence,aiandajend
+up inkandlwithk6=l. leta1;a0
+12(m1)nstart (m)nend(m). then
+as a1 ae2g(m)for someas2start (m);ae2end(m). by criteria
+(2) and (3) of deﬁnition 8, a121. hence8i:(li) =(mi), where w.l.o.g.
+the order of the non-ﬁrst children is arbitrary. pick any inand pick any trace
+t2li. apply case distinction on whether i= 1to prove that lil(mi).
+casei= 1. by construction of l oopsplit, there exists a trace t0tt002l0,
+such thatt0is either empty or ends with an activity =21, andt00is either empty
+or starts with an activity =21.
+casei6= 1. by construction of l oopsplit, there exists a trace t0ha0it
+ha00it002l0, such thata0;a00=2i.
+by model restriction 1, the semantics of 	and the assumption that ll(m), it
+holds thattmust have been produced by mi. hence,lil(mi).
+left to prove: lidfmi. we prove the clauses of dfseparately:
+ 8a;b2^ha;b;i2l (mi) :ha;b;i2li. pick any activities
+a;b2start (mi)such thatha;b;i2l (mi). asldfm, there must
+be a tracetha;bit02l. then by construction of l oopsplit, there is a
+trace inlithat containsh;a;b;i.
+start (mi)start (li). pick an activity a2start (mi). asldfm, there
+must be a trace thait02l, such that(ftg)\i=;. then by construction
+of l oopsplit, there is a trace in lithat starts with a. hence,start (mi)
+start (li). a similar argument holds for end(mi)end(li).
+(mi)(li)was proven before.
+concluding the case distinction, it holds that 8i:lil(mi)^lidfmi.
+proof (of theorem 14). theorem: if the model restrictions hold for a process tree m,
+thenb0language-rediscovers m:l(m) =l(b0(l))for any log lsuch thatl
+l(m)^ldfm.
+we deﬁnem0to be the model that results from applying the rules of property 10
+exhaustively to m.
+we prove by induction on model sizes of m0that8l^l l(m0)^
+ldfm0:m0=b0(l).
+base case:jm0j= 1. by lemma 12, m0=b0(l).
+induction hypothesis: for all models m0
+ismaller than m0, it holds that8li^li
+l(m0
+i)^lidfm0
+i:m0
+i=b0(li).24 s.j.j. leemans, d. fahland, and w.m.p. van der aalst
+induction step: assume jm0j>1and the induction hypothesis. as jm0j>1, there ex-
+ists0,m0
+1m0
+msuch thatm0=0(m0
+1;:::;m0
+m). by lemma 11, selectb0selects
+0. letf0;(l0
+1;:::;l0
+n)gbe the result of selectb0. by lemma 13,8i:lil(mi)^
+lidfmi. by the induction hypothesis, 0(m0
+1;:::;m0
+n) =0(b0(l1);:::;b0(ln)).
+by construction of b0it holds that m0=b0(l), which ﬁnishes the induction.
+by construction,l(m) =l(m0)and hence8l^ll(m)^ldfm:
+l(m) =l(b0(l)). u t
+lemma 16. for a process tree m=(m1;:::;mn)adhering to the model restric-
+tions of section 6.4, the possible cuts for the root operator are mutually exclusive.
+proof. lemma: for a process tree m=(m1;:::;mn)adhering to the model restric-
+tions of section 6.4, the possible cuts for the root operator are mutually exclusive.
+we prove by case distinction that for each , the only nontrivial cut on mis an-cut.
+–case=. take two activities ai;a0
+i2(mi)andaj6=i2(mj). by semantics
+of,ai aj=2g(m)andaj ai=2g(m). hence, no nontrivial sequence cut
+exists. similarly, there is no nontrivial parallel cut.
+towards contradiction, assume there is a loop cut 	
+1;	
+2. by semantics of 	,
+there exists some a22	
+2, such thata22(mi)for someiand there is a a32
+start (mi)with(a2;a3)2g(m). then there is an a12(mj6=i)\start (m).
+by constraint 5 of deﬁnition 8, (a2;a1)2g(m). this contradicts the semantics
+of, that require (a2;a1)=2g(m). hence, there is no such a2,	
+2is empty and
+there is no nontrivial loop cut.
+–case=!. in lemma 11 it is proven that selectb0selects!. by the cut probing
+order ofselectb0, there exists no nontrivial exclusive choice cut.
+towards contradiction, suppose there exists a parallel cut ^
+1;^
+2. take activities
+ai;a0
+i2(mi),aj=i+12(mj). by semantics of !,(ai;aj)=2g(m)and
+(a0
+i;aj)=2g(m). hence,ai;a0
+i;aj2^
+kfor somek, each^
+l6=k=;and there is
+no nontrivial parallel cut.
+towards contradiction, suppose there exists a loop cut 	
+1;	
+2. by constraint 1 of
+deﬁnition 8, start (m)	
+1. by the model restrictions, end(m)\(mi) =;
+for anyi6=n. pick a node a12(m1)such that there exists a node a0
+12
+start (m)having (a0
+1;a1)2g(m). by constraint 2 of deﬁnition 8 and end(m)\
+(m1) =;, it holds that a12	
+1. by transitivity it holds that [i6=n(mi)
+	
+1. by a similar argument, using constraint 3 of deﬁnition 8, it holds that [i6=1(mi)
+	
+1. hence,	
+2is empty and there is no nontrivial loop cut.
+–case=^. in lemma 11 it is proven that selectb0selects^. by the cut probing
+order ofselectb0, there exists no nontrivial exclusive choice or sequence cut.
+	
+1	
+2
+(mi)a4a2
+(mj)a1a3
+leti6=j. towards contradiction, assume there exists a loop cut 	
+1,	
+2. in the
+following, we deﬁne a2start (	
+2)to hold if and only if 9b2	
+1: (a;b)2
+g(m), and similarly for end(	
+2). we prove a contradiction by showing thatdiscovering process models constructively 25
+	
+2is empty. let a22start (	
+2)\(mi). each parallel branch has start ac-
+tivities, so there must exist a12start (mj). by constraint 1 of deﬁnition 8,
+a12	
+1. by semantics of^,(a1;a2)2g(m). by constraint 2 of deﬁnition 8,
+a12start (m)\end(m). hence,start (m)\(mj) =end(mj)\(mj).
+by the model restrictions of section 6.4, the only operators of which mjcan exist
+areand^. then,(mj) =start (m)\(mj) =end(m)\(mj). by
+constraint 1 of deﬁnition 8, 	
+2\(mj) =;.
+left to prove: 	
+2\(mi) =;. we assumed a22start (	
+2). by semantics
+of^,(a1;a2)2g(m). then by constraint 6 of deﬁnition 8, a22end(	
+2.
+by semantics of^, there exists an a42start (m)\(mi)\	
+1. asa22
+start (	
+2)\end(	
+2),(a4;a2)2g(m). by constraint 2 of deﬁnition 8, a42
+end(m). thenstart (m)\(mi) =end(m)\(mi). by the model restric-
+tions of section 6.4, the only operators of which mican exist areand^. then,
+(mi) =start (m)\(mi) =end(m)\(mi). by constraint 1 of deﬁni-
+tion 8,	
+2\(mi) =;. hence,	
+2is empty and there is no nontrivial loop cut
+ofg(m).
+–case=	. in lemma 11 it is proven that selectb0selects	. by the cut probing
+order ofselectb0, there exists no nontrivial exclusive choice, sequence or parallel
+cut. u t

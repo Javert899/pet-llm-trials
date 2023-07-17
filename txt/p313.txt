@@ -1,0 +1,1319 @@
+mining activityclusters
+fromlow-leveleventlogs
+christian w.g ¨unther and wilm.p.vander aalst
+department of technologymanagement, eindhovenuniversityof technology
+p.o.box 513, nl-5600 mb, eindhoven,the netherlands
+fc.w.gunther, w.m.p.v.d.aalst g@tm.tue.nl
+abstract. process mining techniques have proven to be a valuable tool for ana-
+lyzingtheexecutionofbusinessprocesses.theyrely onlogs thatidentify events
+at an activity level, i.e., most process mining techniques assume that the infor-
+mation system explicitly supports the notion of activities/tasks. this is often not
+the case and only low-level events are being supported and logged. for example,
+users may provide different pieces of data which together constitute a single ac-
+tivity.thetechniqueintroducedinthispaperusesclusteringalgorithmstoderive
+activity logs from lower-level data modiﬁcation logs, as produced by virtually
+every information system. this approach was implemented in the context of the
+prom framework and its goal is to widen the scope of processes that can be ana-
+lyzedusing existingprocess mining techniques.
+1 introduction
+businessprocessmanagement (bpm)technology[2,16,17,19]hasbecomeanintegral
+partoftheitinfrastructureofmodernbusinesses,mostnotablyinknowledge-intensive
+ﬁelds (e.g. public administration or the ﬁnancial sector). the potential to create digital
+copies of a document, allowing multiple persons to work with these simultaneously,
+can greatly improve the performance of process execution. process-aware information
+systems(paiss)makeitpossibletocontrolthisdistributionofwork,basedonaprocess
+deﬁnition. this process deﬁnition contains activities, i.e. self-contained partitions of
+the workto be done, between which causal relationships are deﬁned. once a process is
+started,thepaiscreatesaprocessinstance,assignsactivatedtaskstoappropriateusers,
+andcontrols the activationof subsequent tasks based on the process deﬁnition.
+in contrast to an industrial process, where one can literally follow the product
+throughallstagesofitsmanufacturingprocess,monitoringandevaluatingtheexecution
+of an informational process is a complex endeavor. in recent years, several techniques
+tothisendhavebeenproposed,subsumedundertheterm businessprocessintelligence
+(bpi).
+a subset of these methods belongs to the ﬁeld of process mining [4,8,5], which
+deals with the analysis of process execution logs. from these logs, process mining
+techniquesaimtoderiveknowledgeinseveral dimensions ,includingtheprocessmodel
+applied,theorganizationalstructure,andthesocialnetwork.thisinformationaboutthe
+actual situation can then be compared to the intended process deﬁnition and the orga-
+nizational guidelines. discovered discrepancies between the process deﬁnition and the2
+real situation can be used to better align process and organization, to remedy perfor-
+mancebottlenecks and to enforce security guidelines.
+one of the drawbacks current process mining techniques [6,13,3,4] face is that
+theirrequirementstowardsexecutionlogstobeminedaresatisﬁedonlybypais.these
+are designed around the idea of having a deﬁned process model, comprising of atomic
+activities. however, a large number of bpm systems exists which do not enforce a
+strictly prescribed process model, but rather provide users with a generic environment
+tocollectively manipulateandexchangeinformation .anexampleofsuchunstructured
+bpmsystems are most enterprise resource planning (erp) systems (e.g. sap r/3).
+although some erp systems include a workﬂow management component which
+enablestheimplementationofapais,itsuseisnotenforced.thus,erplogstypically
+do not contain events referring to the execution of activities, rather they refer to low-
+level modiﬁcations of atomic data objects in the system. however, this does not imply
+that the concept of an activity does not exist in an erp system. although they are
+notexplicitlydeﬁnedandlogged,userstendtomodifysemanticallyrelateddatawithin
+onelogicalstep.the formmetaphor,whichisimplementedinalmosteveryinformation
+system,allowinguserstoﬁllinanumberofdataﬁeldscombinedononescreen,strongly
+supportsthis paradigm.
+it is highly desirable, and often necessary, to make these tacit activity patterns ex-
+plicit, in order to analyse aspects of process execution on a more abstract level. the
+technique presented in this article uses clustering techniques to discover these “im-
+plicit” activities in low-level logs. it is based on the notion of proximity between low-
+level events, deriving from that measure a semantical relationship between modiﬁed
+dataobjects.
+the fundamental idea of this approach is that an activity is a recurring pattern of
+low-level events, modifying the same set of data types in a system. clusters of data
+modiﬁcation events from an initial scan are subsequently aggregated to higher-level
+clusters,whichareﬁnallyﬁlteredtoyieldthepatternsmostlikelytorepresentactivities.
+by abstracting from the very low level of data modiﬁcation logs to the activity level,
+this technique has the potential to substantially extend the ﬁeld of systems that can be
+analyzedwith process mining techniques.
+this paper is organized as follows. the following section investigates the semantic
+andstructuralrelationshipsbetweenhigh-andlow-levellogs,followedbytheintroduc-
+tion of a lifecycle model for data objects in section 3. section 4 introduces the basic
+notion of an event log and describes the pieces of information typically contained in
+a log. the subsequent three sections describe the three stages of the actual algorithm:
+theinitial scan , theaggregation pass and theﬁnal selection of the most ﬁt candidates.
+section8describesimplementation-speciﬁcaspects,followedbyanoverviewonappli-
+cations in section 9. the article closes by linking to related work in section 10, and a
+concludingdiscussion in section 11.
+2 relationships between high- and low-levellogs
+abusinessprocessdescribesthehandlingofagivencase,wherethecaseistheprimary
+objecttobemanufactured,e.g.acarinsuranceclaim.froma top-down perspectivethis3
+can be interpreted as breaking down the high-level goal (“assess whether we pay for
+the damage caused”) into a set of lower-level sub-goals (e.g., “review client history”,
+“investigate the accident“), and establishing suitable ordering relations between them.
+executing the tasks, i.e. accomplishing these sub-goals, in the speciﬁed order will then
+yieldthe accomplishment of the high-levelgoal, i.e. ﬁnishing the case.
+process modeling can, however, also be interpreted as a bottom-up design process
+when approached from a different perspective. especially in knowledge-intensive do-
+mains,e.g.administration,abusinessprocessisessentiallyastructuredwayofcreating,
+modifying and processing large amounts of data. in the above example, a large set of
+atomic data objects (e.g., name and address of the client, and a detailed description of
+theaccident)needtobecollected.bysuccessivelyprocessingandcombiningtheseob-
+jects into higher-level data (e.g., whether the accident has been caused by the client),
+thedesired end product (e.g. “$2,500 will be paid”) is eventuallycreated.
+the relation between the manufactured low-level data types and the higher-level
+tasks(i.e.,sub-goals)ofthebusinessprocesscanbedescribedasfollows: ataskgroups
+a set of data-modifying operations that are closely semantically related, and which
+typicallyoccurtogether .forexample,thetask“recordclientdata”willtypicallyalways
+consist of the modiﬁcations of data types “name”, “street”, “customer number”, and
+soforth.
+open form 
+set ‘a’ set ‘b’ set ‘n’ redo 
+close form redo redo 
+fig.1.activitydata modiﬁcation model
+mostuser-centeredpaissusetheconceptofforms,whichareinterfacemaskscon-
+taining an input ﬁeld for each data type required. when a user executes a task he will
+be presented with the respective form, on which he can ﬁll out the information for this
+task. while the ordering of tasks is controlled and enforced by the pais, the order in
+whichtoprovidethelow-leveldataisusuallyuptotheuser(i.e.,hecanfreelynavigate
+within the form). this concept is shown in figure 1 in terms of a petri net. notice that,
+in addition to the concurrency of data modiﬁcation operations, there is also the possi-
+bility that data objects are (potentially repeatedly) deleted and set to a different value
+withina task (e.g., when correcting a misspelled name).
+this relationship of the higher-level task incorporating lower-level data modiﬁca-
+tion operations on a semantic level is likewise exhibited on a temporal level, as shown
+in figure 2. data modiﬁcation events occur within the realm of their high-level tasks,4
+ab
+cd
+a b c d
+a1a2a3 b5b4b6 c7c8c9c8d10 d11 d12 process 
+definition 
+task log 
+data mod. 
+log t
+t
+fig.2.relations between multiple levelsof abstraction
+i.e. between their start and end events. in a system like flow er(pallas athena, [11]),
+acasehandlingsystem[1,7]whichcancreatelogsonboththetaskandthedataobject
+level, this obvious property can be easily observed. each execution of a task leaves a
+distinctivetraceinthedatamodiﬁcationlog,i.e.atypicalsetofeventsreferringtomod-
+iﬁcations of the set of data types accessible in this task. this typical set of data types
+modiﬁedby an activityshall be referred to as the activity’s footprint.
+table1.exampleexcerptof a low-leveleventlog
+# timestamp pid event originator
+423 12.07.05;14:24:03 37 cust ﬁrstname p37 brian
+424 12.07.05;14:26:22 37 cust lastname p37 brian
+425 12.07.05;14:26:33 34 complaint customerid p34 stewie
+426 12.07.05;14:26:55 37 cust streetp37 brian
+427 12.07.05;14:27:20 34 complaint orderidp34 stewie
+428 12.07.05;14:27:52 37 cust cityp37 brian
+429 12.07.05;14:28:23 37 cust zipp37 brian
+430 12.07.05;14:28:44 34 complaint valuep34 stewie
+431 12.07.05;14:29:34 34 complaint statusp34 stewie
+432 12.07.05;14:29:34 34 complaint handlerid p34 stewie
+433 12.07.05;15:44:06 38 cust lastname p38 brian
+434 12.07.05;15:44:33 38 cust ﬁrstname p38 brian
+435 12.07.05;15:45:52 38 cust streetp38 brian
+436 12.07.05;15:47:04 34 service datep38 peter
+437 12.07.05;15:47:15 38 cust zipp38 brian
+438 12.07.05;15:48:34 38 cust cityp38 brian
+439 12.07.05;15:55:36 34 service technidp38 peter
+440 12.07.05;16:01:01 34 service sysidp38 peter
+441 12.07.05;16:03:22 34 service resultp38 peter5
+an example excerpt of a low-level log is given in table 1. each line represents one
+event, with its sequence number, time of occurrence, process instance id, name, and
+originator1information. judging from a ﬁrst glimpse, the log appears to be confusing
+andscattered.agreatnumberofcrypticeventsoccurduringarelativelyshorttime,and
+theirrelation is not clear.
+after taking a closer look at table 1 there are several hints about the relationships
+between the single events. it appears to be a commonplace pattern that events within
+the same process instance, triggered by the same originator, occur within a relatively
+small time frame. for example, it seems that stewie has triggered all events whose
+namesstartwith“complaint”,andthesehavealloccurredwithinroughlythreeminutes.
+earlier in the log, there are some events triggered by brian, each starting with “cust”
+and also exhibiting similar characteristics (limited time span, same process id), partly
+interleaved with stewie’s events. notice that the same set of event names occurs again
+lateron, also triggered by brian butin a differentorder.
+fromallwehaveseen,thislooksverymuchlikealow-levellogwhichhasresulted
+from the execution of higher-level processes. brian’s and stewie’s events at the begin-
+ning of the log seem to have resulted from their concurrent execution of two higher-
+level activities. in order to analyze what has been going on in a more abstract fashion,
+andtorediscovertheunderlying,higher-levelprocessmodel,itiscrucialtoreconstruct
+task-leveleventsfrom these low-levelpatterns.
+the subsequent two sections discuss the speciﬁc properties of data objects in a
+business process, and their associated low-level logs. based on these properties and
+theirtypicalrelationstohigher-levellogsandprocesses,analgorithmforthediscovery
+of activity patterns is introduced in sections 5, 6, and 7. after introducing the algo-
+rithmwedescribetheimplementationinthepromframework[14]anddiscusspossible
+applications.
+3 data object lifecycle
+the incentive for using a pais is usually that in an organization a standard set of busi-
+ness processes exist, which are repeatedly executed in a large volume. therefore, pro-
+cess deﬁnitions are created which describe all the potential paths that the execution of
+onetypeof process can follow. when such a process is being executed, a process in-
+stanceiscreated,whichbindstheabstractprocessdeﬁnitiontoanactualsetofresources
+anddata for the speciﬁc case.
+this relationship is depicted in figure 3. the <<instanceof>> relation, which
+describes the connection between the type and instance level, is also apparent for the
+elements of a process deﬁnition: abstract tasks deﬁned in the process deﬁnition, once
+instantiated and bound to an executing resource, spawn activities. data types, like the
+ﬁelds of a customer address deﬁned in a process deﬁnition, are also instantiated to
+objectsfor each process instance.
+thedata types deﬁned in a process deﬁnition are not actual data objects, but rather
+templatesthatdescribethepotentialvaluesoftheirinstantiations(e.g.,inprogramming
+1the originator refers to the person, or resource, having caused the respective event (e.g. an
+employeeﬁlling out a form).6
+process definition 
+activity task data type 
+data object processinstance <<instanceof>> 
+<<instanceof>> <<instanceof>> 
+activityevent dataevent activityaudittrail dataaudittrail<yields>
+<yields> <yields>
+highlevellog lowlevellog <modifies>
+<modifies>1
+11..n
+1 1
+1
+1
+11
+1 1
+1 11..n 0..n
+1..n 0..n
+0..n
+1..n
+0..n 0..n0..n 0..n0..n 0..n 1..n 1..n
+1..n 0..n
+0..1 0..1
+fig.3.type-instancerelationships on process, task and data level(uml 2.0 class diagram)
+languages, deﬁning a variable as “integer” does not describe its value, but rather its
+nature and range). when a process is started, for each of these data types correspond-
+ingdata objects are instantiated, which are subsequently set to actual values during
+execution.
+theumldiagramshowninfigure3furtherdescribestherelationshipbetweenthe
+taskand datadimensionsofaprocess, andtheirrespectivelog events.activities,being
+singular executions of tasks, always refer to exactly one task-level event in the log.
+data instances, on the other hand, can be modiﬁed repeatedly, with transitions in their
+lifecycle resulting in data-level log events. both on the task and data level, audit trails
+groupalleventshavingoccurredwithinoneprocessinstance.logscanbeinterpretedas
+containers for audit trails: they can contain multiple audit trails for the same process or
+even audit trails for multiple processes, as they are often capturing all events occurring
+inone information system.
+thelifecycleofdataobjectsduringtheexecutionofaprocessinstanceisdescribed
+inthe state-transition system shownin figure 4.
+each transition in this model, i.e. deﬁne(def),delete(del),update(upd),roll-
+back(rbk),and conﬁrm(cnf),isassociatedwitharespective eventoccurringwithin
+the system. these events, referring to either a change in value or validity of the data
+object,are the elements of a low-levellog.
+the subsequent section introduces these low-level logs, and the pieces of informa-
+tioncontained in each event,in more detail.
+4 low-levellogs
+log ﬁles were originally introduced as a means for administrators to monitor system
+operation and to trace back errors. these logs are essentially sequences of signiﬁcant7
+undefined confirmed 
+unconfirmed invalid define 
+rollback confirm 
+ / define updatedelete {initial}
+fig.4.generic state-transition system for data objects
+events which have occurred in the system so far, listed in chronological order. the
+notionof an eventlog can be formalized as follows.
+deﬁnition1 (sequence,non-repeatingsequence). letabeaset.aﬁnitesequenceon
+aisamapping ¾2 f1; : : : ; n g !awhere nisthelengthofthesequence. len(¾) =n
+denotes the length and ¾(i)theithelement (for 1·i·len(¾)).²denotes the empty
+sequence,i.e., len(²) = 0anddom(²) =;.
+a sequence ¾2 f1; : : : ; n g !acan be denoted by h¾1; ¾2; : : : ; ¾ niwhere ¾i=
+¾(i)for1·i·n.set(¾) =f¾(i)ji2dom(¾)gisthesetofallelements.asashort
+cutwe can write a2¾todenote a2set(¾)for some a2a.
+a sequence ¾2 f1; : : : ; n g ! ais a non-repeating sequence if and only if
+81·i<j·n¾(i)6=¾(j).
+for any non-repeating sequence ¾2 f1; : : : ; n g ! aanda2a,pos(¾; a)pro-
+videsthe sequence number of ain¾,i.e., ¾(pos(¾; a)) =a.
+in a non-repeating sequence the elements are totally ordered, i.e., for any a1; a22
+¾:a1<¾a2if and only if pos(¾; a1)<pos(¾; a2).
+deﬁnition2 (event,log). letebeasetoflogevents .lisalogovereifandonlyif l
+isa non-repeatingsequence on e.
+as has been stated in the above deﬁnition, the fundamental property of a log is
+the requirement of being a strictly ordered sequence of events. all events contained
+in a log are unique, which is expressed by the sequence being non-repeating. what
+differentiates several kinds of logs is mainly the typical set of event attributes, i.e. data
+which is provided for every event in the particular log. in this article we focus on low-
+level logs, in particular ﬁne-grained logs which describe the ordered modiﬁcation of a
+set of data objects in a distributed environment (i.e. executed by multiple resources or
+persons).in these logs, the followingattributescan typically be found for each event.
+deﬁnition3 (attributes of an event). lete2ebe an event. an event may have the
+followingattributes:
+–tp2e6! fdef; del; upd; rbk; cnf gprovidesthe eventtype,2
+2note that f2a6!bis a partial function, i.e., dom(f)µa. ifa2andom(f), then
+f(a) =?denotes that ais not in the domain. foranyfunction f:f(?) =?.8
+–o2e6!oprovidestheoriginatorofeachevent,where oisthesetoforiginators
+(i.e.,the set of possible resources),
+–ts2e6!ir+
+0providesthe timestamp of eachevent,
+–p2e6!pprovides the process instance of each event, where pis the set of
+processinstances,
+–dt2e6!dtprovides the data type of each event, where dtis the set of data
+types,and
+–di2e6!diprovides the data object of each event, where diis the set of data
+objects.
+alow-leveldatamodiﬁcationlogdescribesthelifecycleofdataobjectsinthemod-
+iﬁed set, with events corresponding to transitions in the lifecycle model presented in
+section 3. the type of state transition (e.g. def) an event refers to is stored in the
+attributeevent type . a pais, which is supposed to be the source of logs in question,
+typically allows for multiple resources (e.g. workers) to be involved in handling one
+process instance. each modiﬁcation of a data object was initiated by a particular re-
+source,whoseidentiﬁcationisstoredinthe originator attribute.the timestamp attribute
+stores the exact time at which an event occurred. every event occurs within the realm
+ofone speciﬁc case, referenced by the processinstance attribute.
+intheexampleloggivenintable1,eachrowcorrespondstooneevent e.thevalue
+in the ﬁrst column denotes the event sequence number, i.e. pos(¾; e). the timestamp
+given in the second column would correspond to ts(e), the process id in column three
+corresponds to p(e), and the originator in the ﬁfth column denotes the value for o(e).
+from looking at the values in the fourth column, it can be seen that they correspond to
+data objects (i.e. instances), as the given strings have the process id appended. thus,
+thevaluesin this column correspond to di(e).
+note that the functions tp,o,dt,di,pandtsare partial. this indicates that not all
+attributesneed to be present, e.g., ts(e) =?if no timestamp is given.
+deﬁnition4 (mapping between data type and instance attribute). letdtbe a set
+of data types and dibe the set of data objects. c2di!dtmaps each instance
+on its corresponding type. note that for every event e2ethe following should hold:
+dt(e)6=? ^ di(e)6=?=)dt(e) =c(di(e)).
+thedata objectswhose modiﬁcations arerecorded in logs areinherently instances.
+each event holds the identiﬁcation of the modiﬁed data object in the attribute data
+object. however, in order to compare and relate events of different process instances,
+it is also necessary to know the typeof the modiﬁed data object, which is stored in
+attributedata type . the distinction between data object and type is mainly important
+on a conceptual level, which is why most systems do not explicitly record both. in a
+system recording only the data type identiﬁer, several instances can be distinguished
+by the respective process instance of the event in question. other systems will only
+record data object identiﬁers, such as “cname p12” and “cname p65”. in most of these
+casesonecanrelateinstancestotheirgiventypeswithouttoomucheffort(inthegiven
+example,itcanbeassumedthatbothidentiﬁersrefertoinstancesofthesamedatatype
+“cname”).9
+5 modiﬁcation cluster scanning
+as discussed in section 2, the hypothesis is that for every low-level log there exists an
+associatedhigh-levelprocess,withitsenactmenthavingresultedinthislog.itis,gener-
+ally speaking, rather irrelevant if this higher-level process actually exists in an explicit
+form. procedural execution of activities does not necessarily result from an explicit
+process prescription. it can just as well result from practical restrictions or guidelines
+enforcinga certain process, from standard behavior,or just daily routine.
+the basic assumption of modiﬁcation cluster scanning is that, based on the fun-
+damental relations between the distinct levels, it is possible to re-discover higher-level
+activityexecutionsinalow-levellog.inordertodeterminewhichlow-leveleventscon-
+stitute one execution of the same activity, this technique makes use of the following
+hypotheses:
+–each activity and its resulting low-level events occur within the same process in-
+stance.
+–all low-level events having resulted from the same, higher-level activity have the
+sameoriginator .
+–eachexecutionofanactivitytypicallyinvolvesmodiﬁcationofthe samesetofdata
+types,i.e. the resulting footprints are (largely)identical.
+–the execution of an activity takes place in a comparably short time span . thus, all
+resultinglow-leveleventsoccur in each other’s proximity .
+–in hierarchical transactional systems, all low-level events of a higher-level activity
+have thesame event type . that is, if the higher-level activity was a roll-back task
+then all resulting lower-level events should also be of type “roll-back”. note that
+this is an optional requirement which should only be imposed in systems with a
+hierarchicaltransactional semantics.
+these assumptions appear to be natural and valid in almost any given setting. they
+directly follow the common perception of an activity: being performed in a process in-
+stancecontext,beingperformedbyoneperson,involvingaﬁxedsetofartifacts,having
+occurredduringalimitedamountoftime.noticefurtherthatinapais,thetimeacase
+spends waiting to be executed usually exceeds the time spent on actually executing ac-
+tivities.thus,itcanbesafelyassumedthatinatypicallogtherearelargevoidsbetween
+comparablyshort burstsof activity.
+inordertouseproximityasameanstodecidewhetherlow-leveleventsbelongtoa
+certainactivity,it is necessary to deﬁne a suitable metric for it.
+deﬁnition5 (proximity function). letlbe alogovere. a function pis a proximity
+functionif p2e£e!ir+
+0
+depending on the information contained in a speciﬁc log, the metric for proximity
+can rely on different pieces of information; i.e., it is possible to use different proximity
+functions,eitherbasedonrealtime(i.e.usingtimestampinformation),orusingalogical
+clockbased on the discrete distance between events:
+–p(e1; e2) =jts(e1)¡ts(e2)j(assuming e1; e22dom(ts)),10
+–p(e1; e2) =jpos(¾; e1)¡pos(¾; e2)j.
+based on the deﬁnition of a proximity function, the decision whether two given
+events are in each other’s proximity can be made based on an appropriately chosen
+parameter prange, denoting the maximal proximity of tworelated events.
+deﬁnition6 (proximity). letlbe alogovere,psome proximity function ( p2e£
+e!ir+
+0),and prange2ir+
+0themaximumproximity.twoevents e1; e22lareineach
+other’sproximityif p(e1; e2)·prange.
+the ﬁrst pass of the algorithm scans the log for an initial set of clusters, each com-
+posedoflow-leveleventswhicharelikelytohaveresultedfromanactivityexecution.it
+is assumed that the majority of activities have been executed within prange, e.g. within
+acertaintimespan,sothatalllow-leveleventsofeachactivityareineachothers’prox-
+imity. the basic idea of the algorithm is to create an event cluster for each event ein
+the log, where the reference event eis the ﬁrst event in the cluster. all clusters having
+occurred after e, and which are still in e’s proximity , are also potentially contained in
+thecluster.
+thus, the deﬁnition of proximity is an example of a clustering function , grouping
+events from a log into potentially related subsets. in fact, the requirement of proximity
+isthemostintegralpartofaclusteringfunctionusedforactivitymining,asitlimitsthe
+setof potentially related eventsto a smaller neighborhood.
+a scan window of length prangeis aligned to the ﬁrst event e1in the log, i.e. the
+scan window contains event e1plus all subsequent events in the proximity of e1. from
+the set of events visible in the scan window, a relevant subset can be selected by fur-
+ther requirements of the employed clustering function. the result of this operation is a
+clusterof potentially related low-levelevents.
+repeatingthisprocedureforeveryeventinthelog,theresultisasetofinitialevent
+clusters, exactly one for each event in the log. each cluster has a different reference
+event e, which is the ﬁrst3element of the cluster, and which is used to deﬁne the re-
+quirementsof this cluster.
+figure 5 shows a step-by-step procedure of applying the algorithm to an example
+log.theoriginallow-levellogisshownintheleftmosttable.assumingascanwindow
+sizeprangeof 10 minutes, the cluster for event 1would comprise events 1, 2, 3, and
+4, based on their proximity to event 1. for event number 2, the cluster contains events
+2, 3, 4, 5, 6 and 7, and so on. note that figure 5 lists clusters which are smaller than
+the examples given here, which is due to the fact that the initial clustering function can
+containfurther requirements extendingmere proximity.
+relyingsolelyonproximityinscanningclustersdoesnotfullytakeadvantageofthe
+hypothesizedpropertiesoflow-leveleventsstatedabove.inordertoﬁlteroutirrelevant
+events from this set, the cluster can be restricted further, e.g. to enforce equality of
+originator or process id within a cluster. the combination of all requirements to be
+enforcedis speciﬁed with a suitable clustering function .
+3referringto the order of appearance in the log.11
+conflict resolution , using a=0.5, yields 
+the minimal conflict-free set. when 
+ordered by their value , the desired 
+clusters appear at the top of the list.aggregation of the initial 
+clusters, using the 
+tolerant aggregation  
+method.initial clustering pass with a 
+scan window size of 10 
+minutes, enforcing 
+equality of originator and  
+process instance .a1
+a2
+a3d1
+d2
+d3b1
+b2
+b3
+c1
+c2
+c3task_atask_b
+task_ctask_d
+#time-
+stamp pid data 
+inst.origin-
+ator data 
+type 
+114:00:00 1a1_1 barney a1
+214:06:22 1a2_1 barney a2
+314:06:28 2a1_2 homer a1
+414:08:55 1a3_1 barney a3
+514:10:12 2a3_2 homer a3
+6 3a1_3 lenny a1
+7 2a2_2 homer a2
+8 3a3_3 lenny a3
+9 3a2_3 lenny a2
+10 3c1_3 homer c1
+11 3c2_3 homer c2
+12 1c2_1 lenny c2
+13 3c3_3 homer c3
+14 3b1_3 homer b1
+15 1c1_1 lenny c1
+16 3b2_3 homer b2
+17 1c3_1 lenny c3
+18 2b1_2 barney b1
+19 3b3_3 homer b3
+20 2c1_2 homer c1
+21 2b2_2 barney b2
+22 2b3_2 barney b3
+23 2b2_2 barney b2
+24 2c2_2 homer c2
+25 2c3_2 homer c3
+26 1c3_1 lenny c3
+27 2c2_2 homer c2
+28 1b1_1 homer b1
+29 3d1_3 lenny d1
+30 1b2_1 homer b2
+31 3d3_3 lenny d3
+32 1b3_1 homer b3
+33 1d1_1 homer d1
+34 3d2_3 lenny d2
+35 2d1_2 barney d1
+36 1d2_1 homer d2
+37 1d3_1 homer d3
+38 2d3_2 barney d3
+39 1d3_1 homer d3
+40 2d2_2 barney d21, 2, 4
+2, 4#
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10 
+11 
+12 
+13 
+14 
+15 
+16 
+17 
+18 
+19 
+20 
+21 
+22 
+23 
+24 
+25 
+26 
+27 
+28 
+29 
+30 
+31 
+32 
+33 
+34 
+35 
+36 
+37 
+38 
+39 
+40 a1, a2, a3
+a2, a3events in 
+cluster footprint 
+3, 5, 7
+4a1, a2, a3
+a3
+5, 7 a3, a2
+a1, a3, a2
+a2, c1
+a3, a2
+a2, c2
+c1, c2, c3
+c2, c3
+c2, c1, c3
+c3, b1, b2
+b1, b2, b3, c1
+c1, c3
+b2, b3, c1
+c3
+b1, b2, b3
+b3, c1
+c1, c2, c3
+b2, b3
+b3, b2
+b2
+c2, c3
+c3, c2
+c3
+c2, b1
+b1, b2, b3
+d1, d3
+b2, b3, d1
+d3
+b3, d1
+d1, d2, d3
+d2
+d1, d3, d2
+d2, d3
+d3
+d3, d2
+d3
+d2low-level log:
+6, 8, 9
+7, 10 
+8, 9
+9, 12 
+10, 11, 13 
+11, 13 
+12, 15, 17 
+13, 14, 16 
+14, 16, 19, 20 
+15, 17 
+16, 19, 20 
+17 
+18, 21, 22, 23 
+19, 20, 24, 25 
+20, 24, 25, 27 
+21, 22, 23 
+22, 23 
+23 
+24, 25, 27 
+25, 27 
+26 
+27, 28 
+28, 30, 32 
+29, 31 
+30, 32, 33 
+31 
+32, 33 
+33, 36, 37 
+34 
+35, 38, 40 
+36, 37, 39 
+37, 39 
+38, 40 
+39 
+40 14:14:23 
+14:15:47 
+14:18:14 
+14:23:57 
+14:24:04 
+14:27:22 
+14:32:40 
+14:32:43 
+14:39:45 
+14:40:10 
+14:42:04 
+14:42:10 
+14:43:02 
+14:44:43 
+14:48:50 
+14:49:00 
+14:50:23 
+14:52:55 
+14:53:45 
+14:54:02 
+14:57:14 
+14:58:00 
+15:04:43 
+15:10:22 
+15:12:19 
+15:13:10 
+15:14:42 
+15:22:05 
+15:28:02 
+15:28:04 
+15:28:05 
+15:31:45 
+15:35:15 
+15:36:00 
+15:37:22 initial clusters:
+a1, a2, ,a3
+a2, a3#
+1
+2
+31, 3, 6
+2, 5, 8clusters footprint 
+a3 4aggregated clusters:
+a2, c1
+a2, c24
+5
+6
+77
+9
+c1, c2, c3
+c2, c310, 12, 20 
+11, 24, 25 
+b1, b2, c3
+b1, b2, b3, c18
+9
+10 
+11 13 
+14 
+c1, c3
+b2, b3, c115 
+16 
+c3
+b1, b2, b312 
+13 
+14 
+15 17, 26 
+18, 28 
+b3, c1
+b2, b319 
+21, 22 
+b2
+b1, c216 
+17 
+18 
+19 23 
+27 
+d1, d3
+b2, b3, d129 
+30 
+d3
+b3, d120 
+21 
+22 
+23 31, 37, 39 
+32 
+d1, d2, d3
+d233, 35 
+34, 40 2, 3, 4, 5
+1, 3, 4, 5conflicting 
+1, 2
+1, 2, 6
+1, 2, 6
+4,5,7,9,10,
+11,12,14,17 
+6, 8, 14, 17 
+6, 7, 9, 11 
+6, 8, 11, 14 
+6, 12 
+6, 8, 9, 14 
+6, 10 
+15, 16, 17, 19, 
+21 
+6, 7, 9, 11 
+13, 16 
+13, 15 
+6, 7, 13 
+20 
+11, 21, 22 
+18, 22, 24 
+13, 19, 22 
+19, 20, 21, 23,  
+24 
+22, 24 2, 4
+1, 4conflicting 
+5, 7
+1, 2
+3, 7
+8, 9
+3, 5, 10 
+6, 9
+6, 8, 12 
+7, 11, 12 
+10, 13 
+9, 15, 17 
+10, 11, 14, 16 
+13, 16, 19, 20 
+12, 17 
+13, 14, 19, 20 
+12, 15 
+21, 22, 23 
+14,16,20,24,25 
+14,16,19,24,25,27 
+18, 22, 23 
+18, 21, 23 
+18, 21, 22 
+19, 20, 25, 27 
+20, 24, 27 
+-- 
+20, 24, 25, 28 
+27, 30, 32 
+31 
+28, 32, 33 
+29 
+28, 30, 33 
+30, 32, 36, 37 
+-- 
+38, 40 
+33, 37, 39 
+33, 36, 39 
+35, 40 
+36, 37 
+35, 38 3.0
+2.5val 
+(a=0.5)
+1.0
+1.5
+1.5
+3.0
+2.5
+2.0
+2.5
+1.5
+2.0
+1.5
+2.5
+1.5
+2.0
+1.0
+1.5
+1.5
+2.0
+2.0
+1.5
+2.5
+1.5
+24 d2, d3 36, 38 20, 22, 23 2.0
+a1, a2, ,a3#
+1 1, 3, 6clusters footprint minimal conflict-free set:
+6c1, c2, c3 10, 12, 20 
+b1, b2, c38 13 3.0val 
+(a=0.5)
+3.0
+2.0b1, b2, b313 18, 28 2.5
+18 d1, d3 29 1.522 d1, d2, d3 33, 35 2.5= victim of conflict resolution.executed three times, by 
+three resources.
+}
+desired resultdata 
+types:data 
+types:
+data 
+types:data 
+types:
+fig.5.all phases of the algorithm, applied to an examplelog12
+deﬁnition7 (cluster). letlbe alogovere. a cluster cis a set of events in l, i.e.,
+cµset(l). a clustering function is a function cfmapping lonto a set of clusters, i.e.,
+cf(l)µip(set(l)).4
+the clustering function to be used in scanning the initial set of clusters can be tai-
+lored to the speciﬁc application and type of log. examples of such clustering functions
+include:
+–cf(l) =fprox(e)je2lg, where prox(e1) =fe22ej jts(e1)¡ts(e2)j ·
+prange^pos(l; e1)< pos (l; e2)g
+(alleventshavingoccurredwithinamaximaltimespanof prangeafterthereference
+event e1; introducing the requirement of proximity),
+–cf(l) =fprox(e)je2lg,where prox(e1) =fe22ej jpos(l; e1)¡pos(l; e2)j ·
+prange^tp(e1) =tp(e2)^pos(l; e1)< pos (l; e2)g
+(logical clock based proximity limit; limits the events contained to those of the
+sametype as e1; for logs from hierarchical transactional systems),
+–cf(l) =fprox(e)je2lg, where prox(e1) =fe22ej jts(e1)¡ts(e2)j ·
+prange^o(e1) =o(e2)^pos(l; e1)< pos (l; e2)g
+(timestamp-based proximity; replaces the requirement for event type equality with
+requiringthe same originator),
+–cf(l) =fprox(e)je2lg, where prox(e1) =fe22ej jts(e1)¡ts(e2)j ·
+prange^pos(l; e1)< pos (l; e2)^o(e1) =o(e2)^p(e1) =p(e2)g
+(timestamp-based proximity limit, enforcing the same originator and process in-
+stancefor all eventsin one cluster),
+–cf(l) =ffeg je2lg
+(everycluster is a singleton),
+–etc.
+in the example shown in figure 5 the third proximity function listed above has
+beenchosen(time-based proximitylimit of10 minutes,equality oforiginator enforced
+within clusters). it cuts the set of events contained in each scan window down further,
+including only those with an originator and process id identical to the reference event.
+thus, the cluster aligned to event 1 contains events 1, 2 and 4; the 2nd cluster contains
+events2and4.theseclusters,createdforeacheventinthelog,constitutetheinitialset
+ofclusters, which is shownin its entirety in the middle table in figure 5.
+the optimal scan window size prangeis the maximal proximity between the ﬁrst
+and last event of all activities recorded in the log. if prangeis set too small, activities
+with a longer duration (or a larger number of low-level events) cannot be captured
+completely.ontheotherhand,atoolargescanwindowwillleadtoeventsfromdistinct
+activitiesbeingcomprisedinonecluster(whenthescanwindowsizeexceedsthemean
+idletimeaprocessspendsbetweenactivities).theclusteringfunctionhastobechosen
+withrespecttothesystemhavingproducedthelogunderconsideration(e.g.,enforcing
+uniform event types within clusters will only work in transactional systems, otherwise
+itwill distort the results).
+4ip(a)isthe powersetof a, i.e., ip (a) =fbjbµag.13
+6 cluster aggregation
+the initial set of clusters contains a great share of clusters which do not correspond
+to actual activity executions. moving the scan window over an actual cluster that has
+resulted from one activity, which e.g. comprises six lower-level events, will yield at
+least six scanned clusters (as the scan window is being moved event-wise). one of
+theseclustersiscorrect,i.e.wherethescanwindowcoveredalleventsderivedfromthe
+activity.theremainingclustershavecapturedonlyasubsetoftheinvolvedevents.the
+latterkindofclusters,havingresultedfromanincorrectscanwindowposition,shallbe
+denotedas fragmentaryclusters .
+another problem is the sheer amount of clusters yielded by the initial scan pass, as
+each event in the log will result in exactly one cluster. it is highly desirable to group
+similar clusters into meta-clusters , which constitutes the second pass of the presented
+algorithm. with each occurrence of a similar cluster found in the initial set, the proba-
+bilitythat this cluster corresponds to the executionof an activityincreases.
+in order to group, or aggregate , the initial clusters, it is necessary to have a means
+for determining their similarity. the essence of what deﬁnes a cluster is the footprint,
+i.e.the set of data objects modiﬁed by its contained events.
+deﬁnition8 (footprint). letlbe alogovere,ca cluster of l, and for any e2l:
+dt(e)6=?(i.e., a data type is deﬁned for each event in the log). fp(c) =fdt(e)je2
+cg.
+using the footprint for evaluating the similarity of two clusters is consistent with
+the activity model presented in section 2. multiple events having resulted from setting
+and clearing one data object repeatedly do not affect the footprint, and thus equality
+betweentwodifferentexecutionsof the same activityis being preserved.
+the aggregation pass combines sets of initial clusters with a compatible footprint
+to meta-clusters, which are identiﬁed by this very footprint. it can be characterized as
+grouping syntactically related patterns, assuming that these are related on a semantic
+levelaswell.fromasetofinitialclusters,theaggregationpassresultsinasetofaggre-
+gated meta-clusters. the decision whether two footprints are compatible, i.e. whether
+theassociated clusters are to be aggregated,is performed by an aggregationmethod .
+deﬁnition9 (aggregation method). letlbe alogovereandcf(l)be a clustering
+function over this log. an aggregation method ag(l)groups the clusters of cf(l)to sets
+ofsimilar elements, based on their footprints. ag(l)2ip(ip(dt)£ip(cf(l)))
+note that if (f; cs )2ag(l), then csis a set of initial clusters that somehow
+belongtogetherbasedonasetofdatatypes f(e.g.,allclustersin cshaveanidentical
+footprint). which speciﬁc aggregation method to choose depends, once again, largely
+on the speciﬁc log under consideration. based on many experiments, the following
+aggregationmethods havebeen found most suitable.
+deﬁnition10 (tolerantaggregation).
+ag(l) =f(f; cs )2ip(dt)£ip(cf(l))j 9ci2cs:fp(ci) =f^cs=fcj2
+cf(l)jfp(cj) =fgg14
+the tolerant aggregation method groups sets of clusters which have exactly the
+same footprint, i.e. the set of modiﬁed data types is identical for each element of a
+meta-cluster. this common footprint is also used to describe the resulting aggregated
+meta-cluster.
+deﬁnition11 (strictaggregation).
+ag(l) =f(f; cs )2ip(dt)£ip(cf(l))j 9ci2cs:fp(ci) =f^cs=fcj2
+cf(l)jfp(cj) =fg ^ 8 ck; cl2cs: (ck\cl=; _ck=cl)g
+the strict aggregation method also enforces the identity of footprints among all
+clusterswithinanaggregatedmeta-cluster.ontopofthis,itfurtherincludesaconﬂict-
+resolution requirement. the issue of conﬂicts will be explained in detail in the next
+section
+deﬁnition12 (greedyaggregation).
+ag(l) =f(f; cs )2ip(dt)£ip(cf(l))jcs6=; ^ 8 ci; cj2cs:fp(ci)µ
+fp(cj)µf_fp(cj)µfp(ci)µfg
+althoughtheﬁrsttwoaggregationmethodsmakenoefforttoﬁlteroutfragmentary
+clusters, the resulting meta-clusters are very precise. greedy aggregation, on the other
+hand, only requires the footprint of all contained clusters to share a certain subset. it
+is up to the speciﬁc implementation of this aggregation method to deﬁne a minimal
+overlap for the contained clusters’ footprints, as well as the method to determine the
+footprint of meta-clusters. greedy aggregation is quite sensitive to these peculiarities,
+however,itcanimproveresultsinverydiverse,orscattered,eventlogs(i.e.,logswhich
+donot exhibita lot of exactlyrecurring patterns).
+the result of the aggregation pass in the example is shown in the upper right table
+offigure5.asthe tolerantaggregation functionhasbeenusedinthisexample,theset
+of aggregated meta-clusters still contains a considerable number of elements which do
+not correspond to actual data modiﬁcation patterns of activities, e.g. aggregated cluster
+number8,containingamixtureoflow-leveleventsresultedfromtheexecutionoftasks
+bandc.
+nevertheless it is clear to see that the footprint is indeed a valid criteria for com-
+paring initial clusters. for example, initial clusters 10, 12 and 20 have been aggregated
+to meta-cluster 6 according to their common footprint (c1, c2, c3), although initial
+cluster 20 contains one superﬂuous event. still, the aggregated set also contains a large
+numberof meta-clusters which represent fragmentary clusters.
+the tables for initial and aggregated clusters in figure 5 each include a column
+denoted “conﬂicting”, which lists the (meta-) clusters the current cluster is in conﬂict
+with. the next section introduces the concept of conﬂicts and the last pass of the algo-
+rithm, which is able to pick from the aggregated set the subset most likely to represent
+actualactivityexecutionpatterns.
+7 maximal conﬂict-freeset of clusters
+it is easy to see that each event in a low-level log must have resulted from exactly
+one higher-level activity. however, the problem of fragmentary clusters introduced in15
+the previous section already shows that events will be included in multiple clusters.
+the aggregation pass can successfully decrease the number of fragmentary clusters,
+given the fact that a suitable aggregation method (e.g. greedy aggregation) is chosen.
+however, fragmentary clusters can potentially still result in multiple aggregated meta-
+clusters,thus distorting the result.
+the very core of the problem can be deﬁned as two clusters containing the same
+event.if this is the case, these clusters are inconﬂict .
+deﬁnition13 (conﬂictbetweenclusters). letlbealogovereandci; cjtwoclus-
+tersof l.ciandcjarein conﬂict iff ci\cj6=;.
+thisdeﬁnitionofconﬂictcanbeextendedontoaggregatedmeta-clustersinastraight-
+forward manner. two meta-clusters are in conﬂict, if any of their aggregated initial
+clustersare in conﬂict.
+deﬁnition14 (conﬂictbetweenmeta-clusters). let(f1; cs 1);(f2; cs 2)2ip(dt)£
+ip(cf(l))be two aggregated meta-clusters. (f1; cs 1)and(f2; cs 2)are in conﬂict if
+atleast two initial clusters ci2cs1andcj2cs2arein conﬂict, i.e. ci\cj6=;.
+thenatureofconﬂictsbetweeninitialclustersandtheirpropagationintotheaggre-
+gated set is also illustrated in the example in figure 5: clusters 1 and 2 from the initial
+set are in conﬂict, because they share events 2 and 4. as initial cluster 1 is aggregated
+into meta-cluster 1, and initial cluster 2 becomes part of meta-cluster 2, these two re-
+sulting meta-clusters are effectively in conﬂict as well. this “inheritance” of conﬂicts
+from the initial clusters leads to a great number of conﬂicts between meta-clusters of
+theaggregatedset.
+thestrictaggregationmethodintroducedinsection6ensuresthateachaggregated
+meta-cluster contains a conﬂict-free set of initial clusters. however, this has no inﬂu-
+enceontheexistenceofconﬂictsbetweenmeta-clusters.thus,thepurposeofthethird
+pass of the presented algorithm is to resolve these conﬂicts, i.e. cut down the set of
+aggregatedclusters to a maximal, conﬂict-free subset.
+thisstepisofutmostimportancewithrespecttotheintendedgoal,i.e.discovering
+activity patterns. given the fact that the scan window size and clustering functions are
+suitable for the analyzed log, and that a correct aggregation method has been chosen,
+all footprints referring to actual activity executions must be represented in the set of
+aggregated meta-clusters. as these correct meta-clusters must contain all events of the
+log, they will be in conﬂict with the illegal meta-clusters (as they have to share events
+then).ifconﬂictresolutionisperformedcorrectly,themaximalsetofconﬂict-freemeta-
+clustersshould equal the set of activityoccurrences in the observedprocess.
+for each two conﬂicting meta-clusters, the algorithm has to select one to be pro-
+motedtothemaximalconﬂict-freeset;theotheroneisdiscarded.tothisend,aconﬂict
+evaluationfunction is used, which is deﬁned as follows.
+deﬁnition15 (conﬂict evaluation). let(f; cs )2ag(l)be an aggregated cluster
+of the log l. the evaluation function val(f; cs )determines the relevance of an ag-
+gregated cluster for the maximal conﬂict-free set of clusters, when it conﬂicts with an-
+other aggregated cluster. val2ip(dt)£ip(cf(l))!ir. the weighed evaluation16
+val(f; cs ) =®¢ jfj+ (1¡®)¢ jcsjuses the factor ®2[0;1]to derive the value of
+anaggregatedcluster fromits footprint size and the number of aggregatedclusters.
+the conﬂict evaluation function used takes into account both the size of the aggre-
+gated cluster’s footprint, as well as the number of contained initial clusters, weighed
+by a parameter ®. setting ®to1will make the algorithm choose the aggregated cluster
+withthelargestfootprint.conversely,avalueof 0for®willgivepreferencetothemeta-
+cluster having aggregated the most initial clusters. as a rule of thumb, the best results
+have generally been achieved by choosing a value of 0:6–0:8for®, as an expressed
+preferenceforlargerfootprintseffectivelyeliminatesalargeshareoffragmentaryclus-
+ters.
+thederivationofthemaximalconﬂict-freesetofaggregatedclusterscanbedeﬁned
+asfollows.
+deﬁnition16 (maximal conﬂict-free set). letlbe alogovereandag(l)be an
+aggregation method over this log. the function mcf(l)selects the maximal subset of
+conﬂict-freeaggregatedclustersfrom ag(l).mcf(l) =f(fi; cs i)2ag(l)j 8(fk; cs k)2
+ag(l) :8cm2csi; cn2csk:cm\cn6=; )val(fi; cs i)>val(fk; cs k)g
+each meta-cluster contained in the maximal conﬂict-free set should ideally corre-
+spond to one activity in the (envisioned) higher-level process. aggregated clusters are
+characterized by their footprint, describing the set of data objects modiﬁed by the re-
+spectiveactivity.fromthispointon,onecanusethesetofinitialclustersaggregatedin
+each element of the maximal conﬂict-free set in order to determine the occurrences of
+the described activity in the log. the boundaries of each activity occurrence are spec-
+iﬁed by the timestamps (or, respectively, the log indices) of the ﬁrst and last low-level
+eventcontained in the respectiveinitial cluster.
+in the example shown in figure 5, conﬂict evaluation has been performed with a
+weightof ®= 0:5,i.e.givingequalpreferencetothe numberofcontainedclusters and
+footprint size. this evaluation is where fragmentary clusters show, because they both
+have a lower chance of being repeatedly represented in the log, and their footprint is
+usually smaller than footprints of “correct” clusters. the conﬂict evaluation values are
+shown in the rightmost column of the table representing the set of aggregated clusters.
+a black dot marks those meta-clusters which have been victim to conﬂict evaluation,
+i.e. they are in conﬂict with another meta-cluster that scores a higher value in the eval-
+uation.
+theresultingminimalconﬂict-freesetofmeta-clustersisshowninthebottomright
+tableoffigure5.itlooksalittledisappointingatﬁrstsight,as33%oftheset’selements
+areclearlynotcorrespondingtoactualactivityexecutions:meta-cluster18isobviously
+a fragmentary cluster, while meta-cluster 8 seems to cover low-level events from the
+overlapof twoactivityexecutions.
+however, the algorithm actually performed better than one might have thought. on
+the one hand, the “correct” meta-clusters have scored better in the evaluation, which
+supports the accuracy of the evaluation function. when the maximal conﬂict-free set
+is thus sorted by the conﬂict evaluation value of contained meta-clusters, the accurate
+results will reside on the top of the scale. note that the algorithm has discovered the
+correct results even without taking into account the process id information. further, it17
+has to be noted that the low-level log used in this example does not satisfy our initial
+assumptions at all: the time spent on executing the activities is not much shorter than
+thetimespentidlebetweenactivitieswithinaprocessinstance(sometimesevenconsid-
+erablylonger!).hence,thescanwindowsizecouldnotbechoseninanoptimalfashion.
+thealgorithmhasthusperformedremarkablywell,consideringthisproblematiclogas
+astarting point.
+constructingahigh-levellogfromtheminimalconﬂict-freesetisfairlystraightfor-
+ward. regarding the example, one would start with the meta-cluster having scored the
+highestevaluationvalue,i.e.meta-cluster1.theenvisionedtaskwhichthisclusterrep-
+resents could be called “a1a2a3”, based on the footprint. as it has been mentioned,
+one can now use the aggregated initial clusters to reproduce the occurrences of this
+task, i.e. activities, as events in the higher-level log. meta-cluster 1 contains the initial
+clusters 1, 3, and 6, so the initial cluster 1 would be the ﬁrst occurrence of activity
+“a1a2a3” in the higher-level log to be created. from the ﬁrst and last event contained
+ininitialcluster1,thestartandendofthiseventcanbederived:theactivityhasstarted
+at14:00:00(cf.event1)andendedat14:08:55(cf.event4),sothisconstitutesourﬁrst
+eventinthehigher-levellog.thisprocessisthenrepeatedforeachinitialclusterinthis
+meta-cluster, and then accordingly for all meta-clusters which are considered “valid”
+activities.
+whentheminimalconﬂict-freesetstilcontains“invalid”meta-clusters,itwouldbe
+appropriate to set a limit for the evaluation value a meta-cluster has to score, in order
+to be included in the high-level log. in the given example, one would want to set this
+limit to val(f; cs )¸2:5. this is, however, a matter of ﬁne-tuning, and one cannot
+give a general rule of thumb on how to set this limit. given this limit, the resulting
+high-level log from the example would have correctly reconstructed two out of three
+processinstances.
+8 implementation
+as a proof of concept, and to allow experimentation with the concepts presented, the
+modiﬁcation cluster scanning algorithm presented in the previous sections has been
+implementedas a plugin for prom [14].
+figure 6 shows the conﬁguration pane of the plugin. rather than choosing a pre-
+deﬁned clustering function, the user can conﬁgure each aspect of the initial clustering
+passseparately:theproximitythresholdforinitialclusterscanbeprovidedbothinreal
+time and as a logical number of events—the algorithm will then dynamically choose
+the more restrictive setting. enforcing the equality of originator and event type ﬁelds
+withina cluster can be toggled independently.
+a great share of systems do not log the name of the data type per event, but rather
+record only the data object, i.e. instance, identiﬁer. as it is necessary to compare low-
+levelevents on a type level,the user can choose an equivalencerelation for the speciﬁc
+logtypeunderconsideration.equivalencerelationsaresimplemoduleswhichcantake
+any two data objects and decide, whether they are derived from the same data type or
+not. in the aggregation pass, the algorithm will rely on the chosen equivalence relation
+tocompare footprints on a type level,rather than on an instance level.18
+fig.6.conﬁgurationpane of the activityminer plugin for prom
+furtheroptionsincludethechoiceofanaggregationmethodtobeused,andsetting
+theweighing factor ®for conﬂict evaluation.
+fig.7.resultvisualization of the activityminer plugin for prom
+afterallthreepassesofthealgorithmhavebeenperformedsuccessfully,theplugin
+will display its results, as shown in figure 7. the lower part of the result dialog is
+the “cluster browser”: aggregated meta-clusters are displayed in the leftmost column.
+theusercanchoosewhethertodisplayelementsoftheaggregatedset(admc)oronly19
+the subset contained in the maximal conﬂict-free set (mdmc). when one or multiple
+meta-clusters are selected, the middle column displays the contained initial clusters.
+the rightmost column shows the current footprint, either of an aggregated or initial
+cluster (depending on the current selection). in figure 7, the meta-cluster “admc.1”
+fromthemaximalconﬂict-freesethasbeenselected,whichcontainsﬁveinitialclusters
+andhas a footprint of three data objects.
+the upper left part of the result dialog shows the log as a linear ribbon, advanc-
+ingtotheright.onthispanetheclusterscurrentlyselectedinthebrowseraredisplayed
+withtheirtemporalpositioninthelog.whenoneormultiple meta-clustersareselected,
+thisviewwilldisplayallcontainedinitialclusters,fortheycanbeinterpretedasoccur-
+rences. in figure 7, the ﬁve initial clusters aggregated in “admc.1” are displayed on
+the log pane. although their temporal positions are overlapping, the “handles” on top
+showtheir distinct, median positions.
+9 applications
+thepresentedclusteringalgorithmhasshowntobeabletosuccessfullyrediscoveraset
+ofhigh-levelactivitypatternsfromalow-levellogintheprevioussections.thissection
+investigates potential ﬁelds of application for the algorithm and shows that it can also
+beemployedsuccessfully within scopes which transcend the original intent.
+inordertoaccuratelyrediscoverlow-leveleventpatternsreferringtoactivitiesona
+higher-levelprocess,thesystemhavinggeneratedthelow-levellogsmustsatisfycertain
+requirements. as the algorithm is based on the notion of proximity, there has to be a
+signiﬁcantgapbetweenthedurationofactivityexecutionsandthewaitingtimebetween
+distinct activities within the execution of a process instance. in general, all systems
+nativelyemployingtheactivitymetaphor(e.g.usingforms)dosatisfythisrequirement.
+fig.8.processand task deﬁnition in flow er20
+one interesting object for activity mining is the case handling system flow er.
+case handling systems are data-driven, i.e. the availability of information determines
+the progress within the executed process. thus, they provide logs both on a high level,
+identifying activity executions, as well as on a lower data modiﬁcation level. figure 8
+showstheprocessdesignerofflow er.thedisplayedprocessmodelwasactuallyused
+to generate the low-level log whose activity mining analysis is shown in figure 7. in
+the window on the lower right of figure 8 the properties for the ﬁrst task “task a”
+are displayed, for whose completion three data objects (listed in the lower half) are
+required.thesedataobjectsindeedcorrespondtothefootprintoftheaggregatedmeta-
+cluster“admc.1”in figure 7.
+case handling provides the end user of a process with a signiﬁcant amount of free-
+dom during execution, including custom deviations from the standard path. even more
+important, the boundary between activities is signiﬁcantly lowered, as there is no strict
+coupling between forms and activities. activities can be executed only partly, and be
+ﬁnished later on, potentially by another person. on the other hand, it is also possible
+foruserstoexecutemultipleactivitiesatonce,i.e.byﬁllingoutonlyoneform.insuch
+an environment, activity mining can yield interesting results, by revealing the actual
+chunks of work which are frequently executed, in contrast to the ones proposed by the
+process deﬁnition. this analysis can both be used to gain interesting insights into the
+waypeopleperformtheirwork,anditcanalsoserveasaperfectguidelineforaredesign
+ofthe process deﬁnition.
+another important ﬁeld of application for activity mining are enterprise resource
+management (erp) systems. in contrast to workﬂow management, emphasizing the
+control ﬂow perspective, these systems are centered around large databases which can
+be modiﬁed in an application-speciﬁc manner. as a consequence of the emphasis on
+data, erp systems usually create event logs on a low-level. process deﬁnitions and
+notionsofactivitiesareoftenonlyexistentonanapplicationlayer,whichisnotreﬂected
+in the log. activity mining can effectively bridge this gap, by providing the necessary
+high-level abstraction. however, it has to be noted that there are further problems to
+be resolved with respect to logs from erp systems, e.g. missing references to process
+instances,which the presented algorithm does not address.
+while erp systems only feature process orientation on the application layer, there
+are also systems which do not support the notion of a deﬁned process at all. never-
+theless, a great share of these systems, e.g. document management systems or expert
+systems, are effectively used to support processes. while some organizations prescribe
+aprocessdeﬁnition off-line,e.g.inprintedform,othersrelyontheirusers’ tacitknowl-
+edgeto perform the right steps in the correct order.
+it is obvious that in such less structured settings, there is even greater demand for
+abstraction and analysis. these systems have no notion of a high-level process, hence
+theycanonlyproducelow-levellogs.transformingthesetohigher-levellogs,usingac-
+tivity mining, allows to use sophisticated analysis methods, e.g. process mining, which
+area premise for discoveringand monitoring these implicit, tacit processes.
+this ﬁeld of application can be extended onto enterprise application integration
+(eai)architectures,whichareabouttobecomecommonplaceinmoderncompanies.in
+ordertoconnectallkindsofincompatiblesystemsfromdifferentvendors(ofteninclud-21
+ing legacy installations), most eai implementations rely on a central message broker ,
+ormessagebus ,solution.thesecentralhubsrelayandtransparentlytranslatemessages
+between otherwise incompatible components, thus enabling company-wide integration
+andworkﬂow.often,thisarchitectureissupportedbymeta-processes,e.g.implemented
+in bpel, which are orchestrating smaller processes within component systems. logs
+from such message brokers usually feature singular interactions between component
+systems in the form of message events. clustering these logs can unveil common pat-
+ternsofinteraction,potentiallyunforeseenbysystemdesigners.basedonthesediscov-
+ered patterns, the architecture can be better understood and optimized for performance
+andquality.
+apart from business processes, it is important to note that the presented algorithm
+is generic enough to provide useful insights from basically any sort of low-level log.
+its application to change logs from source code management systems, like cvs or
+subversion, can yield popular subsets of the repository which are frequently modiﬁed
+together. this information can subsequently be used to e.g. reorganize the repository
+layoutforeasiernavigation.further,theclusteringalgorithmhasalsobeensuccessfully
+applied to access logs from web servers. in this context, rather small values for the
+scan window size can yield clusters containing pages and their associated resources
+(e.g.images).ontheotherhand,increasingthescanwindowsize,suchthatitspansan
+entire visit’s duration, can be used to group visitors according to which subset of the
+sitetheyhavefrequented.
+another interesting application for activity mining is the healthcare domain. in a
+great number of hospitals the supporting information systems transmit events related
+to patient treatment activities to a central data-warehousing system. due to the orga-
+nization of a hospital, it is usual to concentrate a number of examinations (e.g. blood
+tests)ortreatmentsinashorttimespan,inordertominimizetransportationbetweenthe
+wardsinvolved.thispracticeleadstoeventlogscontainingburstsofeventsreferringto
+lower-level activities. clustering the ﬁne-grained event data from a patient’s treatment
+process can provide useful abstraction from single activities, and reveal logical tasks
+whichdescribe the logged procedure more adequately.
+whentheclusteringalgorithmfailstosuccessfullyrediscoveractivitypatternspresent
+intheprocessdeﬁnition,thisdoesnotnecessarilymeanthatthereisaproblemwiththe
+log or the algorithm’s conﬁguration. it can rather be a valuable hint that the process
+deﬁnition is in fact not in line with the current practices within the organization. if
+the algorithm groups low-level events of two distinct activities into one cluster, this is
+a strong indication that these activities are frequently executed directly one after an-
+other. such information can provide valuable information for a redesign effort, i.e. in
+theabovecase one wouldwantto combine the affectedactivitiesinto one.
+finally, it is also possible to apply the presented algorithm to regular high-level
+logs. by setting the scan window size to the typical throughput time of a case, the
+resulting meta-clusters represent typical sets of activities performed in a process5. the
+initial clusters contained in these meta-clusters can correspondingly be interpreted as
+cases, or process instances. thus, if the high-level log does not contain the process id
+5note that different execution orders for parallel parts of the process do not confuse the algo-
+rithm,as the footprint is considered an unordered set.22
+attribute for events, an activity mining analysis can be of great help in rediscovering
+thisinformation.
+10 related work
+thepresentedworkiscloselyrelatedtotheareaofprocessmining,describingafamily
+of a-posteriori process analysis techniques based on event logs. for example, the alpha
+algorithm [6] can construct a petri net model describing the behavior observed in the
+log. the multi-phase mining approach [13] can be used to construct an event process
+chain(epc)basedonsimilarinformation.inthemeantimetherearematuretoolssuch
+asthepromframework[14]toconstructdifferenttypesofmodelsbasedonrealprocess
+executions.
+processminingresearchsofarhasmainlyfocussedonissuesrelatedtocontrolﬂow
+mining.differentalgorithmsandadvancedminingtechniqueshavebeendevelopedand
+implemented in this context (e.g., making use of inductive learning techniques or ge-
+netic algorithms). tackled problems include concurrency and loop backs in process
+executions, but also issues related to the handling of noise (e.g., exceptions). further-
+more, ﬁrst work regarding the mining of other model perspectives (e.g., organizational
+aspects)anddata-drivenprocesssupportsystems(e.g.,casehandlingsystems)hasbeen
+conducted[3].
+activity mining is different from traditional process mining in various respects. it
+doesnotattempttoderiveinformationabouttheprocessdeﬁnition,organization,orex-
+ecutioningeneral,butratherconcentratesonalogical,activity-basedabstraction within
+the realm of event logs. in order to analyze event logs in a meaningful manner, process
+miningalgorithmsrequiretheprocessinstanceidforeachevent.thisrequirementdoes
+not hold for activity mining, as it is primarily based on the notion of proximity. while
+processminingalgorithmsarebasedonanalyzinghigh-levellogs,activityminingdoes
+provide this very information as an abstraction from lower-level logs. thus, activity
+mining is a valuable means for preprocessing low-level event logs to higher-level logs,
+inorder to perform meaningful process mining.
+theresultsobtainedfromapplyingprocessminingtechniquesonthesereconstructed
+higher-levellogscanprovidethemostinterestinginsights,whenthesystemhavingpro-
+ducedtheinitiallow-levellogsintheﬁrstplaceisnotdesignedtostrictlyenforcearigid
+processdeﬁnition.onesystemwhichprovidesoutstandingsupportforﬂexiblechanges
+of the process model, both on a casual and evolutionary basis, is adept[20]. also
+the case handling approach[7], implemented in the commercial system flow er[10],
+is especially interesting, as it rather limits the possible execution paths, in contrast to
+prescribinga ﬁxedset of paths.
+there exists a large amount of similar work also from outside the process mining
+ﬁeld.mostnotablytherehavebeennumerousapproachesfromthedataminingdomain,
+which are also focused on clustering sequential event data. our approach is distinct in
+thatittakesfulladvantageofthepeculiaritiesofthesequenceandeventsunderconsid-
+eration, i.e. it is far more closely tailored towards the application domain of business
+processeventlogs.23
+clustering techniques are commonplace in the area of data mining. however, most
+approaches address the problem of conceptual clustering [15], i.e. they strive not to
+derive higher-level entities from the input data but to derive a classiﬁcation which can
+beapplied to the initial entities (i.e. events).
+anotherrelatedﬁeldinthedataminingdomaindealswiththediscoveryofpatterns
+fromsequentialdata.agrawaletal.[9]alsolookatevents(transactions)fromthesame
+process instance (customer), however, their observation is global, i.e. items to be com-
+pared are not constrained by their temporal distance. while bettini et al. [12] also use
+theideaoffocusingonsmallparts(granules)ofthesequence,thesedonotoverlap,and
+the“interesting” patterns to be discoveredare supposed to be deﬁned a-priori.
+theseapproachesareinterestedinthe(partial)orderbetweenelementsofapattern,
+as their focus lies on deriving implication rules from sequences of events. this contra-
+dicts the basic assumption of our clustering algorithm, namely that the order of events
+withinan activitycluster is not signiﬁcant.
+perhaps the approach most related to ours is from mannila et al. [18], also using
+a “time window” to restrict the subset of events under consideration. although this
+work also mainly focuses on the partial ordering of elements, they also consider the
+trivial case of an empty partial order, corresponding to our approach. nevertheless, the
+absence of using any event attributes other than name (i.e. modiﬁed data type) and
+timestamp, and the focus on implication rules, e.g. for the prediction of future events,
+posesa signiﬁcant differenceto our approach.
+11 discussion
+activity mining, as it has been motivated and presented in this paper, describes the
+processofextractingrecurringpatternsfromeventlogs,whichpointtotheexistenceof
+common tasks on a higher level of abstraction. the need for activity mining is driven
+bymultiple use cases.
+processminingtechniqueshaveevolvedontoastagewheretheirindustrialapplica-
+tiondoesnotonlyseemfeasiblebuttrulybeneﬁcial.however,theyinterpretlogevents
+as corresponding to the execution of abstract tasks, which conﬂicts with most real-life
+systems’ logging on a far more ﬁne-grained, and thus lower, level. consequently this
+mismatchaccountsforoverlycomplexanddetailedmodelswhichmakeithardtoderive
+meaningfulinformation from.
+conducting process mining in a meaningful manner becomes even more difﬁcult
+when the system from which the logs are derived is not process-aware. in most of
+these cases it is nevertheless safe to assume the existence of an implicit, higher-level
+process, following the hypothesis stated in section 2. people tend to follow certain
+patterns (i.e. implicit processes) when accomplishing recurring tasks, and they usually
+also divide them into similarly sized chunks of work (which is our deﬁnition of an
+activity). this property even extends onto automatically executed processes, as these
+aredesigned by humans unconsciously applying these paradigms.
+in such situations activity mining can provide the abstraction necessary to apply
+process mining techniques. once a high-level log has been derived it can be analyzed
+withthesetofprocessminingalgorithmsalreadyavailable,inordertoe.g.discoverthe24
+tacithigh-levelprocesswhichhasgeneratedthelog.if,however,theprocessappearsto
+make no sense from a semantic point of view, then this is a strong hint that unsuitable
+parametershavebeenusedforactivitymining.thus,performingthesubsequentprocess
+mininganalysis can also be used to verifythe correctness of the activitymining pass.
+in comparison to these process mining algorithms, activity mining does not rely
+solely on the log itself to derive these abstractions. conﬁguring the algorithm with
+appropriate parameters requires domain knowledge, such as the maximal time used to
+handle activities, in order to accurately discover the activity clusters. we are currently
+working on heuristics to automatically ﬁnd suitable parameters based on the log, as a
+meansto aid the user in ﬁnding the correct conﬁguration.
+thecurrentstateofaffairsisthatalargeshareofprocess-awareinformationsystems
+donotprovideactivity-levellogs,andarethusnotsuitablefortheapplicationofprocess
+mining.activitymininghasthepotentialtobridgethisgap,bringingbothnewﬁeldsof
+application to process mining and, conversely, an ample toolkit of scientiﬁcally well-
+foundedanalysis methods to ownersof such systems.
+we have also shown that this technique can be used in settings different from its
+originalcontent.themodulardesignofthealgorithmallowsfortailoringittodifferent
+applications, e.g. by using a custom clustering function or aggregation method. we are
+thus convinced that there are plenty of applications for this technique even outside of
+theintended scope.
+12 acknowledgements
+thisresearchissupportedbythetechnologyfoundationstw,appliedsciencedivision
+ofnwoand the technology programme of the dutch ministry of economic affairs.
+references
+1.w.m.p. van der aalst and p.j.s. berens. beyond workﬂow management: product-driven
+casehandling. ins.ellis,t.rodden,andi.zigurs,editors, internationalacmsiggroup
+conference on supporting group work (group 2001) , pages 42–51. acm press, new
+york,2001.
+2.w.m.p. van der aalst and k.m. van hee. workﬂow management: models, methods, and
+systems. mit press, cambridge, ma, 2002.
+3.w.m.p. van der aalst and m. song. mining social networks: uncovering interaction pat-
+terns in business processes. in j. desel, b. pernici, and m. weske, editors, international
+conference on business process management (bpm 2004) , volume 3080 of lecture notes
+in computer science ,pages 244–260. springer-verlag,berlin, 2004.
+4.w.m.p. van der aalst, b.f. van dongen, j. herbst, l. maruster, g. schimm, and a.j.m.m.
+weijters. workﬂow mining: a survey of issues and approaches. data and knowledge
+engineering ,47(2):237–267, 2003.
+5.w.m.p.vanderaalstanda.j.m.m.weijters,editors. processmining ,specialissueofcom-
+puters in industry,volume53, number 3. elsevierscience publishers, amsterdam, 2004.
+6.w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. workﬂow mining: discovering
+processmodelsfromeventlogs. ieeetransactionsonknowledgeanddataengineering ,
+16(9):1128–1142, 2004.25
+7.w.m.p. van der aalst, m. weske, and d. gr ¨unbauer. case handling: a new paradigm for
+business process support. dataand knowledgeengineering , 53(2):129–162, 2005.
+8.r. agrawal, d. gunopulos, and f. leymann. mining process models from workﬂow logs.
+insixthinternationalconferenceonextendingdatabasetechnology ,pages469–483,1998.
+9.r.agrawal,t.imielinski,anda.n.swami. miningassociationrulesbetweensetsofitems
+in large databases. in p. buneman and s. jajodia, editors, proceedings of the 1993 acm
+sigmod international conference on management of data , pages 207–216, washington,
+d.c., 26–28 1993.
+10.pallas athena. case handling with flower: beyond workﬂow . pallas athena bv, apel-
+doorn, the netherlands, 2002.
+11.pallasathena. flowerusermanual . pallasathenabv,apeldoorn,thenetherlands,2002.
+12.c. bettini, x. s. wang, and s. jajodia. mining temporal relationships with multiple granu-
+larities in time sequences. data engineering bulletin ,21(1):32–38, 1998.
+13.b.f.vandongenandw.m.p.vanderaalst. multi-phaseprocessmining: buildinginstance
+graphs. in p. atzeni, w. chu, h. lu, s. zhou, and t.w. ling, editors, international con-
+ference on conceptual modeling (er 2004) , volume 3288 of lecture notes in computer
+science,pages 362–376. springer-verlag,berlin, 2004.
+14.b.f. van dongen, a.k. de medeiros, h.m.w. verbeek, a.j.m.m. weijters, and w.m.p. van
+deraalst. thepromframework:anewerainprocessminingtoolsupport. ing.ciardoand
+p.darondeau,editors, proceedingsofthe26thinternationalconferenceonapplicationsand
+theory of petri nets (icatpn 2005) , volume 3536 of lecture notes in computer science ,
+pages 444–454. springer-verlag,berlin, 2005.
+15.d. h. fisher. knowledge acquisition via incremental conceptual clustering. mach. learn. ,
+2(2):139–172, 1987.
+16.s. jablonski and c. bussler. workﬂow management: modeling concepts, architecture, and
+implementation . international thomson computer press, london, uk, 1996.
+17.f. leymann and d. roller. production workﬂow: concepts and techniques . prentice-hall
+ptr, upper saddle river,newjersey,usa, 1999.
+18.h. mannila, h. toivonen, and a. i. verkamo. discovery of frequent episodes in event se-
+quences. data mining and knowledgediscovery , 1(3):259–289, 1997.
+19.d.c. marinescu. internet-based workﬂow management: towards a semantic web , vol-
+ume 40 of wiley series on parallel and distributed computing . wiley-interscience, new
+york,2002.
+20.m.reichertandp.dadam. adeptﬂex:supportingdynamicchangesofworkﬂowwithout
+loosing control. journalof intelligentinformation systems ,10(2):93–129, 1998.

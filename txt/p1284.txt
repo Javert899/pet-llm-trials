@@ -1,0 +1,949 @@
+international journal on software tools for technology transfer
+https://doi.org/10.1007/s10009-022-00668-w
+general
+regular
+oc-pm: analyzing object-centric event logs and process models
+alessandro berti1·wil m. p. van der aalst1
+accepted: 29 august 2022
+© the author(s) 2022
+abstract
+object-centric process mining is a novel branch of process mining that aims to analyze event data from mainstream informationsystems (such as sap) more naturally, without being forced to form mutually exclusive groups of events with the speciﬁcation
+of a case notion. the development of object-centric process mining is related to exploiting object-centric event logs, which
+includes exploring and ﬁltering the behavior contained in the logs and constructing process models which can encode thebehavior of different classes of objects and their interactions (which can be discovered from object-centric event logs). this
+paper aims to provide a broad look at the exploration and processing of object-centric event logs to discover information related
+to the lifecycle of the different objects composing the event log. also, comprehensive tool support (oc-pm) implementingthe proposed techniques is described in the paper.
+keywords object-centric process mining ·object-centric event logs ·object-centric process discovery ·object-centric
+conformance checking
+1 introduction
+process mining [ 1] is a branch of data science providing tech-
+niques to exploit the event data that support the execution
+of business processes. different areas exist in process min-
+ing, such as process discovery (the discovery of a processmodel from an event log), conformance checking (compar-
+ing the behavior described in the event log with a process
+model), process enhancement (enriching models with infor-mation related to time and data), machine learning (suchas root cause analysis and the prediction of the next activ-
+ity/remaining time).
+mainstream process mining techniques start from an event
+log, i.e., a collection of events extracted from the databases
+supporting the process execution. in such event logs, a case is
+a collection of events related to a particular process execution.for example, in a sales order management system, a case may
+refer to all the events related to the creation and conﬁrmation
+b alessandro berti
+a.berti@pads.rwth-aachen.de
+wil m. p . van der aalst
+wvdaalst@pads.rwth-aachen.de
+1process and data science group, rwth aachen university,ahornstrasse 55, 52074 aachen, nrw, germanyof the order, collecting and packing the different order items,
+the delivery, and invoicing. for such a system, establishing
+a case notion can lead to the known convergence anddiver-
+gence problems [ 2]. we have a convergence problem when
+the same event is related to different cases. in event log for-
+mats such as xes1, this leads to replicating the same event.
+we have a divergence problem when a case contains differ-
+ent instances of the same activity. for example, a sales order
+contains different instances of the collection and the packingof the order items. mainstream process mining techniques(e.g., process discovery and conformance checking) use the
+order of the events inside the log cases. however, the quality
+of the output is affected by the convergence and divergenceproblems.
+object-centric event logs have been proposed to resolve
+the convergence and divergence problems. object-centricevent logs are a novel representation of the event data in the
+information systems, where each event is related to different
+objects of different types. an informal representation of anobject-centric event log is contained in table 1. the event log
+contains eight events. the ﬁrst event, having activity “cre-
+ate order”, is related to an object of type order ( o
+1) and two
+objects of type item ( i1andi2). moreover, some attributes at
+1https://xes-standard.org/
+123a. berti, w. m. p. van der aalsttable 1 informal representation of the events of an object-centric event log. each row (except the header) represents an event
+id activity timestamp item order package delivery resource prepaid-amount weight total-weight
+e1 place order 2020-07-09 08:20:01.527+01:00 {i1,i2}{ o1} alessandro 200.0
+e2 check availability 2020-07-09 08:21:01.527+01:00 {i1} anahita 10.0
+e3 check availability 2020-07-09 08:22:01.527+01:00 {i2} anahita 20.0
+e4 create package 2020-07-09 08:21:01.527+01:00 {i1}{ p1} miriam 10.0
+e5 create package 2020-07-09 08:21:01.527+01:00 {i2}{ p2} tobias 20.0
+e6 load package 2020-07-09 08:23:01.527+01:00 {p1,p2}{ d1} marco 30.0
+e7 delivery successful 2020-07-09 08:23:01.527+01:00 {d1} marco 30.0
+e8 order completed 2020-07-09 08:24:01.527+01:00 {o1} alessandrothe event level are described (for example, prepaid-amount
+having a value 200.0 for the ﬁrst event). object-centric eventlogs describe the lifecycle of different objects without lead-
+ing to the convergence problem since an event can be related
+to different objects. also, the divergence problem is avoidedsince we avoid specifying a single case notion.
+in an object-centric event log, it is also possible to specify
+the values for some attributes of the objects. this is repre-
+sented in table 2: object o
+1, having type order, is sold to the
+customer apple at the cost of 3500. to exploit the information
+contained in object-centric event logs, new process mining
+techniques are required. this leads to the development ofobject-centric process mining techniques. these exploit the
+lifecycle of the objects and the relationships between the
+objects to provide insights on the execution of a businessprocess and check the actual execution logs.
+however, the discipline is still in an early develop-
+ment stage. while some approaches have been proposed for
+process discovery and conformance checking in an object-centric setting (see sect. 5), some important aspects, such
+as the exploration (being able to visualize the event log and
+focus on some dimensions) and ﬁltering (restrict the behav-ior of the log to a subset of events/objects) of object-centric
+event logs have been marginally explored. moreover, a com-
+prehensive description of the annotations for the elementsof object-centric process models (such as the frequency ofnodes and edges) is missing. the paper aims to propose a
+set of object-centric process mining techniques to bridge the
+gap between traditional and object-centric process mining,including:
+•the exploration of object-centric event logs: its events
+and the lifecycle of its objects.
+•the ﬁltering possibilities on object-centric event logs.
+•provide the automatic discovery of object-centric process
+models with different complexity (less/more activities,less/more edges).
+•describe meaningful annotations (number of events/
+objects) at the activity and the edge level.
+•provide some conformance metrics on object-centric
+event logs.
+also, the paper describes the oc-pm tool(s) for object-
+centric process mining, providing the proposed techniques
+as a web-based interface and as a plugin of the prom frame-
+work. these are available at the address https://ocpm.info .
+tool support in object-centric process mining is currently
+limited to a set of library and ad-hoc tools (for example, [ 3]
+for the discovery of variants), hence the importance of com-prehensive tool support covering a good part of the lifecycle
+of an object-centric process mining analysis.
+the rest of the paper is organized as follows. section 2
+describes the information on event logs and directly-follows
+123oc-pm: analyzing object...
+table 2 informal representation
+of the objects of an
+object-centric event log. eachrow (except the header)represents an objectid type customer costs color size ensured priority
+o1 order apple 3500.0
+i1 item orange big
+i2 item green small
+p1 package yes
+p2 package no
+d1 delivery high
+graphs needed to understand the paper. section 3presents
+some operations on object-centric event logs (ﬂattening,lifecycle, ﬁltering), the discovery of object-centric directly-
+follows multigraphs, and several annotations at the activity
+and the edge level. section 4presents the tools supporting the
+paper. section 5presents the related work on object-centric
+process mining. finally, sect. 6concludes the paper.
+2 background
+this section introduces the basic knowledge (event logs,
+directly-follows graph) needed to understand the rest of the
+paper.
+2.1 traditional event log
+“traditional” event logs, used by mainstream process mining
+techniques, are a collection of events and cases. a case isa collection of events of the same process execution. for
+example, in a ticket management system, a case contains
+events for the creation, the resolution, and the closure of theticket. to introduce a deﬁnition of traditional event logs, we
+introduce some universes (event identiﬁers, case identiﬁers,
+activities) in def. 1and then the deﬁnition of traditional event
+log in def. 2.
+deﬁnition 1 (generic universes) below are the universes
+used in the deﬁnition of traditional (and object-centric) eventlogs:
+•u
+eis the universe of event identiﬁers. example: u e=
+{e1,e2,e3,...}
+•ucis the universe of case identiﬁers. example: u c=
+{c1,c2,...}
+•uactis the universe of activities. example: u act={
+place order ,check availability ,… }
+•utimest is the universe of timestamps. example: u timest=
+{2020-07-09t08:21:01.527+01:00 , …} we assume
+utimest to be totally ordered. moreover, a difference −
+operation is deﬁned for timestamps as the number of sec-
+onds separating the subtrahend from the minuend.deﬁnition 2 (traditional event log) a traditional event log
+is a tuple tl=(e,πact,πtime,πcase,≤)where:
+•e⊆ueis a set of events.
+•πact:e→uactassociates an activity to each event.
+•πtime:e→utimest associates a timestamp to each
+event.
+•πcase:e→ p(uc)\{ ∅ } associates a non-empty set of
+cases to each event.
+•≤ ⊆ e×eis a total order on e.
+an important consideration is that, in def. 2, each event
+can be associated with several cases. in traditional event log
+formats such as xes2, cases are primary-level objects, so if
+an event belongs to different cases, it is going to be replicatedin the serialization.
+the operations introduced in def. 3can be deﬁned on an
+event log.
+deﬁnition 3 (operations on an event log) given a tradi-
+tional event log tl=(e,π
+act,πtime,πcase,≤), we deﬁne
+the following operations:
+•πact(tl)={πact(e)|e∈e}
+•πcase(tl)=∪ e∈eπcase(e)
+•forc∈πcase(tl),case tl(c)=/angbracketlefte1,..., en/angbracketrightwhere:
+–{e1,..., en}={ e∈e|c∈πcase(e)}
+–∀1≤i<nei<ei+1
+•given c∈πcase(tl)andcase tl(c)=/angbracketlefte1,..., en/angbracketright:
+– trace tl(c)=/angbracketleftπact(e1),...,π act(en)/angbracketright
+–s t a r t tl(c)=πact(e1).
+– end tl(c)=πact(en).
+•πstart(tl)={start tl(c)|c∈πcase(tl)}is the set of
+start activities.
+•πend(tl)={end tl(c)|c∈πcase(tl)}is the set of
+end activities.
+2http://www.processmining.org/logs/xes
+123a. berti, w. m. p. van der aalst
+2.2 directly-follows graphs
+adirectly-follows graph (dfg) is a simple process model
+describing the directly-follows relationship between the dif-
+ferent activities of a process. in def. 4, we introduce a formal
+deﬁnition of dfg. the deﬁnition comes with a frequencymeasure on the nodes and a frequency measure on the edges
+of the dfg. this identiﬁes the most and the least used paths
+in the process model.
+deﬁnition 4 (directly-follows graph) a directly-follows
+graph is a tuple (a,f,π
+fre qn,πfre qe)where:
+•a⊆uactis a set of activities.
+•⊿ is the start node of the graph, /squareis the end node of the
+graph.
+•f⊆({⊿} ∪ a)×(a∪{/square})is the set of edges.
+•πfre qn:a/notarrowrightn is a frequency measure on the nodes.
+•πfre qe:f/notarrowrightn is a frequency measure on the edges.
+in the previous deﬁnition, we use /notarrowrightas a symbol telling
+that a subset of elements of the domain ( aandfrespectively)
+is mapped to an element of the image ( n). we can discover
+a directly-follows graph from a traditional event log. this is
+introduced in def. 5.
+deﬁnition 5 (discovery of a directly-follows graph) let
+tl=(e,πact,πtime,πcase,≤)be a traditional event log.
+we deﬁne the following discovery operation:
+dfg(tl)=(a,f,πfre qn,πfre qe)
+where:
+•a=πact(tl)and
+f={(⊿,start tl(c)),( end tl(c),/square)|c∈πcase(tl)}∪
+∪c∈πcase(tl),trace tl(c)=/angbracketlefta1,...,an/angbracketright{(ai,ai+1)|1≤i<n}
+•fora∈a,πfre qn(a)=| {e∈e|πact(e)=a}|
+•for(⊿,a)∈f,πfre qe(⊿,a)=| {c∈πcase(tl)|start tl
+(c)=a}|
+•for(a,/square)∈f,πfre qe(a,/square)=| {c∈πcase(tl)|end tl
+(c)=a}|
+•for(a,b)∈f∩(a×a),
+πfre qe(a,b)=/summationdisplay
+c∈πcase(tl),
+trace tl(c)=/angbracketlefta1,...,an/angbracketright
+|{i∈n|1≤i<n∧ai=a∧ai+1=b}|
+given def. 5, we can deﬁne two operators: the projection
+on the set of activities (πa((a,f,πfre qn,πfre qe))=a)
+and the set of edges (πf((a,f,πfre qn,πfre qe))=f).the directly-follows graphs are the building blocks for
+some object-centric process models introduced in sect. 3.3.
+as seen in def. 5, they can be straightforwardly discovered
+from event logs, and they can be easily ﬁltered based on a
+threshold on the frequency of activities and edges.
+3 approach
+the approach section is composed of different subsections,analyzing different techniques to exploit object-centric event
+logs. we start with the deﬁnition of object-centric event logs
+and the proposition of the ocel format for the storage ofobject-centric event logs. the ﬂattening operation (which
+projects the object-centric event log to a traditional event
+log with the choice of a case notion) is introduced, as it isessential for process discovery purposes. then, some ﬁlter-ing operations (activities, paths, endpoints, timeframe, object
+types) are proposed on top of object-centric event logs.
+in sect. 3.3, an object-centric process model (the object-
+centric directly-follows multigraph) is deﬁned that can be
+discovered straightforwardly from an object-centric event log
+using the aforementioned ﬂattening operation. then, somegeneric metrics on object-centric event logs are introduced,
+which can be used to annotate the object-centric process mod-
+els.
+finally, some model-independent conformance checking
+techniques are introduced, which can be applied to object-
+centric event logs.
+3.1 object-centric event log and flattening
+the starting point of an object-centric process mining analy-
+sis lies in an object-centric event log. in object-centric eventlogs, we assume that each event is related to different objects
+of different types. moreover, some other attributes are asso-
+ciated with the events and the objects of the log. def. 6
+introduces some universes that are necessary for the formaldeﬁnition of object-centric event log. the deﬁnition has also
+been introduced in [ 4].
+deﬁnition 6 (universes (for ocel)) below are the universes
+used in the formal deﬁnition of object-centric event logs:
+•u
+attis the universe of attribute names. example: u att=
+{resource ,weight ,… }
+•uvalis the universe of attribute values. example: u val=
+{500,1000 ,mike ,… }
+•utypis the universe of attribute types. example: u typ=
+{string ,integer ,ﬂoat ,… }
+•uois the universe of object identiﬁers. example: u o=
+{o1,i1,...}
+123oc-pm: analyzing object...
+•uotis the universe of objects types. example: u ot={
+order ,item ,… }
+def 7introduces the formal deﬁnition of object-centric
+event log.
+deﬁnition 7 (object-centric event log) an object-centric
+event log is a tuple
+l=(e,an,av,at,ot,o,πtyp,πact,πtime,
+πvmap,πomap,πotyp,πovmap,≤)such that:
+•e⊆ueis the set of event identiﬁers. example: the ﬁrst
+event shown in table 1is related to the event identiﬁer
+e1.
+•an⊆uattis the set of attributes names. example:
+in table 1resource ,prepaid-amount ,weight , and total-
+weight are attribute names and, in table 2,costs ,color ,
+andsize are attribute names.
+•av⊆uvalis the set of attribute values (with the require-
+ment that an ∩av=∅ ).example: in table 1200.0 ,
+anahita , and 10.0 are attribute values, and in table 2,
+apple ,green , and 3500.0 are attribute values.
+•at⊆utypis the set of attribute types. example: the
+type of the attribute resource in table 1isstring .
+•ot⊆uotis the set of object types. example: in table 2,
+for the ﬁrst object, the type is order .
+•o⊆uois the set of object identiﬁers. example: the ﬁrst
+object in table 2is related to the object identiﬁer o1.
+•πtyp:an∪av→at is the function associating an
+attribute name or value to its corresponding type. exam-
+ple: for the attributes in table 1,
+πtyp(prepaid-amount )=ﬂoat ,πtyp(200.0)=ﬂoat .
+•πact:e→uactis the function associating an event
+(identiﬁer) to its activity. example: for the ﬁrst event
+shown in table 1, the activity is place order .
+•πtime:e→utimest is the function associating an
+event (identiﬁer) to a timestamp. example: for the ﬁrst
+event shown in table 1, the timestamp is 2020-07-
+09t08:21:01.527+01:00 .
+•πvmap:e→(an/notarrowrightav)such that
+πtyp(n)=πtyp(πvmap(e)(n))
+∀e∈e∀n∈dom(πvmap(e))
+is the function associating an event (identiﬁer) to its
+attribute value assignments. example: for the ﬁrst event
+in table 1,πvmap(e1)(prepaid-amount )=200.0
+•πomap:e→ p(o)is the function associating an event
+(identiﬁer) to a set of related object identiﬁers. exam-
+ple: the ﬁrst event in table 1is related to three objects
+πomap(e1)={o1,i1,i2}.•πotyp∈o→ot assigns precisely one object type
+to each object identiﬁer. example: for the ﬁrst object in
+table 2,πotyp(o1)=order .
+•πovmap:o→(an/notarrowrightav)such that
+πtyp(n)=πtyp(πovmap(o)(n))
+∀n∈dom(πovmap(o))∀o∈o
+is the function associating an object to its attribute value
+assignments. example: for the second object in table 2,
+πovmap(i2)(color)=green .
+•≤ is a total order (i.e., it respects the antisymmetry, tran-
+sitivity, and connexity properties).
+recently, the ocel format has been proposed for object-
+centric event logs3. two implementations of the format
+exist (json-ocel, supported by json; xml-ocel, sup-
+ported by xml; mongodb [ 5]), with tool support avail-
+able for some popular languages (java/prom framework4,
+javascript5, python6). on the page event logs , some event
+logs (in the json-ocel and xml-ocel formats) areavailable, which can be ingested by the tool support.
+in def. 8, some general statistics on object-centric event
+logs are introduced. while the number of events and (unique)objects derives directly from the log elements, the number oftotal objects is an interesting aggregation that considers how
+many events are related to the given object. so, considering
+the ratio between the number of total objects and uniqueobjects, the higher the ratio, the higher the average length of
+the lifecycle of the objects of the object-centric event log.
+deﬁnition 8 (general statistics on an object-centric event
+log) let lbe an object-centric event log as in def. 7.w e
+deﬁne the following general statistics on the object-centricevent log:
+gs1 number of events e(l)=|e|.
+gs2 number of unique objects uo(l)=|o|.
+gs3 number of total objects to(l)=/summationtext
+e∈e|πomap(e)|.
+an operation deﬁned on object-centric event logs is ﬂat-
+tening . a ﬂattening operation transforms the object-centric
+event log into a traditional event log given the choice of
+an object type. this is useful because many process min-ing approaches are only available for traditional event logs.
+moreover, some object-centric process discovery algorithms
+(such as mvp [ 6,7] and object-centric petri nets [ 8]) performs
+ﬂattening to apply classic process discovery techniques and
+3http://www.ocel-standard.org/
+4https://svn.win.tue.nl/repos/prom/packages/ocelstandard/trunk/
+5https://github.com/javert899/pm4js-sandbox
+6https://github.com/ocel-standard/ocel-support
+123a. berti, w. m. p. van der aalst
+then unite the results for the different object types in a single
+model. def. 9proposes a formal deﬁnition of ﬂattening. this
+is based on the deﬁnition of restriction for a function. given
+a function f:x→y, and x/prime⊆x,f|x/primeis a function with
+dom(f|x/prime)=x/primeand for all x∈x/prime,f(x)=f|x/prime(x).
+deﬁnition 9 (flattening with an object type) let lbe an
+object-centric event log as in def. 7, and ot ∈ot be an object
+type. we deﬁne the ﬂattening of lusing ot as fl(l,ot)=
+(eot,πot
+act,πot
+time,πot
+case,≤ot)where:
+•eot={e∈e|∃o∈oπotyp(o)=ot∧o∈πomap(e)}
+•πot
+act=πact|eot
+•πot
+time=πtime|eot
+•fore∈eot,πot
+case(e)={o∈πomap(e)|πotyp(o)=ot}
+•≤ot={(e1,e2)∈≤ | ∃ o∈oπotyp(o)=ot∧o∈
+πomap(e1)∩πomap(e2)}
+given the deﬁnition of ﬂattening, we can introduce the
+notion of lifecycle in def. 10. the lifecycle of an object is
+the corresponding case in the ﬂattened log7.
+deﬁnition 10 (lifecycle, start and end event for an object)
+letlbe an object-centric event log as in def. 7. we deﬁne:
+•the lifecycle of an object o∈oas the sequence
+of events to which the object is related: lif (o)=
+case fl(l,πotyp(o))(o)
+•the trace of an object o∈oas the sequence of activ-
+ities of the events belonging to its lifecycle: trace (o)=
+trace fl(l,πotyp(o))(o)
+•the start activity of an object o∈oas the ﬁrst activity
+of its trace: start (o)=start fl(l,πotyp(o))(o)
+•the end activity of an object o∈oas the last activity of
+its trace: end (o)=end fl(l,πotyp(o))(o)
+in def. 10, we introduce the additional concepts of trace
+for an object (the activities of the events of its lifecycle). thestart and end activities are of particular importance, as they
+are the start/end of the process execution and can be used to
+identify incomplete/improperly terminated objects.
+3.2 filtering
+filtering is an operation of high importance because itrestricts the behavior contained in the log to the desired one.many ﬁlters have been deﬁned for traditional event logs (ﬁl-
+tering the cases containing an activity, ﬁlters the cases starting
+or ending with an activity, timeframe ﬁlter). in this section,we want to introduce some ﬁltering operations on object-
+centric event logs. in def. 11, given a subset of events of the
+7so, is the sequence of events that are related to the object.log, we deﬁne ﬁltering operations restricting the event log to
+these events.
+deﬁnition 11 (filtering on a set of events) let lbe an
+object-centric event log as in def. 7, and e/prime⊆ea
+set of events. we deﬁne the ﬁltered event log le=e/prime=
+(e/prime,an,av,at,ot,o,πtyp,πact|e/prime,πtime|e/prime,πvmap|e/prime,
+πomap|e/prime,πotyp,πovmap,≤)
+some ﬁlters based on def. 11are presented in def. 12.
+these include a ﬁlter on a subset of activities (useful toremove some undesired activities from the analysis) and a
+ﬁlter on timeframe (useful to restrict the analysis to a given
+period of time).
+deﬁnition 12 (filtering on a set of events - approaches)
+letlbe an object-centric event log as in def. 7.l e t a=
+{π
+act(e)|e∈e}be the set of activities of l. we present
+some possibilities for the ﬁltering of a set of objects:
+f1filtering on a subset of activities given a set of activities
+a/prime⊆a, ﬁlter on the events having an activity in a/prime:
+e/prime={e∈e|πact(e)∈a/prime}
+f2filtering on timeframe given some lower and upper
+bounds lb ,ub∈utimest , ﬁlter on the events falling in
+the range [lb,ub]:e/prime={e∈e|lb≤πtime(e)≤ub}
+the ﬁltered log is deﬁned starting from e/primeas in def. 11.
+it is also possible to deﬁne a ﬁltering operation starting
+from a subset of objects. in def. 13, the event log is ﬁltered
+to the set of events that are related to one of these objects.
+deﬁnition 13 (filtering on a set of objects) let lbe an
+object-centric event log as in def. 7, and o/prime⊆oa set of
+objects. let eo/prime={e∈e|πomap(e)∩o/prime/negationslash=∅ } be the
+subset of events in erelated to at least one object in o/prime.w e
+deﬁne the ﬁltered event log
+le=eo/prime,o=o/prime=(eo/prime,an,av,at,ot,o/prime,πtyp,
+πact|eo/prime,πtime|eo/prime,πvmap|eo/prime,πomap|eo/prime,πotyp|o/prime,
+πovmap|o/prime,≤)
+some ﬁlters based on def. 13are presented in def. 14.
+these exploit the operations on object-centric event logs
+introduced in def. 10.
+deﬁnition 14 (filtering on a set of objects - approaches)
+letlbe an object-centric event log as in def. 7.l e t a=
+{πact(e)|e∈e}be the set of activities of l. we present
+some possibilities for the ﬁltering of a set of objects:
+f3filtering on the objects related to an activity given a set
+of activities a/prime⊆a, ﬁlter on the objects related to one
+of these activities: o/prime={o∈o|trace(o)∩a/prime/negationslash=∅ }
+123oc-pm: analyzing object...
+f4filtering on start activities given a set of activities a/prime⊆
+a, ﬁlter on the objects starting with one of these activities:
+o/prime={o∈o|start(o)∈a/prime}
+f5filtering on end activities given a set of activities a/prime⊆
+a, ﬁlter on the objects ending with one of these activities:
+o/prime={o∈o|end(o)∈a/prime}
+f6filter on a path given a couple of activities (a1,a2)∈
+a×a, ﬁlter on the objects containing (a1,a2)in their
+trace: o/prime={o∈o|(a1,a2)∈trace(o)}
+f7filter on object types given a set of object types sot ⊆
+ot, ﬁlter on the objects having one of these types: o/prime=
+{o∈o|πotyp(o)∈sot}
+the ﬁltered log is deﬁned starting from o/primeas in def. 13.
+with the approaches presented in def. 12and def. 14,
+many ﬁlters available in the classic setting (endpoints, time-frame, attributes) are also made available in the object-centric
+setting.
+3.3 process discovery - oc-dfg
+some of the proposed approaches for object-centric pro-
+cess discovery on object-centric event logs follow a common
+schema: the object-centric event log is ﬂattened on the avail-
+able object types, a process model is discovered for theﬂattened logs, and then the results are collated together.
+in this section, we formalize one object-centric process
+model, the object-centric directly-follows multigraph (oc-
+dfg), and how to discover an object-centric directly-follows
+multigraph starting from an object-centric event log. we
+choose to present object-centric directly-follows multigraphsin the context of the current section because:
+•they can be straightforwardly discovered from object-
+centric event logs (ﬂattening - discovery of dfg -collating).
+•they can be easily annotated, given that no replay oper-
+ation is necessary.
+the formal deﬁnition of oc-dfg is presented in def.
+15. we see that an oc-dfg is a collection of nodes (the
+activities, plus one start and end node for each object type)
+and typed edges between the activities.
+deﬁnition 15 (object-centric directly-follows multigraph)
+an object-centric directly-follows multigraph (oc-dfg) isa tuple (a,ot,n,f,π
+fre qn,πfre qe)where:
+•ais a set of activities.
+•ot is a set of object types.
+•n=a∪{ns,ot|ot∈ot}∪{ne,ot|ot∈ot}is the set
+of nodes of the graph, which includes the set of activitiesand a start/end node for each object type ( ns,otandne,ot
+respectively).
+•f⊆n×ot×nis a set of typed arcs.
+•πfre qn:a/notarrowrightn assigns a frequency to the activities.
+•πfre qe:f/notarrowrightr+∪{0}assigns a frequency to the arcs.
+def. 16introduces the discovery of oc-dfg from object-
+centric event logs. essentially, the event log is ﬂattened for
+each object type, the operation of discovery of an object-
+centric directly-follows multigraph is performed for eachﬂattened log and the results are collated together to obtain
+the oc-dfg.
+deﬁnition 16 (discovery of an object-centric directly-
+follows multigraph) let lbe an object-centric event log as
+in def. 7. we deﬁne odfg (l)=(a,ot,n,f,π
+fre qn,
+πfre qe)where aand ot are the set of activities and object
+types of the log, respectively, nis obtained as in def. 15,
+and given n1,n2∈nwe have (n1,ot,n2)∈f⇐⇒
+(n1,n2)∈πf(dfg(fl(l,ot))), and dom (πfre qn)=
+dom(πfre qe)=∅ (no frequency is described in this deﬁ-
+nition).
+figure 1shows an example object-centric directly-follows
+multigraph. the example contains different object types and
+tells some information about the lifecycles of the different
+object types, including:
+•the lifecycle of the objects with type doctype_inquiry
+starts and ends with the activity “create quotation”.
+•the lifecycle of the objects with type doctype
+_quotation starts with a “create quotation” activity,
+which can end the lifecycle of the quotation or lead to
+the “create order” activity.
+•the lifecycle of the objects with type doctype_order
+allows for a “create order” activity, which can end the
+lifecycle of the order or lead to the “create goods move-
+ment” activity.
+def. 17deﬁnes a frequency-based ﬁltering on object-
+centric event logs. this is useful to simplify the model after
+the discovery, for example, by focusing on the mainstream
+behavior (most frequent activities and edges).
+deﬁnition 17 (frequency-based filtering) let (a,ot,n,
+f,πfre qn,πfre qe)be an object-centric directly-follows multi-
+graph. given mnand me, which are thresholds for the
+frequencies of the activities and edges respectively, we
+deﬁne the ﬁltered object-centric directly-follows multi-graph (a
+/prime,ot,n/prime,f/prime,π/prime
+fre qn,π/prime
+fre qe), where a/prime={a∈
+a|πfre qn(a)≥mn},n/prime=a/prime∪{ns,ot|ot∈ot}∪
+{ne,ot|ot∈ot},f/prime={f∈f|πfre qe(f)≥me}∩(n/prime×
+ot×n/prime),π/prime
+fre qn=πfre qn|a/prime,π/prime
+fre qe=πfre qe|f/prime.
+123a. berti, w. m. p. van der aalst
+fig. 1 an example
+object-centric directly-follows
+multigraph (complete view).
+the arc with number 1highlights the activity “createorder”, which shows all thestatistics for all the object typesof the event log. the arc withnumber 2 highlights the arcgoing from “create wmstransfer order” to “create goodsmovement”, which shows thestatistics for the threeannotations (e/o/ec)
+we see that in def. 16we do not introduce any frequency
+measure on the nodes/edges of the oc-dfg. in def. 18and
+def. 19, some frequency metrics are introduced for activities
+and paths, respectively, and the discovery of oc-dfgs can
+be modiﬁed with the inclusion of these measures. it should
+be noted that the type of models presented in [ 7] is equivalent
+to oc-dfgs with the choice of af1 as frequency metric for
+the activities and pf2 as frequency metric for the paths.3.4 activity/path metrics
+this section proposes some frequency metrics for activities
+and paths that can be computed starting from an object-
+centric event log. the measures are independent from the
+type of model but can be used to annotate the model (forexample, the oc-dfgs introduced in def. 15).
+123oc-pm: analyzing object...
+def. 18proposes some metrics at the activity level (num-
+ber of events, number of unique objects, number of totalobjects).
+deﬁnition 18 (activity frequency metrics) let lbe an
+object-centric event log as in def. 7.l e t a={π
+act(e)|e∈
+e}be the set of activities of l, and for a∈a,t h es e t
+ea={e∈e|πact(e)=a}of all the events having a
+as activity. we deﬁne the following metrics on an activity
+a∈a:
+af1 counting the number of events having a given activity
+e(a)=|ea|.
+af2 counting the number of unique objects related to events
+having a given activity uo(a)=| {o∈o|∃e∈ea,o∈
+πomap(e)}|
+af3 counting the number of total objects related to events
+having a given activity to(a)=| {(e,o)∈o|e∈
+ea∧o∈πomap(e)}|
+the metrics proposed in def. 18can be applied either on
+the overall log, or on the log ﬁltered on a speciﬁc object type(see ﬁlter 7 of def. 14). figure 1(1) shows the annotations
+(extracted using the tool proposed in sect. 4) on the activity
+“create order”. in the same box, we have different lines:
+•the name of the activity.
+•the three frequency annotations ( e,uo,to)o nt h e
+overall log.
+•the three frequency annotations on the log ﬁltered on the
+doctype_order object type (which is colored blue).
+•the three frequency annotations on the log ﬁltered on
+thedoctype_quotation object type (which is colored
+red).
+def. 19deﬁnes some metrics on the paths based on the
+lifecycle of the objects.
+deﬁnition 19 (paths frequency metrics) let lbe an object-
+centric event log as in def. 7.l e t a={π
+act(e)|e∈e}be
+the set of activities of l, and for a∈a,t h es e t ea={e∈
+e|πact(e)=a}of all the events having aas activity. let
+ot∈ot be an object type, and oot={o∈o|πotyp(o)=
+ot}be the set of all the objects having object type ot. we
+deﬁne the following metrics, depending on ot, provided two
+activities a1,a2∈a:
+pf1 counting the number of event couples which real-
+ize the path ec(a1,ot,a2)=| {(e1,e2)∈ea1×
+ea2|∃o∈oot,(e1,e2)∈lif(o)}|.
+pf2 counting the number of objects having the path in
+their lifecycle uo(a1,ot,a2)=| {o∈oot|(a1,a2)∈
+trace(o)}|.pf3 counting the number of total objects having the path
+in their lifecycle to(a1,ot,a2)=| {(e1,o,e2)∈
+ea1×oot×ea2|(e1,e2)∈lif(o)}|.
+figure 1(2) shows the annotations (extracted using the tool
+proposed in sect. 4) on the path of type doctype_delivery
+between the activities “create wms transfer order” and
+“create goods movement”. we see that the three proposed
+measures ( ec,uo,to) are all reported.
+as the last technique, we describe some approaches for
+conformance checking which are independent of a process
+model and depend solely on the veriﬁcation of properties onthe event log. def. 20presents formally the rules.
+deﬁnition 20 (conformance checking - model independent
+approaches) let lbe an object-centric event log as in def.
+7.l e t a={π
+act(e)|e∈e}be the set of activities of l, and
+ea={e∈e,πact(e)=a}. we present some possibilities
+for conformance checking on top of object-centric event logs:
+cc1 number of objects related to an activity fora∈a,
+we deﬁne for lb ,ub∈n(lower and upper bound for
+the number of related objects)
+conf num_obj (a,lb,ub)={e∈ea||πomap(e)|
+<lb∨|πomap(e)|>ub}
+as the set of events violating the rule.
+cc2 duration of the lifecycle given lb ,ub∈r+∪{0},w e
+deﬁne:
+conf dur_lif(lb,ub)={o∈o|
+πtime(lif(o)(|lif(o)|))−πtime(lif(o)(1)) < lb∨
+πtime(lif(o)(|lif(o)|))−πtime(lif(o)(1)) > ub}
+as the set of objects violating the rule.
+the rule cc1 is useful to identify situations where an
+excessive number of objects is worked by an activity. forexample, we can think of an activity “approve expense
+report” which usually involves a limited number of expense
+reports. if an event with the activity “approve expensereport” involves 50 different reports, cc1 is useful to iden-tify the given event. the rule cc2 is helpful in identifying
+objects with an extremely long lifecycle. as an example, if
+a ticket is supposed to be approved in one week, while it isstill not closed after one month, cc2 is useful for identifying
+the given ticket (object).
+figure 2proposes a visualization of the rule cc1 and
+fig. 3provides a visualization of the rule cc2. for both, we
+assume that the event log is ﬁltered on the different object
+types, and the rules are applied to the ﬁltered logs. for cc1,we calculate for each activity the average μand the standard
+123a. berti, w. m. p. van der aalst
+fig. 2 conformance checking based on the number of related objects (in the web-based tool proposed in sect. 4.1)
+fig. 3 conformance checking based on the objects lifecycle duration (in the web-based tool proposed in sect. 4.1)
+deviation σof the number of related objects for the events
+of the given activity. then, we assume that every event of
+the given activity having a number of related objects thatis lower than μ−ζ∗σor higher than μ+ζ∗σ(where
+ζ∈r
++∪{0}is a positive number) are anomalous8.f o r
+cc2, we calculate for each object the average μand the
+standard deviation σof the duration of the lifecycle of the
+object. then, we assume that every object having a duration
+of the lifecycle that is lower than μ−ζ∗σor higher than
+μ+ζ∗σ(where ζ∈r+∪{0}is a positive number) are
+anomalous9. for both rules, it is possible to ﬁlter the object-
+8choosing ζ=1 includes all the events for which the number of
+related objects is more deviant than one standard deviation from theaverage. choosing ζ=6 includes all the events for which the number
+of related objects is more deviant than six standard deviations from theaverage.
+9choosing ζ=1 includes all the objects for which the duration of
+the lifecycle is more deviant than one standard deviation from thecentric event log, keeping respectively only the anomalous
+events and the anomalous objects.
+4 tool
+this section presents two tool supports for the process discov-
+ery techniques proposed in this paper: a web-based tool and
+an implementation on top of the prom process mining frame-
+work. these are available and described at https://ocpm.info .
+along with process discovery, both tools support ﬂatteningand ﬁltering. in particular, the web-based tool also supports
+conformance checking and statistics on object-centric event
+logs.
+footnote 9 continued
+average. choosing ζ=6 includes all the objects for which the duration
+of the lifecycle is more deviant than six standard deviations from theaverage (six sigma principle).
+123oc-pm: analyzing object...
+fig. 4 overall view over the
+process model page of the
+proposed web-based tool
+4.1 oc-pm (web-based tool)
+we present a novel tool for object-centric process mining,
+oc-pm, which enables the object-centric process mininganalyses presented in this paper. the tool is available at the
+address https://ocpm.info and consists of html/javascriptcontent that can be downloaded and promptly run in the
+browser without any backend. the ﬁrst page of the tool
+enables the upload of an object-centric event log in the json-ocel or xml-ocel formats
+10.
+10some of these logs are available at the address http://www.ocel-
+standard.org/
+123a. berti, w. m. p. van der aalst
+the tool consists of different pages, including the process
+schema (which visualizes a process model with the possi-
+bility to interact with it), the events page (which visualizes
+the list of events contained in the object-centric event log,
+with the possibility to focus on the events belonging to thelifecycle of an object), the objects page (the list of objects of
+the log having a given object type is shown, along with their
+lifecycle, the duration of the lifecycle, and other statistics),
+thestatistics page (showing some generic graphs including
+the number of related objects per object type, the number of
+events per activity, the number of related objects per event,
+the distribution of the length of the lifecycle of objects, thedistribution of the events during the time, the dotted chart),
+theconformance page (providing some conformance check-
+ing functionalities).
+figure 4shows the process model page of the proposed
+tool. the page is organized as follows:
+•the top menu presents the different pages/features of the
+application.
+•the second menu presents some options, shown in fig.
+4(1), including the type of the process model:
+– object-centric directly-follows multigraphs (described
+in sect. 3.3).
+– object-centric petri nets [ 8]. in particular, the dec-
+orations are obtained using the token-based replay
+technique described in [ 9].
+and the type of annotation:
+– with the e/ec option, the process model is annotated
+using the measure efor the activities and the measure
+ec for the edges.
+– with the uo option, the process model is annotated
+using the measure uo for the activities and the edges.
+– with the tooption, the process model is annotated
+using the measure to for the activities and the edges.
+moreover, the ﬁltering on object types, along with a ﬁlters
+chain functionality (which shows the active ﬁlters, withthe possibility to remove them), is implemented in this
+menu (see fig. 4(2-3)).
+•the left panel shows the number of events, unique
+objects, and total objects of the overall log (see def. 8).
+moreover, a sliding functionality is offered, keeping only
+the most frequent activities/edges (this is done for oc-
+dfgs using the approach described in def. 17).
+•the right panel shows the process model.
+the process model page permits interaction with the activ-
+ities and the edges. the ﬁltering approaches f1-7 presented
+in def. 14are all implemented in the tool. figure 4(4-5)
+shows the interaction menus when an activity and an edgeare clicked, respectively. it is possible to apply the ﬁltering,or to observe the list of objects related to the activity and
+edge.
+figure 5and 6show some of the statistics that can be
+computed on object-centric event logs. among the additional
+features, the download of the ﬁltered event log in the json-
+ocel or xml-ocel is available, and the possibility toﬂatten the object-centric event log to a traditional event log
+saved in the xes format is offered (fig. 7).
+4.2 oc-pm (prom framework)
+we present another implementation of the process discov-
+ery techniques proposed in this paper, on top of the popularprocess mining framework prom 6.x
+11. the implementa-
+tion is proposed in the package ocelstandard12, which
+can be downloaded using the package manager of prom.an object-centric event log, in the json-ocel or xml-
+ocel formats, can be imported in prom using the import
+button on the top right. after importing, some object-centricprocess mining features are available on top of the object-centric event log: ﬂattening to an object type and process
+discovery (object-centric directly-follows multigraphs and
+object-centric petri nets
+13). opening the process discovery
+plugin, a visualization of an object-centric directly-follows
+multigraph with a default choice for the activity/path sliders
+is proposed. the notation is analogous to the one of the web-based tool presented in the previous subsection. the user can
+interact with the diagram by clicking on the nodes (activities)
+and edges of the directly-follows multigraph. the values forthe activity/path sliders can be changed on the top panel. theuser can also apply some ﬁlters on the object-centric event
+log starting from the top panel.
+5 related work
+this section presents the related work on object-centric pro-
+cess mining.
+5.1 artifact-centric approaches
+artifact-centric process mining is based on deﬁning the
+properties of key business-relevant entities called business
+artifacts. in particular, the proposed techniques focus on themodeling of the single artifacts and their interactions. in [ 10],
+two-phases conformance checking approach is proposed, in
+which the conformance is checked both in the single artifacts
+11https://www.promtools.org/doku.php?id=prom611
+12https://svn.win.tue.nl/repos/prom/packages/ocelstandard/
+trunk/
+13the decorations are obtained using the token-based replay technique
+described in [ 9].
+123oc-pm: analyzing object...
+fig. 5 statistic proposed in the
+web-based tool: number of
+objects per type
+fig. 6 statistic proposed in the web-based tool: length of the lifecycle
+both in the interactions between them. in [ 11], an approach
+to discover the artifacts and their lifecycle from a relational
+database is proposed. this is done by identifying the arti-
+facts and extracting event logs for each artifact. in [ 12], the
+discovery of artifact-centric models on top of the sap erpsystem is discussed. a limitation of these approaches is the
+lack of comprehensive tool support and the dependence on a
+relational database schema.5.2 object-centric behavioral constraint models
+in [ 13], the object-centric behavioral constraint models
+(ocbc) are proposed as declarative models with rich seman-tics that can describe the interaction between the differententities of a database and the activities recorded in an object-
+centric event log with the features described in [ 14]. however,
+the discovery of the rich set of constraints and the proposedevent log format (storing the entire state of the object model
+for each event) have scalability issues.
+123a. berti, w. m. p. van der aalst
+fig. 7 implementation of the object-centric process discovery techniques as plug-in of the prom process mining framework
+5.3 petri nets-based approaches
+colored petri nets [ 15] have been proposed in the ’80 and
+have a wide range of applications. colored petri nets allowthe storage of a data value for each token. the data value
+is called the token color. every place contains tokens of
+one type, which is referred to as the color set of the place.moreover, expressions are deﬁned at the arc level for con-
+sumption/production purposes, and some guards can control
+the execution of the transitions. given their rich semantics,the proposal of a process discovery algorithm able to man-age colors, color sets, expressions, and guards is an enormous
+challenge. in [ 16], colored petri nets are extended (with the
+name catalog-nets) to accommodate processes with severalcases that need to co-evolve ﬂexibly.
+in [17], three concepts are provided to describe the behav-
+ior of processes with many-to-many interactions:
+•unbounded dynamic synchronization of transitions.
+•cardinality constraints limit the size of the synchroniza-
+tion.
+•correlation of the token identities based on history.
+5.4 graph and process querying
+in [ 18,19], the usage of graph databases for the storage,
+querying, and aggregation of object-centric event data is pro-posed. an object-centric event log is inserted in the graph bycreating nodes for the events, objects, object types, attributes
+of the event log, and connections are created based on the
+content of the log. in [ 20], an algorithm for the discovery
+of directly-follows graphs on top of graph databases is pro-posed. however, the scalability of graph databases on process
+mining tasks still needs to be investigated thoroughly. in [ 20],
+the execution time of process mining tasks in a popular graphdatabase (neo4j) is shown to be disappointing.
+in [21], a query language to analyze the execution of busi-
+ness processes is proposed. an approach for ontology-basedextraction of event data has been proposed in [ 22].
+5.5 flattening-based process discovery
+a discovery operation can be deﬁned by ﬂattening (see def.
+11) the object-centric event log into the different object types,
+discovering traditional process models (as an example, adfg or a petri net) on top of the ﬂattened logs and thencollating the results together. different process models can
+serve as building blocks and have been proposed in the liter-
+ature:
+•object-centric directly-follows graphs :i n[ 7], the usage
+of object-centric directly-follows multigraphs is pro-posed to describe the activities of an object-centric event
+log, and the interactions between them.
+•object-centric petri nets :i n[ 8], object-centric petri nets
+have been proposed to support a subset of the semantics
+123oc-pm: analyzing object...
+of colored petri nets. a discovery approach is proposed
+starting from object-centric event logs, in which a ﬂat-tened log is obtained for each object type, a mainstream
+process discovery algorithm (such as the alpha miner or
+the inductive miner) is applied on top of the ﬂattenedlog, and the petri nets are then collated together into anobject-centric petri net. in the model, every place and arc
+is associated with a unique object type, and an arc can be
+allowed to consume/produce a single or multiple tokens.
+5.6 other approaches
+some object-centric process models have been proposed in
+[23,24], however the tool support/assessment is lacking.
+the relationship between interconnected processes has
+been investigated. in [ 25], a token-based interaction mon-
+itoring framework is proposed. in [ 26], instance-spanning
+constraints are discovered from event logs, which regulatethe start of the process instances. in [ 27], object-state transi-
+tions are proposed to improve business process intelligence.
+although all these approaches are useful for conformance
+checking, they do not result in a comprehensive processmodel. in [ 28], multi-instance mining has been proposed,
+along with an implementation in the prom framework that
+can show the interaction between the states visually.
+6 conclusion
+the current paper describes a set of object-centric processmining techniques which can be used to analyze object-centric event logs extracted from mainstream informationsystems (such as sap erp). the deﬁnition of object-centric
+event logs, and the introduction of the ocel format, per-
+mit the introduction of some operations both at the formallevel both in tools/libraries supporting ocel. the opera-
+tions of ﬂattening (projecting the object-centric event log to
+a traditional event log after the choice of an object type)and ﬁltering (activities, paths, endpoints, timeframe, object
+types) are important for the development of more advanced
+object-centric process mining techniques. in particular, theﬂattening operation is an essential operation for process dis-covery.
+the paper also proposes an object-centric process model
+(the object-centric directly-follows multigraph, oc-dfg),which can be straightforwardly discovered from object-
+centric event logs, and easily annotated with frequency
+measures. moreover, several frequency measures for theactivities and the paths of the event log are introduced,
+which can be used as annotations for oc-dfgs and other
+types of object-centric process models. eventually, someconformance checking approaches for object-centric eventlogs are introduced, which verify some properties of the
+events/objects of the log.
+comprehensive tool support, which is available as a web
+interface and as plugin in the prom framework, is offered for
+the ingestion, exploration, and discovery of oc-dfgs and ofobject-centric petri nets [ 8], statistical analysis, and confor-
+mance checking. to the best of the authors’ knowledge, this
+is the ﬁrst attempt to provide comprehensive tool support in
+the object-centric setting.
+there are several points of interest in object-centric pro-
+cess mining not discussed in the current paper, including
+a more precise visualization of the interactions betweendifferent objects and model-based conformance checking.
+moreover, an assessment of the proposed techniques on real-
+life event logs is missing from the current paper. as thediscipline is still young, these points can be developed infuture work.
+funding open access funding enabled and organized by projekt
+deal.
+open access this article is licensed under a creative commons
+attribution 4.0 international license, which permits use, sharing, adap-tation, distribution and reproduction in any medium or format, aslong as you give appropriate credit to the original author(s) and thesource, provide a link to the creative commons licence, and indi-cate if changes were made. the images or other third party materialin this article are included in the article’s creative commons licence,unless indicated otherwise in a credit line to the material. if materialis not included in the article’s creative commons licence and yourintended use is not permitted by statutory regulation or exceeds thepermitted use, you will need to obtain permission directly from the copy-right holder. to view a copy of this licence, visit http://creativecomm
+ons.org/licenses/by/4.0/ .
+references
+1. van der aalst, w.m.p .: process mining - data science in action,
+second edition. springer, new y ork city (2016). https://doi.org/
+10.1007/978-3-662-49851-4
+2. van der aalst, w.m.p .: object-centric process mining: dealing
+with divergence and convergence in event data. in: ölveczky,p .c., salaün, g. (eds.) software engineering and formal meth-
+ods - 17th international conference, sefm 2019, oslo, norway,
+september 18-20, 2019, proceedings. lecture notes in computerscience, vol. 11724, pp. 3–25. springer, new y ork city (2019).https://doi.org/10.1007/978-3-030-30446-1_1
+3. adams, j.n., van der aalst, w.m.p .: oc π: object-centric process
+insights. in: bernardinello, l., petrucci, l. (eds.) application andtheory of petri nets and concurrency - 43rd international con-ference, petri nets 2022, bergen, norway, june 19-24, 2022,proceedings. lecture notes in computer science, vol. 13288, pp.139–150. springer, new y ork (2022). https://doi.org/10.1007/978-
+3-031-06653-5_8
+4. ghahfarokhi, a.f., park, g., berti, a., van der aalst, w.m.p .:
+ocel: a standard for object-centric event logs. in: bellatreche,l . ,d u m a s ,m . ,k a r r a s ,p . ,m a t u l e v i c i u s ,r . ,a w a d ,a . ,w e i -dlich, m., ivanovic, m., hartig, o. (eds.) new trends in databaseand information systems - adbis 2021 short papers, doc-
+123a. berti, w. m. p. van der aalst
+toral consortium and workshops: doing, simpda, madeisd,
+megadata, caons, tartu, estonia, august 24-26, 2021, proceed-ings. communications in computer and information science, vol.1450, pp. 169–175. springer, new y ork city (2021). https://doi.
+org/10.1007/978-3-030-85082-1_16
+5. berti, a., farhang, a., park, g., van der aalst, w.m.p .: a scalable
+database for the storage of object-centric event logs. in: icpm 2021doctoral consortium and demo track 2021. ceur workshop pro-ceedings, vol. 3098, pp. 19–20. ceur-ws.org, sun site centraleurope (2021). http://ceur-ws.org/v ol-3098/demo_137.pdf
+6. berti, a., van der aalst, w.m.p .: starstar models: using events at
+database level for process analysis. in: ceravolo, p ., lópez, m.t.g.,van keulen, m. (eds.) proceedings of the 8th international sym-posium on data-driven process discovery and analysis (simpda2018), seville, spain, december 13-14, 2018. ceur workshopproceedings, vol. 2270, pp. 60–64. ceur-ws.org, sun site cen-tral europe (2018). http://ceur-ws.org/v ol-2270/short3.pdf
+7. berti, a., van der aalst, w.m.p .: extracting multiple viewpoint
+models from relational databases. in: ceravolo, p ., van keulen,m., lópez, m.t.g. (eds.) data-driven process discovery andanalysis - 8th ifip wg 2.6 international symposium, simpda2018, seville, spain, december 13-14, 2018, and 9th international
+symposium, simpda 2019, bled, slovenia, september 8, 2019,
+revised selected papers. lecture notes in business informationprocessing, vol. 379, pp. 24–51. springer, new y ork city (2019).https://doi.org/10.1007/978-3-030-46633-6_2
+8. van der aalst, w.m.p ., berti, a.: discovering object-centric petri
+nets. fundam. informaticae 175(1–4), 1–40 (2020). https://doi.org/
+10.3233/fi-2020-1946
+9. berti, a., van der aalst, w.m.p .: a novel token-based replay tech-
+nique to speed up conformance checking and process enhancement.trans. petri nets other model. concurr. 15, 1–26 (2021). https://
+doi.org/10.1007/978-3-662-63079-2_1
+10. fahland, d., de leoni, m., van dongen, b.f., van der aalst, w.m.p .:
+behavioral conformance of artifact-centric process models. in:abramowicz, w. (ed.) business information systems - 14th inter-national conference, bis 2011, poznan, poland, june 15-17, 2011.proceedings. lecture notes in business information processing,vol. 87, pp. 37–49. springer, new y ork city (2011). https://doi.
+org/10.1007/978-3-642-21863-7_4
+11. nooijen, e.h.j., van dongen, b.f., fahland, d.: automatic dis-
+covery of data-centric and artifact-centric processes. in: rosa,m.l., soffer, p . (eds.) business process management workshops -bpm 2012 international workshops, tallinn, estonia, september 3,2012. revised papers. lecture notes in business information pro-cessing, vol. 132, pp. 316–327. springer, new y ork city (2012).https://doi.org/10.1007/978-3-642-36285-9_36
+12. lu, x., nagelkerke, m., van de wiel, d., fahland, d.: discovering
+interacting artifacts from erp systems. ieee trans. serv. comput.8(6), 861–873 (2015). https://doi.org/10.1109/tsc.2015.2474358
+13. li, g., de carvalho, r.m., van der aalst, w.m.p .: object-centric
+behavioral constraint models: a hybrid model for behavioral anddata perspectives. in: hung, c., papadopoulos, g.a. (eds.) pro-ceedings of the 34th acm/sigapp symposium on appliedcomputing, sac 2019, limassol, cyprus, april 8-12, 2019, pp.48–56. acm, new y ork (2019). https://doi.org/10.1145/3297280.
+3297287
+14. li, g., de murillas, e.g.l., de carvalho, r.m., van der aalst,
+w.m.p .: extracting object-centric event logs to support processmining on databases. in: mendling, j., mouratidis, h. (eds.) infor-mation systems in the big data era - caise forum 2018, tallinn,estonia, june 11-15, 2018, proceedings. lecture notes in businessinformation processing, vol. 317, pp. 182–199. springer, new y orkcity (2018). https://doi.org/10.1007/978-3-319-92901-9_1615. peterson, j.l.: a note on colored petri nets. inf. pro-
+cess. lett. 11(1), 40–43 (1980). https://doi.org/10.1016/0020-
+0190(80)90032-0
+16. ghilardi, s., gianola, a., montali, m., rivkin, a.: petri nets with
+parameterised data - modelling and v eriﬁcation. in: fahland, d.,ghidini, c., becker, j., dumas, m. (eds.) business process manage-ment - 18th international conference, bpm 2020, seville, spain,september 13-18, 2020, proceedings. lecture notes in computerscience, vol. 12168, pp. 55–74. springer, new y ork city (2020).https://doi.org/10.1007/978-3-030-58666-9_4
+17. fahland, d.: describing behavior of processes with many-to-
+many interactions. in: donatelli, s., haar, s. (eds.) application andtheory of petri nets and concurrency - 40th international confer-ence, petri nets 2019, aachen, germany, june 23-28, 2019,proceedings. lecture notes in computer science, vol. 11522, pp.3–24. springer, new y ork city (2019). https://doi.org/10.1007/
+978-3-030-21571-2_1
+18. esser, s., fahland, d.: storing and querying multi-dimensional
+process event logs using graph databases. in: francescomarino,c.d., dijkman, r.m., zdun, u. (eds.) business process manage-ment workshops - bpm 2019 international workshops, vienna,austria, september 1-6, 2019, revised selected papers. lecture
+notes in business information processing, vol. 362, pp. 632–644.
+springer, new y ork city (2019). https://doi.org/10.1007/978-3-
+030-37453-2_51
+19. esser, s., fahland, d.: multi-dimensional event data in graph
+databases. j. data semant. 10(1), 109–141 (2021). https://doi.org/
+10.1007/s13740-021-00122-1
+20. jalali, a.: graph-based process mining. in: leemans, s.j.j.,
+leopold, h. (eds.) process mining workshops - icpm 2020 inter-national workshops, padua, italy, october 5-8, 2020, revisedselected papers. lecture notes in business information process-ing, vol. 406, pp. 273–285. springer, new y ork city (2020). https://
+doi.org/10.1007/978-3-030-72693-5_21
+21. beheshti, s., benatallah, b., nezhad, h.r.m., sakr, s.: a
+query language for analyzing business processes execution. in:rinderle-ma, s., toumani, f., wolf, k. (eds.) business processmanagement - 9th international conference, bpm 2011, clermont-ferrand, france, august 30 - september 2, 2011. proceedings.lecture notes in computer science, vol. 6896, pp. 281–297.springer, new y ork city (2011). https://doi.org/10.1007/978-3-
+642-23059-2_22
+22. calvanese, d., montali, m., syamsiyah, a., van der aalst,
+w.m.p .: ontology-driven extraction of event logs from rela-tional databases. in: reichert, m., reijers, h.a. (eds.) businessprocess management workshops - bpm 2015, 13th internationalworkshops, innsbruck, austria, august 31 - september 3, 2015,
+revised papers. lecture notes in business information processing,
+vol. 256, pp. 140–153. springer, new y ork city (2015). https://doi.
+org/10.1007/978-3-319-42887-1_12
+23. steinau, s., künzle, v ., andrews, k., reichert, m.: coordinating
+business processes using semantic relationships. in: loucopou-los, p ., manolopoulos, y ., pastor, o., theodoulidis, b., zdravkovic,j. (eds.) 19th ieee conference on business informatics, cbi 2017,thessaloniki, greece, july 24-27, 2017, v olume 1: conferencepapers, pp. 33–42. ieee computer society, new y ork city (2017).https://doi.org/10.1109/cbi.2017.53
+24. steinau, s., andrews, k., reichert, m.: the relational process
+structure. in: krogstie, j., reijers, h.a. (eds.) advanced informa-tion systems engineering - 30th international conference, caise2018, tallinn, estonia, june 11-15, 2018, proceedings. lecturenotes in computer science, vol. 10816, pp. 53–67. springer, newy ork city (2018). https://doi.org/10.1007/978-3-319-91563-0_4
+25. li, c., ge, j., li, z., huang, l., yang, h., luo, b.: monitoring
+interactions across multi business processes with token carried data.
+123oc-pm: analyzing object...
+ieee trans. serv. comput. 12(6), 941–954 (2019). https://doi.org/
+10.1109/tsc.2016.2645690
+26. winter, k., stertz, f., rinderle-ma, s.: discovering instance and
+process spanning constraints from process execution logs. inf. syst.89, 101484 (2020). https://doi.org/10.1016/j.is.2019.101484
+27. herzberg, n., meyer, a., weske, m.: improving business process
+intelligence by observing object state transitions. data knowl. eng.98, 144–164 (2015). https://doi.org/10.1016/j.datak.2015.07.008
+28. van eck, m.l., sidorova, n., van der aalst, w.m.p .: multi-
+instance mining: discovering synchronisation in artifact-centricprocesses. in: daniel, f., sheng, q.z., motahari, h. (eds.) businessprocess management workshops - bpm 2018 international work-shops, sydney, nsw, australia, september 9-14, 2018, revisedpapers. lecture notes in business information processing, vol.342, pp. 18–30. springer, new y ork city (2018). https://doi.org/
+10.1007/978-3-030-11641-5_2publisher’s note springer nature remains neutral with regard to juris-
+dictional claims in published maps and institutional afﬁliations.
+123

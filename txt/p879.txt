@@ -1,0 +1,503 @@
+discovering queues from event logs with
+varying levels of information
+arik senderovich2, sander j.j. leemans1, shahar harel2, avigdor gal2,
+avishai mandelbaum2, and wil m.p. van der aalst1
+1eindhoven university of technology, the netherlands;2technion, haifa, israel
+abstract. detecting and measuring resource queues is central to busi-
+ness process optimization. queue mining techniques allow for the iden-
+tication of bottlenecks and other process ineciencies, based on event
+data. this work focuses on the discovery of resource queues. in par-
+ticular, we investigate the impact of available information in an event
+log on the ability to accurately discover queue lengths, i.e. the number
+of cases waiting for an activity. full queueing information, i.e. times-
+tamps of enqueueing and exiting the queue, makes queue discovery triv-
+ial. however, often we see only the completions of activities. therefore,
+we focus our analysis on logs with partial information, such as missing
+enqueueing times or missing both enqueueing and service start times.
+the proposed discovery algorithms handle concurrency and make use
+of statistical methods for discovering queues under this uncertainty. we
+evaluate the techniques using real-life event logs. a thorough analysis of
+the empirical results provides insights into the inuence of information
+levels in the log on the accuracy of the measurements.
+1 introduction
+detecting and measuring resource queues is central to business processes. re-
+source queues reveal bottlenecks and violations of service-level agreements. more-
+over, sojourn times and delays are basic key performance indicators (kpi) that
+cannot be accurately calculated without queueing measurements. process min-
+ing is a research eld which aims to extract such performance information from
+event logs [1]. queue mining can be seen as a particular class of process mining
+techniques focusing on the use of queueing theory to characterize queues from
+data and facilitate performance analytics [2]. existing queue mining approaches
+consider event logs in which full queueing-related information is readily avail-
+able. such information includes timestamps of enqueue and service start events.
+however, for real-life processes, queueing information is often unavailable in the
+event log. thus, previous work on the analysis of resource behavior discovered
+queueing information from logs with missing start timestamps, with the use of
+extensive resource information [3]. moreover, both [2, 3] did not consider complex
+process models with parallelism, but rather worked at the perfectly-ordered log
+level. and in [4], missing timestamps were imputed by using a class of stochas-
+tic petri nets. however, they consider a single timestamp per activity, without
+dierentiating activity times from queues.in this paper, we explore the inuence of available information in the log
+on the accuracy of the aforementioned queue mining techniques. the event logs
+that we consider are general and accommodate a life cycle of three stages per
+activity: (1) in transition, (2) in queue, and (3) in service. to measure queues,
+even in case of missing timestamps for enqueueing/service start information, we
+assume that a process model containing the control ow of the process is given.
+such a model can be discovered from the event log using a process discovery
+algorithm, e.g. in the form of a process tree [5] and subsequently extend the
+control-ow perspective with queueing measurements. the discovered model en-
+ables the extraction of a queue log, which (ideally) contains activity instances
+with the corresponding enqueue, start, and end timestamps.
+our methodology for measuring queue lengths, i.e. the number of work items
+in queue at a given point in time, starts with a queue log. first, we cluster
+the log according to durations (e.g. sojourn time), and get clusters with similar
+durations, and therefore loads. then, we use these loads to t a phase type
+distribution to life cycle durations with the use of bayesian inference. for the
+evaluation of our proposed approach we applied our techniques to three real-
+life event logs: two call center logs and a hospital log. the results show that the
+queue length can be estimated using only partial information from the event log.
+furthermore, the accuracy of our techniques depends on the amount of available
+information, and on the parameters of our techniques.
+the remainder of this paper is organized as follows. section 2 denes the
+event log, the role of process models in queue discovery, and the levels of available
+information that we assume on our event logs. moreover, the section states the
+main problem that we solve in this paper. section 3 presents our methodology for
+queue length discovery. section 4 presents our experiments and discusses their
+results. section 5 concludes the paper.
+2 information levels in event logs & process models
+in this section we dene event logs and an activity life-cycle model. we then
+oer a classication of the levels of information that we consider in the event
+logs, and state the main problem that we solve in this paper.
+2.1 event logs
+anevent loglis a multi-set of traces, where a trace represents a single case, e.g.,
+a customer or a patient visiting a hospital. a trace consists of several activity
+instances , which represent pieces of work performed for the trace. consider the
+process model presented in figure 1. a trace for a patient in this process may
+include blood draw and doctor examination:
+h:::blood draw11:27
+start;blood draw11:29
+complete;exam11:45
+enqueue;exam12:02
+start;exam12:15
+complete:::i:
+each of the above events contains a timestamp at which the event occurred, and
+the life-cycle transition, which denotes a change of state for the activity instance.registration nurse physician check-in 
+exam check-out 
+blood draw get results and and fig. 1. an examination process in an outpatient hospital; activity life-cycle
+the life-cycle transitions of the last three events, belonging to the activity in-
+stance `exam' is as follows: the patient reports at the waiting room and enters a
+queue ( enqueue ); after a while she is invited into the examination room ( start );
+and nally her examination nishes ( complete ). at the bottom of figure 1 the
+activity life-cycle is illustrated. we assume that the transition initiate is not
+available explicitly in the event log, but that it coincides with the last completed
+activity instance. in our example, at 11:29, after blood draw completion, the
+examination was initiated and the patient started transit (she walked towards
+the examination room). in this paper, we aim to estimate performance measures
+if not all timestamps are present.
+2.2 process models
+to infer the initiate life-cycle transition, we assume it coincides with the last
+completed activity instance. however, this is not necessarily the activity instance
+of which the completion time is the closest. for instance, in our example, a lab
+test is processed for results in parallel with the examination activity. this would
+obviously have no inuence on the transit time of the patient, as she has to walk
+from the laboratory to the examination room. even though the lab results are
+ready before she reaches the room, it does not imply that she started walking
+later. therefore, knowledge of the control-ow of the process is required, i.e. the
+initiation time of an activity is the last completed non-parallel activity instance .
+in our experiments, we used process trees [6] because there are powerful discovery
+techniques available for this class of models, and the models are guaranteed to be
+deadlock and livelock free. process trees provide information whether activities
+are parallel by their structure. other formalisms such as petri nets and bpmn
+might provide this information as well.
+our approach assumes the presence of a process model to infer initiation
+events, to identify activity instances and to deal with deviations [7]. we do not
+assume that the event log describes activity instances. therefore, in section 3.1,we introduce a method to obtain activity instances from an event log and a
+process model, and show how we handle with process deviations.
+2.3 levels of information
+not all event logs encountered in practice contain timestamps for all life-cycle
+transitions. throughout the paper, we investigate the ability to measure queues
+lengths, as a function of the available information. more formally, let i=fe;s;cg
+be the event types that an event log may contain with e;s;c corresponding to
+enqueue, start and complete events, respectively. the level of information that
+is available in a given event log can be described by ii. we consider the
+following three levels of information:
+{fcgactivities and completion timestamps; e.g.,ha11:38
+completei.
+{fs,cgactivities, start and completion timestamps; e.g.,ha11:35
+start;a11:38
+completei.
+{fe,s,cgactivities, enqueue, start, and completion timestamps; e.g.,
+ha11:30
+enqueue;a11:35
+start;a11:38
+completei.
+for the latter level of information ( fe;s;cg), queues in front of activities can
+simply be computed when a suitable process model is at hand. in the remainder
+of the section we state the main problem that we solve in the paper.
+2.4 problem statement
+in business processes, cases queue waiting for resources rather than for activities.
+however, in this work, we assume not to have enough data to describe the
+resource perspective completely. therefore, we aim at measuring queues in front
+of activities, which is, in a sense, a more informative view than the one that
+would be provided by the resource perspective, since we also incorporate the
+notion of control-ow.
+letmbe a process model with ambeing the set of activities present in
+the model and the log. denote lithe event log with information level i, and
+let [0;t] be the time interval such that 0 is set to be the time of the rst
+measured activity in the log and tbeing the time of the last measured activity
+(we use a continuous notation for simplicity). for simplicity we shall assume
+that the exogenous arrival time of each case is known. the queue measurement
+- activities (qma) problem receives a model m, and a log, li. the solution to
+the problem is a quantier for queue lengths (exact or approximated) for each
+activity in the model at any point in time, namely ~qa(t); a2am; t2[0;t]:
+for example, in [2], this problem is solved by trivially deriving the queue length
+from a full information log ( fe;s;cg).
+3 methodology and algorithms
+this section describes our methodology and algorithms for solving the qma
+problem. the approach is shown in figure 2: the rst step in the methodologyextract queue logs 
+event log clustering-based 
+load inference (cli)phase-type fitting 
+(phf)
+model fig. 2. a methodology for queue measurement in logs with partial information
+is to extract a queue log per activity, containing the execution information for
+that activity. the queue log then serves as an input to a clustering step, which
+in turn is used both for load inference, and for a rst-attempt measurement
+of the queue length. the result of the clustering algorithm is the input for our
+statistical method, namely, the phase type tting method, which ts a stochastic
+model to the event log via bayesian inference. below, we present the technique
+for extraction of a queue log, dene queueing quantication, and present our
+techniques for measuring queue lengths.
+3.1 extracting queue logs
+the rst step is to split the event log, li, into several activity queue logs, la,
+one for each activity, a2a m. an activity queue log describes the execution
+information for all activity instances of that activity, namely for each execution
+ofain the event log, a queue log contains all activity instances of athat were
+recorded in the event log [2]. for simplicity, we assume that each activity is
+performed by a single resource type, and the resource type performs a single
+activity. therefore, we may consider a queue log per each activity separately.
+obtaining queue logs requires a few steps. first, deviations between the event
+log,li, and model, m, should be removed. then, activity instances should
+be derived from the events in li. this step yields the timestamps of enqueue ,
+start andcomplete . subsequently, activity instances are be mapped to activities,
+according to m. last, the initiate timestamps should be derived from the activity
+instances and m. in this step, knowledge of concurrent activities is necessary.
+we perform the rst three steps by computing an optimal alignment, cf. [7]. the
+last step is performed by inspection of m, and detection of parallel activities.
+note that the relation between traces and activity instances does not exist in
+the resulting queue log, and therefore we regard each activity instance as an
+independent queueing entity.
+3.2 notation and queue quantication
+in this part, we present notation that we use when describing our methods and
+algorithms. then, we provide a quantication framework for ~qa(t), which is the
+log-based solution to the qma problem.letta
+jbe a random function that maps activity instances from log
+lato timestamps of the jth element of the life-cycle denoted j2
+finit;enqu;start;comp g. when a timestamp for element jis available, the ran-
+dom functions becomes deterministic, denoted a
+j:la!ts. note that for
+the considered information levels, comp is assumed to be know, while initis
+obtained during the extraction of the queue log.
+we denote xa
+n(t);t2[0;t] the stochastic process that corresponds to the
+cumulative time that the nth activity instance spends in aat timet, namely
+xa
+n(t) =t ta
+init(n). the realization of xa
+n(t), denotedxa
+n(t), can be obtained
+by the value t a
+init(n), i.e. the time spent between initiation and t.
+an activity instance nis in queue for aat timetwhenever the follow-
+ing probabilistic event holds: qa
+n(t) =fta
+enqu(n)t ta
+start(n)g. denote
+1qan(t)jxa
+n(t)> xa
+n(t), the random variable that indicates whether activity in-
+stancenis enqueued in aat timet, conditioned on a cumulative length of stay
+ofxa
+n(t). clearly, when the log contains the enqueue timestamp the indicator is
+constant (either zero or one), since the values of a
+enqu(n);a
+start(n) are known.
+for the general case, of various levels of information, we dene the following
+quantity to measure queue-lengths:
+~qa(t) =x
+n2lae[ 1qan(t)jxa
+n(t)>xa
+n(t)]; (1)
+for every activity and time in the log, with ebeing the expectation of a random
+variable. in other words, we quantify the queue length in-front of activity as the
+sum of expected values of the indicator. the quantier for queue length, ~qa(t),
+can be written as follows:
+e[ 1qan(t)jxa
+n(t)>xa
+n(t)] =p(qa
+n(t)jxa
+n(t)>xa
+n(t)): (2)
+for eachn2la, the right-hand side part of equation (2) is quantied in the
+techniques that follow.
+3.3 clustering-based load inference
+the idea behind the clustering step is to categorize each trace of the activity
+queue log,la, according to the observed total durations, i.e. a
+comp(n) a
+init(n),
+8n2la. for the completes only information level ( fcg) total durations are
+sojourn times, while for the fs;cgthe total durations are time in transit and in
+queue. the main assumption of this method is that one of the resulting clusters
+contains traces of lafor which queue size in-front of activity awas 0. in other
+words, we assume that the resources are not working 100% of the time for the
+entire time period recorded in the queue log. all other clusters are expected to
+contain traces that were enqueued during their stay.
+we are now ready to present our clustering-based load inference (cli) algo-
+rithm, with clustering being performed on the feature: observed total durations.
+denote 1;:::;k the cluster indexes with kbeing a predened number of clusters.as a rst step, a k-means algorithm runs to partition the traces in the log, la,
+into sub-logs lk
+a(see [8] for references on clustering techniques). following the
+aforementioned assumption, l1
+acontains only non-queueing cases. other clus-
+ters,k= 2;:::;k , are assumed to contain traces that were enqueued, with time
+in queue increasing as kapproaches k. the clusters represent kvariants of
+system load, which we then pass on to the next two methods of figure 2. note
+that the selection of kis process dependent, e.g. in call centers, the load is often
+partitioned into 4 clusters: no load, typical load, moderate load, heavy load [2].
+the result of clustering can already be used to construct a rst-attempt
+quantier for the queue length. specically, we obtain the probability for an
+activity instance to be in queue by applying bayes' theorem to equation (2):
+p(qa
+n(t)jxa
+n(t)> xa
+n(t)) =(1 (n2l1
+a))p(xa
+n(t)> xa
+n(t)jqa
+n(t))
+p(xan(t)> xan(t));
+(3)
+with(n2l1
+a) being the prior probability of a case belonging to the non-
+queueing cluster, p(xa
+n(t)>xa
+n(t)jqa
+n(t)) being the probability for the current
+time in activity being longer than xa
+n(t) given that an activity instance, n, is in
+queue, and p(xa
+n(t)>xa
+n(t)) being the probability for total time being longer
+thanxa
+n(t)). the three components of equation (3) can be easily estimated by
+using the corresponding maximum likelihood estimates (mle). the results
+serve an input to the next phase of our methodology, namely the phase type
+tting algorithm.
+3.4 phase type fitting
+in this part, we assume that each step of the activity life-cycle has an expo-
+nential duration, with a rate that changes per each cluster (depends on system
+load). moreover, we assume that the times a case spends in each step are inde-
+pendent. the assumption that the time in transit and in service is exponential
+is quite common in queueing literature [10, 11]. however, waiting times in queue
+were shown to be exponential only for several specic queueing models; e.g., the
+time in queue for m=m=n queues, conditioned that a case waits, is exponen-
+tial. another example in which waiting times are exponentially distributed is for
+queues in heavy-trac [12]. nevertheless, since we allow the rate of the expo-
+nential distribution per each component of the life-cycle to vary among clusters,
+we assume, as an approximation, that the time in queue is indeed exponential.
+under these assumptions, the suitable model for our life-cycle is that of a
+continuous-time markov-chain (ctmc) that has s= 3 states in sequence. the
+chain absorbs after going through the three stages (transit, queue, service) when
+the activity terminates. the total time that it takes for a case to go through the
+life-cycle (i.e. the sojourn time) has a phase type distribution [9]. the phase type
+distribution is characterized by two parameters: (1) a vector of initial states, ,
+of sizes(e.g. for thefcglevel of information all traces start in the rst phase,
+and thus= (1;0;0)), and (2) a transition-rate matrix gthat describes the
+rates with which the ctmc moves between states.several techniques were suggested to t a phase type distribution to data,
+when the available measurements include total time in process [13]. in our work,
+we use a bayesian approach that relies on a markov-chain monte-carlo method,
+which we refer to as k-phase type fitting (k-phf) [14]. the kin the algorithm
+comes from the number of clusters that it receives from cli. the algorithm is
+based on the structure of the phase type process, the initial state , and prior
+distributions for the transition rates. the output is the matrix bg, estimated
+based on the data. in this work, we used priors that assume that the total time
+is uniformly divided among the stages of the life-cycle. for example, consider
+the completes only information level ( fcg), a case spends 1 =3 of the total time
+in each of the stages: transit, queue, and service. thus, 1 =3 serves as the prior
+to our k-phf method.
+the output of the k-phf algorithm is used to estimate the probability from
+equation 2, for each trace individually. it is well-known that the probability for
+the phase type process to be in state swithi= 1;:::;s , given that the elapsed
+time in process is xis given by exp(xg)s. the expression exp( xg)sis the
+scolumn of the matrix exponential for the original transition-rate matrix, g,
+multiplied by x. thus, for every point in time t2[0;t]:
+p(qa
+n(t)jxa
+n(t)> xa
+n(t)) =exp(xa
+n(t)g)s; (4)
+with the right-hand side expression easily obtained from the k-phf algorithm.
+we t a phase type distribution to each of the clusters, namely k= 1;:::;k , and
+consequently get a corresponding transition matrix gkper cluster. last, we use
+the latter to calculate the expression in equation (4).
+4 evaluation
+finally, in order to evaluate our approach and illustrate the inuence of dierent
+log information levels, we perform experiments using three real-life event logs
+with full information ( fe;s;cg). we removed events from these logs (resulting
+infs;cgandfcg) to test how close the techniques described in this paper come
+to the actual queue length. the rst two logs ( l1andl2) originate from a call
+center of an israeli bank, while the third log ( l3) comes from an outpatient
+hospital.
+4.1 datasets
+logsl1andl2both contain a process in which customers call the bank and
+are initially answered by a computer system, namely the voice response unit
+(vru), which is designed to handle basic questions and requests. if the customer
+requires further service beyond the vru, she can choose to join the queue.
+customers can abandon at any moment while they are in queue, and can also
+leave the vru without reaching the queue. however, we lter these customers
+out of the original log, since they do not match our assumption on activity life-
+cycle section 2. none of our techniques directly uses the dependency between thecustomers in queue, and therefore this ltering does not reduce the validity of
+our experiments. the queue that we measure in this paper is the queue in-front
+of the human agents. the entire time in vru is considered transit. log l2is
+derived from l1by setting the transit time to 0.
+to highlight the parallelism-handling capabilities of our approach, log l3
+originates from a process that contains parallelism: patients being examined and
+undergo several concurrent procedures. of this process, the activity `exam' was
+selected for queue measurement, as it is the most constrained activity in the
+process.
+4.2 experimental setup
+we start with one of the event logs, l1;l2orl3, and derive the corresponding
+queue loglaof each activity aby using the method described in section 3.1.
+then, a model is discovered by inductive miner - infrequent [15] using default
+settings. subsequently, we apply cli and k-phf to lain order to quantify
+~qa(t) (using a milisecond resolution). similarly, the real queue length, qa(t),
+is computed, using the enqueue and start timestamps. to evaluate the accuracy
+of the techniques, we consider the root mean squared error and the bias. first,
+the root mean squared error (rmse) is computed per activity:
+vuut1
+tx
+t2[0;t](~qa(t) qa(t))2:
+as a second measure, we consider the bias, which can indicate systemic error in
+our techniques:
+1
+tx
+t2[0;t](~qa(t) qa(t)):
+this procedure is applied to all methods that we described in section 3, all levels
+of information, and the three event logs. in addition, we provide two baselines
+for comparison. first, we added the busy periods method (bp), which is based
+on [10, 3]. for time t2[0;t], bp simply counts the number of cases that are
+currently in the activity. bp assumes the following: (1) full knowledge of busy
+periods, namely times in which all resources are busy, (2) the number of resources
+are constant and known, and (3) in busy periods, resources are work-conserving
+(non-idling). we provide the algorithm with an approximation to busy periods
+per activity a2am, since we consider times in which qa(t)>0 (a busy period
+can start with an empty queue, and all resources busy).
+as a second baseline, we considered the uniform prior method (up), which
+divides the number of cases in the activity at timestamp tby the number of un-
+known time intervals. for example, if the log contains the initiate and completion
+timestamps, up divides the total time spent in the activity by 3, similarly to
+the prior that we consider for k-phf. in case that all information is known
+(fe;s;cg), up counts the precise number of cases in queue.table 1. queue length evaluation.
+bp up 1-phf cli 4-phf
+rmse bias rmse bias rmse bias rmse bias rmse biasl1fcg21.18 11.91 8.11 -5.12 10.68 -7.76 25.96 -21.34 6.20 -1.63
+fs, cg " " 4.63 0.83 8.08 4.04 4.22 -3.17 8.45 4.81l2fcg13.05 6.18 5.99 -2.40 13.85 8.97 20.98 -16.99 6.53 1.56
+fs, cg " " 7.34 4.87 9.23 5.77 2.63 2.00 11.93 7.96l3fcg21.38 -17.51 4.08 1.20 6.84 5.32 10.69 7.25 8.58 6.98
+fs, cg " " 4.86 3.22 10.37 8.62 10.80 8.31 12.48 10.47
+for our clustering-based methods that we present in section 3, i.e. cli and
+k-phf, we have selected kto be 4, which is a standard selection for call center
+data [2]. for k-phf we also consider k= 1, to test the impact of load knowledge
+on the goodness-of-t for the phase type distribution. to investigate the inuence
+ofkon the clustering-based methods, the procedure was repeated for cli with
+various values of k.
+4.3 results and discussion
+table 1 shows the results for dierent combinations of event logs, information
+levels and techniques. figure 3 shows the inuence of kon cli, tested on l1.
+last, figure 4 shows the queue length obtained by 1-phf, and 4-phf (best
+algorithm for complete only information) as function of time, compared to the
+real queue length.
+considering log l2, our experiments show the sensitivity of bp in case as-
+sumptions (2) and (3) do not hold: for l2, with no transit time and known busy
+periods, bp overestimates the log considerably ( l2rmse 13.05; bias 6.18). this
+is hardly surprising when considering resource dynamics in real-life settings: re-
+sources go on breaks, and start/end their shifts during the day. surprisingly, up
+is superior in allfcgscenarios, except for 4-phf.
+we notice that cli performs poorly for the fcglevel of information. a sensi-
+tivity analysis revealed that indeed k= 4 is not optimal for cli with completes
+only, and it can be improved by selecting k= 2 (figure 3). however, for the
+fs;cgscenarios and the two call center logs ( l1;l2), the results are superior to
+all methods.
+across our experiments, 1-phf performs mediocre on performance, since it
+neglects dierences in system load. when changes in the load are considered, we
+indeed see an improvement, and 4-phf is indeed the superior algorithm across
+thefcginformation level. intuitively, one would expect that methods perform
+better when given more information. however, 4-phf performs best when given
+only completion timestamps; when given more information, i.e. start events,
+4-phf performs worse. we suspect that our choice of kin cli might be of
+inuence here.
+inspecting only averaged results can be misleading. thus, we turn our at-
+tention to figure 4, and observe the behavior of queue lengths of two methods:1 2 3 4 5 6 7010203040
+krmsecscescfig. 3. inuence of kon cli with l1.
+010 20 30 40 50 
+7:00 8:40 10:20 12:00 13:40 15:20 17:00 18:40 20:20 22:00 rmse 
+4-ph 1-ph real
+fig. 4. queue length for 1-phf, 4-phf and real with l1; the x-axis represents time
+(one day).
+1-phf and 4-phf, under knowledge of completion timestamps. we observe that
+1-phf is able to capture the rst peak of the day. however, it misses the re-
+mainder of the day by overestimating the queue length, especially for the peak
+period. in contrast, 4-phf captures much of the behavior, except for sudden
+changes in queue lengths.
+5 conclusion
+in this paper, we showed how to discover queue lengths for activities in opera-
+tional processes. specically, queue lengths were quantied for event logs with
+varying levels of information. in particular, we proposed a comprehensive ap-
+proach, which includes the use of a process model and recorded event data to
+derive a queue log. the queue log then feeds a sequence of two techniques for
+measuring the queue length. the rst technique is based on k-means clustering,
+while the second technique is based on phase type tting. we performed a thor-
+ough evaluation of our methods against baselines and presented the deviationsfrom the real measurements. we tested the methodology on three real-life logs:
+two call centers logs, and one log of an outpatient hospital. the results show
+that our methods are able to discover queue lengths with various levels of accu-
+racy. this accuracy is sensitive to the level of information, and to the kof the
+clustering algorithm.
+in future work, we intend to take the resource perspective into account, since
+cases wait for resources and not for activities. we aim at utilizing the information
+on the matching between activities and the corresponding resources that is often
+available in event logs to improve the accuracy of our methods. furthermore, we
+aim to consider the dependencies between queued cases in a more rigor way, by
+discovering queueing models that correspond to the resources involved.
+references
+1. van der aalst, w.: process mining: discovery, conformance and enhancement of
+business processes. springer (2011)
+2. senderovich, a., weidlich, m., gal, a., mandelbaum, a.: queue mining for delay
+prediction in multi-class service processes. technical report, tech. rep (2014)
+3. nakatumba, j.: resource-aware business process management: analysis and sup-
+port. phd thesis, eindhoven university of technology (2013)
+4. rogge-solti, a., mans, r., van der aalst, w.m.p., weske, m.: repairing event
+logs using timed process models. (2013) 705{708
+5. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured
+process models from event logs - a constructive approach. in colom, j.m., desel,
+j., eds.: application and theory of petri nets and concurrency - 34th international
+conference, petri nets 2013, milan, italy, june 24-28, 2013.
+6. buijs, j., van dongen, b., van der aalst, w.: a genetic algorithm for discovering
+process trees. in: ieee congress on evolutionary computation, ieee (2012) 1{8
+7. adriansyah, a.: aligning observed and modeled behavior. phd thesis, eindhoven
+university of technology (2014)
+8. hastie, t., tibshirani, r., friedman, j.: the elements of statistical learning.
+springer series in statistics. springer new york inc., new york, ny, usa (2001)
+9. neuts, m.f.: renewal processes of phase type. naval research logistics quarterly
+25(3) (1978) 445{454
+10. mandelbaum, a., zeltyn, s.: estimating characteristics of queueing networks using
+transactional data. queueing systems 29(1) (1998) 75{127
+11. mandelbaum, a., zeltyn, s.: service engineering in action: the palm/erlang-a
+queue, with applications to call centers. in: advances in services innovations.
+springer (2007) 17{45
+12. kingman, j.: on queues in heavy trac. journal of the royal statistical society.
+series b (methodological) (1962) 383{392
+13. asmussen, s.: phase-type distributions and related point processes: fitting and
+recent advances. in: international conference on matrix-analytic methods in
+stochastic models. (1996) 137{149
+14. aslett, l.j., wilson, s.p.: markov chain monte carlo for inference on phasetype
+models. isi (2011)
+15. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured
+process models from event logs containing infrequent behaviour. in volume 171 of
+lecture notes in business information processing., springer (2013) 66{78

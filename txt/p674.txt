@@ -1,0 +1,833 @@
+decomposing process mining problems using passages
+wil m.p. van der aalst
+department of mathematics and computer science,
+technische universiteit eindhoven, the netherlands.
+www.vdaalst.com
+abstract. process discovery—discovering a process model from example be-
+havior recorded in an event log—is one of the most challenging tasks in process
+mining. discovery approaches need to deal with competing quality criteria such
+asﬁtness ,simplicity ,precision , and generalization . moreover, event logs may
+contain low frequent behavior and tend to be far from complete (i.e., typically
+only a fraction of the possible behavior is recorded). at the same time, mod-
+els need to have formal semantics in order to reason about their quality. these
+complications explain why dozens of process discovery approaches have been
+proposed in recent years. most of these approaches are time-consuming and/or
+produce poor quality models. in fact, simply checking the quality of a model is
+already computationally challenging.
+this paper shows that process mining problems can be decomposed into a set
+of smaller problems after determining the so-called causal structure . given a
+causal structure, we partition the activities over a collection of passages . confor-
+mance checking and discovery can be done per passage . the decomposition of
+the process mining problems has two advantages. first of all, the problem can be
+distributed over a network of computers. second, due to the exponential nature of
+most process mining algorithms, decomposition can signiﬁcantly reduce compu-
+tation time (even on a single computer). as a result, conformance checking and
+process discovery can be done much more efﬁciently.
+keywords: process mining, conformance checking, process discovery, distributed
+computing, business process management
+1 introduction
+a recent report by the mckinsey global institute (mgi) called “big data: the next
+frontier for innovation, competition, and productivity” describes the spectacular growth
+of data and the potential economic value of such data in different industry sectors [28].
+mgi estimates that enterprises globally stored more than 7 exabytes of new data on disk
+drives in 2010, while consumers stored more than 6 exabytes of new data on devices
+such as pcs and notebooks. despite the growth of storage space, it is impossible to store
+all event data. the global capacity to store data has been estimated in various studies.
+for example, a recent study in science suggests that the total global storage capacity
+increased from 2.6 exabytes in 1986 to 295 exabytes in 2007 [25].
+the incredible growth of event data provides new opportunities for process analysis.
+as more and more actions of people, organizations, and devices are recorded, there are2 wil van der aalst
+ample opportunities to analyze processes based on the footprints they leave in event
+logs. in fact, the analysis of hand-made process models will become less important
+given the omnipresence of event data. this is the reason why process mining is one
+of the “hot” topics in business process management (bpm). process mining aims to
+discover, monitor and improve real processes by extracting knowledge from event logs
+readily available in today’s information systems [2].
+starting point for process mining is an event log . each event in such a log refers to
+anactivity (i.e., a well-deﬁned step in some process) and is related to a particular case
+(i.e., a process instance ). the events belonging to a case are ordered and can be seen as
+one “run” of the process. it is important to note that an event log contains only example
+behavior, i.e., we cannot assume that all possible runs have been observed. in fact, an
+event log often contains only a fraction of the possible behavior [2].
+the growing interest in process mining is illustrated by the process mining mani-
+festo [26] recently released by the ieee task force on process mining . this manifesto
+is supported by 53 organizations and 77 process mining experts contributed to it. the
+active contributions from end-users, tool vendors, consultants, analysts, and researchers
+illustrate the signiﬁcance of process mining as a bridge between data mining and busi-
+ness process modeling.
+petri nets are often used in the context of process mining. various algorithms em-
+ploy petri nets as the internal representation used for process mining. examples are
+the region-based process discovery techniques [6, 13, 33, 19, 36], the algorithm [7],
+and various conformance checking techniques [8, 30–32]. other techniques use alter-
+native internal representations (c-nets, heuristic nets, etc.) that can easily be converted
+to (labeled) petri nets [2].
+in this paper, we focus on the following two main process mining problems:
+–process discovery problem : given an event log consisting of a collection of traces
+(i.e., sequences of events), construct a petri net that “adequately” describes the
+observed behavior.
+–conformance checking problem : given an event log and a petri net, diagnose the
+differences between the observed behavior (i.e., traces in the event log) and the
+modeled behavior (i.e., ﬁring sequences of the petri net).
+both problems are formulated in terms of petri nets. however, other process notations
+could be used, e.g., bpmn models, bpel speciﬁcations, uml activity diagrams, stat-
+echarts, c-nets, heuristic nets, etc. in fact, also different types of petri nets can be em-
+ployed, e.g., safe petri nets, labeled petri nets, free-choice petri nets, etc.
+process mining problems tend to be very challenging. there are obvious challenges
+that also apply to many other data mining and machine learning problems, e.g., dealing
+with noise, concept drift, and the need to explore a large and complex search space.
+for example, event logs may contain millions of events. moreover, there are also some
+speciﬁc problems that make process discovery even more challenging:
+–there are no negative examples (i.e., a log shows what has happened but does not
+show what could not happen);
+–due to concurrency, loops, and choices the search space has a complex structure
+and the log typically contains only a fraction of all possible behaviors;decomposing process mining problems using passages 3
+–there is no clear relation between the size of a model and its behavior (i.e., a smaller
+model may generate more or less behavior although classical analysis and evalua-
+tion methods typically assume some monotonicity property); and
+–there is a need to balance between four (often) competing quality criteria (see sec-
+tion 3): (1) ﬁtness (be able to generate the observed behavior), (2) simplicity (avoid
+large and complex models), (3) precision (avoid “underﬁtting”), and (4) general-
+ization (avoid “overﬁtting”).
+process discovery and conformance checking are related problems. this becomes
+evident when considering genetic process discovery techniques [29, 15]. in each gener-
+ation of models generated by the genetic algorithm, the conformance of every individual
+model in the population needs to be assessed (the so-called ﬁtness evaluation). models
+that ﬁt well with the event log are used to create the next generation of candidate mod-
+els. poorly ﬁtting models are discarded. the performance of genetic process discovery
+techniques will only be acceptable if dozens of conformance checks can be done per
+second (on the whole event log). this illustrates the need for efﬁcient process mining
+techniques.
+dozens of process discovery [2, 6, 7, 11, 13, 18, 19, 21, 24, 29, 33, 35, 36] and con-
+formance checking [3, 8–10, 16, 22, 24, 30–32, 34] approaches have been proposed in
+literature. despite the growing maturity of these approaches, the quality and efﬁciency
+of existing techniques leave much to be desired. state-of-the-art techniques still have
+problems dealing with large and/or complex event logs and process models. therefore,
+we proposed a divide and conquer approach for process mining . this approach uses a
+new concept: passages . a passage is a pair of two sets of activity nodes (x;y)such
+thatx=y(i.e., the activity nodes in xinﬂuence the enabling of the activity nodes
+iny) andx=y(i.e., the activity nodes in yare inﬂuenced by the activity nodes
+inx). the notion of passages will be formalized in terms of graphs and labeled petri
+nets. passages can be used to decompose process discovery and conformance checking
+problems into smaller problems . by localizing process mining techniques to passages,
+more reﬁned techniques can be used. assuming that the event log and process model
+can be decomposed into many passages, substantial speedups are possible. moreover,
+passages can also be used to distribute process mining problems over a network of
+computers (e.g., a grid or cloud infrastructure).
+this paper focuses on the theoretical foundations of process mining based on pas-
+sages. section 2 introduces various preliminaries, including the new notion of passages
+on graphs, event logs, and petri nets. section 3 discusses quality criteria for process min-
+ing, e.g., the ﬁtness notion is introduced. the notion of passages is used in section 4 to
+decompose the overall conformance checking problem into a set of local conformance
+checking problems. section 5 shows how the same ideas can be used for process discov-
+ery, i.e., after determining the causal structure and related passages, the overall process
+discovery problem can be decomposed into a set of local process discovery problems.
+related work is discussed in section 6. section 7 concludes the paper.4 wil van der aalst
+2 preliminaries
+this section introduces basic concepts related to petri nets, wf-nets, and event logs.
+moreover, we introduce the notation of passages on arbitrary graphs. this notion will
+be used to decompose process mining problems into a set of smaller problems.
+2.1 graphs, passages, and paths
+first, we introduce basic graphs notations. we will use graphs to represent process mod-
+els (i.e., petri nets) and the causal structure (also referred to as skeleton) of processes.
+deﬁnition 1 (graph). a graph is a pair g= (n;e)comprising a set nof nodes and
+a setennof edges.
+for a graph g= (n;e)andn2n, we deﬁne presetgn=fn02nj(n0;n)2
+eg(direct predecessors) and postset ng=fn02nj(n;n0)2eg(direct successors).
+this can be generalized to sets, i.e., for xn:gx=[n2xgnandxg=
+[n2xng. the superscript gcan be omitted if the graph is clear from the context.
+to decompose process mining problems into smaller problems, we partition process
+models using the notion passages introduced in this paper. a passage is a pair of non-
+empty sets of nodes (x;y)such that the set of direct successors of xisyand the set
+of direct predecessors of yisx.
+deﬁnition 2 (passage). letg= (n;e)be a graph. p= (x;y)is a passage if and
+only if;6=xn,;6=yn,xg=y, andx=gy.pas(g)is the set of all
+passages ofg.
+consider the sets x=fb;c;dgandy=fd;e;fgin fig. 1 (for the moment ignore
+the numbers in the graph). x=fb;c;dg=fd;e;fg=yandx=fb;c;dg=
+fd;e;fg=y, so(x;y)is indeed a passage.
+aweak passage is a pair (x;y)such that; 6=x[yn,xgy, and
+gyx, i.e.,xmay contain nodes without predecessors and ymay contain nodes
+without successors. note that any passage is also a weak passage but not vice versa. in
+the remainder, we only consider passages.
+deﬁnition 3 (operations on passages). letp1= (x1;y1)andp2= (x2;y2)be two
+passages.
+–p1p2if and only if x1x2andy1y2,
+–p1<p 2if and only if p1p2andp16=p2,
+–p1[p2= (x1[x2;y1[y2),
+–p1np2= (x1nx2;y1ny2).
+the union of two passages p1[p2is again a passage. the difference of two passages
+p1np2is a passage if p2<p 1.decomposing process mining problems using passages 5
+ab
+cd
+e
+fg
+hi1
+12
+2
+2
+222
+3
+45
+5x y
+fig. 1. a graph with ﬁve minimal passages: p1= (fag;fb;cg),p2= (fb;c;d g;fd;e;f g),
+p3= (feg;fgg),p4= (ffg;fhg), andp5= (fg;hg;fig). passagep2is highlighted and
+edges carry numbers to refer to the minimal passage they belong to.
+lemma 1 (properties of passages). letg= (n;e)be a graph with passages p1;p22
+pas(g).
+–p1[p2is a passage.
+–ifp2<p 1, thenp1np2is a passage.
+proof. letp1= (x1;y1)andp2= (x2;y2)be two passages.
+forp3= (x3;y3) =p1[p2we need to prove: ;6=x3n,;6=y3n,
+x3=y3, andx3=y3. this trivially holds because x3= (x1[x2)=
+x1[x2=y1[y2=y3andy3=(y1[y2) =y1[y2=x1[x2=x3.
+assume that p2<p 1andp3= (x3;y3) =p1np2. again we need to prove that
+;6=x3n,;6=y3n,x3=y3, andx3=y3. there is a (x;y)2ewith
+x2x3andy2y3. otherwise, p26< p 1. hence,x36=;andy36=;. observe that
+x2\x3=;andy2\y3=;becausep2is a passage. moreover, x3 y1
+andy3x1. hence,x3= (x1nx2)=x1nx2=y1ny2=y3.y3=
+(y1ny2) =y1ny2=x1nx2=x3. therefore, p3is indeed a passage. u t
+since the union of two passages is again a passage, it is interesting to consider
+minimal passages . a passage is minimal if it does not “contain” a smaller passage.
+deﬁnition 4 (minimal passage). letg= (n;e)be a graph with passages pas(g).
+p2pas(g)isminimal if there is no p02pas(g)such thatp0< p .pasmin(g)is
+the set of minimal passages.
+figure 1 contains ﬁve minimal passages. the sets xandyhighlight minimal pas-
+sagep2= (fb;c;dg;fd;e;fg). the edges in fig. 1 have numbers corresponding to
+the passage they belong to, e.g., edges (a;b)and(a;c)have a label “1” showing that
+they belong to passage p1= (fag;fb;cg). here we already use the property that an
+edge belongs to precisely one minimal passage. in fact, a minimal passage is uniquely
+identiﬁed by any of its elements as is shown next.6 wil van der aalst
+lemma 2. letg= (n;e)be a graph and (x;y)2e. there is precisely one minimal
+passagep(x;y)= (x;y)2pasmin(g)such thatx2xandy2y.
+proof. constructp(x;y)= (x;y)as follows. initially: x:=fxgandy:=fyg. then
+repeatx:=x[yandy:=y[xuntilxandydo not change anymore. the
+algorithm will end because there are ﬁnitely many nodes. when it ends x=yand
+y=x. hence,p(x;y)= (x;y)is passage. no unnecessary elements are added to
+xandy, so(x;y)is minimal and there is precisely one such mininal passage for
+(x;y)2e. u t
+passages deﬁne an equivalence relation on the edges in a graph: (x1;y1)(x2;y2)
+if and only if p(x1;y1)=p(x2;y2). it is easy to see that is reﬂexive (i.e., (x;y)
+(x;y)) , symmetric (i.e., (x1;y1)(x2;y2)if and only if (x2;y2)(x1;y1)), and
+transitive (i.e., (x1;y1)(x2;y2)and(x2;y2)(x3;y3)implies (x1;y1)(x3;y3)).
+in fig. 1 (b;d)(b;e)(b;f)(c;f)(d;d)(d;e), i.e., the arcs having label
+“2” form an equivalence class.
+for anyf(x;y);(x0;y);(x;y0)g e:p(x;y)=p(x0;y)=p(x;y0), i.e.,p(x;y)
+is uniquely determined by xandp(x;y)is also uniquely determined by y. moreover,
+pasmin(g) =fp(x;y)j(x;y)2eg.
+we use the notation x:e#q yto state that there is a non-empty path from node
+xto nodeyin the graph g= (n;e)where the set of intermediate nodes visited by
+pathdoes not include any nodes in q.
+deﬁnition 5 (path). letg= (n;e)be a graph with x;y2nandqn.x:e#q 
+yif and only if there is a sequence =hn1;n2;:::nkiwithk >1such thatx=n1,
+y=nk, for all 1i < k :(ni;ni+1)2e, and for all 1< i < k :ni62q. derived
+notations:
+–xe#q yif and only if there exists a path such thatx:e#q y,
+–x:e yis a shorthand for x:e#q ywithq=;,
+–nodes (xe#q y) =fn2j92nx:e#q yg, and
+–forx;yn:nodes (xe#q y) =[(x;y)2xynodes (xe#q y).
+consider the graph g= (n;e)in fig. 1 to illustrate these notions. ae#q iholds
+forq=fb;d;e;ggbecause of the path =ha;c;f;h;ii.ae#q idoes not hold if
+q=fg;hgbecause all paths connecting atoineed to visit gorh. ifq=fd;e;gg,
+thennodes (ae#q i) =fa;b;c;f;h;igbecause of the two paths connecting atoinot
+visiting any of the nodes in q.
+2.2 multisets
+multisets are used to represent the state of a petri net and to describe event logs where
+the same trace may appear multiple times.
+b(a)is the set of all multisets over some set a. for some multiset b2b(a),b(a)
+denotes the number of times element a2aappears inb. some examples: b1= [ ] ,decomposing process mining problems using passages 7
+b2= [x;x;y ],b3= [x;y;z ],b4= [x;x;y;x;y;z ],b5= [x3;y2;z]are multisets over
+a=fx;y;zg.b1is the empty multiset, b2andb3both consist of three elements, and
+b4=b5, i.e., the ordering of elements is irrelevant and a more compact notation may
+be used for repeating elements.
+the standard set operators can be extended to multisets, e.g., x2b2,b2]b3=b4,
+b5nb2=b3,jb5j= 6, etc.fa2bgdenotes the set with all elements afor whichb(a)
+1.[f(a)ja2b]denotes the multiset where element f(a)appearsp
+x2bjf(x)=f(a)b(x)
+times.
+2.3 petri nets
+most of the results presented in the paper, can be adapted for various process modeling
+notations. however, we use petri nets to formalize the main ideas and to prove their
+correctness.
+deﬁnition 6 (petri net). a petri net is tuple pn= (p;t;f )withpthe set of places,
+tthe set of transitions, and f(pt)[(tp)the ﬂow relation.
+figure 2 shows an example petri net pn= (p;t;f )withp=fstart;c1;:::;
+c5;endg,t=fa;b;:::;hg, andf=f(start;a);(a;c1);(a;c2);:::; (h;end)g. the
+state of a petri net, called marking , is a multiset of places indicating how many tokens
+each place contains. [start]is the initial marking shown in fig. 2. another potential
+marking is [c110;c25;c45]. this is the state with ten tokens in c1, ﬁve tokens in c2, and
+ﬁve tokens in c4.
+a
+start register 
+requestb
+examine 
+thoroughly
+c
+examine 
+casually
+d
+check ticketdecidepay 
+compensation
+reject 
+request
+reinitiate 
+requesteg
+h
+fendc1
+c2c3
+c4c5
+fig. 2. a petri net.
+deﬁnition 7 (marking). letpn= (p;t;f )be petri net. a marking mis a multiset
+of places, i.e., m2b(p).8 wil van der aalst
+like for graphs we deﬁne the preset and postset of a node. for any x2p[t,
+pnx=fyj(y;x)2fg(input nodes) and xpn=fyj(x;y)2fg(output nodes).
+we drop the superscript pnif it is clear from the context.
+a transition t2tisenabled in markingm, denoted as m[ti, if each of its input
+placestcontains at least one token. consider the petri net in fig. 2 with m= [c3;c4]:
+m[eibecause both input places are marked.
+an enabled transition tmay ﬁre, i.e., one token is removed from each of the input
+placestand one token is produced for each of the output places t. formally:m0=
+(mnt)]tis the marking resulting from ﬁring enabled transition tin markingm.
+m[tim0denotes that tis enabled in mand ﬁringtresults in marking m0. for example,
+[start][ai[c1;c2]and[c3;c4][ei[c5]for the net in fig. 2.
+let=ht1;t2;:::;tni2tbe a sequence of transitions. m[im0denotes that
+there is a set of markings m0;m1;:::;mnsuch thatm0=m,mn=m0, and
+mi[ti+1imi+1for0i < n . a marking m0isreachable frommif there exists a
+such thatm[im0. for example, [start][i[end]for=ha;b;d;e;gi.
+deﬁnition 8 (labeled petri net). a labeled petri net pn= (p;t;f;tv)is a petri
+net(p;t;f )with visible labels tvt. letv=ht1;t2;:::;tni2t
+vbe a sequence
+of visible transitions. m[vbm0if and only if there is a sequence 2tsuch that
+m[im0and the projection of ontvyieldsv(i.e.,v=tv).
+if we assume tv=fa;e;g;hgfor the petri net in fig. 2, then [start][vb[end]
+forv=ha;e;e;e;e;gi(i.e.,b,c,d, andfare invisible).
+in the context of process mining, we always consider processes that start in an initial
+state and end in a well-deﬁned end state. for example, given the net in fig. 2 we are
+interested in ﬁring sequences starting in mi= [start]and ending in mo= [end].
+therefore, we deﬁne the notion of a system net .
+deﬁnition 9 (system net). a system net is a triplet sn= (pn;mi;mo)where
+pn= (p;t;f;tv)is a petri net with visible labels tv,mi2b(p)is the initial
+marking, and mo2b(p)is the ﬁnal marking.
+given a system net, (sn)is the set of all possible visible full traces, i.e., ﬁring
+sequences starting in miand ending in moprojected onto the set of visible transitions.
+deﬁnition 10 (traces). letsn= (pn;mi;mo)be a system net. (sn) =fvj
+mi[vbmogis the set of visible traces starting in miand ending in mo.
+if we assume tv=fa;e;f;g;hgfor the petri net in fig. 2, then (sn) =fha;e;gi;
+ha;e;hi;ha;e;f;e;gi;ha;e;f;e;hi;:::g.
+2.4 wf-net
+the petri net in fig. 2 has a designated source place ( start ), a designated source place
+(end), and all nodes are on a path from start toend. such nets are called wf-nets [1,
+4].
+deﬁnition 11 (wf-net). wf= (pn;in;ti;out;to)is a workﬂow net (wf-net) ifdecomposing process mining problems using passages 9
+–pn= (p;t;f;tv)is a labeled petri net,
+–in2pis a source place such that in=;andin=ti,
+–out2pis a sink place such that out=;andout=to,
+–titvis the set of initial transitions and ti=fing,
+–totvis the set of ﬁnal transitions and to=foutg, and
+–nodes (inf out) =p[t, i.e., all nodes are on some path from source place in
+to sink place out.
+wf-nets are often used in the context of business process modeling and process
+mining. compared to the standard deﬁnition of wf-nets [1, 4] we added the require-
+ment that the initial and ﬁnal transitions need to be visible.
+a wf-net wf= (pn;in;ti;out;to)deﬁnes the system sn= (pn;mi;mo)
+withmi= [in]andmo= [out]. ideally wf-nets are also sound , i.e., free of deadlocks,
+livelocks, and other anomalies [1, 4]. formally, this means that for any state reachable
+frommiit is possible to reach mo.
+process models discovered using existing process mining techniques may be un-
+sound. therefore, we cannot assume/require all wf-nets to be sound.
+2.5 event log
+as indicated earlier, event logs serve as the starting point for process mining. an event
+log is a multiset of traces . each trace describes the life-cycle of a particular case (i.e., a
+process instance ) in terms of the activities executed.
+deﬁnition 12 (trace, event log). letabe a set of activities. a trace 2ais a
+sequence of activities. l2b(a)is an event log, i.e., a multiset of traces.
+an event log is a multiset of traces because there can be multiple cases having the
+same trace. in this simple deﬁnition of an event log, an event refers to just an activity .
+often event logs may store additional information about events. for example, many
+process mining techniques use extra information such as the resource (i.e., person or
+device) executing or initiating the activity, the timestamp of the event, or data elements
+recorded with the event (e.g., the size of an order). in this paper, we abstract from such
+information. however, the results presented in this paper can easily be extended to event
+logs with more information.
+an example log is l1= [ha;e;gi10;ha;e;hi5;ha;e;f;e;gi3;ha;e;f;e;hi2].l1
+contains information about 20 cases, e.g., 10 cases followed trace ha;e;gi. there are
+103 + 53 + 35 + 25 = 70 events in total.
+deﬁnition 13 (projection). letabe a set and xaa subset.x2a!xis a
+projection function and is deﬁned recursively: (1) hix=hiand (2) for2aand
+a2a:
+(;hai)x=(
+x ifa62x
+x;haiifa2x
+the projection function is generalized to event logs, i.e., for some event log l2b(a)
+and setxa:lx= [xj2l].
+for the event log l1:l1fa;g;hg= [ha;gi13;ha;hi7]. note that all eandfevents
+have been removed.10 wil van der aalst
+3 conformance checking
+conformance checking techniques investigate how well an event log l2b(a)and
+a system net sn= (pn;mi;mo)ﬁt together. note that the process model snmay
+have been discovered through process mining or may have been made by hand. in any
+case, it is interesting to compare the observed example behavior in land the potential
+behavior of sn.
+conformance checking can be done for various reasons. first of all, it may be used
+to audit processes to see whether reality conforms to some normative or descriptive
+model [5]. deviations may point to fraud, inefﬁciencies, and poorly designed or out-
+dated procedures. second, conformance checking can be used to evaluate the results
+of a process discovery techniques. in fact, genetic process mining algorithms use con-
+formance checking to select the candidate models used to create the next generation of
+models [29].
+there are four quality dimensions for comparing model and log: (1) ﬁtness , (2)
+simplicity , (3) precision , and (4) generalization [2]. a model with good ﬁtness allows
+for most of the behavior seen in the event log. a model has a perfect ﬁtness if all traces
+in the log can be replayed by the model from beginning to end. the simplest model
+that can explain the behavior seen in the log is the best model. this principle is known
+as occam’s razor. fitness and simplicity alone are not sufﬁcient to judge the quality
+of a discovered process model. for example, it is very easy to construct an extremely
+simple petri net (“ﬂower model”) that is able to replay all traces in an event log (but also
+any other event log referring to the same set of activities). similarly, it is undesirable to
+have a model that only allows for the exact behavior seen in the event log. remember
+that the log contains only example behavior and that many traces that are possible may
+not have been seen yet. a model is precise if it does not allow for “too much” behavior.
+clearly, the “ﬂower model” lacks precision. a model that is not precise is “underﬁtting”.
+underﬁtting is the problem that the model over-generalizes the example behavior in the
+log (i.e., the model allows for behaviors very different from what was seen in the log).
+at the same time, the model should generalize and not restrict behavior to just the
+examples seen in the log. a model that does not generalize is “overﬁtting”. overﬁtting
+is the problem that a very speciﬁc model is generated whereas it is obvious that the
+log only holds example behavior (i.e., the model explains the particular sample log, but
+there is a high probability that the model is unable to explain the next batch of cases).
+in the remainder, we will focus on ﬁtness. however, the ideas are applicable to the
+other quality dimensions.
+deﬁnition 14 (perfectly fitting log). letl2b(a)be an event log and let sn=
+(pn;mi;mo)be a system net. lis perfectly ﬁtting snif and only iff2lg
+(sn).
+consider two event logs l1= [ha;e;gi10;ha;e;hi5;ha;e;f;e;gi3;ha;e;f;e;hi2]
+andl2= [ha;e;gi10;ha;e;hi5;ha;gi3;ha;a;g;e;hi2]and the system net snof the
+wf-net depicted in fig. 2 with tv=fa;e;f;g;hg. clearly,l1is perfectly ﬁtting sn
+andl2is not. there are various ways to quantify ﬁtness [2, 3, 8, 24, 29–32], typically
+on a scale from 0 to 1 where 1 means perfect ﬁtness. to measure ﬁtness, one needs todecomposing process mining problems using passages 11
+align traces in the event log to traces of the process model. some example alignments
+forl2andsn:
+1=aeg
+aeg2=aeh
+aeh3=ag
+aeg4=aageh
+aeh5=aageh
+aeg
+the top row of each alignment corresponds to “moves in the log” and the bottom row
+corresponds to “moves in the model”. if a move in the log cannot be mimicked by a
+move in the model, then a “ ” (“no move”) appears in the bottom row. for example, in
+4the model is unable to do the second amove and is unable to do gbeforee. if a move
+in the model cannot be mimicked by a move in the log, then a “ ” (“no move”) appears
+in the top row. for example, in 3the log did not do an emove whereas the model has to
+make this move to enable gand reach the end. given a trace in the event log there may
+be many possible alignments. the goal is to ﬁnd the alignment with the least number of
+elements, e.g., 4is clearly better than 5. the number ofelements can be used
+to quantify ﬁtness. moreover, once an optimal alignment has been established for every
+trace in the event log, these alignments can be used as a basis to quantify precision and
+generalization [3].
+4 distributed conformance checking
+conformance checking techniques can be time consuming as potentially many different
+traces need to be aligned with a model that may allow for an exponential (or even
+inﬁnite) number of traces. event logs may contain millions of events. finding the best
+alignment may require solving many optimization problems [8] or repeated state-space
+explorations [32]. when using genetic process mining, one needs to check the ﬁtness of
+every individual model in every generation [29]. as a result, thousands or even millions
+of conformance checks need to be done. for each conformance check, the whole event
+log needs to be traversed. given these challenges, we are interested in reducing the time
+needed for conformance checking.
+in this section, we show that it is possible to decompose and distribute conformance
+checking problems using the notion of passages deﬁned in section 2.1. in order to do
+this we focus on the visible transitions and create the so-called skeleton of the process
+model.
+deﬁnition 15 (skeleton). letpn= (p;t;f;tv)be a labeled petri net. the skeleton
+ofpnis the graph skel(pn) = (n;e)withn=tvande=f(x;y)2tvtvj
+xf#tv yg.
+figure 3 shows the skeleton of the wf-net in fig. 2 assuming that tv=fa;e;f;g;hg.
+the resulting graph has two minimal minimal passages.
+note that only the visible transitions tvappear in the skeleton. for example, if we
+assume that tv=fa;g;hgin fig. 2, then the skeleton is (fa;g;hg;f(a;g);(a;h)g)
+and there is only one passage (fag;fg;hg).
+if there are multiple minimal passages in the skeleton, we can decompose confor-
+mance checking problems into smaller problems by partitioning the petri net into net12 wil van der aalst
+aregister 
+requestdecide
+reject 
+requestreinitiate 
+requeste g
+h fpay 
+compensation
+fig. 3. the skeleton of the labeled petri net in fig. 2 (assuming that tv=fa;e;f;g;h g). there
+are two minimal minimal passages: (fa;fg;feg)and(feg;ff;g;h g).
+fragments and the event log into sublogs . each passage (x;y)deﬁnes one net fragment
+pn(x;y )and one sublog lx[y. we will show that conformance can be checked per
+passage.
+a
+register 
+requestb
+examine 
+thoroughly
+c
+examine 
+casually
+d
+check ticketdecide pay 
+compensation
+reject 
+requestreinitiate 
+requeste g
+h fc1
+c2c3
+c4c5
+decideereinitiate 
+requestf
+fig. 4. two net fragments corresponding to the two passages of the skeleton in fig. 3:
+pn 1=pn(fa;fg;feg)(left) and pn 2=pn(feg;ff;g;h g)(right). the visible transitions
+tv=fa;e;f;g;h gthat form the boundaries of the fragments are highlighted.
+consider event log l= [ha;e;gi10;ha;e;hi5;ha;e;f;e;gi3;ha;e;f;e;hi2], the
+wf-net pnshown in fig. 2 with tv=fa;e;f;g;hg, and the skeleton shown in fig. 3.
+there are two passages: p1= (fa;fg;feg)andp2= (feg;ff;g;hg). based on this
+we deﬁne two net fragments pn 1andpn 2as shown in fig. 4. moreover, we de-
+ﬁne two sublogs: l1= [ha;ei15;ha;e;f;ei5]andl2= [he;gi10;he;hi5;he;f;e;gi3;
+he;f;e;hi2]. to check the conformance of the overall event log on the overall model,
+we check the conformance of l1onpn 1andl2onpn 2. sincel1is perfectly ﬁtting
+pn 1andl2is perfectly ﬁtting pn 2, we can conclude that lis perfectly ﬁtting pn.
+this illustrates that conformance checking can be decomposed.
+in order to prove this, we ﬁrst deﬁne the notion of a net fragment.
+deﬁnition 16 (net fragment). letpn= (p;t;f;tv)be a labeled petri net. for any
+two sets of transitions x;ytv, we deﬁne the net fragment pn(x;y )= (p0;t0;f0;t0
+v)
+with:decomposing process mining problems using passages 13
+–z=nodes (xf#tv y)n(x[y)are the internal nodes of the fragment,
+–p0=p\z,
+–t0= (t\z)[x[y,
+–f0=f\((p0t0)[(t0p0)), and
+–t0
+v=x[y.
+note that pn 1=pn(fa;fg;feg)in fig. 4 has z=fb;c;d;c 1;c2;c3;c4gas internal
+nodes.
+ba
+c
+d
+e
+jihfn k
+l
+mo
+p g i o
+fig. 5. wf-net wf is decomposed in subnets pn(x;y ). the “clouds” model the internal struc-
+ture of these subnets (places but possibly also hidden transitions). due to the decomposition based
+on passages, one cloud can only inﬂuence another cloud through the visible interface transitions
+xandy. since the visible interface transitions are “controlled” by the event log, it is possible to
+check ﬁtness locally per subnet.
+now we can prove the main result of this paper. figure 5 illustrates our decomposi-
+tion approach. a larger model can be decomposed into net fragments corresponding to
+minimal passages. the event log can be decomposed in a similar manner and confor-
+mance checking can be done per passage.
+theorem 1 (main theorem). letl2b(a)be an event log and let wf= (pn;
+in;ti;out;to)be a wf-net with pn= (p;t;f;tv).
+lis perfectly ﬁtting system net sn= (pn;[in];[out])if and only if
+–for anyha1;a2;:::aki2l:a12tiandak2to, and
+–for any (x;y)2pasmin(skel(pn)):lx[yis perfectly ﬁtting sn(x;y )=
+(pn(x;y );[ ];[ ]).
+proof. ()) letv=ha1;a2;:::aki2lsuch that there is a 2twith[in][i[out]
+andtv=v(i.e.,vﬁts into the overall wf-net). we need to prove the two properties
+listed above:14 wil van der aalst
+–a12tiandak2tobecause only transitions in tiare enabled in the initial
+marking and only transitions in tocan produce tokens for out. moreover, when
+puts a token in place outall other places should be empty; otherwise cannot
+result in [out](property of wf-nets). note that titvandtotv, so the ﬁrst
+and last transition need to be visible.
+–for any (x;y)2pasmin(skel(pn)): we deﬁne pn(x;y )= (p0;t0;f0;t0
+v)and
+0=t0. we need to prove that [ ][0i[ ]inpn(x;y ). this follows trivially
+because sn(x;y )can mimic any move of snwith respect to transitions t0.
+(() letv=ha1;a2;:::aki2lsuch thata12ti,ak2to, and assume that for
+any(x;y)2pasmin(skel(pn))there is a sequence (x;y )such that [ ][(x;y )i[ ]
+inpn(x;y )= (p0;t0;f0;t0
+v)with(x;y )x[y=vx[y. we need to prove that
+there is a2tsuch that [in][i[out]inpn withtv=v. the different (x;y )
+sequences can be stitched together into an overall because the different subnets only
+interface via visible transitions. transitions in one subnet can only inﬂuence other sub-
+nets through visible transitions and these can only move synchronously as deﬁned by
+v2l. u t
+although the theorem only addresses the notion of perfect ﬁtness, other confor-
+mance notions can be decomposed in a similar manner. metrics can be computed per
+passage and then aggregated into an overall metric.
+assuming a process model with many passages, the time needed for conformance
+checking can be reduced signiﬁcantly. there are two reasons for this. first of all, as
+theorem 1 shows, larger problems can be decomposed into a set of independent smaller
+problems. therefore, conformance checking can be distributed over multiple comput-
+ers. second, due to the exponential nature of most conformance checking techniques,
+the time needed to solve “many smaller problems” is less than the time needed to solve
+“one big problem”. existing approaches use state-space analysis (e.g., in [32] the short-
+est path enabling a transition is computed) or optimization over all possible alignments
+(e.g., in [8] the aalgorithm is used to ﬁnd the best alignment). these techniques do
+notscale linearly in the number of activities. therefore, decomposition is useful even if
+the checks per passage are done on a single computer.
+5 process discovery: divide and conquer
+as explained before, conformance checking and process discovery are closely related.
+therefore, we can use the approach used in theorem 1 for process discovery provided
+that some coarse causal structure (comparable to the skeleton in section 4) is known.
+based on the passages in the causal structure, multiple smaller discovery problems are
+formulated. this result in one net fragment per passage. these fragments can be folded
+into an overall model.
+more concretely, we propose the following discovery approach:
+1. input is an event log lraw2b(a
+raw)over a set of activities araw.
+2. extend each trace in the event log with an artiﬁcial start event >and an artiﬁcial
+end event?(f>;?g\araw=;).lext= [h>i;;h?ij2lraw]is the resulting
+log overaext=f>;?g[araw.decomposing process mining problems using passages 15
+3. discover the causal structure, i.e., we assume that there is an algorithm csuch
+thatc(lext) = (a;c)withf>;?gaaextandcaa. the causal
+structure may be inspected and modiﬁed by a domain expert.
+4. filter the event log using the selected set of activities a:l=lexta.
+5. compute the set of passages on the graph g= (a;c):ps=pasmin(g) =
+f(x1;y1);(x2;y2);:::; (xk;yk)g. we assume that there is an algorithm p, such
+thatp(lxi[yi;xi;yi) =pni= (pi;ti;fi;xi[yi)returns a petri net with
+visible transitions xi[yi. the discovered petri nets only overlap with respect to
+visible transitions, i.e., for 1i < jk:((pi[ti)n(xi[yi))\((pj[
+tj)n(xj[yj)) =;. moreover, each pnishould respect the causal structure, i.e.,
+visible transition x2xiis connected to visible transition y2yiinpniif and
+only if (x;y)2c.
+6. merge the individual subsets into one overall system net sn= (pn;mi;mo)
+withpn= (p;t;f;tv)such that:
+–p=fin;outg[[ 1ikpi,
+–t=[1ikti,
+–f=f(in;>);(?;out)g[([1ikfi),
+–tv=a,
+–mi= [in], and
+–mo= [out].
+the discovery process is parameterized byc(the algorithm to ﬁnd causal struc-
+ture) andp(the algorithm to ﬁnd a local, transition bordered process model). any
+combination of candpcan be used as the two main steps are decoupled by the causal
+structure.ccan also be used to ﬁlter out infrequent activities, noise, etc. moreover, the
+user is able to edit the causal structure using domain knowledge or particular prefer-
+ences. experience shows that user feedback is vital to balance between overﬁtting and
+underﬁtting.
+the log is extended by adding an artiﬁcial start event >and an artiﬁcial end event
+?to every trace, this is just a technicality to ensure that there is a clearly deﬁned
+start and end. note that passages can be activated multiple times, e.g., in case of loops.
+therefore, we add transitions >and?and places inandout. if there is a unique start
+(end) event, then there is no need to add transition >(?). ideally, the causal structure
+created in step 3 has one source node >, one sink node?, and all other nodes are on a
+path from>to?(like in a wf-net).
+to illustrate the divide and conquer approach based on passages, consider the event
+loglraw= [ha;b;c;di40;hb;a;c;di35;ha;b;c;ei30;hb;a;c;ei25;ha;b;x;di1;ha;b;ei1].
+the log describes 132 cases. we ﬁrst add the artiﬁcial start and events (step 2): lext=
+[h>;a;b;c;d;?i40;h>;b;a;c;d;?i35;h>;a;b;c;e;?i30;h>;b;a;c;e;?i25;h>;a;b;
+x;d;?i1;h>;a;b;e;?i1]. then we compute the causal structure using c(step 3). as-
+sume that the causal structure shown in fig. 6 is computed. since xoccurs only once
+whereas the other activities occur more than 50 times, xis excluded. the same holds
+for the dependency between bande.lis the log where xis removed (step 4).
+the causal structure has four minimal passages: p1= (f>g;fa;bg),p2= (fa;bg;
+fcg),p3= (fcg;fd;eg), andp4= (fd;eg;f?g). based on these passages we create
+four corresponding sublogs: l1= [h>;a;bi72;h>;b;ai60],l2= [ha;b;ci70;hb;a;ci60;16 wil van der aalst
+a
+bcd
+e
+fig. 6. causal structure c(lext)discovered for the extended event log having four minimal
+passages.
+ha;bi2],l3= [hc;di75;hc;ei55;hdi1;hei1], andl4= [hd;?i76;he;?i56]. one transition-
+bordered petri net is discovered per sublog using p(step 5). figure 7 shows the result-
+ing net fragments. note that infrequent behavior has been discarded, i.e., trace ha;biin
+l2is not possible in pn 2, and traceshdiandheiinl3are not possible in pn 3. what
+behavior is included and what not depends on p.
+a
+bcd
+ed
+ea
+bc
+fig. 7. the petri net fragments discovered for the four passages: pn 1,pn 1,pn 3, andpn 4.
+in the last step of the approach, the four net fragments of fig. 7 are merged into
+the overall model shown in figure 8 (step 6). note that this model is indeed able to
+replay all frequent behavior. two of the 132 cases cannot be replayed because they
+were treated as noise by candp.
+ina
+bcd
+eout
+fig. 8. the wf-net obtained by merging the individual subsets.
+the small example shows that we can use a divide and conquer approach when
+discovering process models. we deliberately did not select concrete algorithms for c
+andp. the approach is generic and can be combined with existing process discoverydecomposing process mining problems using passages 17
+techniques [2, 6, 7, 11, 13, 18, 19, 21, 24, 29, 33, 35, 36]. moreover, the user can modify
+the causal structure (i.e., the result of c) to guide the discovery process.
+by decomposing the overall discovery problem into a collection of smaller discov-
+ery problems, it is possible to do a more reﬁned analysis and achieve signiﬁcant speed-
+ups. the discovery algorithm pis applied to an event log consisting of just the activi-
+ties involved in the passage under investigation. hence, process discovery tasks can be
+distributed over a network of computers (assuming there are multiple passages). more-
+over, most discovery algorithms are exponential in the number of activities. therefore,
+the sequential discovery of all individual passages on one computer is often still faster
+than solving one big discovery problem. if there are more passages than computers, one
+can merge minimal passages into aggregate passages and use these for discovery and
+conformance checking (one passage per computer). however, in most situations, it will
+be more efﬁcient to analyze the minimal passages sequentially.
+6 related work
+for an introduction to process mining we refer to [2]. for an overview of best practices
+and challenges, we refer to the process mining manifesto [26]. the goal of this paper
+is to decompose challenging process discovery and conformance checking problems
+into smaller problems. therefore, we ﬁrst review some of the techniques available for
+process discovery and conformance checking.
+process discovery, i.e., discovering a process model from a multiset of example
+traces, is a very challenging problem and various discovery techniques have been pro-
+posed [6, 7, 11, 13, 18, 19, 21, 24, 29, 33, 35, 36]. many of these techniques use petri nets
+during the discovery process and/or to represent the discovered model. it is impossible
+to provide an complete overview of all techniques here. very different approaches are
+used, e.g., heuristics [21, 35], inductive logic programming [24], state-based regions
+[6, 19, 33], language-based regions [13, 36], and genetic algorithms [29]. classical syn-
+thesis techniques based on regions [23] cannot be applied directly because the event
+log contains only example behavior. for state-based regions one ﬁrst needs to cre-
+ate an automaton as described in [6]. moreover, when constructing the regions, one
+should avoid overﬁtting. language-based regions seem good candidates for discover-
+ing transition-bordered petri nets for passages [13, 36]. unfortunately, these techniques
+still have problems dealing with infrequent/incomplete behavior.
+as described in [2], there are four competing quality criteria when comparing mod-
+eled behavior and recorded behavior: ﬁtness, simplicity, precision, and generalization.
+in this paper, we focused on ﬁtness, but also precision and generalization can also be in-
+vestigated per passage. various conformance checking techniques have been proposed
+in recent years [3, 8–10, 16, 22, 24, 30–32, 34]. conformance checking can be used to
+evaluate the quality of discovered processes but can also be used for auditing purposes
+[5]. most of the techniques mentioned can be applied to passages. the most challeng-
+ing part is to aggregate the metrics per passage into metrics for the overall model and
+log. we consider the approach described in [8] to be most promising as it constructs an
+optimal alignment given an arbitrary cost function. this alignment can be used for com-
+puting precision and generalization [3, 31]. however, the approach can be rather time18 wil van der aalst
+consuming. therefore, the efﬁciency gains can be considerable for larger processes with
+many activities and passages.
+little work has been done on the decomposition and distribution of process mining
+problems. in [15] an approach is described to distribute genetic process mining over
+multiple computers. in this approach candidate models are distributed and in a similar
+fashion also the log can be distributed. however, individual models are not partitioned
+over multiple nodes. therefore, the approach in this paper is complementary. moreover,
+unlike [15], the decomposition approach based on passages is not restricted to genetic
+process mining.
+most related are the divide-and-conquer techniques presented in [20]. in [20] it is
+shown that region-based synthesis can be done at the level of synchronized state ma-
+chine components (smcs). also a heuristic is given to partition the causal dependency
+graph into overlapping sets of events that are used to construct sets of smcs. passages
+provide a different (more local) partitioning of the problem and, unlike [20] which fo-
+cuses on state-based region mining, we decouple the decomposition approach from the
+actual conformance checking and process discovery approaches.
+several approaches have been proposed to distribute the veriﬁcation of petri net
+properties, e.g., by partitioning the state space using a hash function [14] or by mod-
+ularizing the state space using localized strongly connected components [27]. these
+techniques do not consider event logs and cannot be applied to process mining.
+most data mining techniques can be distributed [17], e.g., distributed classiﬁcation,
+distributed clustering, and distributed association rule mining [12]. these techniques
+often partition the input data and cannot be used for the discovery of petri nets.
+7 conclusion
+computationally challenging process mining problems can be decomposed in smaller
+problems using the new notion of passages . this paper shows that the ﬁtness of the
+overall model can be analyzed per passage. the approach is independent of the partic-
+ular conformance checking technique used. moreover, the same idea can be applied to
+other conformance notions. the paper also presents a discovery approach where the dis-
+covery problem can be decomposed after determining the causal structure. the reﬁned
+behavior can be discovered per passage and, subsequently, the discovered net fragments
+can be merged into an overall process model. conformance checking and process dis-
+covery can be done much more efﬁciently using such decompositions. moreover, the
+approach can be distributed over a network of computers.
+this paper presents the idea of passages and provides a formal correctness proof
+showing that a log is perfectly ﬁtting the overall model if and only if the property
+holds per passage. future work will focus on large scale experiments demonstrating
+the performance gains on a variety of process mining problems. we anticipate that the
+actual speedup heavily depends on the number of passages. therefore, it is important
+investigate this using real-life logs and models.decomposing process mining problems using passages 19
+references
+1. w.m.p. van der aalst. the application of petri nets to workﬂow management. the journal
+of circuits, systems and computers , 8(1):21–66, 1998.
+2. w.m.p. van der aalst. process mining: discovery, conformance and enhancement of busi-
+ness processes . springer-verlag, berlin, 2011.
+3. w.m.p. van der aalst, a. adriansyah, and b. van dongen. replaying history on process
+models for conformance checking and performance analysis. wires data mining and
+knowledge discovery , 2(2):182–192, 2012.
+4. w.m.p. van der aalst, k.m. van hee, a.h.m. ter hofstede, n. sidorova, h.m.w. verbeek,
+m. v oorhoeve, and m.t. wynn. soundness of workﬂow nets: classiﬁcation, decidability,
+and analysis. formal aspects of computing , 23(3):333–363, 2011.
+5. w.m.p. van der aalst, k.m. van hee, j.m. van der werf, and m. verdonk. auditing 2.0:
+using process mining to support tomorrow’s auditor. ieee computer , 43(3):90–93, 2010.
+6. w.m.p. van der aalst, v . rubin, h.m.w. verbeek, b.f. van dongen, e. kindler, and c.w.
+g¨unther. process mining: a two-step approach to balance between underﬁtting and over-
+ﬁtting. software and systems modeling , 9(1):87–111, 2010.
+7. w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. workﬂow mining: discovering
+process models from event logs. ieee transactions on knowledge and data engineering ,
+16(9):1128–1142, 2004.
+8. a. adriansyah, b. van dongen, and w.m.p. van der aalst. conformance checking using
+cost-based fitness analysis. in c.h. chi and p. johnson, editors, ieee international en-
+terprise computing conference (edoc 2011) , pages 55–64. ieee computer society, 2011.
+9. a. adriansyah, b.f. van dongen, and w.m.p. van der aalst. towards robust conformance
+checking. in m. zur muehlen and j. su, editors, bpm 2010 workshops, proceedings of the
+sixth workshop on business process intelligence (bpi2010) , volume 66 of lecture notes in
+business information processing , pages 122–133. springer-verlag, berlin, 2011.
+10. a. adriansyah, n. sidorova, and b.f. van dongen. cost-based fitness in conformance
+checking. in international conference on application of concurrency to system design
+(acsd 2011) , pages 57–66. ieee computer society, 2011.
+11. r. agrawal, d. gunopulos, and f. leymann. mining process models from workﬂow logs.
+insixth international conference on extending database technology , volume 1377 of lec-
+ture notes in computer science , pages 469–483. springer-verlag, berlin, 1998.
+12. r. agrawal and j.c. shafer. parallel mining of association rules. ieee transactions on
+knowledge and data engineering , 8(6):962–969, 1996.
+13. r. bergenthum, j. desel, r. lorenz, and s. mauser. process mining based on regions of
+languages. in g. alonso, p. dadam, and m. rosemann, editors, international conference
+on business process management (bpm 2007) , volume 4714 of lecture notes in computer
+science , pages 375–383. springer-verlag, berlin, 2007.
+14. m.c. boukala and l. petrucci. towards distributed veriﬁcation of petri nets properties. in
+prococeedings of the international workshop on veriﬁcation and evaluation of computer
+and communication systems (vecos’07) , pages 15–26. british computer society, 2007.
+15. c. bratosin, n. sidorova, and w.m.p. van der aalst. distributed genetic process mining.
+in h. ishibuchi, editor, ieee world congress on computational intelligence (wcci 2010) ,
+pages 1951–1958, barcelona, spain, july 2010. ieee.
+16. t. calders, c. guenther, m. pechenizkiy, and a. rozinat. using minimum description
+length for process mining. in acm symposium on applied computing (sac 2009) , pages
+1451–1455. acm press, 2009.
+17. m. cannataro, a. congiusta, a. pugliese, d. talia, and p. trunﬁo. distributed data min-
+ing on grids: services, tools, and applications. ieee transactions on systems, man, and
+cybernetics, part b , 34(6):2451–2465, 2004.20 wil van der aalst
+18. j. carmona and j. cortadella. process mining meets abstract interpretation. in j.l. balcazar,
+editor, ecml/pkdd 210 , volume 6321 of lecture notes in artiﬁcial intelligence , pages
+184–199. springer-verlag, berlin, 2010.
+19. j. carmona, j. cortadella, and m. kishinevsky. a region-based algorithm for discovering
+petri nets from event logs. in business process management (bpm2008) , pages 358–373,
+2008.
+20. j. carmona, j. cortadella, and m. kishinevsky. divide-and-conquer strategies for process
+mining. in business process management (bpm 2009) , volume 5701 of lecture notes in
+computer science , pages 327–343. springer-verlag, berlin, 2009.
+21. j.e. cook and a.l. wolf. discovering models of software processes from event-based
+data. acm transactions on software engineering and methodology , 7(3):215–249, 1998.
+22. j.e. cook and a.l. wolf. software process validation: quantitatively measuring the cor-
+respondence of a process to a model. acm transactions on software engineering and
+methodology , 8(2):147–176, 1999.
+23. p. darondeau. unbounded petri net synthesis. in lectures on concurrency and petri nets ,
+volume 3098 of lecture notes in computer science , pages 413–438. springer-verlag, berlin,
+2004.
+24. s. goedertier, d. martens, j. vanthienen, and b. baesens. robust process discovery with
+artiﬁcial negative events. journal of machine learning research , 10:1305–1340, 2009.
+25. m. hilbert and p. lopez. the world’s technological capacity to store, communicate, and
+compute information. science , 332(6025):60–65, 2011.
+26. ieee task force on process mining. process mining manifesto. in business process man-
+agement workshops , volume 99 of lecture notes in business information processing , pages
+169–194. springer-verlag, berlin, 2012.
+27. c. lakos and l. petrucci. modular analysis of systems composed of semiautonomous
+subsystems. in application of concurrency to system design (acsd2004) , pages 185–194.
+ieee computer society, 2004.
+28. j. manyika, m. chui, b. brown, j. bughin, r. dobbs, c. roxburgh, and a. byers. big data:
+the next frontier for innovation, competition, and productivity. mckinsey global institute,
+2011.
+29. a.k. alves de medeiros, a.j.m.m. weijters, and w.m.p. van der aalst. genetic process
+mining: an experimental evaluation. data mining and knowledge discovery , 14(2):245–
+304, 2007.
+30. j. munoz-gama and j. carmona. a fresh look at precision in process conformance. in
+business process management (bpm 2010) , volume 6336 of lecture notes in computer
+science , pages 211–226. springer-verlag, berlin, 2010.
+31. j. munoz-gama and j. carmona. enhancing precision in process conformance: stability,
+conﬁdence and severity. in ieee symposium on computational intelligence and data min-
+ing (cidm 2011) , paris, france, april 2011. ieee.
+32. a. rozinat and w.m.p. van der aalst. conformance checking of processes based on moni-
+toring real behavior. information systems , 33(1):64–95, 2008.
+33. m. sole and j. carmona. process mining from a basis of regions. in applications and
+theory of petri nets 2010 , volume 6128 of lecture notes in computer science , pages 226–
+245. springer-verlag, berlin, 2010.
+34. j. de weerdt, m. de backer, j. vanthienen, and b. baesens. a robust f-measure for eval-
+uating discovered process models. in ieee symposium on computational intelligence and
+data mining (cidm 2011) , pages 148–155, paris, france, april 2011. ieee.
+35. a. weijters and w.m.p. van der aalst. rediscovering workﬂow models from event-based
+data using little thumb. integrated computer-aided engineering , 10(2):151–162, 2003.
+36. j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, and a. serebrenik. process dis-
+covery using integer linear programming. fundamenta informaticae , 94:387–412, 2010.

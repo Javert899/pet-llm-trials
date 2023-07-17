@@ -1,0 +1,819 @@
+merging alignments for decomposed replay
+h.m.w. verbeek and w.m.p. van der aalst
+department of mathematics and computer science
+eindhoven university of technology, eindhoven, the netherlands
+{h.m.w.verbeek,w.m.p.v.d.aalst}@tue.nl
+abstract. in the area of process mining, conformance checking aims to ﬁnd an
+optimal alignment between an event log (which captures the activities that actu-
+ally have happened) and a petri net (which describes expected or normative be-
+havior). optimal alignments highlight discrepancies between observed and mod-
+eled behavior. to ﬁnd an optimal alignment, a potentially challenging optimiza-
+tion problem needs to be solved based on a predeﬁned cost function for misalign-
+ments. unfortunately, this may be very time consuming for larger logs and models
+and often intractable. a solution is to decompose the problem of ﬁnding an opti-
+mal alignment in many smaller problems that are easier to solve. decomposition
+can be used to detect conformance problems in less time and provides a lower
+bound for the costs of an optimal alignment. although the existing approach is
+able to decide whether a trace ﬁts or not, it does not provide an overall alignment.
+in this paper, we provide an algorithm that is able to provide such an optimal
+alignment from the decomposed alignments if this is possible. otherwise, the al-
+gorithm produces a so-called pseudo-alignment that can still be used to pinpoint
+non-conforming parts of log and model. the approach has been implemented in
+prom and tested on various real-life event logs.
+1 introduction
+the ultimate goal of process mining [2] is to gain process-related insights based on an
+event log created by some system. such an event log contains a sequence of events for
+every case that was handled by the system. as an example, an event could be as follows:
+on october 1st, 2011, the resource 112 has completed the activity a1.
+a sequence of events contained in an event log is commonly referred to as a trace . from
+the data associated with the trace, we can derive for which particular case the activity
+a1was completed.
+within process mining, the ﬁeld of process conformance [2, 4, 5, 7–11, 13, 15, 17]
+deals with checking to what extent a process model (like a petri net) and an event log
+conform to each other, that is, how well they match. for this sake, the event log is ﬁrst
+replayed on the petri net as best as possible , which results in an optimal alignment
+between both. such an optimal alignment relates events in the event log to activities
+(transition labels) in the petri net in the best-possible way. based on this optimal align-
+ment, conclusions can then be drawn on important metrics like ﬁtness (how well doesthe event log conform to the petri net?), precision (how well does the petri net con-
+form to the event log?), and generalization (how well does the petri net conform to the
+system?).
+a cutting-edge algorithm to compute an alignment is the cost-based replayer [3],
+which ﬁnds a cost-minimal alignment between the event log and the petri net. although
+this algorithm is very efﬁcient and effective for smaller logs and smaller nets, it has
+problems when dealing with larger logs and larger nets. to speed up problematic re-
+plays, a decomposition technique has been proposed in [1]. this decomposition tech-
+nique decomposes an overall log and an overall petri net into a collection of decom-
+posed logs and a collection of matching decomposed petri nets, and guarantees that the
+decomposed costs (the costs of replaying the decomposed logs on the decomposed nets)
+equal 0 if and only if the non-decomposed costs (the costs of replaying the overall log
+on the overall net) equal 0. hence, the approach is able to accurately identify deviating
+and non-deviating traces, often in a fraction of the time. furthermore, this technique
+guarantees that the decomposed costs are a lower bound for the non-decomposed costs.
+an open issue for the decomposition approach is that it does not prescribe how to
+merge the decomposed alignments into an overall alignment, if possible. whereas the
+replay of the overall log on the overall net results in an overall alignment, replaying the
+decomposed logs on the decomposed nets results in a collection of decomposed align-
+ments. by merging these decomposed alignments into an overall alignment, which may
+be much faster than computing the non-decomposed alignment, one can also obtain di-
+agnostic information on where the event log and the petri net do not match. this paper
+introduces an algorithm to merge decomposed alignments into an overall alignment,
+again if possible. if not possible, then the algorithm will result in a so-called pseudo-
+alignment , which is a relaxation of the regular alignment. such pseudo-alignments pro-
+vide valuable diagnostic information and help to diagnose the misalignments.
+the core of this algorithm consists of 3 alignment rules and 2 pseudo-alignment
+rules. only applying the alignment rules will result in an alignment, but might not be
+feasible as in certain situations no alignment rule can be applied anymore. in such
+situations, we can apply a pseudo-alignment rule, but then the result will be a pseudo-
+alignment.
+the approach has been implemented in prom and has been applied to a large collec-
+tion of logs and models showing that the constructed (pseudo-)alignments indeed help
+to diagnose conformance problems.
+the remainder of this paper is organized follows. first, section 2 provides the pre-
+liminaries, that is, logs, nets, alignments, and the decomposition. second, section 3 in-
+troduces our alignment merge, that is, the 3 alignment rules and the 2 pseudo-alignment
+rules. third, section 4 introduces the implementation of the merge. fourth, section 5
+discusses the beneﬁts of using the algorithm. fifth, section 6 concludes the paper.
+2 preliminaries
+2.1 logs
+in this paper, we consider activity logs , which are an abstraction of the event logs as
+found in practice. an activity log is a collection of traces, where every trace is a se-table 1. an example activity log l1in tabular form.
+trace frequency
+ha1; a2; a4; a5; a6; a2; a4; a5; a6; a4; a2; a5; a7i 1
+ha1; a2; a4; a5; a6; a3; a4; a5; a6; a4; a3; a5; a6; a2; a4; a5; a7i 1
+ha1; a2; a4; a5; a6; a3; a4; a5; a7i 1
+ha1; a2; a4; a5; a6; a3; a4; a5; a8i 2
+ha1; a2; a4; a5; a6; a4; a3; a5; a7i 1
+ha1; a2; a4; a5; a8i 4
+ha1; a3; a4; a5; a6; a4; a3; a5; a7i 1
+ha1; a3; a4; a5; a6; a4; a3; a5; a8i 1
+ha1; a3; a4; a5; a8i 1
+ha1; a4; a2; a5; a6; a4; a2; a5; a6; a3; a4; a5; a6; a2; a4; a5; a8i 1
+ha1; a4; a2; a5; a7i 3
+ha1; a4; a2; a5; a8i 1
+ha1; a4; a3; a5; a7i 1
+ha1; a4; a3; a5; a8i 1
+p3 p5
+p2
+p4 p6p7
+p8p9
+p10
+t2t1
+t8t3
+t4
+t5 t7t10
+t11
+t6 t9p1
+fig. 1. a petri net..
+a1
+a4 a5 a6a2
+a3a7
+a8p3 p5
+p2
+p4 p6p7
+p8p9
+p10
+t2t1
+t8t3
+t4
+t5 t7t10
+t11
+t6 t9p1 fig. 2. an accepting petri net n1.
+quence of activities [2]. table 1 shows the example activity log l1, which contains in-
+formation about 20 cases, for example, 4 cases followed the trace ha1;a2;a4;a5;a8i. in
+total, the log contains 13+17+9+29+9+45+9+9+5+5+17+3 5+5+5 = 156
+activities.
+deﬁnition 1 (universe of activities). the setadenotes the universe of activities.
+to capture an activity log, we use multi-sets. if sis a set of objects, then b(s)is a
+multi-set of objects, that is, if b2b(s)ando2s, then object ooccursb(o)times in
+multi-setb.
+deﬁnition 2 (activity log). letaa be a set of activities. an activity log lovera
+is a multi-set of activity traces over a, that is,l2b(a).
+2.2 nets
+a petri net is a modelling formalism that contains three different types of elements:
+places ,transitions , and arcs [16]. figure 1 shows an example petri net containing 10
+places (p1throughp10), 11 transitions ( t1throught11), and 24 arcs.t1t2t3t5t6t7t9t10 /greatermuch /greatermucha1τa2a4τa5τa7 a3 a6
+/greatermucha8
+000 000 00 10 10 10fig. 3. a trace alignment extended with costs for the trace ha1; : : : ; a 8iand net n1. every column
+corresponds to a move, where the top row contains the activity, the middle row the transitions,
+and the bottom row the costs of this activity-transition pair.
+deﬁnition 3 (petri net). a petri net is a 3-tuple (p;t;f )wherepis a set of places,
+tis a set of transitions such that p\t=;, andf(pt)[(tp)is a set of
+arcs.
+for our purposes, we extend petri nets with labels, an initial marking, and a set of
+ﬁnal markings, yielding an accepting petri net. figure 2 shows an accepting petri net
+based on the example petri net, with labels (like a1anda8), an initial marking ( [p1]),
+and one ﬁnal marking ( [p10]).
+the labels are used to link transitions in the petri net to activities in an activity log.
+as an example, transition t1is linked to activity a1. transitions that are linked to log
+activities are called visible transitions. transitions that are not linked to a log activity,
+like transition t2, are called invisible transitions. these invisible transitions are linked
+to a dummy activity named . note that62a.
+deﬁnition 4 (accepting petri net). letaa be a set of activities. an accepting
+petri net over the set of activities ais a 6-tuple (p;t;f;l;i;o )where (p;t;f )is a
+petri net,l2t!(a[fg)is a labeling function that links every transition onto an
+activity (possibly the dummy activity ),i2b(p)is an initial marking, and ob(p)
+is a set of ﬁnal markings.
+as a result of the labeling, we can obtain an activity sequence from a transition
+sequence by removing all invisible transitions while replacing every visible transition
+with its label. for example, the example transition sequence ht1;t2;t3iyieldsha1;a2i
+as activity sequence.
+the initial marking and ﬁnal markings are included because process mining consid-
+ers complete traces and not a preﬁx-closed language. when replaying an activity log on
+a petri net, the petri net needs to have an initial marking to start with, and ﬁnal markings
+to conclude whether the replay has reached a proper ﬁnal marking. in the example, a
+replay of some trace starts from marking [p1], and the replay will be successful if and
+only if the marking [p10]is reached.
+2.3 alignments
+atrace alignment [2, 3] links activities in a trace onto transitions in a petri net. as an
+example, fig. 3 shows a possible trace alignment for the trace ha1;a2;a3;a4;a5;a6;a7;
+a8iand the accepting petri net n1. we useto denote the lack of a visible transition
+in an alignment. for example, the occurrence of activity a3was not matched by a ﬁringof transition t4in the net. in such a case, we use to indicate that no corresponding
+transition was ﬁred. likewise, although not present in this example, it is possible that
+transitiont4was ﬁred but that this was not matched by an occurrence of activity a3in
+the log. in such a case, we also use but now to indicate that no corresponding activity
+occurred.
+the occurrence of a1matches the ﬁring of transition t1(this is a so-called syn-
+chronous move , as both the log and the net can advance), then we need to ﬁre the
+transitiont2in the net which has no counterpart in the log (a so-called invisible model
+move ), followed by another synchronous move for a2andt3, after which we need to
+skip the activity a3(a so-called log move ) as there is no transition enabled in the net
+that matches this activity, etc. note that we require the transition sequence in the middle
+row of the alignment to lead from the initial marking of the net to some ﬁnal marking.
+deﬁnition 5 (legal moves). letaa be a set of activities, let 2abe an activity
+trace overa, and letn= (p;t;f;l;i;o )be an accepting petri net over a. the set
+of legal moves of aandnis the union of the sets f(a;t)ja2a^t2t^l(t) =ag
+(synchronous moves), f(a;)ja2ag(log moves),f(;t)jt2t^l(t)2ag(visible
+model moves), and f(;t)jt2t^l(t) =g(invisible model moves).
+deﬁnition 6 (trace alignment). letaa be a set of activities, let 2abe an
+activity trace over a, and letn= (p;t;f;l;i;o )be an accepting petri net over a. a
+trace alignment hfor traceon netnis a sequence of legal moves (a;t)2((a[f;
+g)(t[fg ))such that:
+–=h1
+aand
+–for someo2oit holds that i[h2
+tio,
+where
+h1
+a=8
+<
+:hi ifh=hi;
+haih1
+aifh=h(a;t)ihanda2a;
+h1
+a ifh=h(a;t)ihanda62a;
+and
+h2
+t=8
+<
+:hi ifh=hi;
+htih2
+tifh=h(a;t)ihandt2t;
+h2
+t ifh=h(a;t)ihandt62t;
+the bottom row in fig. 3 shows the possible costs of every move. in this example, a
+synchronous move costs 0, a visible model move costs 4, an invisible model move costs
+0, and a log move costs 10. the total costs for the example alignment is 30.
+deﬁnition 7 (costs structure). letaa be a set of activities, and let n= (p;t;f;
+l;i;o )be an accepting petri net over a. a cost structure $foraandnis a function
+that maps every legal move of aandnonto a (non-negative) natural number.
+typically, the costs of all synchronous moves and all invisible model moves are set
+to 0, as then a perfect match has costs 0. the user then only needs to set the costs for
+the log moves and the visible model moves. if these costs would be set to 10 and 4 for
+all transitions and activities, then we would have that $(;t3) = 4 ,$(a2;) = 10 ,
+and$(a2;t3) = 0 .t1t2t4t5t6t7t9t11 /greatermuch /greatermucha1τa2a4τa5τa7 a3 a6
+/greatermucha8
+00 0000 0 0 10 10 10fig. 4. another optimal trace alignment for the trace ha1; a2; a3; a4; a5; a6; a7; a8iand petri net
+n1(nowt4andt11ﬁre rather than t3andt10).
+deﬁnition 8 (costs of trace alignment). letaa be a set of activities, let 2a
+be an activity trace over a, letn= (p;t;f;l;i;o )be an accepting petri net over a,
+leth=h(a1;t1);:::; (an;tn)ibe a trace alignment (of length n) forandn, and let $
+be a cost structure for aandn. the costs of trace alignment h, denoted $h, is deﬁned as
+the sum of the costs of all legal moves in the alignment, that is, $h=p
+i2f1;:::;ng$(ai;
+ti).
+if no other alignment results in lower costs, the alignment is called optimal . there
+may exist multiple optimal alignments for a single trace. for example, the alignment as
+shown in fig. 3 is optimal, but the alignment as shown in fig. 4 is also optimal.
+deﬁnition 9 (optimal trace alignment). letaa be a set of activities, let 2a
+be an activity trace over a, letn= (p;t;f;l;i;o )be an accepting petri net over a,
+lethbe a trace alignment for andn, and let $be a cost structure for aandn. the
+trace alignment his called optimal if there exists no other trace alignment h0such that
+$h0<$h.
+alog alignment is a trace alignment for every trace in the activity log, an optimal
+log alignment is an optimal trace alignment for every trace in the activity log. as a result
+of a log alignment, any trace in the log can be mapped to the transition sequence that
+best matches this trace. as an example, an optimal trace alignment for the trace ha1;
+a2;a4;a5;a6;a2;a4;a5;a6;a4;a2;a5;a7ifrom logl1could include the transition se-
+quenceht1;t2;t3;t5;t6;t7;t8;t2;t3;t5;t6;t7;t8;t5;t2;t3;t6;t7;t9;t10iin netn1, and
+the costs of this alignment would be 0.
+deﬁnition 10 ((optimal) log alignment). letaa be a set of activities, let l2
+b(a)be an activity log over a, and letn= (p;t;f;l;i;o )be an accepting petri
+net overa. a log alignment hfor logland netnis a function that maps every
+possible trace 2lto a trace alignment. a log alignment is called optimal if and only
+if all its trace alignments are optimal.
+clearly, log l1can be perfectly aligned to net n1, as there exists an alignment
+where all trace alignments have costs 0. using such a log alignment, it is possible to
+project the date and information that is present in a log onto the net, and obtain average
+durations between activities, an animation with the token replay, etc.
+2.4 decomposition
+the overall net and the overall log can be decomposed in a number of decomposed nets
+and decomposed logs, in such a way that (1) the costs of the optimal overall alignmenta1
+a4 a6a2
+a3
+a4 a5a2
+a3
+a5a7
+a8
+a6a1a7
+a8
+n1a n1b n1c n1d n1efig. 5. decomposed nets obtained by decomposing the net n1. nets n1b,n1c,n1d, andn1e
+have the empty marking as initial marking, while the nets n1a,n1b,n1c, and n1dhave the
+empty marking as the only ﬁnal marking.
+table 2. decomposed log for activities fa1; a2; a3; a4; a6gin tabular form. this is the log that
+would be replayed on the decomposed net n1bas shown in fig. 5.
+trace frequency
+ha1; a2; a4; a6; a2; a4; a6; a4; a2i 1
+ha1; a2; a4; a6; a3; a4; a6; a4; a3; a6; a2; a4i 1
+ha1; a2; a4; a6; a3; a4i 3
+ha1; a2; a4; a6; a4; a3i 1
+ha1; a2; a4i 4
+ha1; a3; a4; a6; a4; a3i 2
+ha1; a3; a4i 1
+ha1; a4; a2; a6; a4; a2; a6; a3; a4; a6; a2; a4i 1
+ha1; a4; a2i 4
+ha1; a4; a3i 2
+is 0 if and only if the costs of every optimal decomposed alignment is 0, and (2) the
+accumulated costs of the decomposed alignments are a lower bound for the costs of the
+overall alignment [1]. this allows us to decompose an overall alignment problem into a
+number of decomposed alignment problems, which can possibly be solved much faster,
+while still providing certain guarantees.
+figure 5 shows the ﬁve decomposed nets that result from decomposing the net n1.
+for an in-depth description of such decompositions, we refer to [1]. for this paper, it is
+sufﬁcient to know that (1) every visible transition occurs in one or more decomposed
+nets, (2) for every label all different transitions sharing that label occur in a single de-
+composed net, and (3) that every place, invisible transition, and arc occurs in only a
+single decomposed net. as such, a token can only ﬂow from one decomposed net to an-
+other decomposed net through ﬁring some visible transition, which is hence observable
+in the log.
+based on the activity sets as present in these decomposed nets, ﬁve decomposed
+logs will be created. every decomposed log contains as many traces as the overall log,
+but every trace in a decomposed log contains only those activities that are present in the
+corresponding net. as an example, table 2 shows the decomposed log resulting from
+ﬁltering log l1using the decomposed net n1b, that is, the net that corresponds to the
+set of activitiesfa1;a2;a3;a4;a6g.0100200300400500
+0.010.11101001000
+number of activitiescomputation time (in seconds)
+not decomposed decomposed number of activitiesfig. 6. computation times and numbers of activities for the replay on some data sets. the non-
+decomposed replay did not ﬁnish in 10 minutes for some cases, typically the cases with many
+different activities.
+by replaying every decomposed log on the corresponding decomposed net, we ob-
+tain optimal decomposed alignments, say h1tohn. from [1] we know that the costs of
+these optimal decomposed alignments are guaranteed to be 0 if and only if the costs of
+an optimal overall alignment (of the overall log on the overall net) is 0. furthermore, we
+know from [1] that we can use these decomposed alignments to obtain a lower bound
+for the costs of the overall alignment.
+figure 6 shows the usefulness of the decomposition approach. it shows the required
+computation times1and numbers of activities for the dmkd 2006 ,bpm 2013 , and
+is 2014 data sets [12, 14, 15]. these data sets contain in total 59 cases of varying size,
+ranging from 12 to 429 activities, from 500 to 2000 traces, with varying numbers of mis-
+matching traces (from 0% to 50%). obviously, the decomposed replay is more robust
+when it comes to computation times, while it provides the same guarantee as mentioned
+earlier. for larger events logs and models, computing optimal alignments can take days
+and is often intractable. for example, for some of the cases that did not ﬁnish in 10
+minutes it is known that they also do not ﬁnish within 12 hours [15], or that they do not
+ﬁnish because they run out of memory. if the net has a suitable decomposition, replay
+time may thus be reduced from more than 12 hours or infeasible to 10 seconds.
+as a result of this replay, we will have a collection of decomposed alignments and
+a lower bound for the costs. to be able to diagnose the mismatches between the log
+and the net, we want to be able to merge the decomposed alignments into an overall
+alignment, and project that overall alignment onto the log or the net. note that as a result
+of the guarantees of the decomposition, a trace has no costs in the overall alignment if
+and only if it has costs in the decomposed alignments.
+1all tests are performed on a desktop computer with an intel core-i7-4770 cpu at 3.40 ghz,
+16 gb of ram, running windows 7 enterprise (64-bit), and using a 64-bit version of java 7
+where 4 gb of ram was allocated to the java vm.t1a1
+0t2t3t5/greatermuch/greatermuchτa2a4a3a6
+00505t1a1
+0/greatermucht5t7t6t4a2a4a5 a3τ
+500 00t7t8 /greatermuch/greatermucha5a6a7a8τ
+002005t7t9t10 /greatermucha7a8
+05t10
+h1a h1b h1c h1d h1efig. 7. possible optimal decomposed alignments. h1bis an optimal alignment for the decomposed
+log shown in table 2 and the decomposed net n1b, etc.
+3 merging alignments
+this section introduces an algorithm to merge a coherent set of decomposed alignments,
+that is, a set of alignments that result from replaying decomposed logs on corresponding
+decomposed nets. please note that the costs of the merged alignment are simply the
+accumulation of the costs of the decomposed alignments [1]. as a result, when merging
+the alignments we do not need to take the costs into account. instead, we can focus on
+the diagnostic value of the merged alignment.
+to explain issues at hand for this step, we assume that we need to replay the trace
+ha1;a2;a3;a4;a5;a6;a7;a8ion the netn1(see fig. 2). figure 3 shows an optimal
+overall alignment for this trace, which shows that the optimal costs for replaying this
+trace are 30. figure 7 shows a set of possible optimal decomposed alignments, obtained
+by replaying the decomposed logs on the decomposed nets (see fig. 5). accumulating
+the costs from these decomposed alignments yields costs 27, which is caused by the fact
+that neth1dcan do the model move (;t7)instead of the more expensive log move
+(a6;).
+the algorithm needs to merge these ﬁve decomposed alignments into one overall
+alignment, if possible. to do so, the algorithm takes the trace, an empty alignment, and
+the ﬁve decomposed alignments, and works its way through the trace and the decom-
+posed alignment while building up the overall alignment:
+–the algorithm ﬁrst encounters the activity a1in the trace, which is covered by two
+decomposed alignments ( h1aandh1b). fortunately, both decomposed alignments
+agree on a synchronous move on a1and transition t1, so the algorithm adds the
+legal move (a1;t1)to the overall alignment and advances both the trace and the
+decomposed alignments.
+–the algorithm then encounters the activity a2, which is also covered by two decom-
+posed fragments ( h1bandh1c). however,h1bis not yet ready to accept a2as it ﬁrst
+needs to do an invisible model move on the transition t2. therefore, the algorithm
+ﬁrst adds the invisible model move (;t2)to the overall alignment and advances
+the state of h1b. then, unfortunately, the algorithm notices that h1bandh1cdis-
+agree on the move on a2, ash1bsuggests a synchronous move (on transition t3)
+whileh1csuggests a log move. in case of such a conﬂict, we can either take an op-
+timistic approach (by selecting the least expensive move) or a pessimistic approach
+(by selecting the most expensive move). in the remainder of this paper, we will
+use the pessimistic approach, as the optimistic approach tends to mask mismatchesby selecting, in case of a conﬂict, moves without costs. clearly, when diagnosis is
+the goal, one should not mask possible problems, but one should stress them. so,
+the algorithm adds the log move (a2;)to the overall alignment and advances the
+state of the trace and both h1bandh1c.
+–activitya3is handled by the algorithm in a similar way as a2, ash1bandh1cagain
+disagree. note that as a result, the algorithm now has added two log moves for a2
+anda3to the overall alignment, which leads to a transition sequence that is not
+executable in the overall net, and to an overall alignment which is (by deﬁnition)
+not a proper alignment. for this reason, we introduce so-called pseudo-alignments,
+which are alignments except for the fact that the trace does not need to be executable
+in the net. the result of merging the decomposed alignments at hand would then be
+a pseudo-alignment instead of an alignment.
+–etc.
+fig. 8. alignment of the decom-
+posed alignments for obtaining the
+overall pseudo-alignment. the top
+row shows the trace that we need
+to align in the net. the middle
+row shows the optimal decomposed
+alignments of fig. 7 laid out in
+such a way that the activities match
+in the vertical direction. note that
+the ordering in the vertical direction
+of these decomposed alignments is
+of no importance. the bottom row
+shows the pseudo-alignment that
+results from merging these decom-
+posed alignments.
+t2t3t5/greatermuch /greatermuchτa2a4a3 a6
+0050 5t1a1
+0t7t8 /greatermuch/greatermucha5a6a7a8τ
+002005t7t9t10 t1a1
+0
+/greatermucha7a8
+05t10
+/greatermucht5t7t6t4a2a4a5 a3τ
+500 00
+t1a1
+0t2τ
+0/greatermucha2
+5/greatermucha3
+5t5a4
+0t6τ
+0t7a5
+0/greatermuch /greatermucha6a7a8τ
+5 0010t9t10a1a2a3a4a5a6a7a8
+t7
+/greatermuch
+2t7
+this result of this merging is visualized in fig. 8. in this ﬁgure, the middle row shows
+thealignment of alignments that results from merging the decomposed alignments. in
+this row, the legal moves that have been ignored (because they were in conﬂict and
+were less expensive, like (a2;t3), or because they were missing, like a move on t7) are
+indicated with a grey background. the overall pseudo-alignment (see the bottom row
+in fig. 8) follows directly from this alignment of decomposed alignments by taking in
+every column a legal move that has no grey background, and by accumulating the costs
+in every column.to avoid the introduction of the same concepts in the formal deﬁnitions over and
+over again, we ﬁrst deﬁne a base setting for these formal deﬁnitions. this deﬁnition is
+to be used as a preamble for all other deﬁnitions in this section.
+deﬁnition 11 (base setting). the base setting for this section is as follows:
+–aa denotes a set of activities,
+–ldenotes an activity log over a,
+–denotes an activity trace from l,
+–n= (p;t;f;l;i;o )denotes an accepting petri net over a,
+–$denotes a cost structure for aandn,
+–hdenotes an optimal trace alignment of foraandn, given $,
+–nequals the number of decomposed nets obtained by decomposing n,
+–for everyi2f1;:::;ng:
+aidenotes the set of activities of the i-th decomposed net,
+lidenotes the log obtained from lby ﬁltering out all activities not in ai,
+idenotes the activity trace from liobtained from lby ﬁltering out all activ-
+ities not inai,
+ni= (pi;ti;fi;li;ii;oi)denotes the i-th decomposed net obtained by
+decomposing nas explained in [1], where pip,tit,fif,
+8t2tili(t) =l(t),ii=i\pi, andoi=fo\pijo2og,
+hidenotes an optimal trace alignment of iforliandni.
+first, we introduce the space of alignments that we are interested in, that is, the col-
+lection of overall alignments that ﬁt the decomposed alignments. later on, we introduce
+the algorithm that returns an alignment from this space.
+deﬁnition 12 (merged trace alignment). the trace alignment h0is a merged trace
+alignment ofh1;:::;hnif and only if8i2f1;:::;ngh0#ai=hi, whereh0#aiis deﬁned as
+follows:
+h0#ai=8
+<
+:hi ifh0=hi;
+h(a;t)ih0#aiifh0=h(a;t)ih0anda2ai_t2ti;
+h0#ai ifh0=h(a;t)ih0anda62ai^t62ti;
+for decomposed alignments that conﬂict on some legal move no such merged trace
+alignment exists.
+observation 1. (a merged trace alignment may not exist) for arbitrary decomposed
+alignmentsh1;:::;hn, a merged trace alignment h0may not exist.
+see fig. 8: either we have the legal move (a2;t3)or the legal move (a2;). in the
+former case, the decomposed alignment that contains the legal move (a2;)cannot
+be matched. in the latter case, the decomposed alignment that contains the legal move
+(a2;t3)cannot be matched.
+in such cases, to get any result of merging the decomposed alignments, we need to
+let go of the requirement that for some o2oit holds that i[io, that is, the result is
+not an alignment, but a pseudo-alignment .deﬁnition 13 (trace pseudo-alignment). a trace pseudo-alignment hfor traceon
+netnis a sequence of legal moves (a;t)2(a[f;g)(t[fg ))such that
+=h1
+a, whereh1
+ais deﬁned as in deﬁnition 6.
+in a pseudo alignment we drop the second requirement in deﬁnition 6. using these
+pseudo-alignments, the algorithm can handle conﬂicts between the decomposed align-
+ments. a merged pseudo alignment has only legal moves for:
+–each activity in the log trace. in case of conﬂicts, the cheapest legal move is selected
+for the overall pseudo-alignment.
+–a model move that all agree on. note that, by deﬁnition, for an invisible model
+move all agree, as there is only one decomposed net that contains this transition.
+deﬁnition 14 (merged trace pseudo-alignment). the trace pseudo-alignment h0is
+amerged trace pseudo-alignment ofh1;:::;hnif and only if8i2f1;:::;ngh0#ai=hi,
+whereh0#aiis deﬁned as follows:
+h0#ai=8
+>>>>>><
+>>>>>>:hi ifh0=hi;
+h(a;t0)ih0#aiifh0=h(a;t)ih0anda2ai,
+for somet0such that $(a;t0)$(a;t);
+h(x;t)ih0#aiifh0=h(x;t)ih0,x2f;g, andt2ti;
+h0#ai ifh0=h(;t)ih0andt2ti;
+h0#ai ifh0=h(a;t)ih0anda62aiandt62ti;
+as a result, in case of conﬂicting legal moves, the most expensive legal move is se-
+lected to be included in the overall pseudo-alignment (see the second item). of course,
+thisselected legal move will not match some unselected legal moves, which most likely
+breaks the execution of the transition sequence in the net. furthermore, note that it is
+possible to ignore visible model moves (see the fourth item). this is required for com-
+pleteness as otherwise we cannot deal with a conﬂict for such transitions. for example,
+observe that the decomposed alignment h1dincludes the legal move (;t7), which is
+not matched in the decomposed alignment h1c. having (;t7)in the corresponding
+position inh0would work for h1d, but not for h1c. likewise, not having it would work
+forh1c, but not for h1d. to solve this problem, we decide to have (;t)inh0(for sake
+of diagnosis) and to compensate for this using this fourth item.
+theorem 1. (a merged trace pseudo-alignment always exists) for arbitrary decom-
+posed alignments h1;:::;hn, a merged trace pseudo-alignment h0always exists.
+proof. assume that such an h0does not exist, and assume that we could ﬁnd a preﬁx
+ofh0such that the projection of this preﬁx onto every aidoes result in a preﬁx of
+hi. obviously, the empty preﬁx satisﬁes this requirement. now, assume that we cannot
+extend this preﬁx anymore, that is, we cannot add a new legal move, while a ﬁnal mark-
+ing has not been reached yet. this can obviously not involve an invisible transition, as
+there can be no conﬂict on such transition. likewise, this can also not involve a visible
+transition contained in only one decomposed alignment. however, this can also not in-
+volve a shared visible transition that is enabled by all sharing decomposed alignments,
+as then we could simply take a most expensive of the legal moves proposed by thesealignments. as a result, this can only happen in case at least one one of the sharing
+alignments expects another shared visible transition ﬁrst. such a shared visible tran-
+sition cannot correspond to a model move, as otherwise we could use the fourth item
+to continue, as explain above. as a result, there should be a conﬂict with synchronous
+moves. but this clearly contradicts the fact that every decomposed alignment adheres to
+the order of these transitions in the original trace. therefore, it cannot be that we cannot
+extend the preﬁx, unless we have reached a ﬁnal marking.
+theorem 2. (a merged trace pseudo-alignment may not be an alignment) let the trace
+pseudo-alignment h0be a merged trace pseudo-alignment of h1;:::;hn. thenh0may
+not be a trace alignment for landn.
+proof. see fig. 8: we added the legal move (a2;)as this is more expensive than
+adding (a2;t3). in a similar fashion, we also added (a3;). as a result, neither t3nor
+t4is present in the transition sequence of the alignment. but, clearly, net n1requires
+eithert3tot4to ﬁre to reach the ﬁnal marking. hence the resulting transition sequence
+does not satisfy the requirement that i[io, for someo2o.
+based on these deﬁnitions, we ﬁrst introduce three alignment stitching rules, fol-
+lowed by two pseudo-alignment stitching rules. the alignment stitching rules construct
+a merged trace alignment, if possible. if this succeeds, we know that the result is again
+an alignment, and that the reported costs are exact, and not just a lower bound. oth-
+erwise, we need a pseudo-alignment stitching rule to be able to continue, but this will
+result in a pseudo-alignment, and the reported costs will only be a lower bound.
+deﬁnition 15 (stitching function y).lethbe the set of all possible trace pseudo-
+alignments of landn, and lethibe the set of all possible trace alignments of liand
+ni. the function y2(hah1:::hn)!h returns the ﬁrst argument con-
+catenated by the merged trace pseudo-alignment of the third and following arguments
+(h1;:::;hn), where the second argument ( ) is used to guide the stitching. as a result,
+y(hi;;h1;:::;hn)returns the merged trace pseudo-alignment of h1;:::;hn.
+the ﬁrst alignment stitching rule is a simple rule that detects when the algorithm is
+done: if the trace and all decomposed alignments have been dealt with completely.
+alignment stitching rule 1 (all done)
+y(h0;hi;hi;:::;hi) =h0
+the second alignment stitching rule is a rule that allows the algorithm to continue
+if all relevant decomposed alignments agree on the ﬁrst activity in the trace. if so, this
+activity is now dealt with and so are the corresponding legal moves in the relevant
+decomposed alignments. for the irrelevant decomposed alignments, nothing changes.
+alignment stitching rule 2 (activity w/o conﬂict)
+if=haiandt2(t[fg )
+and8i2f1;:::;ng(a2ai))(hi=h(a;t)ihi)
+and8i2f1;:::;ng(a62ai))(hi=hi)
+theny(h0;;h1;:::;hn) =y(h0h(a;t)i;;h1;:::;hn)the third alignment stitching rule is a rule that allows the algorithm to continue if all
+relevant decomposed alignments agree on a next model move. if so, these legal moves
+are now dealt with. note that the set of relevant decomposed alignments differs per
+model move, as this set comprises all decomposed alignments where the corresponding
+decomposed net contains the transition involved in the selected legal move. as a result,
+multiple legal model moves could be a candidate for applying this rule. note that this
+indicates that the candidate transitions are now all enabled, that is they are concurrent.
+alignment stitching rule 3 (transition w/o conﬂict)
+ift2tandx2f;g
+and8i2f1;:::;ng(t2ti))(hi=h(x;t)ihi)
+and8i2f1;:::;ng(t62ti))(hi=hi)
+theny(h0;;h1;:::;hn) =y(h0h(;t)i;;h1;:::;hn)
+as mentioned before, applying these rules will result in an alignment if the algo-
+rithm ends and rule 1 can be applied. however, it may be that no rule is applicable
+before reaching the end of one or more decomposed alignments.
+theorem 3 (alignment stitching rules result in an alignment). provided that the
+application of the alignment stitching rules ends, that is, if at the end rule 1 is applied,
+then the result of applying these rules is an alignment merged trace alignment, that is,
+a trace alignment.
+proof. by construction, the alignment stitching rules append h0with a legal move (a;t)
+if and only if all relevant decomposed alignments hiagree on this legal move. see also
+[1].
+if conﬂicts between activities and/or transitions do occur, the algorithm can use one
+of the following rules to continue. however, by applying these rules, we know that the
+end result will not be an alignment. as we favor alignments, over pseudo-alignments,
+we only apply the following stitching rules if the previous stitching rules can not be
+applied.
+the ﬁrst pseudo-alignment stitching rule is a rule that allows the algorithm to con-
+tinue if the relevant decomposed alignments disagree on the next legal move containing
+the ﬁrst activity in the trace, that is, a synchronous or log move. if so, the most ex-
+pensive of the conﬂicting legal moves is added to the resulting pseudo alignment, the
+activity in the trace is now dealt with, and so are all the conﬂicting moves in the relevant
+decomposed alignment.
+pseudo-alignment stitching rule 1 (activity w/ conﬂict)
+if=haiandr=fi2f1;:::;ngja2aigandm2r
+and8i2r(ti2(ti[fg )^hi=h(a;ti)ihi^$(a;tm)$(a;ti))
+and8i2f1;:::;ngnrhi=hi
+theny(h0;;h1;:::;hn) =y(h0h(a;tm)i;;h1;:::;hn)in this deﬁnition, rcan be interpreted as the set of (indices of) relevant decomposed
+alignments, and mcan be interpreted as the (index of the) relevant decomposed align-
+ment with maximal costs.
+the second pseudo-alignment stitching rule is a rule that allows the algorithm to
+continue if the relevant decomposed alignments disagree on a next model move. if
+so, one of these model moves is selected, and added to the pseudo-alignment, and all
+corresponding model moves are now dealt with.
+pseudo-alignment stitching rule 2 (transition w/ conﬂict)
+ift2tandl(t)2a
+andr=fi2f1;:::;ngjhi=h(;t)i:::gandr6=;
+and8i2rhi=h(;t)ihi
+and8i2f1;:::;ngnrhi=hi
+theny(h0;;h1;:::;hn) =y(h0h(;t)i;;h1;:::;hn)
+in this deﬁnition, again rcan be interpreted as the set of (indices of) relevant decom-
+posed alignments.
+note that both rules are not deterministic, as there may be more activities or multiple
+visible transitions that satisfy the preamble. in such a case, one can select any of these
+activities or transitions, apply the rule using that activity or transition, and continue.
+theorem 4 (stitching rules are complete). applying all ﬁve rules ends, and the result
+of applying them is a merged trace pseudo-alignment.
+proof. by construction, pseudo-alignment stitching rule 1 appends h0with a legal
+move (a;t)if and only if it is the most expensive option, which corresponds 1-to-
+1 with the second item of the merged trace pseudo-alignment. as a result, this rule
+deals effectively with conﬂicting synchronous moves and conﬂicting log moves (as ti
+is allowed to be). also by construction, pseudo-alignment stitching rule 2 allows
+toadd a conﬂicting model move, as it may add such a model move to h0while not
+adding it to some hi. this correspond 1-to-1 with the fourth item of the conﬂicting
+merged trace alignment. as a result, the rule deals effectively with conﬂicting model
+moves. what remains is the proof that alignment stitching rule 1 can be applied at
+some point in time (algorithm ends). assume that the stitching blocks at some point in
+time, while starts witha. if all corresponding hi’s start with the same legal move,
+then alignment stitching rule 2 can be applied. if these hi’s start with conﬂicting legal
+moves, then pseudo-alignment stitching rule 1 can be applied. as a result, to have no
+stitching rule applicable at this moment, some of these hi’s need to start with a model
+move, that is, with some (;ti)or(;ti). in case of (;ti), alignment stitching rule 3
+can be applied, as tionly occurs in ti. otherwise, in case of (;ti), pseudo-alignment
+stitching rule 2 can be applied. hence, the stitching cannot block.
+we now have everything in place for the merge algorithm, which simply keeps on
+checking whether the rules as provided earlier (in the order given) can be applied. as
+soon as it detects a rule that it can apply, it applies that rule and starts over again by
+checking whether the rules can be applied. in the end, the ﬁrst rule is applied, which
+provides us with the result: either a pseudo-alignment or a proper alignment.fig. 9. screenshot of the result of the decomposed replay (left-hand side) and of the result of the
+non-decomposed replay (right-hand side). both alignments are projected onto the overall log.
+4 implementation
+the alignment merge as described in the previous section has been implemented in the
+“logalignment” package of prom 6 [19]. this “logalignment” package2is part of the
+“divideandconquer” framework [18] in prom 6 that supports decomposed discovery
+and decomposed replay.
+in the framework, a single replay (that is, on overall alignment of every trace in
+a log on a net) has a timeout of 10 minutes. in fig. 6 we already noted that some
+non-decomposed replays did not ﬁnish within this time. this timeout of 10 minutes is
+set to prevent a single replay to take almost forever. experiences indicated that only
+rarely a replay ﬁnishes successfully after more than these 10 minutes [14, 15]. in case
+of a decomposed replay, this timeout is enforced in a progressive way. if one of the
+decomposed replays has failed, then the resulting pseudo-alignment will be empty. for
+this reason, after one of the decomposed replays has exceeded the timeout, the timeout
+will be set to 0 minutes. this effectively prevents time being spent in decomposed
+replays that are not needed anyway as the resulting pseudo-alignment is already known
+to be empty.
+figure 9 shows two screenshots: one of the result of the decomposed replay and the
+alignment merge, and one of the result of the non-decomposed replay. the resulting
+(pseudo-)alignments have both been projected onto the overall log. this ﬁgure shows
+that the decomposed replay followed by the alignment merge successfully matches all
+2see https://svn.win.tue.nl/repos/prom/packages/logalignment/
+trunk0.010.11101001000computation time (in seconds)
+not decomposed decomposed decomposed + alignment mergefig. 10. computation times for the replay and the alignment merge on the data sets.
+synchronous moves (the lighter and green chevrons), and also most of the visible model
+moves (the darker and purple chevrons).
+5 discussion
+figure 10 shows the computation time needed for the decomposed replay extended with
+the alignment merge for the three data sets introduced earlier. for sake of reference,
+this ﬁgure also includes the computation time needed for both the non-decomposed
+replay and the decomposed replay. clearly, in many cases, doing a decomposed replay
+followed by an alignment merge is faster than doing a non-decomposed replay. as a
+result, a pseudo-alignment can be returned in a fraction of the time it would take to
+return an alignment. note that, for every data set used, the computation of a pseudo-
+alignment would take up to 20 seconds, whereas the computation of an alignment might
+take more than 10 minutes, that is, days [14, 15].
+if the decomposed alignments do no incur any costs, then there exists an alignment
+that is the result of the merge [1]. for this alignment, it is guaranteed that there are no
+conﬂicts when merging. as a result, in such cases, the algorithm as introduced in this
+paper is guaranteed to return an alignment instead of only a pseudo-alignment.
+if the decomposed alignments do incur costs, then it is still possible that an optimal
+alignment is returned by the stitching algorithm: if at every step during the stitching all
+relevant decomposed alignments agree on a next legal move, then the result will be an
+alignment. note that this alignment may still incur costs, as every relevant decomposed
+alignment may agree on the move to be a log move, or in case all misalignments are
+local. as a result, in certain cases if costs are incurred, the algorithm will return an
+alignment, and this alignment will have the same costs as the non-decomposed align-
+ment [1].
+figure 11 shows that in general it is not possible to obtain an alignment in every
+case. the dashed line in this net indicates the only way this net can be decomposed into
+nets: the ﬁrst decomposed net ( na) contains all transitions labeled aand the second net
+(nd) contains all transitions labeled d. now assume that the trace at hand is the empty
+trace and that every model move costs 4. the optimal alignment for nacontains onlyb
+tba
+dta
+1
+td
+1a
+ta
+k
+ctc
+dtd
+l. . .
+. . .ktransitions labeled a
+ltransitions labeled dfig. 11. an example net for which there is no proper alignment.
+the legal move (;tc)(with costs 2), whereas the optimal alignment for ndcontains
+only(;tb)(also with costs 2). clearly, there is no alignment in the overall net that has
+lower costs than the costs (4) of these two model moves: the upper branch would cost
+4k+ 2, the lower branch 2 + 4l. this example also shows that we cannot give
+an upper bound for an overall alignment using the decomposed alignment, as kandl
+could be arbitrary high.
+at the moment, the cost-based replay algorithm results in on overall optimal align-
+ment. as a result, it is conceivable that for two decomposed replays two optimal de-
+composed alignments are returned which have conﬂicts, while there would also be two
+optimal decomposed alignments that do not conﬂict. in case of the conﬂicting decom-
+posed alignments, the algorithm returns a pseudo-alignment, whereas it would return
+an alignment if the alignments do not conﬂict. as such, it would be beneﬁcial for the
+merge algorithm if the replay algorithm would return alloptimal alignments instead
+of only one. if so, then the merge algorithm could return an alignment in more cases,
+although of course this would take more time as the algorithm would have to check
+possibly many combinations of decomposed alignments.
+6 conclusions
+this paper has introduced an algorithm to merge decomposed alignments. in general,
+the result of the algorithm will be a pseudo-alignment, that is, an alignment except for
+the fact that it may not be executable in the net. however, if the decomposed alignments
+agree with each other, then the algorithm returns a proper optimal alignment. in case
+of a perfect match between the log and the net, then these decomposed alignments
+will always agree with each other [1], and hence the result of the algorithm will be an
+alignment. in case of mismatches between the log and the net, the result many still be
+an alignment, but then all decomposed alignments need to agree.
+this paper has also shown that, especially for logs and nets that contain many ac-
+tivities, the computation of a (non-decomposed) alignment takes longer than the com-
+putations of the decomposed alignments and the time it takes to merge them. as the
+pseudo-alignment that results from the decomposed approach can still be used effec-
+tively to diagnose mismatches, it will often be more convenient to use this approach.
+in case the algorithm returns a proper alignment, then the costs of this alignment are
+exact, that is, it equals the costs obtained through a non-decomposed replay. in case thealgorithm does not return an alignment but a pseudo-alignment, then the costs of this
+alignment are a lower bound for the costs obtained through a non-decomposed replay.
+in the future, we want to see whether heuristics exist that help the merge into obtain-
+ingbetter (pseudo-)alignments. as is, the current algorithm contains non-determinism,
+in which case it has several alternatives to proceed. for example, there could be mul-
+tiple visible model moves to merge next. possibly, using some local heuristic, we can
+select a next merge action which most likely results in a (pseudo-)alignment that better
+matches the overall alignment one would get by doing a non-decomposed replay. note
+that the better this match, the better the gain of using the non-decomposed replay.
+also, we want to extend the stitching rules with rules that allow for different ways of
+decomposing the net. the decomposition introduced in [1] takes care that every invisi-
+ble transition ends up in a single decomposed net. as a result, there can be no conﬂict
+that involves invisible transitions. however, different decomposition approaches may
+not guarantee this. as an example take a decomposition approach where a decomposed
+net is obtained by simply hiding (that is, making invisible) those visible transitions that
+are not relevant for this decomposed net. for such a decomposition approach, every
+transition occurs in every decomposed net, only some visible transitions will be made
+invisible. of course, if some visible transition has been made invisible in some decom-
+posed net, then there will deﬁnitely be a conﬂict when merging the alignment. this gets
+even more complicated if the decomposition approach ﬁrst reduces the decomposed
+nets, for example, by using existing petri net reduction rules [6, 16]. then some invisi-
+ble transitions will be present in only some decomposed nets, and some of them might
+also have visible counterparts in other decomposed nets.
+finally, an interesting idea is to recompose decomposed nets and decomposed logs
+in case their decomposed alignments have many conﬂicts. by recomposing the nets
+and the logs, we remove these conﬂicts but obtain a slightly larger recomposed net
+and recomposed log. as this recomposed net and recomposed log might still be much
+smaller than the overall net and overall log, the decomposed replay might still be much
+faster than the overall replay.
+references
+1. aalst, w.m.p.v.d.: decomposing petri nets for process mining: a generic approach. dis-
+tributed and parallel databases 31(4), 471–507 (2013), http://dx.doi.org/10.
+1007/s10619-013-7127-5
+2. aalst, w.m.p.v.d.: process mining: discovery, conformance and enhancement of business
+processes. 1st edn. (2011)
+3. aalst, w.m.p.v.d., adriansyah, a., dongen, b.f.v.: replaying history on process models for
+conformance checking and performance analysis. wiley interdisc. rew.: data mining and
+knowledge discovery 2(2), 182–192 (2012), http://dx.doi.org/10.1002/widm.
+1045
+4. adriansyah, a., dongen, b.f.v., aalst, w.m.p.v.d.: conformance checking using cost-based
+ﬁtness analysis. in: proceedings of the 2011 ieee 15th international enterprise distributed
+object computing conference. pp. 55–64. edoc ’11, ieee computer society, washington,
+dc, usa (2011), http://dx.doi.org/10.1109/edoc.2011.125. adriansyah, a., sidorova, n., dongen, b.f.v.: cost-based ﬁtness in conformance checking.
+in: application of concurrency to system design (acsd), 2011 11th international confer-
+ence on. pp. 57–66 (june 2011)
+6. berthelot, g.: transformations and decompositions of nets. in: brauer, w., reisig, w.,
+rozenberg, g. (eds.) advances in petri nets 1986 part i: petri nets, central models and
+their properties. vol. 254, pp. 360–376 (1987)
+7. vanden broucke, s.k.l.m., de weerdt, j., vanthienen, j., baesens, b.: determining process
+model precision and generalization with weighted artiﬁcial negative events. knowledge and
+data engineering, ieee transactions on 26(8), 1877–1889 (aug 2014)
+8. calders, t., g ¨unther, c.w., pechenizkiy, m., rozinat, a.: using minimum description length
+for process mining. in: proceedings of the 2009 acm symposium on applied computing.
+pp. 1451–1455. sac ’09, acm, new york, ny , usa (2009), http://doi.acm.org/
+10.1145/1529282.1529606
+9. cook, j.e., wolf, a.l.: software process validation: quantitatively measuring the correspon-
+dence of a process to a model. acm trans. softw. eng. methodol. 8(2), 147–176 (apr 1999),
+http://doi.acm.org/10.1145/304399.304401
+10. de weerdt, j., de backer, m., vanthienen, j., baesens, b.: a robust f-measure for evaluating
+discovered process models. in: computational intelligence and data mining (cidm), 2011
+ieee symposium on. pp. 148–155 (april 2011)
+11. goedertier, s., martens, d., vanthienen, j., baesens, b.: robust process discovery with arti-
+ﬁcial negative events. j. mach. learn. res. 10, 1305–1340 (jun 2009), http://dl.acm.
+org/citation.cfm?id=1577069.1577113
+12. maruster, l., weijters, a.j.m.m., aalst, w.m.p.v.d., van den bosch, a.: a rule-based ap-
+proach for process discovery: dealing with noise and imbalance in process logs. data min-
+ing and knowledge discovery 13(1), 67–87 (2006), http://dx.doi.org/10.1007/
+s10618-005-0029-z
+13. munoz-gama, j., carmona, j.: a fresh look at precision in process conformance. in: hull,
+r., mendling, j., tai, s. (eds.) business process management, lecture notes in computer
+science, vol. 6336, pp. 211–226. springer berlin heidelberg (2010), http://dx.doi.
+org/10.1007/978-3-642-15618-2_16
+14. munoz-gama, j., carmona, j., aalst, w.m.p.v.d.: conformance checking in the large: parti-
+tioning and topology. in: bpm. lecture notes in computer science, vol. 8094, pp. 130–145.
+springer (2013)
+15. munoz-gama, j., carmona, j., aalst, w.m.p.v.d.: single-entry single-exit decomposed con-
+formance checking. inf. syst. 46, 102–122 (2014), http://dx.doi.org/10.1016/
+j.is.2014.04.003
+16. murata, t.: petri nets: properties, analysis and applications. proceedings of the ieee 77(4),
+541–580 (april 1989)
+17. rozinat, a., aalst, w.m.p.v.d.: conformance checking of processes based on monitoring real
+behavior. information systems 33(1), 64 – 95 (2008), http://www.sciencedirect.
+com/science/article/pii/s030643790700049x
+18. verbeek, h.m.w.: decomposed process mining with divideandconquer. in: bpm
+2014 demos, vol. 1295, pp. 86–90. ceur-ws.org (2014), http://ceur-ws.org/
+vol-1295/paper11.pdf
+19. verbeek, h.m.w., buijs, j.c.a.m., dongen, b.f.v., aalst, w.m.p.v.d.: prom 6: the process
+mining toolkit. in: proc. of bpm demonstration track 2010. vol. 615, pp. 34–39. ceur-
+ws.org (2010), http://ceur-ws.org/vol-615/paper13.pdf

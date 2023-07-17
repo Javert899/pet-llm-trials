@@ -1,0 +1,2385 @@
+model repair | aligning process models to reality
+dirk fahland, wil m.p. van der aalst
+eindhoven university of technology, the netherlands
+abstract
+process mining techniques relate observed behavior (i.e., event logs) to modeled
+behavior (e.g., a bpmn model or a petri net). process models can be discovered
+from event logs and conformance checking techniques can be used to detect and
+diagnose dierences between observed and modeled behavior. existing process
+mining techniques can only uncover these dierences, but the actual repair of the
+model is left to the user and is not supported. in this paper we investigate the
+problem of repairing a process model w.r.t. a log such that the resulting model
+can replay the log (i.e., conforms to it) and is as similar as possible to the original
+model. to solve the problem, we use an existing conformance checker that aligns
+the runs of the given process model to the traces in the log. based on this
+information, we decompose the log into several sublogs of non-tting subtraces.
+for each sublog, either a loop is discovered that can replay the sublog or a
+subprocess is derived that is then added to the original model at the appropriate
+location. the approach is implemented in the process mining toolkit prom and
+has been validated on logs and models from several dutch municipalities.
+keywords: process mining, model repair, petri nets, conformance checking
+1. introduction
+process mining techniques aim to extract non-trivial and useful information
+from event logs [ 1,2]. the process mining spectrum ranges from operational
+support techniques (predictions and recommendations) to techniques to identify
+bottlenecks and decision rules [ 1]. the two main (and best known) types of
+process mining are (1) process discovery and (2) conformance checking.
+process discovery techniques automatically construct a process model (e.g.,
+a petri net or a bpmn model) from an event log [ 1,3{8]. the basic idea of
+control-ow discovery is very simple: given an event log containing a collection of
+traces, automatically construct a suitable process model \describing the behavior"
+seen in the log. however, given the characteristics of real-life event logs, it is
+notoriously dicult to learn useful process models from such logs. event logs
+email addresses: d.fahland@tue.nl (dirk fahland), w.m.p.v.d.aalst@tue.nl (wil m.p.
+van der aalst)
+preprint submitted to information systems july 3, 2013only contain example behavior and do not explicitly indicate what is impossible.
+the fact that an event log does not contain a particular trace does not imply
+that that trace is impossible. moreover, a process discovery technique needs
+to mediate between dierent concerns, e.g., tness (ability to explain observed
+behavior), simplicity (occam's razor), precision (avoiding undertting), and
+generalization (avoiding overtting).
+the second type of process mining is conformance checking [4,9{17]. here,
+an existing process model is compared with an event log of the same process.
+conformance checking can be used to check if reality, as recorded in the log,
+conforms to the model and vice versa. the conformance check could yield that
+the model does not describe the process executions observed in reality : activities
+in the model are skipped in the log, the log contains events not described by
+the model, or activities are executed in a dierent order than described by the
+model.
+in case an existing process model does not conform to reality one could |
+in principle | use process discovery to obtain a model that does. however,
+the discovered model is likely to bear no similarity with the original model,
+discarding any value the original model had, in particular if the original was
+created manually. a typical real-life example is the reference process model of a
+dutch municipality shown in fig. 1(left); when rediscovering the actual process
+using logs from the municipality one would obtain the model in fig. 1(right).
+model repair: between conformance checking and discovery
+a more promising approach is to repair the original model such that it can
+replay (most of) the event log while staying close to the reference model (cf.
+fig. 1(middle)). in [ 18], we introduced a new type of process mining: model
+repair . like conformance checking we use a process model nand an event log
+las input. if model nconforms to l(i.e., the observed behavior can be fully
+explained by the model), then there is no need to change n. however, if parts of
+ndo not conform to l, these parts can repaired using the technique presented
+in this paper. unlike discovery, the parts of the model that are not invalidated
+by the event log are kept as is. the resulting repaired model n0can be seen as
+a \synergy" of original process model nand event log l.
+there are three main use cases for model repair:
+improving conformance checking diagnostics. conformance checking identi-
+es discrepancies between modeled and observed behavior, e.g., by showing
+misalignments or places where tokens are missing during replay. however,
+it is not easy to see what the actual conformance problem is and how to
+resolve it. by highlighting the repaired parts of the repaired model, one
+can show discrepancies succinctly. as usual, conformance problems may
+lead to adaptations of the actual process (e.g., better work instructions
+or more control) or to changes of the model to reect reality better. in
+the latter case the repaired model can be used as the new normative or
+descriptive model.
+2pl32
+pl34 pl37
+pl46
+pl49pl52
+pl58
+pl61
+pl78
+pl81
+pl84
+pl87
+pl90pl93
+pl102pl111
+pl116
+pl119 pl123
+finalpl50pl53
+pl56pl65
+pl66
+pl76
+pl85
+pl91pl94
+pl97
+pl113
+pl132
+pl141
+pl178pl183pl206
+pl211 pl215
+pl233
+pl242
+pl256
+pl269
+pl275
+pl285pl1
+pl17pl20
+pl67
+pl77
+pl82
+pl86
+pl98
+pl150
+pl68
+pl151
+pl191
+pl196
+pl202pl801_hoofd_120 (60)01_hoofd_010 (61)
+01_hoofd_260 (62)05_eind_010 (63)
+06_vd_010 (64)
+01_hoofd_110 (65)
+01_hoofd_510_1 (66)silent - and split (67)03_gbh_005 (68)
+11_ah_ii_010 (69)09_ah_i_010 (70)01_hoofd_180 (71)01_hoofd_130 (72)
+01_hoofd_520 (73)
+01_hoofd_530 (74)01_hoofd_480 (75)01_hoofd_430 (76)01_hoofd_250 (77)07_ops_010 (78)silent - skip 05_eind_010 (79)silent - skip 03_gbh_005 (80)
+01_hoofd_020 (81)
+01_hoofd_030_1 (82)
+01_hoofd_030_2 (83)14_vrij_010 (84) silent - skip 14_vrij_010 (85)
+04_bpt_005 (86)
+01_hoofd_065_1 (87)
+01_hoofd_065_2 (88)
+01_hoofd_090 (89)silent - niet regulier (90)
+silent - skip 06_vd_010 (91)silent - skip 07_ops_010 (92)
+01_hoofd_101 (93)silent - niet publiceren (94) silent - is regulier (95)
+silent - and join (96)
+silent - skip procedure verandering (97)
+01_hoofd_195 (98)
+01_hoofd_200 (99) silent - skip 01_hoofd_200 (100)
+silent - and join & split (101)
+01_hoofd_270 (102)
+01_hoofd_330 (103)
+01_hoofd_350_2 (104)silent - skip procedureverandering (105)
+01_hoofd_370 (106)
+12_ap_010 (107)
+01_hoofd_400 (108)01_hoofd_380 (109)
+01_hoofd_420 (110)silent - skip weigeringsgrond (111)
+01_hoofd_440_2 (112)
+01_hoofd_455 (113)
+01_hoofd_460 (114)01_hoofd_451 (115)01_hoofd_450 (116)01_hoofd_446 (117)silent - skip bestreden beschikking aangetast (118)silent - skip niet regulier (119)
+silent - skip zienswijzen vragen (120)
+silent - skip mandaat (121)
+10_uov_010 (122)
+silent - skip aanhoudingsgrond (123)
+silent - skip regulier (124)
+silent - and split and join (125)
+01_hoofd_510_2 (126)01_hoofd_490_2 (127)
+pl32
+pl34 pl37
+pl46 pl49pl52
+pl58
+pl61
+pl78
+pl81
+pl84
+pl87
+pl90pl93
+pl102pl111
+pl116
+pl119pl123
+finalpl50pl53
+pl56pl65
+pl66
+pl76
+pl85
+pl91pl94
+pl97
+pl113
+pl132
+pl141
+pl178pl183pl206
+pl211
+pl215 pl233
+pl242
+pl256
+pl269
+pl275
+pl285pl1
+pl17pl20
+pl67
+pl77
+pl82
+pl86
+pl98
+pl150
+pl68
+pl151
+pl191
+pl196
+pl202pl801_hoofd_12001_hoofd_010
+01_hoofd_26005_eind_010
+06_vd_01001_hoofd_110
+01_hoofd_510_1silent - and split03_gbh_005
+11_ah_ii_01009_ah_i_01001_hoofd_18001_hoofd_130
+01_hoofd_520
+01_hoofd_53001_hoofd_48001_hoofd_43001_hoofd_25007_ops_010silent - skip 05_eind_010silent - skip 03_gbh_00501_hoofd_020
+01_hoofd_030_1
+01_hoofd_030_214_vrij_010
+silent - skip 14_vrij_010
+04_bpt_005
+01_hoofd_065_1
+01_hoofd_065_2
+01_hoofd_090
+silent - niet regulier
+silent - skip 06_vd_010 silent - skip 07_ops_010 01_hoofd_101 silent - niet publiceren silent - is regulier
+silent - and join
+01_hoofd_200
+silent - skip 01_hoofd_200
+silent - and join & split
+01_hoofd_270
+01_hoofd_330
+01_hoofd_350_2 silent - skip procedureverandering
+01_hoofd_370
+01_hoofd_40001_hoofd_380
+01_hoofd_420silent - skip weigeringsgrond
+01_hoofd_440_2
+01_hoofd_455
+01_hoofd_46001_hoofd_45101_hoofd_45001_hoofd_446silent - skip niet regulier
+silent - skip zienswijzen vragen
+silent - skip mandaat
+10_uov_010
+silent - skip aanhoudingsgrond
+silent - skip regulier
+silent - and split and join
+01_hoofd_510_201_hoofd_490_2silent 01_hoofd_065_1
+silent 01_hoofd_510_1silent 01_hoofd_195
+silent 01_hoofd_446silent 01_hoofd_270
+silent 12_ap_010silent 04_bpt_005
+silent 01_hoofd_510_2silent 01_hoofd_030_1
+silent 01_hoofd_030_2
+silent 01_hoofd_330silent 01_hoofd_110p 3
+figure 1: original model (left), model (middle) obtained by repairing the original model w.r.t.
+a given log, and model (right) obtained by rediscovering the process without considering the
+original model. the highlighted parts in the repaired model have been added to better t the
+observed behavior.
+monitoring process evolution. processes may evolve over time, e.g., workers
+start handling cases dierently, informal procedures change, or people adapt
+to changing external circumstances. this implies that the corresponding
+process models need to be updated to be of any value. model repair shows
+the parts of the old model that no longer t. these parts can be adapted
+to reect the new situation.
+supporting customization. dierent process variants and organizational
+units may share some initial reference model, e.g., a model describing best
+practices or a modeling template. for example, municipalities may use a
+standard reference model for processing building permits, but still there
+will be dierences between municipalities (e.g., the moment of payment).
+organizations using enterprise software may use reference models provided
+by the vendor, but their actual processes may deviate from these initial
+models. model repair can be used to customize the initial reference model.
+the resulting model is close to the reference model, but more accurately
+describes reality for a specic process or organizational unit.
+for all three use cases it is important that the repaired model remains as close to
+the original model as possible . for example, when monitoring process evolution
+one would not like to completely change the process repeatedly if the changes
+are gradual or local. for customization it is also important to stay as close to
+the initial reference model as possible (e.g., to more eectively communicate
+dierences).
+3since it may be undesirable to modify the process model to accommodate
+infrequent highly exceptional behavior, one may choose to repair the model only
+for frequently observed deviating behavior. the inuence of the original model
+on the repaired model may be congurable. eectively, there are two extremes.
+one extreme is to avoid changes to the original model as much as possible. the
+other extreme is to simply discover the process model from the event log with
+little consideration for the original model. in this paper, we avoid the latter case
+as much as possible. we try to stay as close to the original model as possible,
+e.g., to clearly communicate the dierences.
+scope: repairing control-ow to t an event log
+in this paper we focus on repairing control-ow problems and only briey
+discuss repairing other perspectives such as data ow and work distribution.
+there are two main reasons for this. first of all, the control-ow structure forms
+the backbone of the process model. hence, other perspectives are only considered
+when the control-ow is xed. second, it is generally intractable to consider all
+perspectives at the same time. the choice to rst focus on control-ow is common
+in process mining. consider for example decision mining approaches that rst
+x the decision points and only then use classical data mining approaches to
+describe the choices in terms of e.g. decision trees [ 19]. another example is
+the alignment-based approach to check conformance with respect to data and
+resources described in [ 20]. in [ 20] it is demonstrated that the alignment-based
+techniques also used in our repair approach can be extended to data and resources.
+however, already for conformance checking this is computationally challenging.
+for discovery and repair it seems better to rst focus on the control-ow and in
+a second phase repair the other perspectives. in any case, it is straightforward
+to the extend the approach in this paper to also cover additional perspectives.
+the main criterion for repair used in this paper is tness , i.e., our rst concern
+is to extend the model such that the observed behavior can be explained by
+the model. there are also other considerations such as avoiding overtting and
+undertting and the desire to produce a simple model. however, these are of
+secondary concern in this paper. it does not make any sense to reason about
+a model with poor tness (as is demonstrated in [ 21]). if the model is unable
+to replay most of the events in the log, there is no point in trying to balance
+overtting and undertting. moreover, the secondary concerns can be addressed
+in a pre- or post-processing phase. for example, infrequent paths can be removed
+to increase precision and simplicity.
+problem denition and approach
+the concrete problem addressed in this paper reads as follows. we assume a
+petri netn(a model of a process) and a log l(being a multiset of observed
+cases of that process) to be given. nconforms to lifncan execute each case
+inl, i.e.,ncan replayl. ifncannot replay l, then we have to changento a
+petri netn0such thatn0can replaylandn0is as similar to nas possible.
+we solve the repair problem in a compositional way: we identify subprocesses
+that have to be added in order to repair n. in more detail, we rst compute
+4for each case l2lanalignment that describes at which parts nandldeviate.
+based on this alignment, we identify transitions of nthat have to be skipped to
+replayland which particular events of lcould not be replayed on n. moreover,
+we identify the location at whichnshould have had a transition to replay each of
+these events. we group sequences of non-replayable events at the same location
+to a sublogl0ofl. for each sublog l0, we construct a small subprocess n0
+that can replay l0by using a process discovery algorithm. we then insert n0
+innat the location where each trace of l0should have occurred. by doing
+this for every sublog of non-replayable events, we obtain a repaired model that
+can replay l. moreover, by the way we repair n, we preserve the structure of
+ngiving process stakeholders useful insights into the way the process changed.
+we observed in experiments that even in case of signicant deviations we could
+identify relatively few and reasonably structured subprocesses: adding these to
+the original model always required fewer changes to the original model than a
+complete rediscovery. repairing the model of fig. 1(left) in this way yields the
+model shown in fig. 1(middle).
+extending an earlier version of this article [ 18], we investigate several options
+for improving the above method of model repair. in particular, we show how
+choosing the \right" alignment of ltoninuences repairs of nin a favorable
+way. we show how to decompose and align sublogs on non-tting traces such
+that subprocesses added to nhave a simple structure. we present heuristics
+for improved placement of subprocesses in n, and introduce a technique to
+identify loops that can be added to ninstead of a subprocess. also, we highlight
+techniques for preprocessing logs to improve the quality of the repaired model.
+the introduced techniques for model repair are evaluated experimentally and
+compared to a high-quality manual repair. we also investigate limitations of
+repeatedly repairing a model with respect to several logs.
+the remainder of this paper is structured as follows. section 2 recalls basic
+notions on logs, petri nets and alignments. section 3 investigates the model
+repair problem in more detail. section 4 presents a solution to model repair
+based on subprocesses. section 5 introduces a number of improvements on this
+basic model repair technique. we report on experimental results in sect. 6 and
+discuss related work in sect. 7. section 8 concludes the paper.
+2. preliminaries
+this section recalls the basic notions on petri nets and introduces notions
+such as event logs and alignments.
+2.1. event logs
+event logs serve as the starting point for process mining. a process model
+describes the life-cycle of cases of a particular type, e.g., insurance claims,
+customer orders, or patient treatments. hence, each event refers to a case.
+moreover, each event refers to some activity and all events corresponding to
+a particular case are ordered. in other words: each case is described by a
+5sequence of events. next to its activity name, an event may have many other
+attributes, such a timestamp, the resource(s) involved, the transaction type (start,
+complete, abort, etc.), associated costs, etc. for example, in 2010 the ieee
+task force on process mining standardized xes ( www.xes-standard.org ), a
+standard logging format that is extensible and supported by the openxes
+library ( www.openxes.org ) and by tools such as prom, xesame, disco, etc.
+xes allows for standard attributes such as timestamp, but also allows for the
+addition of any number of event attributes.
+in this paper, we focus on control-ow and assume that an event is represented
+by an action . as a result, a trace is a sequence of actions, an event log can be
+dened as a multiset of traces. each trace describes the life-cycle of a particular
+case (i.e., a process instance ) in terms of the activities executed.
+denition 1 (trace, event log) .let  be a set of actions. a trace l2is a
+sequence of actions. l2i b() is an event log, i.e., a multiset of traces.
+an event log is a multiset of traces because there can be multiple cases having
+the same trace. if the frequency of traces is irrelevant, we refer to a log as a
+set of traces l=fl1;:::;lng. in this simple denition of an event log, an event
+is fully described by an action and we cannot distinguish two cases having the
+same trace.
+additional attributes may be incorporated in the action, e.g., action decide (goldcustomer ;john;reject )
+may refer to a decision to reject a gold customer made by john. action
+decide (goldcustomer ;mary;reject ) refers to the same decision made by mary.
+adding attributes to the action label results in a large number of dierent actions.
+hence, process mining becomes dicult. whereas conformance checking is still
+possible [ 20] discovery and repair quickly become intractable. therefore, we pro-
+pose a two-stage approach where rst the control-ow is discovered or repaired.
+after xing the control-ow one can consider the other attributes as shown
+in [19] and [ 22]. note that the concept of alignments described in section 2.4
+can be extended to accommodate additional attributes and process models can
+be extended with decision rules and resource allocation rules. however, for
+simplicity we abstract from these perspectives.
+2.2. petri nets
+we use labeled petri nets to describe processes. we rst introduce unlabeled
+nets and then lift these notions to their labeled variant.
+denition 2 (petri net) .a petri net ( p;t;f ) consists of a set pofplaces , a
+settoftransitions disjoint from p, and a set of arcs f(pt)[(tp). a
+markingmofnassigns each place p2pa natural number m(p) oftokens . a
+net systemn= (p;t;f;m 0;mf) is a petri net ( p;t;f ) with an initial marking
+m0and a nal marking mf.
+/mt99
+/mt101/mt98/mt97 /mt100
+/mt112/mt49/mt112/mt50
+/mt112/mt51/mt112/mt52
+/mt112/mt53/mt112/mt54
+figure 2: a net system n.we writey:=fxj(x;y)2fgand
+y:=fxj(y;x)2fgfor the pre-and
+thepost-set ofy, respectively. fig. 2
+6shows a simple net system nwith the
+initial marking [ p1] and nal marking
+[p6].nwill serve as our running ex-
+ample.
+the semantics of a net system n
+are typically given by a set of sequential runs . a transition tofnisenabled
+at a marking mofnim(p)1, for allp2t. iftis enabled at m, thent
+may occur in the step mt  !mtofnthat reaches the successor marking mt
+withmt(p) =m(p) 1 ifp2tnt,mt(p) =m(p) + 1 ifp2tnt, and
+mt(p) =m(p) otherwise, for each place pofn. a sequential run of nis a
+sequencem0t1 !m1t2 !m2:::tk !mfof stepsmiti+1  !mi+1;i= 0;1;2;:::of
+nbeginning in the initial marking m0and ending in the nal marking mfofn.
+the sequence =t1t2:::tkis an occurrence sequence ofn. for example, in the
+netnof fig. 2 transition ais enabled at the initial marking; abcd is a possible
+occurrence sequence of n.
+the transitions of a petri net can be labeled with names from an alphabet
+. in particular, we assume label 2 denoting an invisible action. a labeled
+petri net (p;t;f;` ) is a net ( p;t;f ) with a labeling function`:t!. a
+labeled net system n= (p;t;f;`;m 0;mf) is a labeled net ( p;t;f;` ) with
+initial marking m0and nal marking mf. the semantics of a labeled net are the
+same as for an unlabeled net. additionally, we can consider labeled occurrence
+sequences of n. each occurrence sequence =t1t2t3:::ofninduces the
+labeled occurrence sequence `() =`(t1)`(t2)`(t3):::`(tk)jnfgobtained by
+replacing each transition tiby its label `(ti) and omitting all 's from the result
+by projection onto  nfg. we say that ncan replay a logli eachl2lis a
+labeled occurrence sequence of n.
+2.3. relating event logs and process models
+our repair approach assumes that the event log and the labeled petri net
+refer to a common set of actions . ideally, event log and process model refer to
+a common ontology. in reality this is often not the case. besides dierences in
+naming , there may be dierences in granularity and coverage .
+the event log may contain information about low level events that do not
+correspond to activities in the model. for example, the trace segmentation
+approach described in [ 23] aims to group low-level events into clusters, which
+represent the execution of a higher-level activity in the process model. by
+projecting these clusters onto the higher-level activities, the abstraction level
+can be lifted. in [ 24] the same problem is addressed by mining for common
+low-level repeating patterns that are replaced by higher level activities. the
+latter approach made it possible to successfully apply process mining to the
+event logs of philips healthcare's x-ray machines. in [ 25] a similar approach
+was applied to the low-level event logs of asml's wafer steppers.
+whereas dierences in granularity are dicult to tackle, dierences in cover-
+age are relatively easy. events in the event log that do not correspond to any
+7activity can be removed from the event log. activities in the model that are
+unobservable can be labeled as actions [1].
+in the following we assume that event log and process model have been
+preprocessed and refer to a common set of actions ; though log and model may
+use just a subset of .
+2.4. aligning an event log to a process model
+conformance checking techniques investigate how well an event log l2i b()
+and a labeled net system n= (p;t;f;`;m 0;mf) t together. the process model
+nmay have been discovered through process mining or may have been made by
+hand. in any case, it is interesting to compare the observed example behavior
+inland the potential behavior of n. in case the behavior in lis not possible
+according to n(ncannot replay l), we want to repair n.
+in the following we recall a state-of-the-art technique in conformance checking
+[9{11]. we use the concept of alignments for identifying where landndeviate,
+and hence where nhas to be repaired. these alignments will allow us to
+determine a minimal set of changes that are needed to replay lonn. it
+essentially boils down to relating l2lto an occurrence sequence ofnsuch
+thatlandare as similar as possible. when putting landnext to each other,
+i.e., aligningandl, we will nd (1) at which point a particular activity of
+nshould have occurred but did not according to land (2) at which point a
+particular activity of loccurred, but was not described by n[9].
+alignments are very dierent from well-known edit distances such as the
+levenshtein distance [ 26]. first of all, we are aligning a trace and a model and
+not two traces or sets of traces. as a model has usually innitely many traces
+(in case of loops) the least deviating trace cannot be found by enumerating
+all traces and computing their edit distance. second, we would like to assign
+arbitrary costs to the dierent types of deviations. and nally, we are not just
+interested in the distance between trace and model, but in their exact deviations .
+therefore, we turn the problem into an optimization problem. for applications
+of the edit distances to process mining, we refer to [27].
+to explain the alignment concept consider a trace l=accd which is sim-
+ilar to the occurrence sequence =abcd of the net of fig. 2 where trace l
+deviates from by skipping over band having an additional c. an alignment
+shows a possible correspondence between trace land occurrence sequence :
+ac cd
+acb d. the projection onto the rst row (ignoring ) yields
+tracel. the projection onto the second row (ignoring ) yields trace . the
+in the rst row corresponds to the skipping of bin the log and the in the
+second row corresponds to the skipping of the second cin the model. obviously,
+such an alignment provides input for repairing the event log.
+in [9{11] an approach was presented that allows to automatically align a
+tracelto an occurrence sequence of nwith a minimal number of deviations
+(i.e.,insertions) in an ecient way. all of this is based on the notion of an
+alignment and a cost function.
+8denition 3 (alignment) .letn= (p;t;f;`;m 0) be a labeled net system. let
+l=a1a2:::ambe a trace over . a move is a pair (b;s)2([fg )(t[fg )n
+f(;)g. an alignment ofltonis a sequence = (b1;s1)(b2;s2):::(bk;sk)
+of moves, such that
+1.the restriction of the rst component to actions  is the trace l, i.e.,
+(b1b2:::bk)j=l,
+2.the restriction of the second component to transitions t, (s1s2:::sk)jt, is
+an occurrence sequence of n, and
+3.transition labels and actions coincide (whenever both are dened), i.e., for
+alli= 1;:::;k , ifsi6=;`(si)6=, andbi6=, then`(si) =bi.
+move (bi;si) is called (1) a move on model ibi=^si6=, (2) a move
+on log ibi6=^si=, and (3) a synchronous move ibi6=^si6=.
+note that in fig. 2 transition names and transition labels coincide, i.e., t= 
+and`(t) =tfort2t. however, the denition allows for multiple transitions
+having the same label and invisible transitions having a label.
+for instance, for trace l=accd and the net of fig. 2, a possible alignment
+would be ( a;a)(c;c)(;b)(c;)(d;d), also denoted as:ac cd
+acb d.
+each trace usually has several (possibly innitely many) alignments to n.
+for instance, possible alignments for trace l=abcbd and the net of fig. 2 are:
+1=abcb d
+abc d,2=abc bd
+abcebd, and
+3=ab c b d
+a c b d.
+we are typically interested in a best alignment, i.e., one that has as few
+non-synchronous moves (move on model or move on log) as possible. one way to
+nd a best alignment is to use a cost function on moves, and to nd an alignment
+with the least total cost.
+denition 4 (cost function, cost of an alignment) .let: [t!ndene for
+each transition and each action a non-negative cost: (x)0 for allx2[t.
+the costs of an invisible action is set to zero: (x) = 0 ifx2tand`(x) =. the
+costof a move (b;s) is(b;s) and is dened as follows: (b;s) = 0 ib6=6=s
+(synchronous move), (b;s) =(s) ib=(move on model), and (b;s) =(b)
+is=(move on log). the cost of an alignment = (b1;s1):::(bk;sk) is
+() =pk
+i=1(bi;si).
+the cost for actions (in ) and for visible transitions (in n) can be chosen
+freely; the specic choice of costs depends on the use case, as we discuss later.
+costs for actions and transitions raise the cost of an alignment for every move
+on log or move on model. by minimizing the costs of an alignment, we avoid
+moves on log and moves on model in favor of synchronous moves.
+consider for example above alignments 1,2, and3for tracel=abcbd
+and the net of fig. 2, and a standard cost function assigning unit costs to all
+undesirable moves, i.e., (x) = 1 for all x2[t.(1) = 1,(2) = 1, and
+(3) = 5. hence, 1and2are clearly better alignments than 3.
+9denition 5 (best alignment) .letn= (p;t;f;`;m 0) be a labeled net system.
+letbe a cost function over moves of nand . let lbe a trace over . an
+alignment(oflton) is a bestalignment (wrt. ) i for all alignments 0(ofl
+ton) holds(0)().
+note that a trace lcan have several best alignments with the same cost (cf.
+1and2). a best alignment of a tracelcan be found eciently using an
+a?-based search over the space of all prexes of all alignments of l. the cost
+functionthereby serves as a very ecient heuristics to prune the search space
+and guide the search to a best alignment.
+1.the default cost function is uniform and assigns each deviation cost 1; the
+corresponding best alignment has the least number of deviations.
+2.a non-uniform cost function allows to compute alignments with specic
+properties. for instance, one can set costs based on how probable a
+particular deviation is (low probability implies high costs). then a log
+trace is aligned to the most probable model trace showing the most probable
+deviations.
+3.generally, the higher the costs of a move, the more likely it is avoided
+in an alignment and replaced by other moves. this way, one can reveal
+a dierent set of deviations that explain the dierence between log and
+model.
+in sect. 5, we explore cost functions which yield more favorable model repairs
+than a uniform cost function. more technical details on the cost function are
+given in [10, 11].
+using the notion of best alignment we can relate any trace l2lto an
+occurrence sequence of n. hence, in the remainder, we can assume to have an
+\oracle" that maps both tting and non-tting cases onto paths and states in the
+model.
+3. model repair: the problem
+the model repair problem is to transform a model nthat does not conform
+to a loglinto a model n0that conforms to lbut is as close to nas possible.
+we review the state-of-the-art in conformance checking and investigate the model
+repair problem in more detail.
+3.1. conformance of a process model to a log: problem dimensions
+to repair a model, one rst needs to diagnose the mismatches between model
+nand logl. to understand what needs to be repaired we use the state-of-the-art
+in conformance checking [ 9]. conformance checking techniques can be used to
+point out dierences between modeled and observed behavior, and thus point
+out parts that need to be repaired. therefore, we briey review conformance
+checking literature.
+conformance checking can be done for various reasons. first of all, it may
+be used to audit processes to see whether reality conforms to some normative
+10or descriptive model. deviations may point to fraud, ineciencies, and poorly
+designed or outdated procedures. second, in process evolution or process cus-
+tomization conformance checking helps detecting dierences between an outdated
+model or a reference model and reality. finally, conformance checking can be
+used to evaluate the results of process discovery techniques. in fact, genetic
+process mining algorithms use conformance checking to select the candidate
+models used to create the next generation of models [5].
+numerous conformance measures have been developed in the past [ 4,9{17].
+these can be categorized into four quality dimensions for comparing model and
+log: (1) tness , (2) simplicity , (3) precision , and (4) generalization [1]. a model
+with good tness allows for most of the behavior seen in the event log. a model
+has a perfect tness if all traces in the log can be replayed by the model from
+beginning to end. the simplest model that can explain the behavior seen in the
+log is the best model. this principle is known as occam's razor. a model is
+precise if it is not \undertting", i.e., the model does not allow for \too much"
+behavior. a model is general if it is not \overtting", i.e., the model is likely to
+be able to explain unseen cases [1, 9].
+the tness of a model nto a loglcan be computed using the alignments of
+sect. 2.4. for example, tness can be dened as the fraction of moves on log or
+moves on model relative to all moves [ 9]. the aligned event log can also be used
+as a starting point to compute other conformance metrics such as precision and
+generalization [ 9,28]. however, as discussed earlier, the focus will be on tness.
+3.2. repairing a process model to conform to a log: guiding forces
+although there are many approaches to compute conformance and to diagnose
+deviations given a log land modeln, we are not aware of techniques to repair
+modelnto conform to log l.
+there are two \forces" guiding such repair. first of all, there is the need to
+improve conformance. second, there is the desire to clearly relate the repaired
+model to the original model, i.e., repaired model and original model should be
+similar. given metrics for conformance and closeness of models, we can measure
+the weighted sum or harmonic mean of both metrics to judge the quality of
+a repaired model. if the rst force is weak (i.e., minimizing the distance is
+more important than improving the conformance), then the repaired model may
+remain unchanged. if the second force is weak (i.e., improving the conformance
+is more important than minimizing the distance), then repair can be seen as
+plain process discovery. in the latter case, the initial model is irrelevant and it
+is better to use conventional discovery techniques.
+figure 3 illustrates the trade-o between both forces thus dening the repair
+spectrum . on the left-hand-side of the spectrum, the focus is on keeping the
+original model even if there are conformance problems. on the right-hand-side
+of the spectrum, the focus is on creating a model that ts the log best even if the
+resulting model is very dierent from the original one. typically, model repair is
+applied in settings in-between these two extremes. for example, only those parts
+of the original model that are clearly problematic are repaired. alternately, one
+11keep original model
+a
+b cdiscover new model repair model
+da
+b c
+de a b c de
+force 2: stay close to 
+original modelforce 1: improve 
+conformancefigure 3: the repair spectrum: balancing between two forces.
+could make the minimal set of changes needed to reach a predened conformance
+level (e.g., 95% of all cases can be replayed).
+the trade-o shown in fig. 3 creates a major challenge: how to identify which
+parts of a model shall be kept, and which parts of a model shall be considered
+as non-conformant to the log and hence changed, preferably automatically? the
+latter is a local process discovery problem which requires balancing the four
+quality dimensions of conformance as well.
+3.3. addressing dierent quality dimensions: trade-os
+in this paper, we primarily focus on tness, which is often seen as the most
+important quality dimension for process models. a model that does not t
+a given log (i.e., the observed behavior cannot be explained by the model) is
+repaired using the information available in the alignments.
+it does not make much sense to consider other quality dimensions [ 1,2,9]
+(i.e., precision, generalization, and simplicity) when the model has poor tness.
+see [21] for experimental results showing that good tness is a primary concern
+before addressing secondary concerns such as precision, generalization, and
+simplicity. for example, in [ 28] it is shown that only for a tting model precision
+[14] can be measured adequately.
+our technique for model repair will cater for tness, and address precision
+as a side eect. simplicity is indirectly taken into account as we remain as
+close to the original model as possible. moreover, generalization and precision
+can be balanced, for instance using a post-processing technique such as the one
+presented in [29].
+for model repair basically the same experiences apply as for classical process
+discovery: while repairing, one should not be forced to extend the model to
+allow for all observed infrequent behavior | it could result in overly complicated,
+spaghetti-like models. therefore, we propose the following approach.
+1.given a log land model n, determine the multiset lfof tting traces
+and the multiset lnof non-tting traces in l.
+2.split the multiset of non-tting traces lnintoldandlo. tracesldare
+considered as deviating and the model needs to be repaired to address these.
+tracesloare considered as outliers and do not trigger repair actions.
+3.repair model nbased on the multiset l0=lf[ldof traces.l0should
+perfectly t the repaired model n0, but there may be many candidate
+modelsn0.
+124.return a repaired model n0that can be easily related back to the original
+modeln, and in which changed parts are structurally simple.
+3.4. filtering the event log before repair: three approaches
+before replaying the event log on the model, we remove all cases that are
+not meeting basic quality constraints. for example, there may be cases where
+clearly the initial or nal part of the trace is missing. this may be caused by
+the fact that these cases have not yet nished or were already running before
+the recording of events started. other signs of corrupted event data are missing
+timestamps or non-monotonously increasing timestamps. when the event log
+contains transactional information (e.g., start and complete events), one can
+also see other log-related problems (e.g., activities that were started but never
+completed). note that even when we consider just activity names in  for
+conformance, the other attributes still provide useful information indicating
+whether a trace should be considered for repair or not.
+besides removing corrupted traces, one also needs to carefully consider the
+set of actions appearing in the event log lbut not in the model n:a=fa2
+ljl2lgnf`(t)jt2tg. it may be that there are very rare events or events
+that correspond to uninteresting actions deliberately not included in the model.
+these events should be removed from lbefore replaying the event log on the
+model.
+after replaying the event log, we obtain the multiset of non-tting traces ln
+the step of separating this multiset into the multiset of deviating traces ldand
+the multiset of outlier traces lois critical for repair. figure 3 already illustrated
+the trade-o between minimizing the distance to the original model and ensuring
+conformance. for each deviation revealed by the alignments of log and model,
+weneed to decide whether the model is \wrong" and the log is \right" or the
+model is \right" and the log is \wrong" . to support this step we propose three
+approaches: frequency-based ltering ,trace clustering , and manual inspection
+using trace alignment .
+for frequency-based ltering we can look (1) at the frequencies of non-
+conforming traces, (2) at the frequencies of particular deviations, and (3) at the
+frequencies of deviations in a particular state.
+if most traces are frequent and there are just a few traces that are infrequent,
+e.g., traces that are unique, then one may consider removing the infrequent ones
+as their eect on conformance is minimal.
+by computing alignments, we can replay any case in the model even if it
+is deviating. the symbols in the alignment show where problems occur. if
+a problem is very infrequent, the log rather than the model may be repaired.
+for example, if there are only few bmoves on log ( b;), one may repair this
+by removing the corresponding b's from the log. if there are only few smoves
+on model (;s), one may repair this by adding the corresponding moves to the
+log. note that by doing this lddoes not only contain a subset of the original
+non-tting traces, but also (partly) modied traces.
+one can also consider the states in which according to the alignment there is
+a problem. later, we will show that it is easy to identify the severity of problems
+13in the dierent states. this information can be used to discard particular
+deviations or not. things that happen infrequently have a low impact on the
+overall conformance; therefore, one may choose to discard these.
+another approach is to apply trace clustering to the multiset of non-tting
+tracesln[6,7,30]. this results in more homogenous groups of traces. per
+group one can decide to add the traces to ldorlo. particularly interesting is
+the approach in [7] which creates a \rest cluster" of possible outliers.
+despite these automated approaches, one often needs to use domain knowledge
+to further split the multiset of non-tting traces lnintoldandlo. fortunately,
+this is facilitated by the trace alignment technique presented in [ 31]. the main
+idea of trace alignment is to align traces for visual inspection showing events that
+occur out of order. see [ 32] for a case study using trace alignment to identify
+outliers.
+all of the techniques mentioned are (partially) supported by existing plug-ins
+in prom. the plugin \filter log using simple heuristics" allows to detect and
+lter incomplete cases and outlier events; it was used in the case study of sect. 6.
+more advanced ltering techniques are available in plug-ins such as \actitrac",
+\trace alignment (with guide tree)", \filter out unmapped event classes",
+\construct log from alignment", and \align log to model".
+in the remainder, we assume l0to be given, i.e., outliers looflare removed.
+if an event log is noisy and one includes also undesired traces lo, it makes no
+sense to repair the model while enforcing a perfect t as the resulting model will
+be spaghetti-like and not similar to the original model.
+4. repairing processes by adding subprocesses
+in the following, we present a solution to model repair. we rst sketch a
+na ve approach which completely repairs a model w.r.t. the quality dimension of
+tness but scores poorly in terms of precision . we then dene a more advanced
+approach that also caters for precision. section 5 presents more rened repair
+techniques that address simplicity and improve similarity to the original model.
+4.1. naive solution to model repair { fitness
+alignments give rise to a naive solution to the model repair problem that we
+sketch in the following. it basically comprises to extend nwith a-transition
+that skips over a transition twhenever there is a move on model ( ;t), and
+to extendnwith a self-looping transition twith labelawhenever there is a
+move on log ( a;). this extension has to be done for all traces and all moves
+on log/model. the crucial part is to identify the locations of these extensions.
+figure 4 illustrates how the non-tting log l=facfced;abccfedgaligns to
+the netnof fig. 2. the nets below each alignment illustrate the dierences
+between log lof fig. 4 and net nof fig. 2. after replaying ac, the net is in
+marking [p4;p3]and the log requires to replay fwhich is not enabled in the net.
+thus a log move ( f;) is added. similarly, cis not enabled at this marking
+and log move ( c;) is added. then eshould occur, which requires to move
+14a c f c e d
+a c b e b d
+[p2,p3] [p4,p3] [p4,p5] [p4,p3] [p4,p5] [p6]
+/mt99
+/mt101/mt98/mt97 /mt100/mt112/mt50
+/mt112/mt51/mt112/mt52
+/mt112/mt53/mt112/mt54/mt99/mt102
+after replaying acfc
+a b c c f e d
+a b c e b d
+[p2,p3] [p2,p5] [p4,p5] [p4,p3] [p4,p5] [p6]
+/mt99
+/mt101/mt98/mt97 /mt100/mt112/mt50
+/mt112/mt51/mt112/mt52
+/mt112/mt53/mt112/mt54/mt99/mt102
+after replaying abccf
+figure 4: alignments of log l=facfced;abccfed gto the net of fig. 2.
+the token from p3top5, i.e., a model move ( ;b). correspondingly, the rest
+of the alignment, and the second alignment is computed. the third line of the
+alignment describes the marking that is reached in nby replaying this prex of
+the alignment on n.
+using this information, the extension w.r.t. a move on model ( ;t) is trivial:
+we just have to create a new -labeled transition tthat has the same pre- and
+post-places as t. for a log move ( a;) the alignment tells in which marking
+mofnactionashould have occurred (the \enabling location" of this move).
+in principle, adding an a-labeled transition tathat consumes from the marked
+places ofmand puts the tokens back immediately, repairs nw.r.t. to this move
+on log. however, we improve the placement of taby checking if two moves on log
+(a;) would overlap in their enabling locations. if this is the case, we only add
+onea-labeled transition that consumes from and produces on this overlap only.
+figure 5(left) shows how model nof fig. 2 would be repaired w.r.t. the
+alignment of fig. 4. the move on model ( ;b) requires to repair nby adding
+atransition that allows to skip bas shown in fig. 5. the move on log ( c;)
+occurs at two dierent locations fp4;p3gandfp4;p5gin the dierent traces.
+they overlap on p4. thus, we repair nw.r.t. ( c;) by adding a c-labeled
+transition that consumes from and produces on p4. correspondingly for ( f;).
+the extended model that is shown in fig. 5(left) can replay log lof fig. 4
+without any problems.
+15/mt99
+/mt101/mt98/mt97 /mt100
+/mt112/mt49/mt112/mt50
+/mt112/mt51/mt112/mt52
+/mt112/mt53/mt112/mt54/mt102
+/mt99
+/mt99
+/mt101/mt98/mt97 /mt100
+/mt112/mt49/mt112/mt50
+/mt112/mt51/mt112/mt52
+/mt112/mt53/mt112/mt54/mt102
+/mt99figure 5: result of repairing the net of fig. 2 w.r.t. the log of fig. 5 by the naive approach
+(left) and by adding subprocess (right).
+4.2. identify subprocesses { precision
+the downside of the naive solution to model repair is that the repaired
+model has low precision. for a log lwhere a best alignment contains only
+few synchronous moves, i.e., ndoes not conform to l, many-transitions and
+self-loops are added. we observed in experiments that often many self-loops
+were added to nat the same location. in such a case, the resulting model
+locally permits arbitrary sequences of previously non-replayable events, making
+the model less precise w.r.t. log l. in the following, we turn this observation
+into a structured approach to model repair that addresses precision and tness
+together.
+instead of just recording for individual actions a2 their enabling locations
+w.r.t. log moves, we now record enabling locations of sequences of log moves .
+each maximal sequence of log moves (of the same alignment) that all occur at
+the same location is a non-tting subtrace . we group non-tting subtraces at the
+same location qinto a non-tting sublogsat that location. we then discover
+fromsasubprocess nsthat can replay sby using a mining algorithm that
+guarantees perfect tness of nstos. we ensure that nshas a unique start
+transition and a unique end transition. we then add subprocess nstonand
+let the start transition of nsconsumes from qand let the end transition of ns
+produce on q, i.e., the subprocess models a structured loop that starts and ends
+atq.1
+figure 5(right) illustrates this idea. the model depicted is the result of
+repairingnof fig. 2 by adding subprocesses as described by the alignments of
+fig. 4. we can identify two subtraces cfandfcthat occur at the same sublocation
+p4. applying process discovery on the sublog fcf;fcgyields the subprocess at
+the top right of fig. 5(right) that puts candfin parallel. the two grey-shaded
+silent transitions indicate the start and end of this subprocess.
+4.3. formal denitions
+the formal denitions read as follows. for the remainder of this paper, let n
+be a petri net system, let lbe a log. for each trace l2l, assume an arbitrary
+1the term subprocess is here used in the sense of a part of the process that has a unique
+entry point and a unique exit point. it should be read as a plain extension of the existing
+process model, and not be confused with the idea of factoring out process parts into another
+document or organizational entity.
+16but xed best tting alignment (l) to be given. let (l) =f(l)jl2lgbe
+the alignments of the traces in lton.
+whenever an alignment (l) has a log move ( ai;), the net nis in a
+particular marking mi, which we call the location of the move.
+denition 6 (location of a log move) .let= (a1;t1):::(an;tn) be an
+alignment w.r.t. n= (p;t;f;m 0;mf;`). for any move ( ai;ti), letmibe the
+marking of nthat is reached by the occurrence sequence t1:::ti 1jtofn. for
+all 1in, if (ai;ti) = (ai;) is a log move, then the location of (ai;) is
+the set loc(ai;) =fp2pjmi(p)>0gof places that are marked in mi.
+for example in fig. 4, loc(c;) =fp4;p3gin the rst alignment and
+loc(c;) =fp4;p5gin the second alignment.
+any two consecutive log moves have the same location mas the marking m
+ofndoes not change in a log move. we group these consecutive moves into a
+subtrace at location m.
+denition 7 (subtrace) .asubtrace (;q) is a maximal sequence= (ai;)
+:::(ai+k;) of consecutive log moves of having the same location q, i.e.,
+loc(aj;) =loc(ai;) =q;iji+k, and no longer sequence of log moves
+has this property.
+we write(l) for the set of all subtraces of all alignments (l) oflton.
+to simplify notation, we write = (;q) and loc() =qwhen no confusion
+can arise.
+for example, in fig. 5, fcis a subtrace of the rst alignment at location
+fp4;p3gandcfis a subtrace of the second alignment at location fp4;p5g. we
+could repair the net by adding two subprocesses, one that can replay fcat
+q1=fp4;p3gand one that can replay cfatq2=fp4;p5g. however, we
+could instead just add one subprocess that can replay fcand cfat location
+q1\q2=fp4g.
+this observation gives rise to two notions. a sublocation of a subtrace is a
+subset of its location loc(). a sublog is a set of subtraces; the location of the
+sublog is the sublocation shared by all traces in the sublog, or any subset of it.
+denition 8 (sublog) .let(l) be an alignment. a non-empty set s(l)
+of subtraces together with a non-empty location qt
+2sloc() is a sublog
+(s;q) of(l).
+each sublog will yield a subprocess that is added to n. the way these
+sublogs are organized will inuence the quality of the repaired model. to ensure
+tness of the repaired model, each subtrace has to be in some sublog. a set
+s=f(s1;q1);:::; (sn;qn)gof sublogs is complete (w.r.t.(l)) is1[:::[sn=
+(l). a complete set scan, for instance, be constructed by putting any two
+subtraces at the same location into the same sublog. we will see in sect. 5.4
+that one can use more rened methods for constructing sthat also addresses
+the simplicity of the repaired model.
+17we now have all notions to formally dene how to repair model nw.r.t. log
+l. for each sublog ( s;q) discover a process model nsand connect it to the
+locationqinn.
+denition 9 (subprocess of a sublog) .letlbe a log, let nbe a petri net, let
+(l) be an alignment of lton, and let (s;q) be a sublog of (l).
+lets+=fstarta1:::akendj(a1;):::(ak;)2sgbe the sequences of
+events described in sextended by a start event and an endevent ( start;end62).
+letmbe a process discovery algorithm that returns for any log a tting
+model (i.e., a petri net that can replay the log). let ns=m(s+). then
+(ns;q) is the subprocess ofs.
+the discovery algorithm mwill produce transitions labeled with the actions
+occurring in s+and a start transition tstartwith label start and an end transition
+tendwith label end. in the following, we assume thattstart=;andtend=;,
+i.e., that start and end transitions have no pre- or post-places. in case m
+produced pre- and post-places for start and end, these places can be safely
+removed without changing that nscan replay s+. when repairing n, we
+connecttstart andtendto the location qof the subprocess.
+algorithm 1 denes how to repair a petri net nw.r.t. a log lby adding
+subprocesses. the algorithm takes as input a complete set of sublogs sobtained
+from an alignment (l) oflton; it returns the subprocess-repaired model of
+nw.r.t.s.
+algorithm 1 subprocess-based repair
+procedure repairsubprocess (netn, complete set of sublogs s)
+n0 n // create copy for repair
+for allt2tn0;`(t)6=do
+ifexists model move ( ;t) in some subtrace in sthen
+add ton0a new transition twitht=t;t=t;`0(t) =
+for all (s;q)2sdo
+(ns;q) the subprocess of ( s;q) according to def. 9
+starts;ends the start and end transitions of ns
+addnston0// assumensandn0are disjoint
+for allp2qdoadd arcs (p;starts);(ends;p) ton0
+set`0(starts) :=;`0(ends) :=
+return repaired net n0
+theorem 1. letlbe a log, let nbe a petri net. let (l)be the alignments
+of the traces of ltonandsbe a complete set of sublogs of (l). letn0be
+a subprocess-repaired model of nw.r.t.s. then each trace l2lis a labeled
+occurrence sequence of n0, that is,n0can replayl.
+sketch. the theorem holds from the observation that each alignment =
+(a1;t1):::(an;tn)2(l) ofltoncan be transformed into an alignment of l
+ton0having synchronous moves or model moves on invisible transitions only,
+as follows.
+18every move on model ( ;ti) ofw.r.t.nis replaced by a model move
+(;ti;) w.r.t.n0on the new invisible transition ti;;`(ti;) =which allows
+to skip over ti.
+every move on log ( a;) w.r.t.nis part of a subtrace = (a1;):::(ak;)
+of a sublog ( s;q)2s. by adding the subprocess nsat locationq, the subtrace 
+is replaced by a sequence ( ;starts)(a1;t1):::(ak;tk)(;ends) of synchronous
+moves in the subprocess ns. moves (;starts) and (;ends) are harmless
+because they are made silent by relabeling startsand endswith.
+this theorem concludes the basic techniques for repairing a process model
+w.r.t. tness to a given log. observe that original model nis preserved entirely
+as we only add new transitions andnew subprocesses . by taking a best alignment
+(l) oflton, one ensures that number of new -transitions and the number
+of new subprocesses is minimal.
+4.4. optional subprocesses instead of loops { better precision
+the quality of the subprocess-based repair can be improved in some cases.
+algorithm 1 adds for each sublog ( s;q) a subprocess nsthat consumes from
+and produces on the same set qof places, i.e., the subprocess is a loop. if this
+subprocess is entered in each trace of lonly once, then nsis also executed
+exactly once. thus, ncould be repaired by inserting nsin sequence (rather
+than as a loop), by rening the places q=fq1;:::;qkgto placesfin1;:::; inkg
+andfout1;:::; outkgwith
+1.inj=qj;inj=fstartsg;j= 1:::;k , and
+2.outj=qj;outj=fendsg;j= 1:::;k .
+ifnsis entered at most once per case of l, we can additionally add a transition
+ts
+skipwith(ts
+skip)=fin1;:::; inkgand(ts
+skip)=fout1;:::; outkgwhich allows
+to skipns.
+a model repaired by adding nsin an (optional) sequence has a higher
+precision than the model repaired by adding nsin a loop (alg. 1). in the latter,
+the modelnscan be executed an arbitrary number of times, in the former (at
+most) once. however, this improvement for precision is only correct if there
+is no other subprocess n0
+swith an overlapping location q0\q6=;, as our
+repair technique does not discover orderings between dierent subprocesses at
+overlapping locations.
+5. improving repair
+section 4 introduced a basic technique for repairing a process model: it adds
+a subprocess wherever a part of the log cannot be replayed on the model. the
+resulting model n0ts the log, and the use of subprocesses (as a loop or in
+sequence) caters for the precision of n0. in this section, we present techniques
+which specically address simplicity ofn0. we show techniques
+1.for identifying loops in sublogs and repairing nby inserting a single
+transition rather than adding a large subprocess, and
+19/mt99
+/mt98/mt97 /mt100
+/mt112/mt49/mt112/mt50
+/mt112/mt51/mt112/mt53
+/mt112/mt54/mt112/mt55
+/mt101
+/mt112/mt52(l) =abc d b c b c d
+abced
+figure 6: model that shall be repaired w.r.t. the trace abcdbcbcd ;(l) is the corresponding
+alignment.
+2.for removing from n0unused or rarely used parts (after loops and subpro-
+cesses are added); both techniques are optional.
+in addition, we show that simplicity of n0can be improved by computing align-
+ments and sublogs with favorable qualities; we present pre-processing techniques
+1.for picking a specic alignment of log lto original model nthat yields
+less changes to n, and
+2.for aligning, decomposing, and clustering subtraces into sublogs to improve
+the structure of subprocesses in n0, and
+3.how to pick a more specic location on where a subprocess or loop is added
+tonbased on locations of subtraces.
+these three techniques can be used to pre-process the input of any of the repair
+techniques. each of the pre-processing techniques can be applied on its own or
+in combination with others in the given order. the complete algorithm for our
+repair technique is given at the end of this section.
+5.1. identifying loops
+up to now, we repaired nby adding subprocesses which can replay sublogs
+of non-tting events. this section and the next one, introduce two dierent
+operations for repairing process models which address simplicity.
+5.1.1. observation: subprocesses cannot handle repeating behavior well
+a loop of a process manifests itself in the log lin repetitive patterns. for
+instance, the trace l=abcdbcbcd has the repetitive pattern of events bcdwith
+some events occasionally missing, e.g., event din the second iteration. if the
+original model ncan only replay a single occurrence of the pattern bcdbut
+not several iterations of the pattern, then nhas to be repaired. however, the
+example of figures 6 and 7 shows that the subprocess-based repair of sect. 3 in
+this case yield a counter-intuitive and unnecessarily complex model.
+aligning the trace l=abcdbcbcd to the model nof fig. 6 yields for instance
+the alignment (l). the rst iteration of the pattern bcdcan still be replayed
+onn, but the second and third iteration cannot and lead to the sublog bcbcd .
+repairingnw.r.t.(l) according to sect. 4 results in the model shown in fig. 7;
+20/mt99
+/mt98/mt97 /mt100
+/mt112/mt49/mt112/mt50
+/mt112/mt51/mt112/mt53
+/mt112/mt54/mt112/mt55
+/mt101
+/mt112/mt52/mt98
+/mt99
+/mt100figure 7: sub-process based repair of the model of fig. 2 w.r.t. the trace abcdbcbcd .
+/mt99
+/mt98/mt97 /mt100
+/mt112/mt49/mt112/mt50
+/mt112/mt51/mt112/mt53
+/mt112/mt54/mt112/mt55
+/mt101
+/mt112/mt52/mt108/mt111/mt111/mt112/mt32/mt98/mt97/mt99/mt107
+figure 8: loop-based repair of the model of fig. 2 w.r.t. the trace abcdbcbcd .)
+the subprocess added at place p7allows to replay the two additional iterations
+bcandbcd.
+the model of fig. 7 clearly has disadvantages: it has a rather complex struc-
+ture, and there is no explicit loop that describes the three iterations bcd;bc;bcd.
+instead, dierent parts of the model describe the same behavior multiple times.
+5.1.2. idea: discover structured loops
+a more favorable solution for repair would be the model shown in fig. 8 that
+denes a structured loop. the loop body is indicated by the grey-shaded area,
+the \loop back" transition takes a token from the loop exit (place p7) back to
+its entry (places p2,p3). this model can replay the trace l=abcdbcbcd . in the
+following, we present a technique that achieves this repair.
+to repair a model nw.r.t. structured loops, we have to identify three things.
+(1) we have to identify whether a trace has several iterations of a repetitive
+pattern from which only the rst iteration can be replayed in nand the others
+cannot. in the model n, we have to identify (2) the part that can replay the rst
+iteration of the repetitive pattern, so that (3) by adding a \loop back" transition
+also the second, third, . . . iteration of the pattern can be replayed.
+the challenge that we face is that not all iterations of the pattern are identical,
+for instance in case of skipped events or alternative paths within the loop body.
+this makes it dicult to identify the patterns that are repeated. our solution
+is to avoid nding the patterns explicitly, but rather take each subtrace as a
+hypothesis that \it could be an iteration of a loop". we test the hypothesis by
+searching for a loop body that, when extended by a loop back transition, can
+replay. if this loop body exists, the hypothesis is true and the identied loop
+repairsn. if it does not exist, ncannot replay through a loop and we use
+the subprocess-based repair.
+we illustrate the idea by an example; the algorithm is given afterwards. in
+21fig. 6, the alignment (l) yields the sublog ( fbcbcdg;fp7g). from the activities
+b;c;dand the loop exit p7, we identify the loop hypothesis consisting of all nodes
+between places p2;p3andp7, see the grey-shaded area in fig. 8. when adding
+a loop back transition from p7top2;p3, we can replay bcbcd with model moves
+(;e) and (;d). thus, the hypothesis holds and we can add the loop back
+transition and two -transitions to repair the model of fig. 6 which results in
+the model of fig. 8.
+there are a few more non-trivial aspects to nding loops which we discuss
+and solve as we present the formal denitions and algorithms.
+5.1.3. algorithm for loop discovery
+for a sublog ( s;q) that cannot be replayed in nwe nd a potential loop
+body and test whether it is one, as follows.
+1.the actions ( s) insare the activities of the potential loop body. the
+locationqcontains the places that were marked when any subtrace 2s
+could not be replayed on n. if there is a loop, the location qcontains the
+exitof the loop body. the loop body thus consists of all transitions labeled
+with (s) that precede places in q. we search in nfor the smallest
+connected subnet nsthat contains these transitions and ends with q. the
+places ofnsthat have no pre-transition are the loop entry . we complete
+nsto a loop by adding a loop back transition that consumes from the exit
+qand produces on the entry of the loop.
+2.to test whether ( s;q) describes loop iterations, we test whether the loop
+nscan replay swhen there are tokens initially in q(the loop exit). to
+account for variations in loop iterations, e.g., skipped events, we compute
+an alignment (s) ofstonswhere costs log moves are set high relative
+to costs for model moves (e.g., factor 100). if (s) contains no log moves,
+thennscan replay the loop, that is, the hypothesis holds. we can repair
+nby adding the identied loop back transition. if (s) contains model
+moves, corresponding -transitions have to be added to nas well as, see
+alg. 1.
+formal denitions. the loop discovery algorithm is given in alg. 2. it extends
+the given original model n= (p;t;f;`;m 0;mf) with a loop back transition
+for each sublog ( s;q)2sthat indeed describes a loop. the algorithm builds
+on some notions. let distance (n;x;q ) denote the length of a shortest path
+from nodexto some node q2qalong the arcs f. we dene the subnetn[t0]
+induced by a set t0tof transitions as n[t0] = (p0;t0;f0;`0;m0
+0;m0
+f) where
+p0=s
+t2t0(t[t),f0=fj(p0t0)[(t0p0),`0=`jp0[t0,m0
+0(p) = 1 if there is
+no arc (p;t)2f0andm0
+0(p) = 0 otherwise, and m0
+f(p) = 1 if there is no arc
+(t;p)2f0andm0
+f(p) = 0 otherwise. in n[t0], places without pre-transition
+(post-transition) are in the initial (nal) marking.
+the netnloopreturned by alg. 2 is repaired w.r.t. log moves in sthat can
+be attributed to iterative behavior. nloopisnotrepaired w.r.t. model moves and
+w.r.t. non-iterative behavior. these repairs can be achieved by computing an
+22algorithm 2 repairing a model by discovering and adding loops
+procedure addloops (original model n, sublogss, cost function )
+nloop n // copy ofn
+for all (s;q)2sdo
+ts ; // transitions of the loop body
+for each log move (a;) in a subtrace in sdo
+chooseta2tswith`(ta) =aand distance (n;ta;q) minimal
+ts ts[ftag
+for eacht2ton a path in nfromt12tstot22tsdo
+ts ts[ftg // add all transitions in between
+ns n[ts] // copy of potential loop body
+entrys fp2psjm0;s(p)>0g
+exits fp2psjmf;s(p)>0g // test the loop body
+add a new transition loopswithloops=entrys,loop
+s=exitstons
+ alignment (s;ns;)
+ifcontains no log move then
+add transition loopswithloops=entrys,loop
+s=exitstonloop
+returnnloop
+alignmentloop(l) ofltonloopand then applying the subprocess-based repair.
+the alignment loop(l) contains less deviations than the original alignment (l)
+oflton, because some deviations are already repaired in nloop. the full
+procedure is given in sect. 5.6.
+iteration preserving alignments. algorithm 2 will be ineective if loop iterations
+are scattered over dierent sublogs; it works best if many loop iterations end
+up in the same subtrace in some sublog. this can be inuenced by nding a
+particular alignment (l) that contains log moves \as late as possible".
+a negative example is the following alignment of trace abcdbcbcd to the model
+of fig. 6,0(l) =ab c d b c b c d
+ab c e d. alignment 0(l)
+has the same cost as (l) of fig. 6, but diers in its representation of loop
+iterations. our approach would nd a loop body for subtrace ( bc;fp5;p6g) of
+0(l), but not for ( cdb;fp2;p4g), because transition dlies after the loop exit
+fp2;p4g. alignment 0(l) violates the notion of having log moves \as late as
+possible" by the log move ( c;) that occurs before the synchronous move ( c;c).
+for discovering loops, we prefer (l) of fig. 6 over 0(l). in(l) the rst
+loop iteration is completely described by synchronous moves and all subsequent
+iterations are grouped into one subtrace. an alignment of this kind is iteration
+preserving , which we characterize as follows:
+1.for any synchronous move ( a;t) that is preceded by a sequence ( a1;):::
+(ak;) of log moves, no log move ( ai;) could have matched t, i.e.,a6=ai
+for all 1ik.
+2.a model move (;t) is either preceded by a synchronous move or by
+another model move, i.e., log moves are put last.
+23the prom plugin that implements the technique of sect. 2.4 for nding a best
+alignment uses a heuristics that returns iteration preserving alignments [ 10,11].
+however, it might be that the rst iteration can only be completed when a large
+number of model moves is used. in that case, the alignment we are looking
+for would not be a best alignment as additional model moves increase the cost.
+in such a situation, the cost for model moves can be set to 0 (the same as
+synchronous moves), allowing to replay all events of the rst iteration at no
+extra cost.
+5.2. removing unused and infrequent parts
+so far, we repaired nby adding new transitions, subprocesses, and loops
+that allow to replay all traces of log l. however, nmay also contain transitions
+for which there is no event in l. these superuous transitions, so far, remain in
+the repaired model n0; if superuous transitions were removed, we would repair
+nalso in terms of precision w.r.t.land simplicity .
+the idea for removing unused parts is simple. we align the log lto the
+repaired model n0. the alignment contains only synchronous moves and model
+moves on transitions of n0. we count for each transition tofn0how often it
+participates in a move. if that number is 0, then tis not used, and we remove t.
+in the same way, unused places can be removed. see alg. 3 for the corresponding
+procedure.
+algorithm 3 removing unused or rarely used nodes
+procedure removeinfrequent (modeln, logl, cost fct., thresh.k)
+ alignment (l;n; )
+for allt2tndoused(t) number of times toccurs in a move in 
+for allp2pndoused(p) p
+t2pused(t) +m0(p)
+for allx2tn[pnwhere used(x)kdo
+removexand all adjacent arcs from n
+returnn
+the threshold parameter allows to remove also nodes that are rarely used.
+removing them will impair tness but improve simplicity. thus, a user may
+seek a favorable spot in the model repair spectrum, as discussed in sect. 3.
+5.3. picking specic alignments for repair
+the algorithms introduced so far take alignments and sublogs as input to
+repair a process model nw.r.t. a logl. in the next three sections, we investigate
+which properties of an alignment or a sublog yield more favorable repairs, and
+how to obtain alignments and sublogs with such properties.
+uniform deviations yield simpler repairs. the basis for repairing nw.r.t.l
+is an alignment of ntolthat highlights were landndeviate. so far, we
+considered an alignment that shows the smallest number of deviations between
+nandl, as it is computed by the cost-based approach of sect. 2.4. however,
+241=ace d
+ac b d
+/mt99
+/mt101/mt98/mt97 /mt100
+/mt112/mt49/mt112/mt50
+/mt112/mt51/mt112/mt52
+/mt112/mt53/mt112/mt54
+/mt1012=ac e d
+acb eb d
+/mt99
+/mt101/mt98/mt97 /mt100
+/mt112/mt49/mt112/mt50
+/mt112/mt51/mt112/mt52
+/mt112/mt53/mt112/mt54
+figure 9: the alignment 2has more uniform deviations compared to 1. repairing the net
+of fig. 2 w.r.t. 2yields a simpler model (right) than the repair w.r.t. 1(left).
+the simplicity of the repaired model n0does not only depend on the number of
+deviations, but also on their uniformity . the more uniform the deviations are
+the more likely it is they can be repaired in the same way, for instance, with the
+same transition or subprocess.
+figure 9 shows two alignments 1and2of the trace l=aced to the net of
+fig. 2. both alignments have the same number of deviations, but 2is more
+uniform as both deviations are a b-move on model ( b;), whereas1has one
+log move (;e) and one model move ( b;). repairing the net of fig. 2 w.r.t.
+1or2yields the respective two nets shown in fig. 9. the deviations in 2
+can both be repaired by the same -labeled transition, whereas the repair for
+1needs an additional e-labeled transition; the net in fig. 9(right) is simpler
+and more similar to the original net of fig. 2. next, we present a technique that
+helps picking alignments with more uniform deviations, such as 2.
+compute a global cost function. the best alignment of ltonis dened w.r.t.
+a cost function ; we can adjust to obtain a particular alignment. the idea is
+to nd a cost function in which a log move that occurs very rarely has high
+costs (and hence is avoided), and a log move that occurs very frequently has low
+costs (and hence is preferred); correspondingly for model moves. for instance in
+fig. 9, when action bhas lower costs than event e, then alignment 2has less
+cost than alignment 1.
+such a cost function can be found by looking globally on all deviations
+betweennandl, as follows. first compute an alignment with a given cost
+function;can be uniform or already take other aspects into account. count
+for each action a2 and each transition t2tthe number of respective log
+moves and model moves in . the most frequent move yields the \most ecient"
+repair whereas all other moves yield \less ecient" repairs. we obtain by
+scaling the original costs in with respect to how frequent a move occurs: the
+most frequent move keeps its costs, the cost of any other move is scaled up more
+the less frequent it is. algorithm 4 gives the explicit denition to compute .
+computing a best alignment w.r.t. will prefer moves with lower costs
+(i.e., which yield a more ecient repair across the entire log l) and avoid moves
+with higher costs (i.e., which yield a more expensive repair w.r.t. entire l). the
+above procedure could be iterated, i.e., compute =globalcost (l;n;).
+however, in experiments we found the alignments returned for andto be
+25algorithm 4 computing a global cost function
+procedure globalcost (logl, netn, cost function )
+ alignment (n;l; )
+for alla2dodev(a) number of log moves ( a;) in
+for allt2tdodev(t) number of model moves ( ;t) in
+devmax maxx2[tdev(x) // most ecient repair
+(x) (x)devmax
+dev(x), for allx2[t
+return global cost function 
+identical.
+5.4. aligning, decomposing, and clustering subtraces into sublogs
+the repair technique of sect. 3 extracts sublogs from an alignment of lto
+nand adds a subprocess to nfor each sublog. the simplicity of the repaired
+model depends on the number of subprocesses added (fewer means simpler), and
+how simple each subprocess is. so far, we only gave a na ve procedure to extract
+sublogs: group subtraces at the same location. in the following, we investigate
+the forces that inuence simplicity of subprocesses and propose a procedure for
+extracting sublogs that aims at a simple repaired model.
+5.4.1. simplicity of subprocesses
+a subprocess nsadded tonwill be simpler if the sublog ( s;q) from which
+nsis derived contains many similar traces and no outliers (or noise). the
+number of subprocesses in turn can be reduced by grouping as many traces as
+possible into the same sublog. this observation reveals two forces that aect
+simplicity: (1) any two subtraces with overlapping locations should be in the
+same sublog, and (2) dissimilar traces should not be in the same sublog.
+we address these two forces with the following approach. first partition the
+subtraces(l) into sets sub1;:::; subkof similar subtraces, so that traces in
+dierent sets are dissimilar. then subtraces that are in the same set subiand
+have overlapping locations are grouped into the same sublog, which may yield
+several sublogs depending on the overlap. we conrmed in experiments that
+repairingnw.r.t. the sublogs obtained in this way will yield a simpler structure
+of the repaired process model. we present both steps in the following.
+5.4.2. partitioning subtraces based on similarity
+figure 10 illustrates the problem of partitioning the subtraces (l) into sets
+of similar subtraces by an example. the subtraces to the left are very diverse. if
+we group all of them into a single sublog, we could discover the subprocess n0,
+which has a rather complex structure. if we decided to put each subtrace into a
+dierent sublog, we would obtain simple subprocesses, but these contain certain
+structures multiple times. for instance, the sequence cdefwould be represented
+twice. simplicity can be achieved by partitioning the subtraces into sets of
+mutually similar traces.
+26/mt97/mt98/mt103/mt104/mt102
+/mt99/mt100
+/mt100/mt99/mt99/mt100/mt101/mt102/mt97/mt98/mt99/mt100/mt101/mt102/mt103/mt104/mt105
+/mt99/mt100/mt101/mt102 /mt99/mt100/mt101/mt102
+/mt99/mt100
+/mt100/mt99/mt99/mt100/mt101/mt102
+/mt97/mt98/mt83/mt117/mt98 /mt50/mt32/mt58/mt32/mt99/mt100/mt101/mt102/mt44/mt32/mt99/mt100/mt101/mt102/mt44/mt32/mt99/mt100/mt44/mt32/mt100/mt99/mt97/mt98/mt99/mt100/mt101/mt102/mt103/mt104/mt105 /mt97/mt98/mt103/mt104/mt102 /mt97/mt98/mt103/mt104/mt102
+/mt103/mt104/mt105/mt97/mt98/mt99/mt100/mt101/mt102
+/mt99/mt100
+/mt100/mt99/mt99/mt100/mt101/mt102
+/mt97/mt98/mt103/mt104/mt102
+/mt97/mt98/mt103/mt104/mt105/mt83/mt117/mt98 /mt51/mt32/mt58/mt32/mt103/mt104/mt102/mt44/mt32/mt103/mt104/mt105
+/mt83/mt117/mt98 /mt49/mt32/mt58/mt32/mt97/mt98/mt44/mt32/mt97/mt98
+/mt97
+/mt98/mt101
+/mt103 /mt104/mt99
+/mt102 /mt105/mt100/mt78/mt48
+/mt99
+/mt100/mt101
+/mt102/mt78/mt50
+/mt103 /mt104/mt102 /mt78/mt51
+/mt105/mt97 /mt98/mt78/mt49/mt100/mt105/mt115/mt99/mt111/mt118/mt101/mt114
+/mt101/mt110/mt100
+/mt115/mt116/mt97/mt114/mt116 /mt101/mt110/mt100/mt115/mt116/mt97/mt114/mt116 /mt101/mt110/mt100
+/mt101/mt110/mt100 /mt115/mt116/mt97/mt114/mt116/mt100/mt105/mt115/mt99/mt111/mt118/mt101/mt114
+/mt115/mt116/mt97/mt114/mt116/mt100/mt101/mt99/mt111/mt109/mt112/mt111/mt115/mt101 /mt100/mt101/mt99/mt111/mt109/mt112/mt111/mt115/mt101figure 10: decomposing and aligning sublogs to obtain multiple, simpler subprocesses.
+however, there is no obvious partition of the subtraces shown in fig. 10.
+subtrace cdefis similar to cdand to a part of abcdefghi , but cdis rather dierent
+from abcdefghi . also abghf andcdefare similar to a part of abcdefghi , but cdef
+and abghf are not similar to each other. in any case, we either end up with
+sublogs of dissimilar traces (yielding a complex subprocess), or with many small
+sublogs (yielding duplicated structures). in the following, we propose a technique
+that avoids this trade-o.
+idea: decompose subtraces. partitioning the subtraces of fig. 10 fails, because
+some traces are only similar to a part of another trace. we avoid this problem
+by decomposing each subtrace into parts that are similar to other subtraces.
+the algorithmic idea is as follows. we call two subtraces similar if they share
+50% of their actions (regardless of the ordering). a long subtrace decomposes
+into shorter subtraces =prex0sux whenever0is also a subtrace found
+by the alignment (and and0themselves are dissimilar). decomposition starts
+with the longest subtrace and the longest part 0. this way, we decompose
+into the longest similar subtraces that we can nd. when no subtrace can be
+decomposed anymore, any two subtraces are either clearly similar or clearly
+dissimilar. formal denitions are given below.
+figure 10 illustrates this procedure. in the rst step, abcdefghi decomposes
+into ab;cdef;ghibecause of cdef. from the resulting set of subtraces, abghf
+decomposes into aband ghfbecause of ab. in the resulting set, no subtrace
+can be decomposed anymore, e.g., trace cdef is not decomposed into cdand
+efbecause cdand cdef are similar (they share at least 50% of the actions).
+27grouping pairwise similar traces yields the three sets sub1;sub2;sub3shown
+in fig. 10(right). from these, we can discover the subprocesses n1,n2, and
+n3which have a simpler structure; only n2andn3overlap on transition f.
+note that by adding n1,n2, andn3to the same location (their start and end
+transitions are connected to the same places), the 3 subprocesses together replay
+the subtraces of fig. 10(left).
+formal denitions. let () denote the actions occurring in a subtrace .
+subtraces (1;q1) and (2;q2) are similar , written (1;q1)(2;q2), i they
+share at least 50% of the actions, i.e.,j(1)\(2)j
+j(1)j0:5 andj(1)\(2)j
+j(2)j0:5.
+letbe the transitive closure of , i.e.,is the equivalence relation induced
+by. let subbe a set of subtraces; partitions subinto its equivalence
+classes sub1;:::; subkwhere for each i= 1;:::;l , (1;q1);(2;q2)2subii
+(1;q1)(2;q2). finally, we write sub[n] for the set of subtraces in subthat
+have length n. algorithm 5 shows the complete algorithm.
+algorithm 5 decomposing and aligning subtraces
+procedure alignsubtraces (subtraces sub)
+nmax length of longest subtrace in sub
+forn=nmax:::1do
+for all (;q)2sub[n]do
+choose012=where12sub[k],k<n maximal,61
+if012existthen
+sub subnf(;q)g
+sub sub[f(1;q);(2;q);(3;q)g
+sub subnsub[0] // remove empty subtraces
+sub1;:::; subk equivalence classes of subwrt
+return sub1;:::; subk
+5.4.3. grouping subtraces into sublogs
+algorithm alignsubtraces returns sets sub1;:::; subkof similar subtraces.
+by def. 8, a set subiof subtraces is only a log if their joint location is non-empty.
+otherwise we split subibased on the locations of its subtraces.
+as before, locations of subtraces may overlap in a way that some subtraces
+could be placed in more than one sublog. consider for example the subtraces
+(abc;fp;qg);(abd;fq;rg);(abe;fq;rg);(abf;fp;sg). their joint locations is empty;
+when grouping the traces into sublogs, we have to choose whether ( abc;fp;qg)
+should be in one log with ( abd;fq;rg);(abe;fq;rg) (locations overlap on qor in
+one log with ( abf;fp;sg) (overlap on p).
+in experiments, we found that the repaired model is more structured when
+we consider the \frequency" of a place w.r.t. a set subof subtraces. whenever
+a subtrace has a place pin its location, the process should have been able
+to replay that trace when there was a token on p. the more often poccurs,
+the more frequent it is w.r.t. behavior that has to be repaired. we interpret
+a frequent place pas more important for the placement of a subprocess. in
+28contrast, a less frequent place just happened to be marked when a subtrace had
+to be executed; it is less signicant on where to add a subprocess to repair a
+model. thus, we propose to group subtraces into sublogs based on the frequency
+of the places in their locations, starting with the most frequent places. in
+our example above, place qwould be the most frequent one, and we would
+group ( abc;fp;qg);(abd;fq;rg);(abe;fq;rg) into one sublog with location fqg
+and ( abf;fp;sg) into another sublog with location fp;sg.
+formal denitions. for a set subof subtraces and a place p2p, letsub[p] denote
+the subtraces of subhavingpin their location, sub[p] =f(;q)2subjp2qg.
+algorithm 6 groups subtraces subinto sublogs.
+algorithm 6 grouping subtraces to sublogs
+procedure groupintosublogs (subtraces sub)
+s ;
+while sub6=;do
+choose placep2pwithjsub[p]jis maximal
+s sub[p] // all subtraces at place p
+q t
+2sloc() // at leastp2q
+s s[f (s;q)g
+sub subnsub[p]
+returns
+5.4.4. complete algorithm
+algorithm 7 shows the complete procedure which extracts from the set of
+all subtraces (l), a complete set s=groupintoalignedsublogs ((l))
+of sublogs, where each sublog contains only similar traces. we noticed in
+experiments that aligned sublogs yield simpler subprocesses, and that we were
+able to to identify more loops from aligned sublogs than from unaligned ones.
+algorithm 7 aligning subtraces to sublogs
+procedure groupintoalignedsublogs (subtraces sub)
+s ;
+sub1;:::; subk alignsubtraces (sub)
+fori= 1;:::;k do
+s s[ groupintosublogs (subi)
+returns
+5.5. improving the placement of a subprocess
+a sublog (s;q) returned by alg. 7 may still have a large location q. the
+locationqcould be reduced further if additional information from the entire
+original log lis taken into account. the idea is that a place p2qis more
+signicant for a subtrace in sif it was marked last before that subtrace had to
+be executed. the subset of places in qthat were marked last the most often are
+29considered as most signicant; all other less signicant places are removed from
+q.
+formal denitions. recall from sect. 4.3 that each subtrace 2swas extracted
+from an alignment (l) of a trace l2lto the model n. let (a;t) be the
+synchronous move that precedes in(l) =:::(a;t)(;t0
+1):::(;t0
+k):::, .e.,
+we ignore the model moves ( ;t0
+i). the places marked last before are the
+post-places tinn; we write last(;n):=t. given sublog ( s;q), the number
+of times a place p2qwas marked last before a subtrace 2sis dened as
+last(p;s;n ) =jf2sjp2last(;n)gj. the higher last(p;s;n ), the more
+signicant is pfors. algorithm 8 reduces the location of each sublog to the most
+signicant places. note that the location of a sublog ( s;q) remains unchanged
+iflast(;n)\q=;aslast(p;s;n ) = 0 for all p.
+algorithm 8 picking relevant locations of sublogs
+procedure pickrelevantlocations (netn, sublogss)
+s0 ;
+for all (s;q)2sdo
+s0 s0[f(s;fp2qjlast(p;s;n ) is maximalg)g
+returns0
+we found in experiments that by this technique, subprocesses introduced
+during repair are less likely to have overlapping locations.
+5.6. complete model repair procedure
+we experimentally evaluated the eect each of the techniques introduced so
+far. based on the insights gained there (see sect. 6), we designed the extended
+repair algorithm 9. it takes as input the original model nand the log l. in
+addition, the user can provide a cost function to specify how severe deviations
+w.r.t. particular transitions or events are; a uniform cost function with costs 1
+can be used as well. finally, threshold kwill be used when removing infrequently
+used parts from n.
+the algorithm has three major steps: (1) first repair the model for loops
+using addloops (alg. 9), (2) then for subprocesses and skipped activities using
+repairsubprocess (alg. 1), and (3) nally remove infrequent nodes (alg. 3).
+the algorithm can be congured in various ways:
+1. steps (1) and (3) can be omitted.
+2.repairing for loops is most eective if the cost function loopused for
+computing the alignment uses 0 costs for model moves and high costs for
+log moves; though other cost functions are possible.
+3.subprocess-based repair yields less subprocesses when the cost function
+tis computed by globalcost (alg. 4); though one could also omit
+globalcost and sett for the given cost function .
+4.in steps (1) and (2), sublogs are extracted from the respective alignment
+bygroupintoalignedsublogs (alg. 7); sublogs can also be extracted
+directly without aligning them by s groupintosublogs ((l)).
+30algorithm 9 extended procedure for model repair
+procedure repairextended (modeln, logl, cost function , threshold k)
+// (1) repair for loops
+loop cost function with 8t2nt:(t) = 0;8a2(l) :(e) = 100
+loop(l) alignment (n;l; loop)
+loop(l) all subtraces of loop(l)
+sloop groupintoalignedsublogs (loop(l))
+sloop pickrelevantlocations (n;sloop)
+nloop addloops (n;l; loop)
+// (2) repair for subprocesses and skipped events
+t globalcost (nloop;l; )
+(l) alignment (n;l; t)
+(l) all subtraces of (l)
+s groupintoalignedsublogs ((l))
+s pickrelevantlocations (nloop;s)
+nt repairsubprocess (nloop;l; t)
+// (3) remove infrequent
+nrepaired removeinfrequent (nt;l; t;k)
+returnnrepaired
+5.procedure pickrelevantlocations (alg. 8) to pick more specic loca-
+tions for loops and subprocesses can be omitted.
+experimental results show that the complete procedure yields best results as
+we discuss in the next section.
+6. experimental evaluation
+the technique for model repair presented in this paper is implemented
+in the process mining toolkit prom 6 in the package uma , available from
+http://www.promtools.org/prom6/ . we briey discuss some implementation
+details and then present an experimental evaluation of our techniques.
+6.1. implementation in prom
+the prom package uma provides a repair model plugin that implements
+alg. 9. this plugin calls three separate plugins repair model (nd loops) ,
+repair model (nd subprocesses) , and repair model (remove unused parts) which
+implement the three main repair steps, respectively. each of these repair plugins
+takes as input a petri net n, a logl, and a best-tting alignment (l) ofl
+ton. the alignment (l) can be computed in prom 6 using the conformance
+checker of [ 9{11]. additionally, we provide a plugin align log and model for
+repair (global costs) which computes an alignment using a global cost function
+(alg. 4). each of the repair plugins has an option to align sublogs of non-tting
+events (alg. 7) and to pick optimal sublocations (alg. 8).
+31table 1: deviations of 10 logs from dutch municipalities to a reference model and properties
+of manually repaired models.
+log deviations manual repair
+moves on per add similarity-
+traces length model log case jpj j tj distance
+m1 434 1-51 3327 310 1-26
+m2 286 1-72 1885 323 1-41
+m3 481 2-82 3079 1058 1-49
+m4 324 1-37 2667 192 2-21
+m5 328 2-43 3107 342 2-25
+m1f249 24-40 681 229 1-12 5 20 0.068
+m2f180 23-70 516 240 1-41 6 27 0.095
+m3f222 22-82 465 598 1-49 44 82 0.158
+m4f239 15-37 1216 180 2-17 23 43 0.117
+m5f328 13-43 1574 280 2-16 15 36 0.111
+in an earlier version of this paper [ 18], sublogs were obtained by grouping
+subtraces that share the same location in a greedy way (pick sublogs with the
+largest overlap of places rst).
+inrepair model (nd subprocesses) , subprocesses are discovered from sublogs
+using the ilp miner [ 8] which guarantees to return a model that can replay the
+sublog. the returned model is then simplied according to [ 29] and added to n
+as a subprocess as dened in alg. 1.
+6.2. experiment data
+we validated our implementation on real-life logs from a process that is
+shared by ve dutch municipalities. figure 1(left) shows the reference base
+model that is used in several municipalities. however, each municipality runs the
+process dierently as demanded by the \couleur locale". as a result, the process
+observed in each municipality substantially deviates from the base model.
+we obtained 5 raw logs (m1-m5) from the municipalities' information systems.
+from these we created ltered logs (m1f-m5f) by removing all cases that clearly
+should not t the base model, for instance because they lacked the start of the
+process or were incomplete (see sect. 3 for the discussion). table 1 shows the
+properties of these 10 logs (over 44 dierent actions) discussed in the following.
+the table lists the number of traces, minimum and maximum length, and the
+properties of a best alignment of the log to the model of fig. 1(left) as the total
+number of model moves, number of log moves and the minimum and maximum
+number of deviations (log move or model move) per case. none of the traces
+could be replayed on the base model, in some cases deviations were severe.
+6.3. manual repair
+to obtain a \gold standard" regarding model repair the reference model
+was repaired manually by a modeling expert. for repair, deviations between
+ltered log and model in the alignment were identied and classied based on
+background information about the process. we observed that
+321.activities were executed in reality in a dierent order than described by
+the process model,
+2.groups of activities were executed repeatedly where the process model only
+allows for a single execution,
+3. some activities had been skipped in some cases, and
+4. some activities had never been executed.
+based on this classication, the model was repaired:
+1.where a dierent execution order was required, the ordering of activities
+was adjusted, for instance by reversing activity order, making activities
+parallel, or swapping activities and gateways in the process.
+2.when a group of activities had been executed repeatedly, the model was
+repaired by either implementing a loop that allows for repeated execution of
+these activities, or by inserting a new block of activities. the latter repair
+was conducted in situations when repeated activities occurred interleaved
+with the main process ow or much later than their original occurrence in
+the process.
+3.optional activities were skipped by adding a -transition, preferably skip-
+ping over a sequence of optional activities where applicable.
+4. activities never executed were removed from the model.
+after applying all repairs, the repaired model was checked for conformance, and
+additional changes were applied until the repaired model conformed to the given
+log. figure 12(right) shows the manually repaired model for log m2f, the changes
+are highlighted: one subprocess consisting of 10 activities was added, a group of
+2 activities had to be moved to a dierent branch, one loop was implemented,
+and several activities had to be made optional. table 1 shows the dierences of
+the manually repaired models for each ltered log to the reference model which
+had 59 places, 68 transitions, and 152 arcs. log m3frequired by far the largest
+changes in particular in adding new subprocesses and loops. logs m4fand
+m5frequired many repairs for optional activities. we also measured the graph
+similarity distance [33] of each manually repaired model to the reference model.
+the similarity distance roughly indicates the fraction of the original model that
+has to be changed to obtain the repaired/rediscovered model, i.e., 0 :0 means
+identical models. the manual repairs increased the distance to the reference
+model between :068 and:158.
+the time to manually repair one model was between 1hr for m1f, around
+3hrs form3f,m4fandm5feach, and 5hrs for m2ffor which it was hardest
+to derive repair actions from the found deviations.
+6.4. automatic repair
+to evaluate the techniques for automatically repairing models, we conducted
+a series of experiments. in the rst experiment, we repaired the reference model
+for each of the 10 logs using the subprocess-based repair of alg. 1 followed
+by removing unused nodes with alg. 3 based on an alignment of uniform cost
+function. the other experiments investigated the inuence of the improvements
+33pl32
+pl34 pl37
+pl46
+pl49pl52
+pl58
+pl61
+pl78
+pl81
+pl84
+pl87
+pl90pl93
+pl102pl111
+pl116
+pl119pl123
+finalpl50pl53
+pl56pl65
+pl66
+pl76
+pl85
+pl91pl94
+pl97
+pl113
+pl132
+pl141
+pl178pl183pl206
+pl211
+pl215 pl233
+pl242
+pl256
+pl269
+pl275
+pl285pl1
+pl17pl20
+pl67
+pl77
+pl82
+pl86
+pl98
+pl150
+pl68
+pl151
+pl191
+pl196
+pl202pl801_hoofd_12001_hoofd_010
+01_hoofd_26005_eind_010
+06_vd_010 01_hoofd_110
+01_hoofd_510_1silent - and split03_gbh_005
+11_ah_ii_01009_ah_i_01001_hoofd_18001_hoofd_130
+01_hoofd_520
+01_hoofd_53001_hoofd_48001_hoofd_43001_hoofd_250
+07_ops_010silent - skip 05_eind_010 silent - skip 03_gbh_00501_hoofd_020
+01_hoofd_030_1
+01_hoofd_030_214_vrij_010silent - skip 14_vrij_010
+04_bpt_005
+01_hoofd_065_1
+01_hoofd_065_2
+01_hoofd_090 silent - niet regulier
+silent - skip 06_vd_010
+silent - skip 07_ops_01001_hoofd_101 silent - niet publiceren silent - is regulier
+silent - and join
+silent - skip procedure verandering
+01_hoofd_200 silent - skip 01_hoofd_200
+silent - and join & split
+01_hoofd_270
+01_hoofd_330
+01_hoofd_350_2 silent - skip procedureverandering
+01_hoofd_370
+01_hoofd_40001_hoofd_380
+01_hoofd_420silent - skip weigeringsgrond
+01_hoofd_440_2
+01_hoofd_455
+01_hoofd_46001_hoofd_45101_hoofd_45001_hoofd_446silent - skip niet regulier
+silent - skip zienswijzen vragen
+silent - skip mandaat
+10_uov_010
+silent - skip aanhoudingsgrond
+silent - skip regulier
+silent - and split and join
+01_hoofd_510_201_hoofd_490_2silent 01_hoofd_065_2
+silent 01_hoofd_260
+silent 01_hoofd_510_1silent 01_hoofd_030_1silent 01_hoofd_010
+silent 04_bpt_005
+silent 01_hoofd_446silent 01_hoofd_065_1
+silent 01_hoofd_370
+silent 12_ap_010silent 09_ah_i_010
+silent 01_hoofd_530silent 01_hoofd_270silent 01_hoofd_120silent 01_hoofd_030_2
+silent 01_hoofd_195
+silent 01_hoofd_490_2silent 01_hoofd_020
+silent 01_hoofd_250
+silent 01_hoofd_510_2silent 01_hoofd_110
+silent 01_hoofd_380silent 01_hoofd_330
+silent 01_hoofd_520
+pl32
+pl34pl37
+pl46 pl49pl52
+pl58
+pl61
+pl78
+pl81
+pl84
+pl87
+pl90pl93pl102pl111
+pl116
+pl119pl123
+finalpl50pl53
+pl56
+pl65
+pl66pl76
+pl85
+pl91pl94
+pl97
+pl113
+pl132
+pl141
+pl178pl183pl206
+pl211
+pl215pl233
+pl242
+pl256
+pl269
+pl275
+pl285pl1
+pl17pl20
+pl67
+pl77
+pl82
+pl86
+pl98
+pl150
+pl68
+pl151
+pl191
+pl196
+pl202pl801_hoofd_12001_hoofd_010
+01_hoofd_26005_eind_010
+06_vd_01001_hoofd_110
+01_hoofd_510_1silent - and split
+03_gbh_00511_ah_ii_01009_ah_i_01001_hoofd_18001_hoofd_130
+01_hoofd_520
+01_hoofd_53001_hoofd_48001_hoofd_43001_hoofd_250
+07_ops_010silent - skip 05_eind_010
+silent - skip 03_gbh_00501_hoofd_020
+01_hoofd_030_1
+01_hoofd_030_2
+14_vrij_010 silent - skip 14_vrij_01004_bpt_005
+01_hoofd_065_1
+01_hoofd_065_2
+01_hoofd_090 silent - niet regulier
+silent - skip 06_vd_010
+silent - skip 07_ops_01001_hoofd_101 silent - niet publiceren silent - is regulier
+silent - and join
+01_hoofd_200
+silent - and join & split
+01_hoofd_270
+01_hoofd_330
+01_hoofd_350_2 silent - skip procedureverandering
+01_hoofd_370
+01_hoofd_40001_hoofd_380
+01_hoofd_420silent - skip weigeringsgrond
+01_hoofd_440_2
+01_hoofd_455
+01_hoofd_46001_hoofd_45101_hoofd_45001_hoofd_446silent - skip niet regulier
+silent - skip zienswijzen vragen
+silent - skip mandaat
+10_uov_010
+silent - skip aanhoudingsgrond
+silent - skip regulier
+silent - and split and join
+01_hoofd_510_201_hoofd_490_2silent 01_hoofd_270silent 04_bpt_005
+silent 01_hoofd_446silent 12_ap_010silent 01_hoofd_195
+silent 01_hoofd_490_2silent 01_hoofd_030_2
+silent 01_hoofd_065_2
+silent 01_hoofd_330
+silent 10_uov_010silent 01_hoofd_030_1figure 11: result of repairing fig. 1(left) w.r.t. m1 (left) and m2f(right).
+in model repair that can be achieved by the variants proposed in sect. 5. the
+quality of the automatically repaired models is measured in terms of graph
+similarity distances to the reference model and to the manually repaired models.
+6.4.1. subprocess-based repair
+applying subprocess-based repair (alg. 1 and 3) on the base model of
+fig. 1(left) and the ltered log m1fyields the model of fig. 1(middle). re-
+pairing the base model w.r.t. the raw log m1 results in the model shown in
+fig. 11(left). repairing the base model w.r.t. the ltered log m2fyields the
+model of fig. 11(right). in each case, model repair requires only several seconds;
+a best alignment (needed for repair) could be obtained in about a minute per
+log. we checked all resulting models for their capability to replay the respective
+log and could conrm complete tness for all models.
+moreover, we could re-identify the original model as a sub-structure of
+the repaired model, making it easy to understand the made repairs in the
+context of the original model. table 2 shows for each log the number of added
+subprocesses, the average and maximal number of transitions per subprocess,
+and the total number of added and of removed transitions in the entire process.
+we can see that in the worst case, m3, the number of transitions in the model
+has more than tripled. nevertheless, this large number of changes is nicely
+structured in subprocesses: between 2 and 10 subprocesses were added per
+log, the largest subprocess had 37 transitions, the average subprocess had 6-13
+transitions. we identied alternatives, concurrent actions, and loops in the
+dierent subprocesses. yet, simplication [ 29] ensured a simple structure in
+all subprocesses, i.e., graph complexity between 1 :0 and 2:0. model repair also
+34table 2: results on subprocess-based automatic repairs for the logs from table 1.
+subprocesses change to original discover
+# addedjtj totaljtj sim-dist. sim-dist.
+avg. max. add. rem. to orig. to man. to orig.
+m1 7 7 21 69 3 0.144 0.476
+m2 5 10 23 65 3 0.147 0.486
+m3 10 13 37 151 3 0.199 0.542
+m4 8 7 13 71 4 0.139 0.541
+m5 6 9 24 60 3 0.143 0.540
+m1f2 6 9 25 4 0.074 .094 0.473
+m2f2 12 21 37 5 0.103 .131 0.539
+m3f7 10 26 87 5 0.164 .176 0.543
+m4f6 7 13 60 4 0.124 .145 0.542
+m5f4 9 23 51 3 0.111 .146 0.541
+allowed 25%-30% of the original transitions to be skipped by new -transitions;
+only few original transitions could be removed entirely.
+to measure the eectiveness of automatic model repair, we computed the
+graph similarity distance [ 33] between automatically repaired model and original
+model, between automatically repaired model and manually repaired model,
+and between a completely rediscovered model and the original model. the
+rediscovered model was obtained with the ilp miner [ 8] (ensuring tness) and
+subsequently simplied by the technique of [ 29] using the same settings as for
+subprocess simplication.
+we observed that every automatically repaired model is signicantly more
+similar to the reference model ( :074-:199) than the rediscovered models are
+to the reference model ( :473-:543). this indicates that model repair indeed
+takes the original model structure by far more into account than model discov-
+ery. the numbers also match the observations one can make when comparing
+fig. 1(middle) to fig. 1(right). the manually repaired models are slightly closer
+to the reference model in terms of similarity distance (compare tables 1 and 2),
+e.g.,:094 for automatic repair and :068 for manual repair for m1f. however, the
+automatic repairs have a dierent characteristic than the manual repairs as the
+distance between automatically and manually repaired models is larger than the
+dierence between automatically repaired model and reference model. filtering
+logs prior to repair, as discussed in sect. 3, positively aects the similarity of
+the repaired model to the original model, i.e., compare similarity of repaired
+miand mifto original. also, the eect of ltering is stronger when repairing a
+model than when rediscovering a model, i.e., rediscovered models all had similar
+distance to the original, regardless of whether the log was ltered.
+6.4.2. improvements by repair variants
+we conducted 7 additional experiments varying on (1) whether to repair for
+structured loops (alg. 2 in sect. 5.1), (2) whether to align sublogs (alg. 7 in
+sect. 5.4), (3) whether to compute a global cost function for alignment (alg. 4 in
+sect. 5.3), and (4) whether or not to remove unused nodes from the model (alg. 3
+35pl32
+pl34 pl37
+pl46 pl49 pl52
+pl58
+pl61
+pl78
+pl81
+pl84
+pl87
+pl90pl93pl111
+pl116
+pl119pl123
+finalpl50pl53
+pl56
+pl65
+pl66pl76
+pl85
+pl91pl94
+pl97
+pl113
+pl132
+pl141
+pl178pl183pl206
+pl211
+pl215pl233
+pl242
+pl256
+pl269
+pl275
+pl285pl1
+pl17pl20
+pl67
+pl77
+pl82
+pl86
+pl98
+pl150
+pl68
+pl151
+pl191
+pl196
+pl202pl8pl178_post
+pl34_post01_hoofd_12001_hoofd_010
+01_hoofd_26005_eind_010
+06_vd_010 01_hoofd_110
+01_hoofd_510_1silent - and split
+03_gbh_00511_ah_ii_01009_ah_i_01001_hoofd_18001_hoofd_130
+01_hoofd_520
+01_hoofd_53001_hoofd_48001_hoofd_43001_hoofd_250
+07_ops_010silent - skip 05_eind_010
+silent - skip 03_gbh_00501_hoofd_020
+01_hoofd_030_1
+01_hoofd_030_2
+14_vrij_010 silent - skip 14_vrij_01004_bpt_005
+01_hoofd_065_1
+01_hoofd_065_2
+01_hoofd_090 silent - niet regulier
+silent - skip 06_vd_010
+silent - skip 07_ops_01001_hoofd_101 silent - niet publiceren silent - is regulier
+silent - and join
+01_hoofd_200silent - and join & split
+01_hoofd_270
+01_hoofd_330
+01_hoofd_350_2 silent - skip procedureverandering
+01_hoofd_370
+01_hoofd_40001_hoofd_380
+01_hoofd_420silent - skip weigeringsgrond
+01_hoofd_440_2
+01_hoofd_455
+01_hoofd_46001_hoofd_45101_hoofd_45001_hoofd_446silent - skip niet regulier
+silent - skip zienswijzen vragen
+silent - skip mandaat
+10_uov_010
+silent - skip aanhoudingsgrond
+silent - skip regulier
+silent - and split and join
+01_hoofd_510_201_hoofd_490_2silent 12_ap_010silent 01_hoofd_195silent 01_hoofd_270
+silent 10_uov_010silent 01_hoofd_446silent 01_hoofd_030_1
+silent 01_hoofd_490_2silent 04_bpt_005
+silent 01_hoofd_065_2
+silent 01_hoofd_330silent 01_hoofd_030_2
+pl32
+pl34pl37
+pl46 pl49 pl52
+pl58
+pl61
+pl78
+pl81
+pl84
+pl87
+pl90pl93pl102pl111
+pl116
+pl119pl123
+finalpl50pl53
+pl56
+pl65
+pl66pl76
+pl85
+pl91pl94
+pl97
+pl113
+pl132
+pl141
+pl178pl183pl206
+pl211
+pl233
+pl242
+pl256
+pl269
+pl275
+pl285pl1
+pl17pl20
+pl67
+pl77
+pl82
+pl86
+pl98
+pl150
+pl68
+pl151
+pl191
+pl196
+pl202pl102_post
+pl178_post
+pl34_post01_hoofd_12001_hoofd_010
+01_hoofd_26005_eind_010
+06_vd_010
+01_hoofd_110
+01_hoofd_510_1silent - and split
+03_gbh_00511_ah_ii_01009_ah_i_01001_hoofd_18001_hoofd_130
+01_hoofd_520
+01_hoofd_53001_hoofd_48001_hoofd_43001_hoofd_250
+07_ops_010silent - skip 05_eind_010
+silent - skip 03_gbh_00501_hoofd_020
+01_hoofd_030_1
+01_hoofd_030_2
+14_vrij_010
+silent - skip 14_vrij_01004_bpt_005
+01_hoofd_065_1
+01_hoofd_065_2
+01_hoofd_090 silent - niet regulier
+silent - skip 06_vd_010
+silent - skip 07_ops_01001_hoofd_101 silent - niet publicerensilent - is regulier
+silent - and join
+silent - skip procedure verandering
+01_hoofd_195
+01_hoofd_200 silent - skip 01_hoofd_200
+silent - and join & split
+01_hoofd_330
+01_hoofd_350_2 silent - skip procedureverandering
+01_hoofd_370
+12_ap_010
+01_hoofd_40001_hoofd_380
+01_hoofd_420silent - skip weigeringsgrond
+01_hoofd_440_2
+01_hoofd_455
+01_hoofd_46001_hoofd_45101_hoofd_45001_hoofd_446silent - skip bestreden beschikking aangetast
+silent - skip niet regulier
+silent - skip zienswijzen vragen
+silent - skip mandaat
+10_uov_010
+silent - skip aanhoudingsgrond
+silent - skip regulier
+silent - and split and join
+01_hoofd_510_201_hoofd_490_2silent - loopsilent 01_hoofd_030_2
+silent 01_hoofd_330silent 01_hoofd_460silent 01_hoofd_446pl801_hoofd_270
+silent 01_hoofd_270silent 01_hoofd_065_2
+silent 12_ap_010
+silent 01_hoofd_455silent 01_hoofd_195
+silent 01_hoofd_490_2silent 01_hoofd_030_1
+silent 10_uov_010silent 04_bpt_005
+silent - skip sub1
+silent - skip sub2
+silent - skip sub3
+pl32
+pl34
+pl37 pl46
+pl49pl52
+pl58
+pl78
+pl81
+pl84
+pl87
+pl90pl93
+pl102 pl111pl116
+pl119pl123
+finalpl50pl53
+pl56pl65
+pl66
+pl76
+pl85
+pl91pl94
+pl97
+pl113
+pl132
+pl141
+pl178pl183pl206
+pl211
+pl233
+pl242
+pl256
+pl269
+pl275
+pl1
+pl17pl20
+pl67
+pl77
+pl82
+pl86
+pl98
+pl150
+pl68
+pl202pl7pl11
+pl1801_hoofd_12001_hoofd_010
+01_hoofd_26005_eind_010 06_vd_010 01_hoofd_110silent - and split03_gbh_005
+11_ah_ii_01009_ah_i_01001_hoofd_18001_hoofd_130
+01_hoofd_520
+01_hoofd_53001_hoofd_48001_hoofd_43001_hoofd_25007_ops_010 silent - skip 05_eind_010silent - skip 03_gbh_005 01_hoofd_020
+01_hoofd_030_1
+01_hoofd_030_214_vrij_010
+silent - skip 14_vrij_010
+04_bpt_005
+01_hoofd_065_1
+01_hoofd_065_2
+01_hoofd_090 silent - niet regulier
+silent - skip 06_vd_010 silent - skip 07_ops_010 01_hoofd_101 silent - niet publiceren silent - is regulier
+silent - and join
+silent - skip procedure verandering
+01_hoofd_200 silent - skip 01_hoofd_200
+silent - and join & split
+01_hoofd_330
+01_hoofd_350_2
+silent - skip procedureverandering
+01_hoofd_370
+01_hoofd_40001_hoofd_380
+01_hoofd_420silent - skip weigeringsgrond
+01_hoofd_440_2
+01_hoofd_455
+01_hoofd_46001_hoofd_45101_hoofd_45001_hoofd_446silent - skip bestreden beschikking aangetast
+silent - skip niet regulier
+silent - skip zienswijzen vragen
+silent - skip mandaat
+10_uov_010
+silent - skip aanhoudingsgrond
+silent - skip regulier
+silent - and split and join01_hoofd_490_2silent - skip subprocess silent - start subprocesssilent - repeat stepssilent - skip 01_hoofd_065_1silent - skip 04_bpt_005
+silent - skip 01_hoofd_110
+pl215
+pl801_hoofd_270silent - skip hoofd_030_x
+silent - and join
+silent - skip 01_hoofd_330
+silent - skip 01_hoofd_446
+silent - repeat
+silent - and join
+silent - skip 01_hoofd_490_2silent - skip 01_hoofd_460silent - skip 01_hoofd_455
+silent - skip 10_uov_010silent - skip 01_hoofd_065_201_hoofd_065_2figure 12: result of repairing fig. 1(left) w.r.t. m2fby aligning sublogs (left), discovering
+loops (middle), by manual repair (right).
+in sect. 5.2). in all 7 experiments, we grouped sublogs according to alg. 6 and
+picked locations according to alg. 8. figure 12 compares the result of repairing
+fig. 1(left) w.r.t. log m2fby using aligned sublogs fig. 12(left) and by discovering
+loops (middle) with the manually repaired model (right). here, aligning sublogs
+splits the large sublog that leads to the large subprocess of fig. 11(right) into
+three smaller sublogs, which yield three additional subprocesses in fig. 12(left).
+in fig. 12(middle), the largest sublog was identied as a loop.
+the main eects we observed in all logs are the following.
+1.loop detection is eective. except for log m1f, we could identify and
+repair loops for each of the logs, ranging between 1 and 4 loops. the
+smallest loop bodies had 1 transition, the largest loop bodies had between
+19 and 23 transitions (for m2, m4, m5, and their ltered variants). the
+discovered loops were structured (i.e., single entry and single exit) and
+contained sequences of activities, concurrent activities, and alternative
+branches; we did not observe structured loops nested insider other loops.
+we could conrm that the discovered loop bodies coincide with the loops
+constructed in the manually repaired models.
+for each identied loop, the repaired model had 1 subprocess of the size
+of the loop body less compared to repairs without loop detection. thus,
+a repair with loop discovery added between 27% and 89% of nodes less
+compared to a repair without loops.
+these subprocesses were loop-free except for loops of length 1 or 2, which
+are introduced by the ilp miner in case of optional activities. the notable
+36exception was m3f, where no large loop could be identied. here, the
+repair revealed a rather complex subprocess having unstructured loops
+(i.e., multiple entries and exits).
+this indicates that our technique was capable of detecting all structured
+loops in the given data set, but cannot handle unstructured loops.
+2.most loops were found when the cost function loopof alg. 9 used costs 0
+for model moves. by such a cost function, the alignment can capture loop
+iterations that contain skipped events. however, we observed a tradeo.
+for log m4 and m4f, some loop iterations contained a large number of
+skipped actions w.r.t. the loop body. the repair had to add more -
+transitions to the loop body than the corresponding subprocess would have
+had.
+3. without aligning sublogs, no loops could be identied. we observed that
+without aligning sublogs, many of the subtraces did contain complete loop
+iterations, but these were preceded or interleaved with other events. in
+these cases, alg. 2 cannot verify the loop hypothesis. when sublogs were
+aligned, loop iterations were separated from other events and loops could
+be found.
+4.aligning sublogs also leads to smaller subprocesses that are localized better
+in the repaired model. the number of subprocesses increased between 2
+and 4 for ltered logs and between 5 and 9 for unltered logs (log m3
+constitutes an extreme case with 23 very small subprocesses).
+if loop detection was not used, average subprocess size reduced by 14%-54%
+(avg. -32%) for ltered logs and by 31%-67% (avg. -42%) for unltered
+logs. if loop detection was used (which always happens in alg. 9 before
+aligning sublogs for subprocess discovery), average subprocess size reduced
+by 8%-54% (avg. -24%) for ltered logs and by 20%-62% (avg. -39%)
+for unltered logs. in particular sublogs which contain iterative behavior
+contribute to the separation and reduction of sublogs. as sublogs with
+iterative behavior are not present after loop detection, the reduction eect
+is slightly less.
+5.computing a global cost function allows to reduce the size of subprocesses
+that cannot be implemented as loops. in these, we observed a reduction
+between 17% and 52% for the average subprocess size in ltered logs; in
+unltered logs we observed reductions of up 33% but some subprocesses
+also increased in size by 1 or 2 transitions.
+6.most superuous nodes (between 4% and 12% of all nodes) could be found
+when the alignment was based on a global cost function. no superuous
+nodes were found when aligning sublogs of an alignment with a uniform
+cost function.
+altogether, the results suggest to repair models by the following procedure:
+rst detect loops based on aligned sublogs with a specic cost function that
+ignores model moves, then add subprocesses based on aligned sublogs that uses
+a global cost function for alignments, and nally remove superuous nodes.
+algorithm 9 was designed based on these insights. for this algorithm, graph
+37table 3: model quality after direct and after iterative repairs with alg. 9
+sim.-dist m1fm2fm3fm4fm5f
+direct repair vs. original 0.070 0.073 0.176 0.111 0.099
+repeated vs. original 0.070 0.080 0.143 0.148 0.195
+repeated vs. direct repair 0.0 0.021 0.144 0.119 0.166
+similarity distance to the original model improves by 3% to 31% compared to a
+plain subprocess-based repair (compare rst line of tab. 3 to tab. 2).
+6.5. repeated repairs
+finally, we evaluated how often our automatic repair technique can be
+applied without requiring human refactoring of the repaired model. for this,
+we consecutively repaired the reference model rst for log m1fand then the
+resulting model for m2fand so on. in each iteration i, we measured the similarity
+of the repaired model to the model obtained by direct automatic repair w.r.t.
+log mifand to the original process model. table 3 shows the results.
+we observed that the repeatedly repaired model has a similar distance to
+the original model as the directly repaired model. occasionally, the repeatedly
+repaired model would be even more similar to the original model (m3f). however,
+after a certain number of iterations, the repeatedly repaired model collects
+additional repair artifacts, making it less similar to the original than the directly
+repaired model.
+based on these insights repeated repairs can in principle be applied, depending
+on the use case. if one is interested in understanding dierences to the original
+model, then the directly repaired model will have a higher quality. in uses cases
+such as process evolution, the original model will be outdated after the rst
+repair, and the repaired model serves as reference. the results of tab. 3 suggest
+that the repaired model should be improved, e.g., in a manual refactoring step,
+to maintain its quality before the next evolution step is performed.
+7. related work
+the model repair technique presented in this paper largely relates to three
+research streams: conformance checking of models, iterative process discovery,
+and changing models to reach a particular aim.
+various conformance checking techniques that relate a given model to an
+event log have been developed in the past. their main aim is to quantify tness ,
+i.e., how much the model can replay the log, and if possible to highlight deviations
+where possible [ 9{12,16]. the more recent technique of [ 9{11] uses alignments
+to relate log traces to model executions which is a prerequisite for the repair
+approach presented in this paper. besides tness, other metrics [ 4,9,13{15,17]
+(precision ,generalization , and simplicity ) are used to describe how good a model
+represents reality. precision and generalization are currently considered in our
+approach only as a side-eect and are not a guiding factor for model repair.
+incorporating these measures into model repair is future work. simplicity is
+38considered in our approach in the sense that changes should be as tractable as
+possible, which we could validate experimentally.
+iterative process discovery techniques solve a problem that is very similar to
+model repair. the problem is to continuously improve an existing (discovered)
+process model based on observed behavior. there are 2 basic types of iterative
+process discovery which both take an existing model nand a loglof most recent
+process executions as input. the rst type, such as the technique proposed in [ 34],
+discovers from la modelnldescribing the executions l, and then merges n
+andnlinto a new model n0. the second type of incremental discovery extracts
+the ordering relations rnbetween activities in nand the ordering relations rl
+between events in land merges them into updated ordering relations r0from
+which then the incrementally updated process model n0is derived. in [ 35]r0
+is derived from the ordering relations with highest support and condence in
+rnandrl. in [ 36],r0are the relations of rnsuperseded by the relations rl
+of the log. in the context of the model repair problem, the approach in [ 34]
+discovering nlfromlmay result in a too complex model to merge into n,
+as the model in fig. 1(right) shows. the same problem occurs for the set of
+all ordering relations rloflin [36]. in contrast, the approach of [ 35] cannot
+guarantee a tting model as support and condence of original model and log
+are balanced, possibly neglecting ordering relations of the log. our approach of
+separating non-tting subtraces from tting traces and repairing the model for
+non-tting traces avoids these problems.2
+a dierent approach to enforcing similarity of repaired model to original
+model could be model transformation incorporating an edit distance. the work
+in [37] describes similarity of process model variants based on edit distance.
+another approach to model repair is presented in [ 38] to nd for a given model
+a most similar sound model (using local mutations). the work in [ 39] considers
+repairing incorrect service models based on an edit distance. these approaches
+do not take the behavior in reality into account. other approaches to adjust a
+model to reality, adapt the model at runtime [ 40,41], i.e., an individual model
+is created for each process execution. this paper repairs a model for multiple
+past executions recorded in a log; it extends on an earlier version by a number
+of improvements of the model repair techniques including better structured
+subprocesses and loop detection. the approach of [ 29,42] uses observed behavior
+to structurally simplify a given model obtained in process discovery.
+8. conclusion
+this paper addressed, for the rst time, the problem of repairing a process
+model w.r.t. a given log. we proposed a repair technique that preserves the
+original model structure and introduces subprocesses into the model to permit
+to replay the given log on the repaired model. we validated our technique on
+2unfortunately, the discussed techniques were not available in tool prototypes for experi-
+mental evaluation.
+39real-life event logs and models, and showed that the approach is eective. the
+repaired model allows to understand how the original model deviated and had
+to be changed to achieve conformance to the log.
+our proposed technique of model repair covers the entire problem space of
+model repair between conrming conformance and complete rediscovery. in
+case of complete tness, the model is not changed at all. in case of an entirely
+untting model (no synchronous move), the old model is eectively replaced by
+a rediscovered model. in case of partial tness, only the non-tting parts are
+rediscovered. this allows to apply our technique also in situations where the
+given model is understood as a partial model (created by hand) that is then
+completed using process discovery on available logs.
+the technique can be congured. the cost-function inuences the best-tting
+alignment found; discovering structured loops, grouping of traces into sublogs,
+and identifying sublocations for inserting new subprocesses allows for various
+solutions. any process discovery algorithm can be used to discover subprocesses;
+the concrete choice depends on the concrete conformance notion addressed.
+in our future work we would like to consider other conformance metrics such
+as generalization and precision. moreover, in our current approach we abstract
+from extra logging information such as the resource executing or initiating the
+activity and the timestamp of the event. we would like to incorporate this
+information when repairing the model. for example, resource information can
+give valuable clues for repair. finally, we would like to address process model
+repair also for other perspectives such as the data perspective. misconformances
+on data can already be discovered in an alignment-based approach [20].
+acknowledgements. we thank m. kunze and r.m. dijkman for providing us with
+an implementation of the graph similarity distance and the anonymous reviewers for
+their fruitful suggestions. the research leading to these results has received funding
+from the european community's seventh framework programme fp7/2007-2013 under
+grant agreement no257593 (acsi).
+references
+[1]w. m. p. van der aalst, process mining: discovery, conformance and
+enhancement of business processes, springer, 2011.
+[2]ieee task force on process mining, process mining manifesto, in: bpm
+workshops, vol. 99 of lnbip, springer, 2012, pp. 169{194.
+[3]w. m. p. van der aalst, a. weijters, l. maruster, workow mining: discov-
+ering process models from event logs, ieee transactions on knowledge
+and data engineering 16 (9) (2004) 1128{1142.
+[4]s. goedertier, d. martens, j. vanthienen, b. baesens, robust process
+discovery with articial negative events, journal of machine learning
+research 10 (2009) 1305{1340.
+40[5]a. medeiros, a. weijters, w. m. p. van der aalst, genetic process mining:
+an experimental evaluation, data mining and knowledge discovery 14 (2)
+(2007) 245{304.
+[6]g. greco, a. guzzo, l. pontieri, d. sacc a, discovering expressive process
+models by clustering log traces, ieee transaction on knowledge and
+data engineering 18 (8) (2006) 1010{1027.
+[7]j. d. weerdt, m. d. backer, j. vanthienen, b. baesens, leveraging process
+discovery with trace clustering and text mining for intelligent analysis
+of incident management processes, in: ieee congress on evolutionary
+computation (cec 2012), ieee computer society, 2012, pp. 1{8.
+[8]j. van der werf, b. van dongen, c. hurkens, a. serebrenik, process discov-
+ery using integer linear programming, fundamenta informaticae 94 (2010)
+387{412.
+[9]w. m. p. van der aalst, a. adriansyah, b. van dongen, replaying history
+on process models for conformance checking and performance analysis,
+wires data mining and knowledge discovery 2 (2) (2012) 182{192.
+[10]a. adriansyah, b. van dongen, w. m. p. van der aalst, conformance check-
+ing using cost-based fitness analysis, in: edoc 2011, ieee computer
+society, 2011, pp. 55{64.
+[11]a. adriansyah, b. f. van dongen, w. m. p. van der aalst, towards robust
+conformance checking, in: bpm 2010 workshops, vol. 66 of lnbip, 2011,
+pp. 122{133.
+[12]t. calders, c. guenther, m. pechenizkiy, a. rozinat, using minimum
+description length for process mining, in: sac 2009, acm press, 2009,
+pp. 1451{1455.
+[13]j. e. cook, a. l. wolf, software process validation: quantitatively mea-
+suring the correspondence of a process to a model, acm transactions on
+software engineering and methodology 8 (2) (1999) 147{176.
+[14]j. munoz-gama, j. carmona, a fresh look at precision in process confor-
+mance, in: bpm 2010, vol. 6336 of lncs, springer, 2010, pp. 211{226.
+[15]j. munoz-gama, j. carmona, enhancing precision in process conformance:
+stability, condence and severity, in: cidm 2011, ieee, paris, france,
+2011, pp. 184{191.
+[16]a. rozinat, w. m. p. van der aalst, conformance checking of processes
+based on monitoring real behavior, information systems 33 (1) (2008)
+64{95.
+[17]j. d. weerdt, m. d. backer, j. vanthienen, b. baesens, a robust f-measure
+for evaluating discovered process models, in: cidm 2011, ieee, 2011, pp.
+148{155.
+41[18]d. fahland, w. m. p. van der aalst, repairing process models to reect
+reality, in: bpm 2012, vol. 7481 of lecture notes in computer science,
+springer, 2012, pp. 229{245.
+[19]a. rozinat, w. m. p. van der aalst, decision mining in prom, in: interna-
+tional conference on business process management (bpm 2006), vol. 4102
+of lncs, springer, 2006, pp. 420{425.
+[20]m. d. leoni, w. m. p. van der aalst, b. van dongen, data- and resource-
+aware conformance checking of business processes, in: business informa-
+tion systems (bis 2012), vol. 117 of lnbip, springer, 2012, pp. 48{59.
+[21]j. buijs, b. van dongen, w. m. p. van der aalst, on the role of fitness,
+precision, generalization and simplicity in process discovery, in: otm
+federated conferences, 20th international conference on cooperative in-
+formation systems (coopis 2012), vol. 7565 of lncs, springer, 2012, pp.
+305{322.
+[22]m. song, w. m. p. van der aalst, towards comprehensive support for
+organizational mining, decision support systems 46 (1) (2008) 300{317.
+[23]c. g unther, a. rozinat, w. m. p. van der aalst, activity mining by global
+trace segmentation, in: bpm 2009 workshops, proceedings of the fifth
+workshop on business process intelligence (bpi'09), vol. 43 of lnbip,
+springer, 2010, pp. 128{139.
+[24]r. p. j. c. bose, w. m. p. van der aalst, abstractions in process mining:
+a taxonomy of patterns, in: business process management (bpm 2009),
+vol. 5701 of lncs, springer, 2009, pp. 159{175.
+[25]a. rozinat, i. de jong, c. g unther, w. m. p. van der aalst, process mining
+applied to the test process of wafer scanners in asml, ieee transactions
+on systems, man and cybernetics, part c 39 (4) (2009) 474{479.
+[26] v. levenshtein, binary codes capable of correcting deletions, insertions,
+and reversals, soviet physics-doklady 10 (8) (1966) 707{710.
+[27]r. p. j. c. bose, w. m. p. van der aalst, trace alignment in process mining:
+opportunities for process diagnostics, in: business process management
+(bpm 2010), vol. 6336 of lncs, springer, 2010, pp. 227{242.
+[28]a. adriansyah, j. munoz-gama, j. carmona, b. dongen, w. m. p. van der
+aalst, alignment based precision checking, in: workshop on business
+process intelligence (bpi 2012), vol. 132 of lnbip, springer, 2012, pp.
+137{149.
+[29]d. fahland, w. m. aalst, simplifying discovered process models in a
+controlled manner, information systems.
+url http://dx.doi.org/10.1016/j.is.2012.07.004
+42[30]r. p. j. c. bose, w. m. p. van der aalst, trace clustering based on
+conserved patterns: towards achieving better process models, in: bpm
+2009 workshops, proceedings of the fifth workshop on business process
+intelligence (bpi'09), vol. 43 of lnbip, springer, 2010, pp. 170{181.
+[31]r. p. j. c. bose, w. m. p. van der aalst, process diagnostics using trace
+alignment: opportunities, issues, and challenges, inf. syst. 37 (2) (2012)
+117{141.
+[32]r. p. j. c. bose, w. m. p. van der aalst, analysis of patient treatment
+procedures, in: bpm workshops'11, vol. 99 of lnbip, 2011, pp. 165{166.
+[33]r. m. dijkman, m. dumas, l. garc a-ba~ nuelos, graph matching algorithms
+for business process model similarity search, in: bpm, vol. 5701 of lncs,
+2009, pp. 48{63.
+[34]e. kindler, v. rubin, , w. sch afer, incremental workow mining based on
+document versioning information, in: unifying the software process spec-
+trum (spw 2005), revised selected papers, vol. 3840 of lncs, springer,
+2005, pp. 387{301.
+[35]a. kalsing, g. s. do nascimento, c. iochpe, l. h. thom, an incremental
+process mining approach to extract knowledge from legacy systems, in:
+edoc'2010, ieee, 2010, pp. 79{88.
+[36]w. sun, t. li, w. peng, t. sun, incremental workow mining with optional
+patterns and its application to production printing process, international
+journal of intelligent control and systems 12 (1) (2007) 45{55.
+[37]c. li, m. reichert, a. wombacher, discovering reference models by mining
+process variants using a heuristic approach, in: bpm 2009, vol. 5701 of
+lncs, springer, 2009, pp. 344{362.
+[38]m. gambini, m. l. rosa, s. migliorini, a. h. m. ter hofstede, automated
+error correction of business process models, in: bpm 2011, vol. 6896 of
+lncs, springer, 2011, pp. 148{165.
+[39]n. lohmann, correcting deadlocking service choreographies using a
+simulation-based graph edit distance, in: bpm 2008, vol. 5240 of lncs,
+springer, 2008, pp. 132{147.
+[40]s. w. sadiq, w. sadiq, m. e. orlowska, pockets of exibility in workow
+specication, in: er'2001, vol. 2224 of lncs, 2001, pp. 513{526.
+[41]m. reichert, p. dadam, adeptex-supporting dynamic changes of work-
+ows without losing control, jiis 10 (2) (1998) 93{129.
+[42]d. fahland, w. m. p. van der aalst, simplifying mined process models: an
+approach based on unfoldings, in: business process management (bpm
+2011), vol. 6896 of lncs, springer, 2011, pp. 362{378.
+43

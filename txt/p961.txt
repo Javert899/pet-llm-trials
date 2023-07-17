@@ -1,0 +1,467 @@
+recurrent process mining with live event data
+alifah syamsiyah, boudewijn f. van dongen, wil m.p. van der aalst
+eindhoven university of technology
+a.syamsiyah@tue.nl, b.f.v.dongen@tue.nl, w.m.p.v.d.aalst@tue.nl
+abstract. in organizations, process mining activities are typically per-
+formed in a recurrent fashion, e.g. once a week, an event log is extracted
+from the information systems and a process mining tool is used to ana-
+lyze the process' characteristics. typically, process mining tools import
+the data from a le-based source in a pre-processing step, followed by
+an actual process discovery step over the pre-processed data in order
+to present results to the analyst. as the amount of event data grows
+over time, these tools take more and more time to do pre-processing
+and all this time, the business analyst has to wait for the tool to nish.
+in this paper, we consider the problem of recurrent process discovery
+in live environments, i.e. in environments where event data can be ex-
+tracted from information systems near real time. we present a method
+that pre-processes each event when it is being generated, so that the
+business analyst has the pre-processed data at his/her disposal when
+starting the analysis. to this end, we dene a notion of intermediate
+structure between the underlying data and the layer where the actual
+mining is performed. this intermediate structure is kept in a persistent
+storage and is kept live under updates. using a state of the art process
+mining technique, we show the feasibility of our approach. our work is
+implemented in the process mining tool prom using a relational database
+system as our persistent storage. experiments are presented on real-life
+event data to compare the performance of the proposed approach with
+the state of the art.
+keywords: recurrent proses mining live event data incremental process
+discovery
+1 introduction
+process mining is a discipline where the aim is to improve an organization's
+processes given the information from the so called event logs [16]. process mining
+techniques have been successfully demonstrated in various case studies such as
+health care, insurance, and nance [5,10,12,23]. in many of these cases, a one-
+time study was performed, but in practice, process mining is typically a recurring
+activity, i.e. an activity that is performed on a routine basis.
+as an illustration, suppose that each manager of an insurance company has
+the obligation to report her/his work to a director once in each month to see2 alifah syamsiyah, boudewijn f. van dongen, wil m.p. van der aalst
+jjanjanuary february march
+jan, 
+febjan, feb, 
+mar
+j+f j+f+mlive scenariotraditional scenario
+monthly report
+since march 2017
+since 2017weekly report
+update phaseretrieve and 
+mining phaseabstraction 
+and mining 
+phase
+intermediate 
+structure
+new event
+fig. 1. traditional vs live scenario in process discovery
+the company's progress since the beginning of a year. typical analysis in such
+regular report incorporates the observations from previous month, last three
+months, or last year. this type of reporting requires an analyst to repeatedly
+produce analysis results from data that grows over time.
+existing process mining tools are not tailored towards such recurrent analy-
+ses. instead, they require the analysts to export the event data from a running
+system, import it to the mining tool which pre-processes the data during im-
+porting and then use the tool on the pre-processed data. as the amount of data
+grows, the import and pre-processing phase takes longer and longer causing the
+analyst to waste time.
+however, most information systems nowadays record real-time event data
+about business processes during their executions. this enables analysis tech-
+niques to import and pre-process the data when it \arrives". by shifting the
+pre-processing time an analyst is able to do process mining on the pre-processed
+data instantly.
+the idea of this live scenario is sketched in figure 1. in the live scenario,
+we introduce a persistent storage for various structures that are kept as \ an
+intermediate structure" by process mining algorithms. we then show how such
+intermediate structure can be updated without the need for full recomputation
+every time an event arrives. using the intermediate structure of the state-of-
+the-art process mining technique, we show the feasibility of our approach in the
+general process mining setting and using experiments on real-life data, we show
+the added time-benet for the analyst.
+this paper is organized as follows. in section 2 we introduce recurrent process
+mining and we focus on a traditional technique in this setting. in section 3, werecurrent process mining with live event data 3
+show how recurrent process mining can be performed on live event data and we
+prove that the technique of section 2 can be made incremental. we show the
+improvements of our work using real-life data in section 4. then, in section 5
+discusses some related work. finally, we conclude the paper in section 6.
+2 recurrent process mining
+the challenge in process mining is to gain insights into an operational system
+in which activities are executed. the execution of these activities is reected
+through events, i.e. events are occurrences of activities. furthermore, in process
+mining, activities are being executed in the context of cases (also referred to as
+process instances) at a particular point in time.
+denition 1 (events, cases, and activities).
+letabe the universe of activities, let cbe the universe of cases, and let be
+the universe of events. we dene #act: ñaa function labeling each event
+with an activity. we dene #cs: ñca function labeling each event with a
+case. we dene #tm: ñra function labeling each event with a timestamp.
+in process mining, the general assumption is that event data is provided in
+the form of an event log. such an event log is basically a collection of events
+occurring in a specic time period, in which the events are grouped by cases
+sequentialized based on their time of occurrence.
+denition 2 (event log and trace).
+lete be a collection of events and ts;te prtwo timestamps with ts  te
+relating to the start and the end of the collection period.
+a trace peis a sequence of events such that the same event occurs only
+once in, i.e. | |  |te p u|. furthermore, each event in a trace refers to the
+same casec pc, i.e. @e p#cs pe q cand we assume all events within the given
+time period are included, i.e. @e p p#cs pe q c ^ts ¤#tm pe q ¤te q ù ñe p.
+an event log l p} peq1is a set of traces.
+note that the time-period over which an event log is collected plays an im-
+portant role in this paper. in most process mining literature, this time period is
+neglected and the event log is assumed to span eternity. however, in practice,
+analysis always consider event data pertaining to a limited period of time. there-
+fore, in this paper, we explicitly consider the following process mining scenarios
+(as depicted in figure 1):
+{analysts perform process mining tasks on a recurrent schedule at regular
+points, e.g. once a week about the last week, or once a month about the last
+month, or
+{analysts perform process mining on the data since a pre-determined point
+in time, e.g. since 2017, or since march 2017.
+1} peqdenotes a powerset of sequences, i.e. l e4 alifah syamsiyah, boudewijn f. van dongen, wil m.p. van der aalst
+2.1 traditional recurrent process mining
+to execute the two process mining scenarios, a multitude of process mining
+techniques is available. however, all have two things in common, namely (1)
+that the starting point for analysis is an event log and (2) that the analysis is
+performed in three phases, namely: loading ,abstraction , and mining .
+while the details may dier, all process mining techniques build an inter-
+mediate structure in memory during the abstraction phase. typically, the time
+needed to execute this phase is linear in the number of events in the event
+log. this intermediate structure (of which the size is generally polynomial in the
+number of activities in the log, but not related to the number of events anymore)
+is then used to perform the actual mining task. in this paper, we consider the
+state-of-the-art process discovery algorithm, namely the inductive miner [6, 7],
+which is known to be exible, to have formal guarantees, and to be scalable. for
+the inductive miner, the intermediate structure is the so-called direct succession
+relation (denition 3) which counts the frequencies of direct successions.
+denition 3 (direct succession [16]).
+letlbe an event log over e . the direct succession relation ¡l:a a ñn
+counts the number of times activity ais directly followed by activity bin some
+cases inlas follows:
+¡l pa;b q  pl| |1
+i 1#
+1;if #act p pi qq a ^#act p pi  1 qq b
+0;otherwise:
+to illustrate how the inductive miner algorithm uses the direct succession
+relation described above, we refer to table 1. here, we show (by example), how
+the mining technique uses the relation as an intermediate structure to come to
+a result. in order to apply this traditional technique in a recurrent setting, the
+loading of the data, the abstraction phase, and the mining phase have to be
+repeated. when over time the event data grows, the time to execute the three
+phases also grows, hence performing the recurrent mining task considering one
+year of data will take 52 times longer than considering one week of data.
+in table 2 we show an example of the inductive miner applied to a real-
+life dataset of the bpi challenge 2017 [17] which contains data of a full year.
+we record the times to perform the three phases of importing, abstraction, and
+mining on this dataset after the rst month, at the middle of the year, and at
+the end of the year. it is clear that indeed the importing and abstraction times
+grow considerably, while the actual mining phase is orders of magnitude faster.
+an exclusive-choice cut of lis a cut p; a1; :::; a n qsuch that
+@i; j p t1; :::; n u @a pai @b paji j ñ£l pa; b q
+ña sequence cut of lis a cut pñ; a1; :::; a n qsuch that
+@i; j p t1; :::; n u @a pai @b paji  j ñ p¡ 
+l pa; b q ^ £ 
+l pb; a qq
+table 1: examples of the use of the intermediate structure in inductive minerrecurrent process mining with live event data 5
+week inductive miner
+loading abstraction mining
+5 0.8520 2.8531 0.0254
+26 3.6319 30.9528 0.0257
+52 9.5854 93.5118 0.0291
+table 2: process mining times (in seconds) in the traditional setting on data of
+the bpi challenge 2017 [17]
+figure 2 shows the result of the inductive miner after the rst 5 weeks of
+data, i.e. if an analyst has produced this picture on january 29th2016, it would
+have taken 3.7305 seconds ( 0:8520  2:8531  0:0254) in total to load the event
+log, build the abstraction, and do the mining in order to produce this picture
+using the inductive miner in prom.
+fig. 2. screenshot of prom showing the result of the inductive miner on the bpi
+challenge 2017 data considering the rst 5 weeks of data.
+in section 3, we present a method to store the intermediate structure in a
+persistent storage and to keep it live under updates, i.e. every time an event is
+generated, the intermediate structure is updated (in constant time). this way,
+when a process mining task is performed, the time spent by the analyst is limited
+to the time to retrieve the intermediate structure and to do the actual mining.
+3 recurrent process mining with live event data
+it is easy to see that given an event log l, the relation in denition 3 can
+be computed during a single linear pass over the event log, visiting each event
+exactly once. in this section, we present a live process mining technique based
+on the inductive miner which does not require the analyst to repeat the import
+and analysis phases every time a process mining task is performed.
+in order to enable live process mining, we use a persistent event storage,
+called db-xes [13], which uses a relational database to store event data. the6 alifah syamsiyah, boudewijn f. van dongen, wil m.p. van der aalst
+full structure of this relational database is beyond the scope of this paper, but
+what is important is that given a trace, it is possible to quickly retrieve the last
+event recorded for that trace.
+denition 4 (last event in a trace).
+lete be a collection of events and let c pcbe a case. the function
+:c ñe y tku is a function that returns the last event in ebelonging to case
+c, i.e.
+ pc q #
+k; if @e pe#cs pe q c;
+e pe; if #cs pe q c ^ ee1pe p#cs pe1q c ^#tm pe1q ¡#tm pe qq:
+using db-xes as a persistent storage and making use of the ability to query
+for the last event in a trace, we present the incremental inductive miner in
+section 3.1.
+3.1 incremental inductive miner
+the inductive miner uses only the frequency of direct successions between ac-
+tivities as input as dened in denition 3. therefore, to enable an incremental
+version of the inductive miner, we present an update strategy that, given the
+relation ¡lfor some log land a new event e, we can derive the relation ¡l1
+wherel1is the loglwith the additional event e.
+theorem 1 (updating relation ¡is possible).
+lete be a set of events and la log overe. lete p zebe a fresh event
+to be added such that for all e1peholds #ts pe1q  #ts pe qand lete1e y te u
+be the new set of events with l1the corresponding log over e1. we know that for
+alla;b paholds that:
+¡l1 pa;b q  ¡l pa;b q  $
+'&
+'%0 if p#cs pe qq  k;
+1 if #act p p#cs pe qqq a ^#act pe q b;
+0 otherwise :
+proof. letc #cs pe q pcbe the case to which the fresh event belongs.
+if for alle1peholds that # cs pe1q c, then this is the rst event in case c
+and we know that l1l y xe y. hence relation ¡does not change from ltol1
+as indicated by case 1.
+if there exists e1 p#cs pe qq pewith #cs pe1q c, then we know that there
+is a tracec pl. furthermore, we know that l1 pl ztc uq y tc  xe yu, i.e.
+eventegets added to trace cofl. this implies that ¡l1 p#act pe1q;#act pe qq=
+¡l p#act pe1q;#act pe qq  1 as indicated by case 2.
+in all other cases, the number of direct successions of two activities is not
+aected. 
+using the simple update procedure indicated in theorem 1 the incremen-
+tal inductive miner allows for recurrent process mining under live updates. in
+section 4 we show how the eect of keeping relation ¡lives on the total time
+needed to perform the recurrent process mining task.recurrent process mining with live event data 7
+10 20 30 40 50123
+n-th weektime (seconds)
+10 20 30 40 5050100150
+n-th weektime (seconds)
+fig. 3. the comparison of recurrent process discovery using diim (left) vs traditional
+inductive miner (right)
+4 experimental results
+we implemented the algorithm presented as a prom2plug-in called database-
+incremental inductive miner (diim)3. diim is designed for recurrent process
+discovery based on live event data. it uses db-xes as the back-end storage
+and the inductive miner as the mining algorithm. in this section, we show the
+experimental results of applying diim in a live scenario and we compare it to
+traditional inductive miner.
+for the experiment, we used a real dataset from bpi challenge 2017 [17].
+this dataset pertains to the loan applications of a company from january 2016
+until february 2017. in total, there are 1,202,267 events and 26 dierent activities
+which pertain to 31,509 loan applications.
+in this experiment, we looked into some weekly reports where we were inter-
+ested to see process models of the collective data since 2016. the last working
+day, i.e. friday, was chosen as the day when we performed the process discov-
+ery to have a progress report for that week. in live scenario, we assumed that
+each event was inserted to the db-xes database precisely at the time stated in
+the timestamp attribute of the event log. then, the db-xes system immedi-
+ately processed each new event data as it arrived using triggers in the relational
+database, implementing the update procedures detailed in section 3, thus keep-
+ing the relations live under updates. in traditional scenario, we split the dataset
+into several logs such that each log contained data for one week. for the n-th
+report, we combined the log from the rst week until the n-th week, loaded it
+into prom, and discovered a process model.
+figure 3 shows the experimental results of recurrent process discovery using
+diim and the inductive miner. the x-axis represents the n-th week, while the
+y-axis represents the time spent by user (in seconds) to discover process models.
+the blue dots are the experiment using diim which includes the total times to
+insert new events, update the intermediate structure, retrieve the values from the
+2seehttp://www.processmining.org and http://www.promtools.org
+3https://svn.win.tue.nl/repos/prom/packages/databaseinductiveminer/
+trunk/8 alifah syamsiyah, boudewijn f. van dongen, wil m.p. van der aalst
+db-xes, and mine the process models, while the red dots are the experiment
+using traditional inductive miner which includes the time to load the xes event
+logs, build the intermediate structure, and mine the process models.
+as shown in figure 3, our incremental technique is much faster, even when
+considering the time needed to insert events in the relational database, a process
+that is typically executed in real time and without the business analyst being
+present. more important however, is the trendlines of both approaches.
+as expected, the time to perform the process mining task in the traditional
+setting is growing linear in the size of the event data (the arrival rate of events in
+this dataset is approximately constant during the entire year). this is due to the
+fact that the rst two phases of loading the data and doing the abstraction into
+the intermediate structure scales linearly in the number of events, whereas the
+mining scales in the number of activities. the latter is considerably smaller than
+the former in most practical cases as well as in this example. our incremental
+algorithms are more stable over time as the update time only depends on the
+number of newly inserted events and both the retrieval and mining times depend
+on the number of activities rather than the number of events.
+the variations in the recorded values of the diim are therefore explained by
+the number of inserted events in a day. the higher the number of newly inserted
+events, the longer it takes to do the update in the relational database system of
+the intermediate structure. however, the total update time remains limited to
+around 1.4 seconds per day.
+in order to see the average time for doing an update for a single event, we
+normalized the total update time with the number of events inserted in each
+day as shown in figure 4. the x-axis represents the n-th day, while the y-axis
+represents the update time per event. as shown from the figure 4, the average
+time to conduct an update for a single event stabilizes around 0.000545 seconds,
+i.e. the database system can handle around 1800 events per second and this
+includes the insertion of the actual event data in the underlying db-xes tables.
+to validate the fact that the update time scales linearly in the number of
+activities, we refer to figure 5. for this experiment, we used a dierent dataset
+with 31 dierent activities and eleven thousands of events, provided to us by xe-
+rox services, india. the x-axis represents the total number of dierent activities
+which has been inserted to the database, while the y-axis represents the time
+in seconds to update an event. from the gure, it is clear that the update time
+indeed depends linearly on the number of activities.
+it is important to realize that the results of the process mining techniques in
+both the traditional and the live setting are not dierent, i.e. the process models
+are identical. figure 6 shows a screenshot of a process model in prom, produced
+by the incremental inductive miner considering all the data in the original le. in
+the traditional setting, it would have taken an analyst 103.1263 seconds to load
+the event log, build the abstraction and do the mining in order to get this picture
+on december 30th2016. due to the availability of the intermediate structure in
+the database, it would take the analyst only 0.0392 seconds to produce the same
+result using the incremental inductive miner.recurrent process mining with live event data 9
+50 100 150 200 250 300 3502468104
+n-th dayaverage update time (seconds)
+fig. 4. average update time per event10 15 20 25 300:511:5102
+total number of activitiesupdate time (seconds)
+y 5:82 104x 6:27 104
+fig. 5. the inuence of number of activi-
+ties to update time
+fig. 6. screenshot of prom showing the result of the inductive miner on the bpi
+challenge 2017 data considering all data.
+5 related work
+for a detailed explanation about process mining, we refer to [16]. here we pri-
+marily focus on the work related to recurrent process discovery in process mining
+and its applications on live event data.
+in the current setting of process discovery, event data from a le-based sys-
+tem is imported to a process mining tool. this technique potentially creates
+redundancy of data reloading in environments which necessitate some repeti-
+tions in the discovery. therefore, some researches have been looking to the area
+of databases, hadoop, and other ways to store event data in a persistent manner.
+a study in [22] examined a tool called xesame. to access the data in xe-
+same, one needs to materialize the data by selecting and matching it with
+xes [4] elements. it does not provide a direct access to the database. a more
+advanced technique using ontology was proposed in [1,2]. in this work, data can
+be accessed on-demand using query unfolding and rewriting techniques, called
+ontology-based data access. however, performance issues make this approach
+unsuitable for large event logs.
+relational xes, or rxes, was introduced in [18]. the rxes schema was
+designed with a focus on xes standard. using experiments with real life data,10 alifah syamsiyah, boudewijn f. van dongen, wil m.p. van der aalst
+it was shown that rxes typically uses less memory compared to the le-based
+openxes and mapdb xeslite implementations [9]. as an improved version of
+rxes, db-xes was introduced in [13] to enable process mining in the large.
+in [14] db-xes basic schema is extended to allow instant social network mining,
+especially the handover of work networks.
+process mining not only covers procedural process discovery, but also declar-
+ative process discovery. the work in [11] deals with declarative process discovery
+using sql databases. building on top of rxes, the authors introduce a min-
+ing approach that directly works on relational event data by querying the log
+with conventional sql. queries can be customised and cover process perspec-
+tive beyond the control ow, e.g., organisational aspects. however, none of these
+techniques handles live event data, the focus is often on static data that has
+been imported in a database.
+treating event data as a dynamic sequence of events has been explored in
+[19,20]. this work presented single-node stream extension of process mining tool
+prom which enables researchers and business users to also apply process mining
+on streaming-data. the applicability of the framework on the cooperative aspects
+of process mining was demonstrated in [21]. here the authors dene the notion
+of case administration to store for each case the (partial) sequence of (activity,
+resource)-pairs seen so far.
+another online process discovery technique based on streaming technology
+was proposed in [8]. this work presented a novel framework for the discovery
+of ltl-based declarative process models from streaming event data. the frame-
+work continuously updates a set of valid business constraints based on the events
+occurring in the event stream. moreover, it gives the user meaningful information
+about the most signicant concept drifts occurring during process execution.
+however, from the real-time techniques using streaming event data that we
+have seen so far, none of them deals with recurrent process discovery. interme-
+diate results are not stored after presenting the results. therefore, all data (old
+and new) needs to be reloaded and processed each time a new analysis is needed.
+building on from that concern, this work explores both in the ability to process
+live event data and to handle recurrent questions in process discovery.
+6 conclusion
+process mining aims to give insights into processes by discovering process models
+which adequately reect the behavior seen in an event log. one of the challenges
+in process mining is the recurrent nature of mining tasks which, using traditional
+tools and techniques, require analysts to import and pre-process larger and larger
+datasets.
+in this paper we focused on recurrent process discovery on live event data.
+using the inductive miner technique as an example, we show how we can reduce
+the time needed for an analyst to do process mining by storing intermediate
+structure in a persistent storage. then we show how to keep this intermediate
+structure alive under insertion of new events.recurrent process mining with live event data 11
+using a concrete implementation, we use the relational database called db-
+xes to store the event data and the intermediate structure. in this relational
+database, we added triggers to update the intermediate structure with the in-
+sertion of each event and we implemented the incremental inductive miner as a
+version of the existing technique which is able to use this persistent intermediate
+structure directly.
+we tested the performance of the proposed approach and compared it to
+the traditional techniques using real-life datasets. we show that loading and
+mining time of the traditional approach grows linearly as the event data grows.
+in contrast, our incremental implementation shows constant times for updating
+(per event) and the retrieval and mining times are independent of the size of the
+underlying data.
+the core ideas in the paper are not limited to control ow. they are, for
+example, trivially extended to store intermediate structures keeping track of
+average times between activities or for social networks. moreover, they are not
+restricted towards procedural process discovery. in [15] we show how the work
+extends into declarative process discovery, particularly using minerful [3] as
+the discovery technique. we introduce a so-called controller function which we
+keep live under updates. then we show that, using the controller function, we
+can keep all minerful relations live under updates.
+a more fundamental challenge for future work is the updating of the inter-
+mediate structures in batches of events, rather than for each event separately.
+furthermore, we aim to enable these techniques to keep these structures live
+under removal of past events.
+references
+1. d. calvanese, t.e. kalayci, m. montali, and s. tinella. ontology-based data ac-
+cess for extracting event logs from legacy data: the onprom tool and method-
+ology. in bis 2017 , 2017.
+2. d. calvanese, m. montali, a. syamsiyah, and w.m.p. van der aalst. ontology-
+driven extraction of event logs from relational databases. in bpi 2015 , pages
+140{153, 2015.
+3. c. di ciccio and m. mecella. mining constraints for artful processes , pages 11{23.
+springer berlin heidelberg, 2012.
+4. c.w. g unther. xes standard denition. www.xes-standard.org, 2014.
+5. m.j. jans, m. alles, and m.a. vasarhelyi. process mining of event logs in au-
+diting: opportunities and challenges. available at ssrn 2488737 , 2010.
+6. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-
+structured process models from event logs - a constructive approach. in petri
+nets 2013 , pages 311{329, 2013.
+7. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-
+structured process models from event logs containing infrequent behaviour. in
+bpm workshop 2013 , pages 66{78, 2013.
+8. f.m. maggi, a. burattin, m. cimitile, and a. sperduti. online process discovery
+to detect concept drifts in ltl-based declarative process models , pages 94{111.
+springer berlin heidelberg, 2013.12 alifah syamsiyah, boudewijn f. van dongen, wil m.p. van der aalst
+9. f. mannhardt. xeslite managing large xes event logs in prom. bpm center
+report bpm-16-04 , 2016.
+10. e. rojas, j. munoz-gama, m. sep ulveda, and d. capurro. process mining in
+healthcare: a literature review. journal of biomedical informatics , 61:224{236,
+2016.
+11. s. sch onig, a. rogge-solti, c. cabanillas, s. jablonski, and j. mendling. ecient
+and customisable declarative process mining with sql , pages 290{305. springer
+international publishing, cham, 2016.
+12. s. suriadi, m.t. wynn, c. ouyang, a.h.m. ter hofstede, and n.j. van dijk. un-
+derstanding process behaviours in a large insurance company in australia: a
+case study. in caise 2013 , pages 449{464, 2013.
+13. a. syamsiyah, b.f. van dongen, and w.m.p. van der aalst. db-xes: enabling
+process mining in the large. in simpda 2016 , pages 63{77, 2016.
+14. a. syamsiyah, b.f. van dongen, and w.m.p. van der aalst. discovering social
+networks instantly: moving process mining computations to the database and
+data entry time. in bpmds 2017 , 2017.
+15. a. syamsiyah, b.f. van dongen, and w.m.p. van der aalst. recurrent process
+mining on procedural and declarative approaches. bpm center report bpm-17-
+03, 2017.
+16. w.m.p. van der aalst. process mining: data science in action . springer, 2016.
+17. b.f. van dongen. bpi challenge 2017, 2017.
+18. b.f. van dongen and s. shabani. relational xes: data management for process
+mining. in caise 2015 , pages 169{176, 2015.
+19. s.j. van zelst, a. burattin, b.f. van dongen, and h.m.w. verbeek. data streams
+in prom 6: a single-node architecture. in bpm demo session 2014 , page 81,
+2014.
+20. s.j. van zelst, b.f. van dongen, and w.m.p. van der aalst. know what you
+stream: generating event streams from cpn models in prom 6. in bpm demo
+session 2015 , pages 85{89, 2015.
+21. s.j. van zelst, b.f. van dongen, and w.m.p. van der aalst. online discovery of
+cooperative structures in business processes. in otm conferences 2016 , pages
+210{228, 2016.
+22. h.m.w. verbeek, j.c.a.m. buijs, b.f. van dongen, and w.m.p. van der aalst.
+xes, xesame, and prom 6. in information systems evolution , volume 72, pages
+60{75, 2010.
+23. z. zhou, y. wang, and l. li. process mining based modeling and analysis of
+workows in clinical care - a case study in a chicago outpatient clinic. in
+icnsc 2014 , pages 590{595, 2014.

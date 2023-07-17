@@ -1,0 +1,977 @@
+semi-supervised log pattern detection and exploration
+using event concurrence and contextual information
+(extended version)
+xixi lu1, dirk fahland1, robert andrews2, suriadi suriadi2,
+moe t. wynn2, arthur h.m. ter hofstede2, wil m.p. van der aalst1
+1eindhoven university of technology, eindhoven, the netherlands
+2queensland university of technology, brisbane, australia
+(march, 2017)
+abstract. process mining offers a larger variety of techniques for analyzing pro-
+cess execution event logs. although end-to-end process models can be discovered
+automatically, often surprisingly many insights can only be obtained and veriﬁed
+by carefully investigating the actual event data. uncovering such insights is an
+explorative and iterative process as witnessed in many case studies. automated
+pattern detection on event logs can support this. here, unsupervised techniques
+generate a multitude of patterns based on statistical properties of the log only
+(lacking domain context), whereas supervised pattern detection requires domain
+experts to specify patterns to detect by hand (lacking the event log context). in
+this paper, we reconcile supervised and unsupervised pattern detection. we let
+users both, build basic patterns by hand and automatically obtain patterns through
+unsupervised learning. we visualize pattern matches in the context of the event
+log (also showing concurrency and other contextual information) and let the user
+modify earlier patterns based on the domain insights. this enables an iterative
+approach for identifying more complex patterns than those obtainable by existing
+techniques. we implemented our approach in the prom framework and evaluated
+the tool using both the bpi challenge 2012 log of a loan application process and
+an insurance claims log from a major australian insurance company.
+1 introduction
+real-life business processes and correspondingly recorded event logs tend to be com-
+plex and unstructured. to derive useful insights for improving business processes, pro-
+cess mining offers a large variety of techniques for analyzing these event logs. although
+discovering end-to-end process models from such complex event logs is useful, experi-
+ence shows that many important insights can only be obtained by carefully investigating
+the actual event data, see for example the reports for the bpi challenges [1].
+pattern detection has been proven to be a powerful mechanism for dealing with
+complex event logs in process mining and helping to gain valuable insight into common
+behavior in process executions [2–8]. more speciﬁcally, pattern detection has been ap-
+plied in various contexts: (i) to specify patterns as constraints and detect non-compliant
+cases [6]; (ii) to automatically detect frequent common behavior [8]; (iii) to ﬁnd low
+level behavior patterns for log simpliﬁcation [3, 4]; (iv) to model re-occurring qualitypattern elicitation and detection
+gap
+mine
+frequency,
+support,
+coverage, 
+…
+manually
+draw
+mine
+unsupervised pattern detection supervised pattern detection
+patternspatterns
+pattern instances 
+and diagnostics
+limitations:
+•computational complex / expensive
+•#patterns explodes
+•trivial/meaningless patterns
+•not leveraging domain knowledgelimitations:
+•manual intensive
+•drawn patterns not observed or
+not reflecting reality
+•require “modeling” knowledgepattern instances 
+and diagnostics
+missing: 
+semi -supervised 
+approachfig. 1: problem analysis: there is a gap between unsupervised and supervised pattern
+detection on event logs.
+issues in event logs [9]. however, existing approaches to pattern detection are either
+exclusively unsupervised learning or exclusively supervised learning , with each having
+their own limitations, as depicted by fig. 1.
+unsupervised learning [3, 7] generates patterns based on statistical properties of
+the log, such as frequency, support and conﬁdence, and suffers from a problem known
+as “pattern explosion”, resulting in many uninteresting or trivial patterns. patterns that
+are less frequent are much more difﬁcult to detect. in contrast, most supervised ap-
+proaches [5,6] assume the patterns to be given in a formal language such as ltl, (col-
+ored) petri nets or declare models, e.g., manually drawn by the experts. this modeling
+task is often laborious and may miss unexpected but relevant patterns from the log.
+in this paper, we propose a semi-supervised approach to detect log patterns . an
+overview of the approach is shown in fig. 2. we ﬁrst convert traces in the log into par-
+tial orders of events, deriving concurrent events and contextual information using e.g.
+time information. we then visualize these partial orders allowing the user to explore
+traces, select events, and extract patterns of interest. extracted patterns are expressed as
+simple graphs that specify direct and indirect succession or unknown (partial) ordering
+of activities. we show how such patterns can be extracted automatically by converting
+the output of existing unsupervised pattern detection algorithms, or by our proposed
+semi-supervised detectors . by highlighting in the log all occurrences of patterns cho-
+sen by a user, we enable the user to explore the patterns in their context (where and
+how frequently they occur). we provide operations to let a user modify a pattern based
+on an occurrence in a particular context (by extending them with additional activities,
+different ordering relations, etc.) or create new patterns based on existing ones. this
+facility to explore and modify patterns iteratively helps the user to balance between
+unsupervised and supervised learning.
+the contributions are the following. we formally deﬁne a pattern as a partial order
+of activities in terms of concurrence (or independence), directly-cause or eventually-
+cause relations. we distinguish one event as a core-event , which is the focal point of
+a pattern. we discuss a matching algorithm using the notion of core-event to retrieve
+pattern instances and calculate the support and conﬁdence of a pattern based on the
+number of core-events that match the pattern. we propose semi-supervised pattern de-
+tectors using the core-event of interest, and we provide operations to extract and modify
+patterns based on matches in an event log. based on the literature study (see sect. 2),our approach
+convert
+visualize / supervised
+detect 
+instancesprocess analyst / 
+domain expert 
+log patterns
+pattern instances &
+contextual information 
+& pervasiveness
+partially ordered 
+traceslogunsupervised detect 
+semi -supervised detect 
+select core -events direct -context detector
+… other detectorsintegrated existing
+contribution (this paper) 
+implemented detectorsselect, create, change , or extend patterns feedback loopfig. 2: an overview of the proposed approach.
+8 out of 11 investigated pattern detection approaches do not allow the user to explore
+instances of patterns. we implemented the approach as a plug-in for the prom process
+mining framework3. the tool supports both supervised and semi-supervised detection.
+moreover, we integrate two unsupervised approaches to show that our approach does
+not substitute but complements existing pattern detection approaches. we evaluated the
+approach in two case studies conducted using real-life event data sets.
+the remainder of this paper is organized as follows. sect. 2 discusses related work.
+sect. 3 discusses the preliminaries and the input for our approach. in sect. 4, we for-
+mally deﬁne the patterns and pattern instances. in sect. 5, we explain our approach to
+detect patterns and ﬁnd pattern instances. sect. 6 reports results for the two case studies
+conducted. sect. 7 concludes the paper and discusses future work.
+2 related work
+we use table 1 to discuss and structure related work. here we discuss related work on
+log pattern detection on a conceptual level; an evaluation of the techniques for which
+an implementation is available is available in sect. 6.2.
+log pattern deﬁnition. patterns in the process mining literature have been deﬁned
+differently. early work focuses on clustering frequently co-occurring activities; such a
+cluster of activities is considered as a (low-level) pattern and mapped into a high level
+activity [4, 10]. later, more specialized deﬁnitions are used. bose et al. [3] deﬁned pat-
+terns as repeated sequences. [7] and [8] deﬁned patterns as partial orders of activities in
+which the edges represent only eventual-cause relations. the work in [5,11] considered
+patterns as petri nets. in our case, we use partial orders, distinguishing concurrence,
+directly-cause and eventually-cause.
+unsupervised log pattern detection. unsupervised log pattern detection approaches
+take an event log as input and generate patterns based on predeﬁned measures [3, 7, 8].
+some limitations are known. firstly, such unsupervised approaches are computation-
+ally complex and expensive, generating a massive amount of possible patterns based on
+their frequencies or other measures. if one sets the values for the measures too high,
+then only very frequent, trivial patterns are returned, thereby missing many interesting
+3http://www.promtools.org/table 1: comparison of related pattern detection approaches.
+s/u/m/v* exact
+instances?provide
+unsuper.
+supportchange/
+deﬁne
+patterns?explore
+pattern
+instances?
+bose et al., pattern abstraction [3] u exact + (beh.)y- -
+g¨unther et al., fuzzy mining [4] u exact + (act.) - -
+mannhardt et al., log abstraction [5] s approx. - (act.) + +/-
+maggi et al., ltl checker [6] s exact - (com.) +/- +/-
+leemans et al., episodes miner [7] u exact + (beh.) - -
+diamantini et al., pattern discovery [8] u exact + (beh.) - -
+baier et al., activity maching [12] m exact - (act.) - -
+ferreira et al., label abstraction [10] u exact + (act.) - -
+tax et al., local models [11] u approx. + (beh.) - -
+song et al., dotted chart [13] v na - (beh.) - -
+shneiderman et al., eventflow [2] s.v . exact - (beh.) + +
+lu et al., pattern explorer m.s.v .u. exact + (beh.) + +
+* s. for supervised; u. for unsupervised; m. for semi-supervised; v . for visualization.
+yin parentheses, the aim of the technique is abbreviated: beh. for behavior analysis; act. for low level activity abstraction;
+com. for compliance checking.
+results. by setting the values too low, too many patterns are returned (so called ‘pattern
+explosion’) [3, 7, 8]. secondly, as a result of not leveraging domain knowledge, many
+of the patterns generated by unsupervised learning are not of interest or are meaning-
+less. finally, most unsupervised approaches do not return pattern instances or additional
+contextual or diagnostic information of the detected patterns, thus obstructing the user
+from analyzing the patterns [7].
+supervised log pattern detection. supervised pattern detection approaches in pro-
+cess mining take patterns and logs as input and detect pattern instances as results [5].
+such supervised approaches require the user to model patterns in a formal language
+(e.g. as (colored) petri nets, or ltl constraints), which relies on the expertise of the
+user. this may potentially require formalizing a large set of pattern descriptions. more-
+over, the user may miss potentially important patterns through incomplete speciﬁcation
+or model idealized patterns that are not observed in reality.
+log explorer and visualization. advanced log visualization analytics have also been
+proposed as a way to help the user observe patterns. the dotted chart [13] is a simple
+way of visualizing event logs and helping the user spot and interpret patterns such as
+batch processing. however, no pattern extraction approaches are supported, nor is it
+possible to query for all instances of the observed patterns. eventflow [2] has been pro-
+posed as a more advanced tool for visualizing event sequences. it allows for advanced
+querying. however, eventflow also requires the user to create patterns (queries) and
+does not support generating patterns in an unsupervised or semi-unsupervised way. in
+our case, we allow semi-supervised pattern detection; the detected patterns are sug-
+gested to the user and can be used as queries. moreover, we support partially ordered
+events and help the user detect and explore causal dependencies between events [14].3 preliminaries
+in this section, we recall a few basic concepts such as partial orders, event logs, and
+partially ordered traces. these are used later in the paper.
+3.1 basic notations: partial order, dag, projection, event logs
+letxbe a set of elements. x0xis a subset of elements of x.rxxdenotes
+a set of relations between x.ris apartial order over xif and only if ris irreﬂexive,
+anti-symmetric, and transitive. r:x!yis a function that maps an element in xto
+an element in y, we use dom (r)to denote the domain of randrng(r)the range of r,
+i.e.,dom (r)xandrng(r)y. let g= (n;<)be adirected acyclic graph (dag)
+with<nn. we use< to denote transitive reduction of <and<+to denote the
+transitive closure of <. the relation <+will be used to denote reachability and is also
+known as a partial order. in this paper, for all nodes n;n02n,n6<+n0andn06<+n,
+we say nandn0areconcurrent and use njj<n0to denote this. we use #to denote a
+projection function , i.e., x#x0=x\x0, and r#x0=r\(x0x0). let g= (n;<)be
+a dag and n0n. we overload the projection function and deﬁne the projection for
+a graph, g#n0= (n#n0;<#n0), also known as induced subgraph .
+anevent log represents the observed behavior of a process. each case going through
+the process results in a trace of events in the event log.
+deﬁnition 1 (event, trace, event log). letebe the universe of unique events , i.e., the
+set of all possible event identiﬁers. a trace2eis a ﬁnite sequence of events. an
+event log l=f1;2;;ngeis a set of traces.
+here we assume no event appears twice in the same trace nor in the same log. we use
+efor the set of events in trace andelfor the set of events in log l. let ube a
+set of attribute names. for each event e2e and name d2u,d(e)returns the value
+of attribute dfor event e, ord(e) =?otherwise. for example, case(e)denotes the
+trace of e;act(e)is the activity associated with e;time(e)denotes the timestamp of e;
+resource (e)denotes the resource that executed e. fig. 3(a) shows an example of a trace.
+the trace=he1;e2;:::;e5icontains ﬁve events, totally ordered as is. event e1has
+activityact(e1) =injury and is executed on time(e1) =08/09/2016-00:30:00.
+3.2 partially ordered traces
+we explain the use of partial orders for analyzing events, deﬁne partially ordered traces,
+and discuss how to obtain them from an event log (def. 1). many recent papers con-
+sider partial orders of events [14–16], instead of totally ordered event sequences. one
+reason for this consideration is that a particular total order of events may be unreliable
+or unknown. for example, if events aandbare recorded only on day granularity (not
+seconds), then the totally ordered log may contain the sequence ha;biwhereas in reality
+hb;aioccurred. on the other hand, ordering events totally based on time may be mis-
+leading, i.e. two events may be causally unrelated but just happen to occur in a particular
+order. representing events as a partial order (where aandbcan occur “unordered” or
+“concurrent”) alleviates this problem and allows us to represent more accurate contex-
+tual information of events [14, 16].deﬁnition 2 (partially ordered trace). apartially ordered trace '= (e;)is a
+directed acyclic graph (dag), in which denotes the inferred “cause” relations4over
+events e. if ee0, we say e caused e0. we use to denote directly-cause ,+to
+denote eventually-cause , andjjto denote the concurrent relation.
+note that the eventually-cause relations+is equivalent to the reachability relation of
+the dag (e;)and forms therefore a partial order. fig. 3(b) shows a partially ordered
+trace (e;), in which e=fe1;e2;;e5gand=fe1e2;e1e3;e2e4;e3
+e4;e4e5g. in this particular case,  =and+=[f e1e4;e1e5;e2
+e5;e3e5g.jj=fe2jje3g. note that, , and+are irreﬂexive and acyclic.
+08/09/2016
+00:30:0008/09/2016
+23:47:00
+arrival injury
+𝑒1𝑒2admission
+𝑒3consult
+𝑒4treat
+𝑒508/09/2016
+23:47:00
+(b) partially ordered trace08/09/2016
+00:30:0008/09/2016
+23:47:00
+arrival injury
+𝑒1𝑒2
+admission𝑒3consult
+𝑒4treat
+𝑒509/09/2016
+01:47:0009/09/2016
+02:47:00
+09/09/2016
+01:47:0009/09/2016
+02:47:00
+directly causes (and 
+eventually causes)eventually causes(a) totally ordered trace
+fig. 3: a sequential trace and its con-
+verted partially ordered trace.partial orders of events may be obtained
+from totally ordered traces. a few works [15,
+17, 18] assume to have an oracle that indi-
+cates the set of activities that are concurrent
+or unordered and use this oracle to convert to-
+tally ordered events into partial orders. such
+an oracle could be obtained by interviewing
+domain experts or be computed from event
+logs [14].
+in this paper, we overload the symbol
+'to denote an conversion oracle function
+that, for a trace , returns the partially or-
+dered trace '() = ( e;). we deploy
+the oracle that considers the events occurring
+within a short time to be concurrent [14] as
+our default oracle. let =he1;;enibe
+a trace.'time(;dt) = ( e;)in which
+=feiejj1i<jn^
+9ik<jtime(ek+1) time(ek)>dtg. in addition, we also overload the 'function to
+handle an event log l=f1;;ngand return a set of partially ordered traces, one
+for each trace in l, i.e.,'(l) =f'(1);;'(n)g. an example of such a conversion
+based on the timestamps is shown in fig. 3, with dt= 0sec.
+in this paper, we use actas our default labeling function for events and assume it
+is universally available. note that it is possible to consider other functions, for example
+resource , to explore resource related patterns such as hand-over of work.
+4 patterns and pattern instances
+having deﬁned partially ordered traces of an event log, we now present the concepts of
+log patterns. in sect. 4.1 we ﬁrst motivate and then deﬁne the log patterns and pattern
+instances. next, in sect. 4.2, we discuss how pervasiveness measures for the patterns,
+such as support, conﬁdence and coverage, are computed. in sect. 5, we discuss our three
+approaches to pattern detection.
+4we use the term “cause” (causality) only to distinguish the relations in a partially ordered trace from the follow relations
+(i.e., directly-follow andeventually-follow ) in totally ordered traces.(b) pattern instance 1arrival𝑒11𝑒12
+admission 𝑒13consult𝑒14treat
+𝑒15injury
+arrival
+admission𝑛1𝑛2
+𝑛3
+(a) pattern p1
+arrival injury
+𝑒31𝑒32admission
+𝑒33treat
+𝑒34arrival treat
+𝑛4𝑛5𝑛6
+(d) pattern p2arrival injury
+𝑒21𝑒22
+admission𝑒23treat
+𝑒24
+arrival injury
+𝑒41𝑒42treat
+𝑒43(c) pattern instance 2
+(e) pattern instance 3 (f) pattern instance 4treat
+𝑒44directly and 
+eventually causeeventually causecore -event
+injury
+injurymatched 
+events
+matched 
+core -eventmatch 
+instances
+match 
+instancesfig. 4: two patterns and four highlighted pattern instances, two for each pattern.
+4.1 core-event, pattern and pattern instance
+to support process analysts in expressing and modifying log patterns with ease, the
+patterns should be simple. moreover, if such a pattern resembles the event structure of
+our traces, it should be easier for the user to observe and recognize these patterns. we
+therefore deﬁne a pattern too as a labeled dag, which allows for expressing common
+causal dependencies that occur in a partially ordered trace, namely directly-cause and
+eventually-cause . the concurrence relation is then deduced for any two events that are
+not eventually causing one another. fig. 4(a) and (d) show two examples of patterns.
+in addition to considering patterns as labeled dags, we, for two reasons, explicitly
+include a notion called a core-event in the patterns. firstly, the core-event notion allows
+for unambiguous notions of pattern matches and unambiguous computation of measures
+such as frequency. without a core-event, having a pattern pthat says “ aeventually-
+caused b” and a trace 1=ha;b;b;ai, should one count this as one instance or two?
+given another trace 2=ha;b;a;b;ci, if one counts the number of combinations, such
+an approach results in three pattern instances in 2while there is only two a’s and two
+b’s, causing confusion. in our case, the core-event anchors the pattern in a particular
+perspective, we simply count the number of distinct events that match the core-event
+and satisfy the pattern; we ignore whether the pattern for the same core-event occurs
+several times. take the same example, if ais the core-event of p, then we have one afor
+1and two a’s for2. similarly, if the pattern phasbas the core-event, then we have
+twob’s for1and also two b’s for2. moreover, having a core-event also allows us to
+unambiguous ﬁnd anti-instances (events) that do not satisfy a pattern on the event level
+and not just on the case level. for example, having pattern pwith aas the core-event,
+the second ain1do not satisfy the pattern. without the core-event, 1may be consider
+as compliant or not, depending on the interpretation of the pattern.
+deﬁnition 3 (log pattern). a log pattern p = (n;7!;;;;c)is a directed acyclic
+graph, of which:
+–n is a set of nodes,
+–7!is a set of edges among n and denotes the directly-cause relation4,
+–;is a set of edges among n and denotes the eventually-cause relation4,
+–:n!a is a partial function that assigns a label (n)to any node n2n,
+–c2n is the core-event of the pattern
+and satisﬁes the following constraints:
+1.7!;, i.e., the directly-cause relation is a subset of the eventually-cause relation;2.(n;;)is a partial order, from which the concurrence jj;can be deduced;
+3. for all n;n02n, if there is n002n such that n ;n00;n0, then there is no n 7!n0.
+we also say c has context p and call n nfcgthecontext-nodes of c.
+by regarding a pattern as a core-event (activity) that occurred in a particular context,
+a pattern instance is an occurrence of the core-event in the log in the same context.
+deﬁnition 4 (pattern instance). let p = (n;7!;;;;c)be a log pattern, (e';)a
+partially ordered trace, e0e'a subset of events, and e c2e0an event. (ec;e0)is an
+instance of pattern p if and only if there is a bijective function i :e0!n such that
+–ecis mapped to the core-event, i.e., i (ec) =c.
+–for each event e2e0, event e and the corresponding node i (e)have the same label,
+i.e.,act(e) =(i(e));
+–for all events e ;e02e0, the relations between e and e0satisfy the relations between
+i(e)and i (e0), i.e., (1)i(e)7!i(e0))e e0,(2)i(e);i(e0))e+e0, and
+(3)i(e0)jj;i(e))e0jje
+if(ec;e0)is an instance of pattern p, we also say e csatisﬁes p.
+the behavior speciﬁed by a pattern are preserved in the instances of the pattern.
+fig. 4(b), (c), (e) and (f) exemplify four pattern instances highlighted in their partially
+ordered traces: highlighted e11ande21satisfy p1; e31ande41satisfy p2. it is important
+to note that changing the core-event of a pattern does not change the behavioral relations
+of the pattern, but does change the instances that match the pattern.
+deﬁnition 5 (a maximal set of pattern instances). let p = (n;7!;;;;c)be a
+pattern, l an event log, 'the conversion oracle. a maximal set of pattern instances
+pi(p;'())of trace2l is deﬁned as a largest set of all instances of p in '()that
+differ in their core-event, i.e., for any instance (e0;e0)of p, if (e0;e0)62pi(p;'())
+then there exist (e0;e00)2pi(p;'()). we write pi (p;l;') =s
+2lpi(p;'())
+for the union of a maximal set of pattern instances of all traces in log l. we write
+pic(p;l;')to denote the set of all core-events that satisfy p, i.e., pic (p;l;') =fej
+(e;e0)2pi(p;l;')g.
+we also deﬁne the set of anti-pattern instances antipic (p;l;'), which is the set
+of core-events that do not satisfy p, i.e., antipic (p;l;') =fe2eljact(e) =
+(c)gnpic(p;l;'). note that independent of which maximal set of pattern instances
+is returned, the set of all core-events and the set of anti-pattern instances of a pattern
+remain the same. consider for example pattern p2 in fig. 4(d) and the four partially
+ordered traces shown on the right-hand side to be the set of all partially ordered traces
+in'(l). a maximal set of pattern instances of p2 in '(l)always contains four pattern
+instances with e11,e21,e31ande41as the core-events that satisfy p2. as e41(injury ) in
+fig. 4(f) already satisﬁes p2 with context-event e43(treat ),e44(treat ) is not considered
+as a context event. however, if n6(treat ) was considered as core-event of p2, we would
+obtain ﬁve instances with the core-events e15;e24;e34;e43;ande44. furthermore, e31
+ande41are anti-pattern instances of pattern p1.4.2 pattern support, conﬁdence and coverage
+to help the user assess the pervasiveness of a pattern, we deﬁne the following ﬁve
+measures of a pattern based on the set of all pattern instances. let p= (n;7!;;;;c)
+be a pattern. given a log land the partially ordered traces '(l), we have the set of all
+core-events pic(p;l;') =fe1;e2;;engthat satisfy p.
+–pattern support indicates how many distinct events satisfy p. i.e., p-supp (p;l;') =
+jpic(p;l;')j.
+–pattern conﬁdence is the number of events that satisfy pdivided by the total number
+of events that have the same label as the core-event; this measure indicates how
+often is the occurrence of the core-event a predictor for the occurrence of the entire
+pattern. i.e., p-conf (p;l;') =p-supp (p;l;')
+jfe2eljact(e)=(c)gj.
+–case support is the number of traces that have at least one pattern instance satisfy-
+ingp, i.e., c-supp (p;l;') =j f2lj 9e2pic(p;l;');e2eg j.
+–case conﬁdence is the case support of pdivided by the number of cases that have
+an event with the same label as c, i.e., c-conf (p;l;') =c-supp (p;l;')
+jf2lj9e2; act(e)=(c)gj.
+–case coverage is the case support of pdivided by the number of cases in the log,
+i.e.,c-cover (p;l;') =c-supp (p;l;')
+jlj.
+we note that the desirability of pervasiveness measures (highly pervasiveness or oth-
+erwise) is context/application dependent. for example, for patterns representing non-
+complaint behavior or data quality issues, we would prefer to see low pervasiveness.
+5 pattern detection and pattern instance matching
+we now introduce operations to extract and extend patterns in the context of a log
+in an explorative approach. to help the reader envision this explorative approach, we
+ﬁrst brieﬂy introduce the log pattern explorer tool, for which a screenshot is shown
+in fig. 5. the right-hand side panel shows the log patterns, manually or automatically
+extracted. the user may create or modify a pattern. on the left-hand side, each log trace
+is visualized as a partial order in its own panel: each event is visualized as a square tile;
+tiles can be colored based on event attributes; concurrent events are stacked on top of
+each other; the labels and arcs are omitted for the sake of simplicity. when a user selects
+one or more patterns in the right-hand panel, all pattern instances are highlighted on the
+left (by a color-coded frame around the tiles of the satisfying events).
+in sect. 5.1, we discuss various ways to extract, detect, and modify patterns using
+supervised, semi-supervised or unsupervised approaches. we then discuss an approach
+to compute a maximal set of pattern instances of a pattern (def. 5) in sect. 5.2.
+5.1 pattern detection approaches - partially ordered traces to patterns
+deﬁnition 3 and the tool allow the user to create any pattern of interest. nevertheless, as
+shown in fig. 2, we would like to support the user in extracting these patterns from a log
+with ease. for example, an expert glances through the partially ordered traces visualized
+in fig. 5 and may observe some events (patterns) reoccur in many traces, e.g., through
+the color coding. the user can then extract a pattern by marking all events (tiles) in1. user select “ a_submitted”,
+apply direct -context detector: 
+pattern 2
+pattern 3
+pattern 42. select pattern 
+and highlight instancestrace 1
+trace 2
+trace 3
+trace 4
+…pattern 1
+events (squares) ordered left to right;
+concurrent events stacked; 
+labels and arcs omittedfig. 5: the patterns found using event asubmitted .
+partially ordered trace + user selected events
+arrival injury
+𝑒1𝑒2
+admission𝑒3consult
+𝑒4treat
+𝑒5
+arrival
+admission𝑛1𝑛2
+𝑛3 pattern p1user selected events
+user selected core -event1. extract
+pattern
+2. match 
+instancespartially ordered traces 
++ user selected extension
+arrival injury
+𝑒1𝑒2
+admission𝑒3consult
+𝑒4treat
+𝑒5
+arrival injury
+𝑒21𝑒22
+admission𝑒23treat
+𝑒24arrival
+𝑛21𝑛22
+admission 𝑛23treatarrival
+𝑛11𝑛12
+admission𝑛13treat
+3. extend 
+pattern
+3. extend 
+pattern𝑛24pattern p3 extends p1 
+with eventually -cause“treat”
+pattern p4 extends p1 
+with directly cause “treat”injuryinjury
+injury𝑛14
+* all eventually -cause relations omitted for simplicity
+fig. 6: iteratively extracting and extending patterns from partially ordered traces.
+a trace that make up the pattern. next, we deﬁne an operation for also extracting the
+relations between the events from the trace to extract a complete pattern deﬁnition.
+supervised pattern extraction from partially ordered traces. in essence, each
+partially ordered trace or any of its subgraphs could be extracted as a pattern. let
+'= (e;)be a partially ordered trace. we use (';ec) = pto denote a conversion
+from a partially ordered trace into a pattern p= (n;7!;;;;c)with n=e,7!= ,
+;=+,=act, and c=ec2eis a chosen core-event. similarly, one may convert
+any subgraph of a partially ordered trace into a pattern. let e0ebe a set of interested
+events selected from '. we simply project the pattern onto e0(as deﬁned in sect. 3.1).
+the behavioral pattern induced by e0and core-event ec2e0is deﬁned as function
+extractpattern (';ec;e0) = ((';ec))#e0= (e0; #e0;+#e0;act#e0;ec) = pe0.
+fig. 6 (step 1) shows extraction of a pattern from the partially ordered trace shown
+in fig. 3 by selecting events e1(injury ),e2(arrival )ande3(admission )and considering
+e1as the core-event. the extracted pattern p1 = ( n;7!;;;;c)with n=fn1;n2;n3g,
+n17!n2;n17!n3,n1;n2, and n1;n3;n2andn3are concurrent; for , the labelsof events remain unchanged. in the tool shown in fig. 5, the user can select a set of
+tiles (events) on the left and apply the pattern extraction function, the ﬁrst tile is the
+core-event; the extracted pattern will appear in the panel on the right.
+creating, extending and changing patterns. seeing all instances of a pattern in their
+larger context, the user may change or extend the current pattern. for example, the user
+may want to extend a pattern with another node, or change a directly-cause into an
+eventually-cause. here, we only list the following ﬁve groups of operations to change
+or create a pattern: (1) change the core-event; (2) change the labels; (3) add (remove)
+a node to (from) a pattern; (4) change directly-cause into eventually-cause, and vice
+versa; (5) add (remove) a relation to (from) a pattern. step 3 (extend pattern) in fig. 6
+exempliﬁes two different extensions of p1 that differ in how the added node treat is
+relates to its predecessors.
+semi-supervised pattern detection. to help the user discover interesting patterns,
+we propose semi-supervised pattern detectors that identify patterns for a user-chosen
+core-event: (1) concurrence detector , (2) direct-predecessor (successor) detector , and
+(3)direct-context detector . the concurrence detector runs as follows. let pbe the
+set of patterns we have detected so far. let lbe a log,'a conversion oracle, and c
+a core-event of interest. let ec=fe2eljact(e) =(c)g. for event e2ec,
+letbe the trace containing e, and let cebe the events that are concurrent with e
+in'(). if(e;ce[feg)is not an instance of any pattern p2 p , then we obtain
+a new pattern p0=extractpattern ('();e;ce[feg)and add p0top. this allows
+to obtain a set of distinct patterns describing different sets of activities that occurred
+concurrently. for the direct-predecessor (successor) detector ,ceis the set of events
+that are directly-causing (that directly-caused by) core-event e. for the direct-context
+detector ,cecontains directly preceding, succeeding and all concurrent events of e. the
+relevance of an extracted pattern can be assessed using the measures of sect. 4.2.
+integrating unsupervised pattern detection. to also leverage on existing unsuper-
+vised pattern detection techniques, their output has to be converted to our pattern no-
+tion (def. 3). we discuss this conversion for two techniques [3, 7]. for the technique
+in [3], the output patterns are sequences of activities, directly or eventually-follows.
+any such pattern also satisﬁes our pattern deﬁnition (def. 3). however, originally total-
+ordered events may now be independent (concurrent) due to the usage of partially or-
+dered traces and may therefore no longer satisfy the converted pattern. in such cases,
+the user may ﬁnd low p-supp andp-conf , explore anti-pattern instances and modify the
+pattern accordingly. the output patterns in [7] are partial orders of events in which the
+relations represent eventually-follow and no relations represent co-occur. we retain all
+eventually-follow relations and choose to consider co-occur as concurrent. regarding
+choosing the core-events, the user may specify an activity (label) of interest to be auto-
+matically selected as the core-event; otherwise, a random node is selected. the user can
+run such an unsupervised detection in the tool shown in fig. 5. the returned and con-
+verted patterns are shown in the right panel. the user can explore the pattern instances
+in the left panel. note that the pervasiveness of a pattern (such as p-supp andp-conf )
+are recomputed in our case, depending on the chosen core-event.5.2 computing a maximal set of pattern instances
+we propose the following approach to compute a maximal set of instances of a pattern,
+which can be divided into three phases. first, all events that can be matched to core-
+event cof pattern pare computed; we call these events the candidates of cand use ec
+to denote this set of events. in the second phase, for each candidate e2ec, we try to
+ﬁnd a pattern instance for pwith eas core-event. this is done through incremental,
+exhaustive construction of the mapping i(def. 4) with backtracking and pruning. if we
+can complete the construction of imapping to events e0in the trace, then (e;e0)is a
+pattern instance and added to the maximal set. else, eis an anti-pattern instance. the
+algorithm(s) for computing the pattern instances are listed below.
+algorithm matchingpatterninstances (p;l;')
+input: pattern p, log l, and conversion function '.
+output: the set of all pattern instances pi.
+1. pi fg
+2. forpartially ordered trace (e;)2'(l)
+3. docandidates (c) feje2e^act(e) =(c)g
+4. forevent ec2candidates (c)
+5. doi fg , and i(ec) c
+6. isinstance  recursivelytrycombinations (p;i;(e;))
+7. ifisinstance
+8. then pi pi[f(ec;dom (i))g
+9. else antipic antipic[fecg
+10. return pi
+algorithm recursivelytrycombinations (p;i;(e;))
+input: pattern p, mapping i:e!n, and partially ordered trace (e;).
+output: whether (ec;dom (i))is an instance of p#rng(i).
+1. (base case)
+2. ifnnrng(i)is empty
+3. then return true
+4. (recursion)
+5. select n2nnrng(i), and candidates (n) feje2endom (i)^act(e) =(n)g
+6. fore2candidates (n)
+7. do(make the choice)
+8. i i[fe!ng
+9. if(ec;dom (i))is an instance of p#rng(i)
+10. then
+isinstance recursivelytrycombinations (p;i;(e;))
+11. ifisinstance
+12. then return true
+13. i infe!ng(undo the choice)
+14. (has tried all candidates for nand has not found a valid solution )
+15. return false
+the running-time complexity is exponential w.r.t. the size of the pattern (i.e., jnj),
+but polynomial in the size of ec. in the best case, we try one combination and it alreadyis an instance, then the algorithm runs in linear time. in the worst case, one may have
+to try every combination, then the algorithm runs in exponential time. however, we can
+incrementally check the validity of the chosen candidates so far throught the projection
+function and efﬁciently prune the search space. moreover, note that by only searching
+for a maximal set of pattern instances instead of all pattern instances, we evade explor-
+ing exponentially many matches for the same core-event.
+6 evaluation and discussion
+we implemented our approach as a visualizer called log pattern explorer in the log-
+patternexplorer package in the prom framework3. we conducted two case studies to
+show how our semi-supervised approach supports the user in detecting complex pat-
+terns of interest and gaining important insights into a process while exploring pattern
+instances. in this section we present our evaluation results.
+6.1 evaluation using bpi challenge 2012 log
+the bpi challenge 2012 event log5was recorded for a loan application process in
+a dutch ﬁnancial institute. there are 13,087 cases in the log having in total 262,200
+events and 36 activities. we used the default oracle 'time(l;dt), with dt= 0 sec (e.g.,
+events are concurrent if they happened within a second), to obtain partially ordered
+traces. we discuss our main ﬁndings and compare our results with existing tools.
+scenario: distinct contexts. using the direct-context detector , we ﬁrst investigate the
+events asubmitted . we obtained six patterns, of which four are shown in fig. 5. we
+viewed the pattern instances of each pattern and discuss three interesting observations.
+firstly, the instances of pattern 1 ended immediately after adeclined (a de). in
+contrast, the instances of pattern 2 and 3 are sometimes eventually followed by ade,
+as shown in fig. 7 and 8. however, glancing through the instances, there is a signif-
+icant difference in the number of the events adebetween these two patterns, which
+is our second observation. to verify this observation, we extend the two patterns with
+eventually-causing ade, leading to p2a and p3a in figs. 7 and 8. the measures of the
+extended patterns show that there is indeed a difference: 67.8% of the instances of pat-
+tern 2 eventually caused ade(i.e.,p-supp (pattern 2+ade)
+p-supp (pattern 2)=2841
+4189= 67.8%); whereas, only
+19.3% of the instances of pattern 3 eventually caused ade(i.e.,p-supp (pattern 3+ade)
+p-supp (pattern 3)=
+835
+4320= 19.3%). thirdly, we observed the same difference between the two patterns
+in eventually-causing oaccepted (o ac) (concurrent with three other activities
+as shown in p3b in fig. 8). following the same steps as before, we ﬁnd that p3 is
+eventually-followed by oacin 35% of all instances which happened for p2 only in
+11.8% of all instances. these observations suggest that a partly submitted application
+that is pre-accepted is much less likely to be declined (p3a) and more likely to be ac-
+cepted (p3b) than those that have to go through wafhandelen leads (p2a).
+510.4121/uuid:3926db30-f712-4394-aebc-75976070e91fview instances 
+of pattern 2
+pattern 2
+extend pattern 2 
+with “a_declined” by extract
+p2a* the first four characters of the label of an event are shown.fig. 7: viewing the instances of pattern 2, we observed a signiﬁcant number of
+adeclined (a de), extended pattern 2 with eventually-cause ade.
+pattern 3
+view instances
+extend pattern 3 
+with “a_activated” and etc.
+extend pattern 3 with “a_declined”
+p3a
+p3b…
+…
+…
+…
+fig. 8: viewing instances of pattern 3 and extended it into two different patterns.
+scenario: directly-cause versus eventually-cause. we further investigated pattern
+4 in fig. 5 and found another interesting observation. glancing through the instances
+of pattern 4, we see only 1 of the 59 instances eventually causes oac, see fig. 9.
+observing that in some cases wbeoordelen fraude (fraud) does not directly follow,
+but eventually follows its core-event, we modify p4 by changing the two directly-
+cause relations into eventually-cause. we then obtained 92 pattern instances. glanc-
+ing through these new instances, we suddenly observed many more oac, and in-
+deed the p-supp shows 26 instances eventually-cause oac. coloring the events based
+on their resources showed that the directly-caused fraud ’s are executed by resource
+112, known to be the system, whereas the eventually-caused (and not directly-caused)
+fraud ’s events are executed by human resources. this difference (i.e., 1=59versus
+(26 1)=(92 59)) may suggest that the system user is able to help human resources
+identify and ﬁlter fraudulent cases (which are eventually not accepted). note that unsu-
+pervised approaches not distinguishing directly-cause andeventually-cause will not be
+able to detect these two patterns [7].
+scenario: infrequent patterns and anti-pattern instances. we then focused on the
+aactivated , using concurrent detector .aactivated is concurrently executed
+with aapproved (a ap) andaregistered in 2246 cases ( p-conf is 1.0). in
+2243 of the 2246 cases they are also concurrent with oac. inspecting the 3 anti-only 1 accept
+many more 
+acceptsfig. 9: signiﬁcant difference in the number of oaccepted between
+the patterns “directly-cause wbeoordelen fraude ” and “eventually-cause
+wbeoordelen fraude ”.
+fig. 10: three anti-pattern instances of aactivated .
+pattern instances in which aactivated is not concurrent with oac, no oacis
+found, see fig. 10. veriﬁed with the data-owner, we understood that these three cases
+could have severe ﬁnancial impact. we quote the data-owner “in these cases the ac-
+tivity oaccepted (o ac) was skipped, while aactivated was executed. from
+a business point of view, this implies that the customer never accepted an offer on a
+loan application, but the money was transferred nonetheless. in total, for 63,000 euro in
+these three cases.” we also observed in 99.7% of the 2050 cases aapdirectly-caused
+wvalideren aanvraag (va) and ended after that immediately; inspection of the 0.3%
+where this pattern is not observed shows that 3 additional activities were repeatedly
+fig. 11: six instances of an infrequent pattern.fig. 12: the eventflow drawn an overview of the bpi challenge 2012 log.
+executed by human resources after aap, see fig. 11. this may suggest that the case
+status was not up-to-date, causing more unnecessary work.
+6.2 results of existing approaches using bpi challenge log
+we applied existing techniques (for which an implementation is available in java) on
+the same bpi challenge log and discuss the results. overall, existing approaches have
+difﬁculties with detecting patterns that contain a large set of concurrent (independent)
+events and retrieving their instances, such as pattern p3b. both ltlchecker [6] and
+eventflow [2] have difﬁculties supporting querying or detecting the instances of pat-
+tern p3b for example. although the user observed some instances of the four concur-
+rent activities (i.e., aactivated ,aap,aregistered ,oac) in the visualization
+shown by eventflow, see fig. 12, the user has difﬁculties expressing this as a pattern
+(query) and retrieving all traces that contain the pattern. furthermore, another differ-
+ence we observed is that both techniques only retrieve (anti-)pattern instances retrieved
+on the case level, instead of events.
+for the dotted chart [13], we found three versions of in the prom framework. ap-
+plying them on the same log, the three dotted chart plugins have shown similar results;
+the visualization is competent in drawing an overview of the log and helping the ana-
+lyst to observe high level patterns such as the weekend effect and seasonal patterns in
+the log. however, the technique is less suitable to observe concrete behavioral patterns.
+this is because the dots (representing events) drawn are almost indistinguishable, espe-
+cially when they occurred closely to each other, see fig. 13. even manually assigning
+colors to dots have not helped, see fig. 14.
+for unsupervised approaches, the patterns that are (and can be) detected are limited
+to their deﬁnition of patterns. applying pattern abstraction [3] on the bpi challengezoom in
+zoom infig. 13: the dotted chart 3 drawn an overview of the bpi challenge 2012 log; unable
+to distinguish individual dots that occurred closely after eachother.
+fig. 14: the dotted chart with color manually assigned to ﬁnd the concurrent pattern.
+fig. 15: 52116 patterns found by episodeminer, only the ﬁrst 100 most frequent are
+accessible.2012 log, it detected 231 sets of activities and 5744 patterns using the default set-
+ting. however, pattern abstraction deﬁnes patterns as sequence of activities directly-
+followed each other, therefore, it cannot detect for example p2a, p3a, and p3b.
+episodes miner [7] returned 12 frequent patterns (all of the same set of activities)
+using the default setting. in attempts to ﬁnd infrequent patterns (e.g., p3b), we lower
+the frequency threshold and obtained up-to 52116 patterns; however, only the ﬁrst 100
+most frequent patterns are shown, which remain the same set of patterns; no infrequent
+pattern surfaced, see fig. 15. as episodes miner do not distinguish directly-follows
+and eventually-follows, it is unable to distinguish for example the two patterns shown
+in fig. 9.
+6.3 evaluation using an insurance log
+we also performed a second evaluation using a claims log from a leading queens-
+land (australia) insurance provider. the log for this evaluation was extracted from the
+claims processing system of a leading queensland (australia) provider of compulsory
+third party (ctp) insurance. the log included 863,828 events comprising 2,584 cases
+( claims ﬁnalised between january 2012 and july 2015 where the claimants‘ injury
+severity was minimal). to facilitate investigation, the log was ﬁltered to include a ran-
+dom sample of 285 cases, with 144 distinct activities from 50,566 events representing
+activity completions. unlike the previous evaluation, this case study exploited a stand-
+out feature of the log pattern explorer tool, which is its ability to visually highlight
+concurrent events, to detect concurrency-related data quality (dq) issues.
+scenario: form-based event capture. aform-based dq issue [9] refers to a set of
+events, within the same case, that were recorded with the same timestamp. this is a
+problem as these events did not all occur at the same time in reality, but were recorded
+simultaneously due to certain actions that a user may perform on a form. for example,
+a user may tick the ‘check all’ checkbox to indicate the completion of a set of tasks,
+triggering the system to record the completion of all these tasks in the log at the time
+the user clicked ‘save’; rather than the actual times the user completed the individual
+tasks.
+to demonstrate the advantage of the tool, this component of the evaluation was
+conceived as a double-blind test in which two different researchers used different meth-
+ods to independently identify frequently occurring sets of concurrent events in the log:
+researcher aused the log pattern explorer and researcher bused rapidminer’s6fp-
+growth and create association rules operators). researcher ahad neither domain
+knowledge about the insurer’s processes nor prior exposure to the log, while researcher
+bhad substantial prior knowledge. yet, researcher amanaged to detect and replicate
+the concurrency-related issues in a quicker manner than researcher b (due to the over-
+heads of data preparation and results interpretation imposed by the data mining tools).
+below, we detail how we successfully detected form-based dq issue [9] using the tool.
+in preparation for mining association rules, researcher bﬁltered a set of all events
+ec2elhaving timestamps within 1 second of another event in the same case (i.e.
+deemed to be concurrent with another event in the same case) from the insurance claims
+6https://rapidminer.com/log,el. let t=f(t1;e1);:::; (tm;em)gbe the set of timestamp, event pairs of events
+e2ecwhere ti=time(ei),a=fa1;:::;angbe the set of activity labels of events
+e2ecand(a;act(e))be a function that returns trueif the value of the activity label
+attribute of event e,act(e), isaorfalse otherwise. ecwas ’pivoted’ to form tuples
+of the form ( ti;(a1;act(ei));:::; (an;act(ei)) and used as input to rapidminer’s fp-
+growth and create association rules operators. the association rules identiﬁed by
+using the rapidminer operators are shown in table 2 from which the manifestations of
+the form-based dq issue shown in table 3 may be distilled. (note, we include columns
+representing the pattern support and case support metrics to indicate pervasiveness.)
+on the other hand, researcher aused the log pattern explorer tool to discover this
+dq issue. with the default oracle 'time(l;dt)(where dt= 0sec) a clue to the existence
+of this dq issue is the presence of recurring stacked tiles across cases. through colour-
+ing of events (based on their activity label) in a stack, we can easily observe frequently
+occurring groups of activities. for example, in figure 16 (left), three concurrent activi-
+ties (light blue, deep blue and purple), a manifestation of form-based dq issue, can be
+seen to occur frequently. through an iterative process of tile colouring, pattern editing
+and assessment of pattern pervasiveness, researcher awas able to distill 4 out of the top
+6 manifestations of the form-based dq issues that were independently-discovered by
+researcher b.
+form-based pattern 
+(pattern extraction)
+different manifestation of 
+form-based pattern ("fuzzy")
+fig. 16: example of form-based dq issues discovered through log pattern explorer
+this experiment also illustrates a ‘fuzzy’ way to detect variations of dq patterns
+of interest. using the ‘pattern ﬁtting’ approach (described above) can still be rather
+limiting in ﬁnding patterns when one is in the exploration stage. for example, in fig-
+ure 16 (right), we see another instance of this dq issue: the three activities of interest
+happened repeatedly and could occur in ‘close proximity’ to each other (either concur-
+rently, directly-followed, or directly-succeeding one another), thus they did not ﬁt the
+‘same timestamp’ deﬁnition that was originally deﬁned in [9] for the form-based dq
+issue. these variations are unlikely to be known by process analysts in the early stage
+of analysis. the log pattern explorer tool thus allows one to discover the possible vari-
+ations of a particular event log quality issue, such that a more comprehensive approach
+can be taken in the subsequent cleaning of the log.
+scenario: collateral events. thecollateral events dq issue [9] is an event log quality
+issue that manifests itself when the occurrence of one event triggered the ﬁring of other
+events within a short amount of time (for example, within seconds or minutes). these
+subsequent events being ﬁred may not be meaningful or important from the perspective
+of the process being analysed (e.g. automated notiﬁcation emails being sent to various
+parties upon the receipt of an insurance claim).premise conclusion conﬁdence lift
+complete initial claim estimate request initial claim evidence 0.985 79.259
+request initial claim evidence complete initial claim estimate 0.942 79.259
+est estimate submitted for approval 0.994 31.914
+estimate submitted for approval est 1.031.914
+review outstanding accounts commence settlement assessment 0.721 26.689
+commence settlement assessment review outstanding accounts 0.620 26.689
+pay settlement assessment commence settlement assessment 0.610 2.573
+quantquantum submitted for rationale
+review and quantum approval0.576 11.545
+quantum submitted for rationale
+review and quantum approvalquant 1.011.545
+review and action new discharge
+documentreview and action new
+statutory bodies document0.560 7.936
+review and action uploaded
+rehabilitation document
+consider referral to rsa,
+action rehab treatment planreview and action erp 0.733 5.096
+review and action erp action rehab treatment plan 0.683 5.080
+action rehab treatment plan review and action erp 0.731 5.078
+review and action uploaded
+rehabilitation document
+consider referral to rsa,
+review and action erpaction rehab treatment plan 0.619 4.600
+review and action uploaded
+rehabilitation document
+consider referral to rsareview and action erp 0.562 3.908
+review and action erpreview and action uploaded
+rehabilitation document
+consider referral to rsa0.706 3.908
+review and action new
+employment documentreview and action new
+correspondence document0.746 3.792
+review and action new
+legal documentreview and action new
+correspondence document0.701 3.565
+review and action erp,
+action rehab treatment planreview and action uploaded
+rehabilitation document
+consider referral to rsa0.639 3.539
+action rehab treatment planreview and action uploaded
+rehabilitation document
+consider referral to rsa0.637 3.528
+review correspondencereview and action new
+correspondence document0.667 3.390
+review and action scanned
+rehabilitation document
+consider referral to rsareview and action uploaded
+rehabilitation document
+consider referral to rsa0.569 3.151
+review and action new
+statutory bodies documentreview and action new
+correspondence document0.614 3.122
+review and action new
+discharge documentreview and action new
+correspondence document0.596 3.031
+table 2: association rules mined using rapidminerfrequently occurring concurrent activitiespattern
+supportcase
+support
+quant,
+quantum submitted for rationale review and quantum approval303 185
+review and action uploaded rehabilitation document
+consider referral to rsa,
+review and action erp,
+action rehab treatment plan297 71
+est,
+estimate submitted for approval184 131
+review outstanding accounts,
+commence settlement assessment126 126
+pay settlement asessment,
+commence settlement assessment98 98
+complete initial claim estimate,
+request initial claim evidence66 66
+table 3: manifestations of the form-based dq issue distilled from association rules
+the existence of collateral events dq issue can be easily detected using the log
+pattern explorer tool. in particular, using the ‘same timestamp’ layout, one can adjust
+the time window for two events to be considered concurrent and observe the changes in
+the layout of the events, if any, with any small increase in the concurrent time window.
++30 seconds +30 seconds
+fig. 17: changes in the layout of events, each with a 30-second increase in the con-
+currency time window.
+figure 17 shows three screenshots capturing the changes in the tile layout for the
+same event log as the concurrency time window changes from 0 seconds (left win-
+dow), to 30 seconds (middle ﬁgure), and to 60 seconds (right ﬁgure). we can see that
+the change from 0 to 30 seconds resulted in a substantial change in the shape of the
+layout for the same log. this simple, yet powerful, information tells us that the event
+log contains many events within a case that were separated by fewer than 30-second
+difference between them - a symptom of the existence of the collateral events pattern.
+equally interesting, as we increase the time window to 60 seconds, we noticed only mi-
+nor changes in the layout of the tiles. an interesting observation here, therefore, is thatthe 30-second (or shorter) window may be an measure of the internal system latency.
+this insight can be further used to determine if two events separated by less than 30
+seconds are indeed sequential or a result of the delay in the logging of the events.
+to conclusively detect if collateral patterns do exist, one needs to understand the
+make up of those events that are stacked together (that is, there needs to be an expla-
+nation as to why the occurrence of one event triggered the ﬁring of other events within
+a short amount of time). in this situation, a similar approach to detecting form-based
+pattern (as described above) can be taken.
+scenario:homonymous label ahomonymous label dq issue [9] refers to a situation
+whereby two or more events within a case have the same label; however, the interpre-
+tation of those labels are different due to the changes in the context of the case. for
+example, in a hospital setting, an activity labeled ‘triage patient’ may be interpreted
+as a nurse triaging a patient as he/she arrives in an emergency department. however,
+in a log, we may see this activity being recorded a second time after the patient was
+discharged. this second triage activity actually refers to a nurse or a doctor reviewing
+the triage activity of a patient, instead of triaging the patient again. therefore, the inter-
+pretation of the same event label between the ﬁrst and second occurrences is different.
+in this section, we described how we used the log pattern explorer tool to discover
+the presence of the homonymous label dq issue. some domain knowledge is required
+as we need to know the activity label that is likely to cause this dq issue. through
+domain expert’s knowledge, it was noted that the activity ‘complete initial estimate
+workﬂow’, which mostly happens at the beginning of a case (see figure 18) could
+sometimes occur later in a case. however, when it occurs for the second or subsequent
+time, it does not mean that another ‘initial’ claim estimate was performed. rather, it
+often occurs when the insurance company determines that the other party’s insurer (in a
+multi-party accident insurance claim) is responsible for the claim. therefore, the claim
+is now being transferred to the other insurance company (this is reﬂected by the occur-
+rence of the ‘recover claim and/or management costs upon transfer of claim to another
+insurer’ - coloured as red in the bottom part of figure 18. the second occurrence of the
+‘complete initial estimate workﬂow’, in this context, actually refers to the original in-
+surance company estimating the cost that they have incurred thus far so that they can
+recover it from the insurance company to whom the claim is being transferred.
+using the log pattern explorer tool, it is interesting to note that such behaviour
+can be easily seen by highlighting activities of interest, the recurrence of the ‘complete
+initial estimate workﬂow’ is clearly unfolded in the visualisation. note that the sec-
+ond occurrence of this activity, in light of the changing context of the case, would not
+be easily observed through the analysis of a process model as most process discovery
+techniques would create a single node for this activity.
+7 conclusion and future work
+in this paper, we proposed a semi-supervised approach for log pattern detection. we
+deﬁned our patterns as partial orders and distinguished a core-event to help the user
+detect patterns of interest. we use concurrency and contextual information of the core-
+events and support the user in extracting, modifying, and extending patterns. the two'complete initial estimate workflow' activity
+homonymous label dq issue: 
+same activity (blue colour) occurred at different location in a case.
+the red-coloured activity signifies the change in the context of the case.fig. 18: the activity ‘complete initial estimate workﬂow’ (coloured as blue) often
+occurs early in a case (top). this activity can also be the source for a homonymous
+label dq issuecase studies show that our approach is successful in assisting process analysts in ﬁnding
+complex patterns and infrequent patterns of interest. future work aims at empirically
+evaluating the approach and the tool with process analysts. moreover, we would like
+to integrate log cleaning operations, such as event abstraction, event relabeling, event
+ﬁltering etc., and recommend such operations for the patterns detected.
+references
+1. bautista, a.d., wangikar, l., akbar, s.m.k.: process mining-driven optimization of a con-
+sumer loan approvals process - the bpic 2012 challenge case study. in: bpm workshops.
+(2012) 219–220
+2. monroe, m., lan, r., lee, h., plaisant, c., shneiderman, b.: temporal event sequence
+simpliﬁcation. ieee trans. vis. comput. graph. 19(12) (2013) 2227–2236
+3. bose, r.j.c., van der aalst, w.m.: abstractions in process mining: a taxonomy of patterns.
+in: bpm. v olume 5701 of lncs., springer (2009) 159–175
+4. g ¨unther, c., rozinat, a., van der aalst w.m.p.: activity mining by global trace segmenta-
+tion. in: bpm. v olume 43 of lnbip., springer (2009) 128–139
+5. mannhardt, f., de leoni, m., reijers, h.a., van der aalst, w.m.p., toussaint, p.j.: from
+low-level events to activities - a pattern-based approach. in: bpm. v olume 9850 of lncs.,
+springer (2016) 125–141
+6. maggi, f.m., montali, m., westergaard, m., van der aalst, w.m.p.: monitoring business
+constraints with linear temporal logic: an approach based on colored automata. in: bpm
+2011. (2011) 132–147
+7. leemans, m., van der aalst, w.m.p.: discovery of frequent episodes in event logs. in:
+simpda. v olume 1293 of ceur., ceur-ws.org (2014) 31–45
+8. diamantini, c., genga, l., potena, d.: behavioral process mining for unstructured processes.
+j. intell. inf. syst. 47(1) (2016) 5–32
+9. suriadi, s., andrews, r., ter hofstede, a.h., wynn, m.t.: event log imperfection patterns for
+process mining: towards a systematic approach to cleaning event logs. information systems
+64(2017) 132–150
+10. ferreira, d.r., szimanski, f., ralha, c.g.: improving process models by mining mappings
+of low-level events to high-level activities. j. intell. inf. syst. 43(2) (2014) 379–407
+11. tax, n., sidorova, n., haakma, r., van der aalst, w.m.p.: mining local process models. j.
+innovation in digital ecosystems 3(2) (2016) 183–196
+12. baier, t., rogge-solti, a., mendling, j., weske, m.: matching of events and activities: an
+approach based on behavioral constraint satisfaction. in: sac, acm (2015) 1225–1230
+13. song, m., van der aalst, w.m.: supporting process mining by showing events at a glance.
+in: proceedings of wits. (2007) 139–145
+14. lu, x., fahland, d., van der aalst, w.m.: conformance checking based on partially ordered
+event data. in: bpm workshops. v olume 202 of lnbip., springer (2014) 75–88
+15. ponce de le ´on, h., rodr ´ıguez, c., carmona, j., heljanko, k., haar, s.: unfolding-based
+process discovery. in: atv a. v olume 9364 of lncs., springer (2015) 31–47
+16. mokhov, a., carmona, j., beaumont, j.: mining conditional partial order graphs from event
+logs. t. petri nets and other models of concurrency 11(2016) 114–136
+17. diamantini, c., genga, l., potena, d., van der aalst, w.m.: towards process instances
+building for spaghetti processes. in: proceedings of sebd. (2015) 256–263
+18. armas-cervantes, a., dumas, m., la rosa, m.: discovering local concurrency relations in
+business process event logs. (2016)

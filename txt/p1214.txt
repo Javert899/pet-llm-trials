@@ -1,0 +1,560 @@
+24th international conference on business information systems (bis 2021)
+artiﬁcial intelligence
+https://doi.org/10.52825/bis.v1i.62
+© authors. this work is licensed under a creative commons attribution 4.0 international license 
+published: 02 july 2021
+text-aware predictive monitoring
+of business processes
+marco pegoraro1[https://orcid.org/0000-0002-8997-7517 ], merih seran uysal1[https://orcid.org/
+0000-0003-1115-6601 ], david benedikt georgi1, and wil m.p . van der aalst1[https://orcid.org/ 
+0000-0002-0955-6940 ]
+1process and data science chair, rwth aachen university, aachen, germany
+fpegoraro,uysal,wvdaalstg@pads.rwth-aachen.de david. georgi@rwth-aachen.de
+abstract. the real-time prediction of business processes using historical event data is an im-
+portant capability of modern business process monitoring systems. existing process prediction
+methods are able to also exploit the data perspective of recorded events, in addition to the
+control-ﬂow perspective. however, while well-structured numerical or categorical attributes are
+considered in many prediction techniques, almost no technique is able to utilize text documents
+written in natural language, which can hold information critical to the prediction task. in this
+paper, we illustrate the design, implementation, and evaluation of a novel text-aware process
+prediction model based on long short-term memory (lstm) neural networks and natural lan-
+guage models. the proposed model can take categorical, numerical and textual attributes in
+event data into account to predict the activity and timestamp of the next event, the outcome,
+and the cycle time of a running process instance. experiments show that the text-aware model
+is able to outperform state-of-the-art process prediction methods on simulated and real-world
+event logs containing textual data.
+keywords: predictive monitoring, process mining, natural language processing, lstm neu-
+ral networks
+1 introduction
+in recent years, a progressive and rapid tendency to digital transformation has become ap-
+parent in most aspects of industrial production, provision of services, science, education, and
+leisure. this has, in turn, caused the widespread adoption of new technologies to support hu-
+man activities. a signiﬁcant number of these technologies specialize in the management of
+enterprise business processes.
+the need of analysis and compliance in business processes, united to a larger and larger
+availability of historical event data have stimulated the birth and growth of the scientiﬁc discipline
+ofprocess mining. process mining enables the discovery of process models from historical
+execution data, the measurement of compliance between data and a process model, and the
+enhancement of process models with additional information extracted from complete process
+cases.
+advancements in process mining and other branches of data science have also enabled
+the possibility of adopting prediction techniques, algorithms that train a mathematical model
+from known data instances and are able to perform accurate estimates of various features of
+future instances. in the speciﬁc context of process mining, predictive monitoring is the task of
+221pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+predicting features of partial process instances, i.e., cases of the process still in execution, on
+the basis of recorded information regarding complete process instances. examples of valuable
+information on partial process instances are the next activity in the process to be executed for
+the case, the time until the next activity, the completion time of the entire process instance, and
+the last activity in the case (outcome). if accurately estimated, these case features can guide
+process owners in making vital decisions, and improve operations within the organization that
+hosts the process; as a result, accurate predictive monitoring techniques are widely desirable
+and a precious asset for companies and organizations.
+existing predictive monitoring techniques typically operate at the merging point between
+process mining and machine learning, and are able to consider not only the control-ﬂow per-
+spective of event data (i.e., the activity, the case identiﬁer, and the timestamp), but also ad-
+ditional data associated with them. however, few prediction techniques are able to exploit
+attributes in the form of text associated with events and cases. these textual attributes can
+hold crucial information regarding a case and its status within the workﬂow of a process. a
+general framework describing the problem is shown in figure 1.
+next activity
+next timestamp
+outcome
+cycle timeprediction model
+fit modelactivities
+timestamps
+additional data
+categorical
+textualnumericalpredict input
+historical 
+event logreal-time 
+event log
+figure 1. problem overview: a general predictive monitoring model. the aim is predicting features of running process instances
+based on historical data, by exploiting numerical, categorical, and textual data.
+the aim of this paper is to assess the extent to which textual information can inﬂuence
+predictive monitoring. to this end, we present a novel predictive monitoring approach able to
+exploit numerical, categorical, and textual attributes associated with events, as well as control-
+ﬂow information. our prediction model estimates features of cases in execution by combining
+a set of techniques for sequential and textual data encoding with predictions from an lstm
+neural network, a machine learning technique particularly effective on sequential data such as
+process traces. validation through experiments on real-life event logs shows that our approach
+is effective in extracting additional information from textual data, and outperforms state-of-the-
+art approaches for predictive monitoring.
+the remainder of the paper is structured as follows. section 2discusses some recent work
+related to predictive monitoring. section 3presents some preliminary deﬁnitions. section 4
+illustrates the details and architecture of our text-aware predictive monitoring technique. sec-
+tion5presents the evaluation of the predictor and the results of the experiments. section 6
+concludes the paper.
+2 related work
+the intersection of process mining and machine learning is a rich and inﬂuential ﬁeld of re-
+search. among the numerous applications of machine learning in process mining, feature pre-
+diction on partial process traces based on historical complete traces (i.e., predictive monitoring)
+222pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+is particularly prominent. accurately predicting features such as cycle time and bottlenecks
+leads to valuable insights in many domains, e.g. production processes [17].
+earlier techniques for prediction in process mining focused on white-box and human-inter-
+pretable models, largely drawn from statistics. many proposals have been put forward to com-
+pute an estimate of the cycle time of a process instance, including decision trees [6] and simu-
+lation through stochastic petri nets [13]. additionally, teinemaa et al. [16] proposed a process
+outcome prediction method based on random forests and logistic regression. van der aalst
+et al. [1] exploit process discovery as a step of the prediction process, obtaining estimations
+through replay on an annotated transition system; this technique is then extended by polato
+et al. [12] by annotating a discovered transition system with an ensemble of na ¨ıve bayes and
+support vector regressors, allowing for the data-aware prediction of cycle time and next activity.
+the second half of the 2010s saw a sharp turn from ensemble learning to single prediction
+models, and from white-box to black-box models – speciﬁcally, recurrent neural networks. this
+is due to the fact that recurrent neural networks have been shown to be very accurate in learning
+from sequential data. however, they are not interpretable, and the training efﬁciency is often
+lower.
+this family of prediction methods employs lstm neural networks to estimate process in-
+stance features. evermann et al. [7] proposed the use of lstms for next activity prediction;
+tax et al. [15] trained lstms to predict cycle time of process instances. navarin et al. [9]
+extended this approach by feeding additional attributes in the lstm, attaining data-aware pre-
+diction. more recently, park and song [10] merged system-level information from a process
+model with a compact trace representation based on deep neural networks to attain perfor-
+mance prediction.
+no existing predictive monitoring technique, to the best of our knowledge, incorporates
+information from free text, recorded as event or trace attribute, with the control-ﬂow perspective
+of the process into a state-of-the-art lstm neural network model for predictive monitoring: this
+motivates the approach we present in this paper.
+3 preliminaries
+let us ﬁrst introduce some preliminary deﬁnitions and notations.
+deﬁnition 1 (sequence) asequence of lengthn∈n0over a setxis an ordered collection
+of elements deﬁned by a function σ:{1,...,n}→ x, which assigns each index an element
+ofx. a sequence of length nis represented explicitly as σ=/angbracketleftx1,x2,...,x n/angbracketrightwithxi∈xfor
+1≤i≤n. in addition,/angbracketleft/angbracketrightis the empty sequence of length 0. over the sequence σwe deﬁne
+|σ|=n,σ(i) =xi, andx∈σ⇔∃ 1≤i≤n :x=xi.x∗denotes the set of all sequences over x.
+the function hdk:x∗→x∗gives the head or preﬁx of length kofσfor0≤k≤n:
+hdk(σ) =/angbracketleftx1,x2,...,x k/angbracketright. for instance, hd2(σ) =/angbracketleftx1,x2/angbracketright.
+deﬁnition 2 (event, trace, event log, preﬁx log) letabe the universe of activity labels.
+lettbe the closed under subtraction and totally ordered universe of timestamps. let d1,
+d2,...,dmbe the domains of additional attributes. an event is a tuplee= (a,t,d 1,...,d m)∈
+a×t ×d 1×···×d m=e. over an event ewe deﬁne the projection functions πa(e) =a,
+πt(e) =t, andπdi(e) =di. atraceσ∈e∗is a sequence of events such that timestamps are
+non-decreasing: πt(ei)≤πt(ej)for1≤i < j≤|σ|. an event logl∈b(e∗)is a multiset of
+traces. given an event log l, we deﬁne the preﬁx log l={hdk(σ)|σ∈l∧1≤k≤|σ|}.
+additional attributes di∈d imay be in the form of text, i.e., its domain is the set of se-
+quencesdi= σ∗from a ﬁxed and known alphabet σ.
+223pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+next, let us deﬁne the target functions for our predictions:
+deﬁnition 3 (target functions) letσ∈e∗be a non-empty trace, and let 1≤k≤|σ|. the
+next activity functionfa:e∗×n→a∪{ }returns the activity of the next event, or an artiﬁcial
+activity if the given trace is complete:
+fa(σ,k) =/braceleftbigg
+ ifk=|σ|
+πa(σ(k+ 1)) else
+thenext timestamp functionft:e∗×n→t returns the time difference between the next event
+and last event in the preﬁx:
+ft(σ,k) =/braceleftbigg
+0 ifk=|σ|
+πt(σ(k+ 1))−πt(σ(k))else
+thecase outcome functionfo:e∗→a returns the last activity of the trace: fo(σ) =πa(σ(|σ|)).
+thecycle time functionfc:e∗→t returns the total duration of the case, i.e., the time difference
+between the ﬁrst and the last event of the trace: fc(σ) =πt(σ(|σ|))−πt(σ(1)).
+the prediction techniques we show include the information contained in textual attributes
+of events. in order to be readable by a prediction model, the text needs to be processed by a
+text model. text models rely on a text corpus, a collection of text fragments called documents.
+before computing the text model, the documents in the corpus are preprocessed with a number
+of normalization steps: conversion to lowercase, tokenization (separation in distinct terms),
+lemmatization (mapping words with similar meaning, such as “diagnose” and “diagnosed” into
+a single lemma), and stop word removal (deletion of uninformative parts of speech, such as
+articles and adverbs). these transformation steps are shown in table 1.
+step transformation example document
+0 original “the patient has been diagnosed with high blood pres-
+sure.”
+1 lowercase “the patient has been diagnosed with high blood pressure.”
+2 tokenization /angbracketleft“the”, “patient”, “has”, “been”, “diagnosed”, “with”, “high”,
+“blood”, “pressure”, “.”/angbracketright
+3 lemmatization /angbracketleft“the”, “patient”, “have”, “be”, “diagnose”, “with”, “high”,
+“blood”, “pressure”, “.”/angbracketright
+4 stop word ﬁltering /angbracketleft“patient”, “diagnose”, “high”, “blood”, “pressure”/angbracketright
+table 1. text preprocessing transformation of an example document containing a single sentence.
+in order to represent text in a structured way, we consider four different text models:
+bag of words (bow) [5]: a model where, given a vocabulary v, we encode a document
+with a vector of length |v|where thei-th component is the term frequency (tf), the number of
+occurrences of the i-th term in the vocabulary, normalized with its inverse document frequency
+(idf), the inverse of the number of documents that contain the term. this tf-idf score accounts
+for term speciﬁcity and rare terms in the corpus. this model disregards the order between
+words.
+bag of n-grams (bong) [5]: this model is a generalization of the bow model. instead of
+one term, the vocabulary consists of n-tuples of consecutive terms in the corpus. the unigram
+model (n = 1) is equivalent to the bow model. for the bigram model (n = 2), the vocabulary
+consists of pairs of words that appear next to each other in the documents. the documents are
+encoded with the td-idf scores of their n-grams. this model is able to account for word order.
+224pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+paragraph vector (doc2vec) [8]: in this model, a feedforward neural network is trained to
+predict one-hot encodings of words from their context, i.e., words that appear before or after
+the target word in the training documents. an additional vector, of a chosen size and unique for
+each document, is trained together with the word vectors. when the network converges, the
+additional vector carries information regarding the words in the corresponding document and
+their relationship, and is thus a ﬁxed-length representation of the document.
+latent dirichlet allocation (lda) [4]: a generative statistical text model, representing doc-
+uments as a set of topics, which size is ﬁxed and speciﬁed a priori. topics are multinomial
+(i.e., categorical) probability distributions over all words in the vocabulary and are learned by
+the model in an unsupervised manner. the underlying assumption of the lda model is that
+the text documents were created by a statistical process that ﬁrst samples topic from a multi-
+nomial distribution associated with a document, then sample words from the sampled topics.
+using the lda model, a document is encoded as a vector by its topic distribution: each compo-
+nent indicates the probability that the corresponding topic was chosen to sample a word in the
+document. lda does not account for word order.
+in the next section, we will describe the use of text models in an architecture allowing to
+process a log to obtain a data- and text-aware prediction model.
+4 prediction model architecture
+the goal of predictive monitoring is to estimate a target feature of a running process instance
+based on historical execution data. in order to do so, predictive monitoring algorithms examine
+partial traces, which are the events related to a process case at a certain point throughout its
+execution. obtaining partial traces for an event log is equivalent to computing the set of all
+preﬁxes for the traces in the log. preﬁx logs will be the basis for training our predictive model.
+in this paper, we speciﬁcally address the challenge of managing additional attributes that
+are textual in nature. in order to account for textual information, we need to deﬁne a construc-
+tion method for ﬁxed-length vectors that encode activity labels, timestamps, and numerical,
+categorical, and textual attributes.
+given an event e= (a,t,d 1,...,d m), its activity label ais represented by a vector /vector ausing
+one-hot encoding. given the set of possible activity labels a, an arbitrary but ﬁxed ordering over
+ais introduced with a bijective index function indexa:a→{ 1,...,|a|}. using this function,
+the activity is encoded as a vector of size |a|, where the component indexa(πa(e))has value 1
+and all the other components have value 0. the function 1a:a→{ 0,1}ais used to describe
+the realization of such one-hot encoding /vector a=1a(πa(e))for the activity label of the event e.
+in order to capture time-related correlations, a set of time-based features is utilized to en-
+code the timestamp tof the event. we compute a time vector /vectort= (ˆt1,ˆt2,ˆt3,ˆt4,ˆt5,ˆt6)of min-max
+normalized time features, where t1is the time since the previous event, t2is the time since the
+ﬁrst event of the case, t3is the time since the ﬁrst event of the log, t4is the time since midnight,
+t5is the time since previous monday, and t6is the time since the ﬁrst of january. the min-max
+normalization is obtained through the formula
+ˆx=x−min(x)
+max(x )−min(x)
+where min(x) is the lowest and max(x) is the highest value for the attribute x.
+every additional attribute diofeis encoded in a vector /vectordias follows:
+/vectordi=
+
+1di(di) ifdiis categorical
+ˆdi ifdiis numerical
+textmodel (d1)ifdiis textual
+225pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+the encoding technique depends on the type of the attribute. categorical attributes are
+one-hot encoded similarly to the activity label. numerical attributes are min-max normalized: if
+the minimum and maximum are not bounded conceptually, the lowest or highest value of the at-
+tribute in the historical event log is used for scaling. finally, if diis a textual model, it is encoded
+in a ﬁxed-length vector with one of the four text models presented in section 3; the documents in
+the text corpus for the text model consist of all instances of the textual attribute dicontained in
+the historical log. this technique allows to build a complete ﬁxed-length encoding for the event
+e= (a,t,d 1,...,d m), which we indicate with the tuple of vectors enc(e) = (/vector a,/vectort,/vectord1,...,/vectordm).
+this encoding procedure allows us to build a training set for the prediction of the target
+functions presented in section 3utilizing an lstm neural network.
+figure 2illustrates the entire encoding architecture, and the ﬁt/predict pipeline for our ﬁnal
+lstm model. the schematic distinguishes between the ofﬂine (ﬁtting) phase, where we train
+the lstm with encoded historical event data, and the online (real-time prediction) phase, where
+we utilize the trained model to estimate the four target features on running process instances.
+given an event log l, the structure of the training set is based on the partial traces in its preﬁx
+logl={hdk(σ)|σ∈l∧1≤k≤|σ|}. for each σ=/angbracketlefte1,e2,...e n/angbracketright∈land1≤k≤n,
+we build an instance of the lstm training set. the network input /angbracketleftvecx 1, /vector x2,..., /vector x k/angbracketrightis given by
+the event encodings vecx 1=enc(e 1),vecx 2=enc(e 2), throughvecx k=enc(e k). the targets
+(/vector ya,yt,/vector yo,yc)are given by /vector ya=fa(σ,k),/vector yt=ft(σ,k),/vector yo=fo(σ), andyc=fc(σ,k).
+figure 3shows the topology of the network. the training utilizes gradient descent and
+backpropagation through time (bptt). the loss for numerical prediction values ˆyand the true
+valueyis the absolute error ae(ˆ y,y) =|ˆy−y|, while the loss for categorical prediction values
+is computed using the categorical cross-entropy error ce( /vectorˆy,/vector y) =−/summationtextk
+i=1yi·log ˆyi.
+5 evaluation
+the predictive monitoring approach presented in this paper has been implemented for valida-
+tion, utilizing a python-based, fully open-source technological stack. pm4py [3] is a process
+mining python tool developed by fraunhofer fit. it is used for event log parsing and its internal
+event log representation. the neural network framework tensorﬂow [2], originally developed
+by google, and its api keras1were utilized to implement the ﬁnal lstm model. furthermore,
+the libraries scikit-learn [11], nltk2, and gensim3provided the natural language processing
+capabilities required to preprocess and normalize text, as well as build and train the text models.
+the text-aware model is compared to two other process prediction methods. first, the pure
+lstm approach based on the ideas of navarin et al. [9] is considered, which only uses the
+activity, timestamp, and additional non-textual attributes of each event. this approach can be
+considered the state of the art in predictive monitoring with respect to prediction accuracy. the
+second baseline is the process model-based prediction method originally presented by van der
+aalst et al. [1]. this approach builds an annotated transition system for a log using a sequence,
+bag, or set abstraction. each state of the transition system is annotated with measurements of
+historical traces that can be used to predict target values for unseen traces. during the predic-
+tion phase, running traces are mapped to the corresponding state of the transition system, and
+the measurements of the state are used to compute a prediction. we adopt the improvement
+of this method described in [14] to apply it to classiﬁcation tasks and obtain the next activity
+and outcome predictions. the ﬁrst 8 events of a trace are considered for the construction of
+the state space. experiments with different horizon lengths (1, 2, 4, 16) mostly led to inferior
+results, and are thus not reported.
+1https://keras.io/
+2https://nltk.org/
+3https://radimrehurek.com/gensim/
+226pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+generate
+prefix 
+tracesencoded
+real-time logfit predict
+fit fit
+text 
+corpus
+text normalization
+real-time
+event loghistorical
+event logprefix
+event logencode encodetext modelpredictions
+extract text dataencoded 
+historical prefix 
+log
+encoding modellstm
+neural network
+preprocessingtext 
+attributes
+figure 2. overview of the text-aware process prediction model. predictions for real-time processes are realized by an lstm
+model that is ﬁtted using an encoded representation of all preﬁxes of the historical event log. the encoding of textual attributes is
+realized by a text preprocessing pipeline and an exchangeable text encoding model.
+227pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+.
+lstm lstm lstmlstmlstmlstmlstm
+lstmlstmlstmlstm
+lstmlstmlstmlstm softmax
+softmax
+no activationno activation
+trace encoding
+input tracelstm network architecture
+(unrolled)output layers
+shared layer
+event 1 event 2 event  input layerpredictions
+specialized
+layersnext activity
+next timestamp
+outcome
+cycle time
+figure 3. lstm model architecture to simultaneously predict the next activity (/vector ya), next event time (yt), outcome (/vector yo)and cycle
+time(yc)for an encoded preﬁx trace /vector x1, /vector x2, . . . , /vector x k.
+we evaluate the two baseline methods against our approach considering all four text models
+presented here, with a varying dimension of vector size (50, 100 and 500 for bow and bong,
+10, 20 and 100 for pv and lda). the bong model is built with bigrams (n = 2). of the four
+target functions presented in section 3, classiﬁcation tasks (next activity and outcome) are
+evaluated with a weighted-average class-wise f 1score; regression tasks (next timestamp and
+cycle time) are evaluated on mean absolute error (mae). the ﬁrst 2/3 of the chronologically
+ordered traces is used to ﬁt the prediction model to the historical event data. the remaining 1/3
+of traces are used to measure the prediction performance.
+event log customer hospital
+journey admission
+cases 15 001 46 520
+trace variants 1001 2784
+events 55 220 117 952
+events per case (mean) 3.681 2.536
+median case duration (days) 0.224 7.579
+mean case duration (days) 0.713 121.154
+activities 18 26
+words before preprocessing 247 010 171 938
+words after preprocessing 98 915 165 285
+vocabulary before preprocessing 1203 4973
+vocabulary after preprocessing 817 4633
+text attribute customer question diagnosis
+additional non-textual attributes gender admission type
+age insurance
+table 2. overview of the evaluated event logs with their key properties.
+the process prediction models are evaluated on two real-world event logs, of which the
+general characteristics are given in table 2. additionally, snippets of the datasets are shown in
+tables 3and4. the ﬁrst describes the customer journeys of the employee insurance agency
+228pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+case activity timestamp age gender message
+40154127 question 2015/12/15 12:24:42.000 50-65 m can you send me a copy of the decision?
+40154127 taken 2015/12/30 15:39:36.000 50-65 m
+40154127 mijn sollicitaties 2015/12/30 15:39:42.000 50-65 m
+40154127 taken 2015/12/30 15:39:46.000 50-65 m
+40154127 home 2015/12/30 15:39:51.000 50-65 m
+23245109 question 2015/07/21 09:49:32.000 50-65 m law: how is the gaa (average number of labor)?
+23245109 question 2015/07/21 09:54:28.000 50-65 m dismissal procedure: stops my contract automatically after two years of illness?
+23245109 question 2015/07/21 10:05:43.000 50-65 m dismissal: am i entitled to a transitional allowance?
+23245109 question 2015/07/21 10:05:56.000 50-65 m chain determination: how often may be extended a ﬁxed-term contract?
+23245109 mijn werkmap 2015/07/27 09:54:03.000 50-65 m
+23245109 mijn berichten 2015/07/27 09:54:13.000 50-65 m
+23245109 mijn cv 2015/07/27 10:04:20.000 50-65 m
+21537056 taken 2015/10/30 13:16:48.000 50-65 m
+21537056 question 2015/10/30 13:22:00.000 50-65 m how can i add a document/share with my consultant work through the workbook?
+21537056 taken 2015/10/30 13:23:24.000 50-65 m
+21537056 mijn werkmap 2015/10/30 13:24:39.000 50-65 m
+19290768 question 2015/09/21 12:41:21.000 30-39 v filling: what should i do if i made a mistake when ﬁlling out the income problem?
+19290768 home 2015/09/22 10:09:53.000 30-39 v
+19290768 taken 2015/09/22 10:10:14.000 30-39 v
+19290768 home 2015/09/22 10:11:12.000 30-39 v
+53244594 mijn berichten 2016/02/25 09:10:40.000 40-49 m
+53244594 question 2016/02/25 13:27:38.000 40-49 m when is/are transferred my unemployment beneﬁts?
+53244594 question 2016/02/29 10:04:23.000 40-49 m problem: i have to pay sv c 0 and further ﬁll only the amount of holiday pay. what should i do if i
+get an error?
+53244594 question 2016/02/29 10:10:52.000 40-49 m why did you change the amount of my payment?
+table 3. snippet from the customer journey log.
+commissioned by the dutch ministry of social affairs and employment. the log is aggregated
+from two anonymized data sets provided in the bpi challenge 2016, containing click data of
+case activity timestamp admission type insurance diagnosis
+8 phys referral/normal deli 2117-11-20 10:22:00 newborn private newborn
+8 home 2117-11-24 14:20:00 newborn private
+9 emergency room admit 2149-11-09 13:06:00 emergency medicaid hemorrhagic cva
+9 dead/expired 2149-11-14 10:15:00 emergency medicaid
+10 phys referral/normal deli 2103-06-28 11:36:00 newborn medicaid newborn
+10 short term hospital 2103-07-06 12:10:00 newborn medicaid
+11 emergency room admit 2178-04-16 06:18:00 emergency private brain mass
+11 home health care 2178-05-11 19:00:00 emergency private
+12 phys referral/normal deli 2104-08-07 10:15:00 elective medicare pancreatic cancer sda
+12 dead/expired 2104-08-20 02:57:00 elective medicare
+13 transfer from hosp/extram 2167-01-08 18:43:00 emergency medicaid coronary artery disease
+13 home health care 2167-01-15 15:15:00 emergency medicaid
+16 phys referral/normal deli 2178-02-03 06:35:00 newborn private newborn
+16 home 2178-02-05 10:51:00 newborn private
+17 phys referral/normal deli 2134-12-27 07:15:00 elective private patient foramen ovale patent foramen ovale minimall y
+invasive sda
+17 home health care 2134-12-31 16:05:00 elective private
+17 emergency room admit 2135-05-09 14:11:00 emergency private pericardial effusion
+17 home health care 2135-05-13 14:40:00 emergency private
+18 phys referral/normal deli 2167-10-02 11:18:00 emergency private hypogl ycemia seizures
+18 home 2167-10-04 16:15:00 emergency private
+19 emergency room admit 2108-08-05 16:25:00 emergency medicare c 2 fracture
+19 rehab/distinct part hosp 2108-08-11 11:29:00 emergency medicare
+20 phys referral/normal deli 2183-04-28 09:45:00 elective medicare coronary artery disease coronary artery bypass
+graft sda
+20 home 183-05-03 14:45:00 elective medicare
+table 4. snippet from the hospital admission log.
+customers logged in the ofﬁcial website werk.nl and phone call data from their call center.
+the second log is generated from the mimic-iii (medical information mart for intensive
+care) database and contains hospital admission and discharge events of patients in the beth
+israel deaconess medical center between 2001 and 2012.
+the results of the experiments are shown in table 5. the next activity prediction shows an
+improvement of 2.83% and 4.09% on the two logs, respectively, showing that text can carry
+information on the next task in the process. while the impact of our method on next timestamp
+prediction is negligible in the customer journey log, it lowers the absolute error by approximately
+11 hours in the hospital admission log. the improvement shown in the outcome prediction is
+small but present: 1.52% in the customer journey log and 2.11% in the hospital admission
+log. finally, the improvement in cycle time prediction is particularly notable in the hospital
+admission log, where the error decreases by 27.63 hours. in general, compared to the baseline
+approaches, the text-aware model can improve the predictions on both event logs with at least
+one parametrization.
+in addition, the prediction performance is evaluated per preﬁx length for each event log.
+229pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+table 5. experimental results for the next activity, next timestamp, outcome, and cycle time prediction. all mae scores are in days.
+bpic2016 customer journey mimic-iii hospital admission
+text text activity time outcome cycle activity time outcome cycle
+model vect. size f1 mae f 1 mae f1 mae f 1 mae
+text-aware process prediction (lstm + text model)
+bow 50 0.4251 0.1764 0.4732 0.2357 0.5389 29.0819 0.6120 69.2953
+bow 100 0.4304 0.1763 0.4690 0.2337 0.5487 31.4378 0.6187 70.9488
+bow 500 0.4312 0.1798 0.4690 0.2354 0.5596 27.5495 0.6050 70.1084
+bong 50 0.4270 0.1767 0.4789 0.2365 0.5309 27.5397 0.6099 69.4456
+bong 100 0.4237 0.1770 0.4819 0.2373 0.5450 28.3293 0.6094 69.3619
+bong 500 0.4272 0.1773 0.4692 0.2358 0.5503 27.9720 0.6052 70.6906
+pv 10 0.4112 0.1812 0.4670 0.2424 0.5265 29.4610 0.6007 73.5219
+pv 20 0.4134 0.1785 0.4732 0.2417 0.5239 27.2902 0.5962 69.6191
+pv 100 0.4162 0.1789 0.4707 0.2416 0.5292 28.2369 0.6058 69.4793
+lda 10 0.4239 0.1786 0.4755 0.2394 0.5252 28.8553 0.6017 69.1465
+lda 20 0.4168 0.1767 0.4747 0.2375 0.5348 27.8830 0.6071 69.6269
+lda 100 0.4264 0.1777 0.4825 0.2374 0.5418 27.5084 0.6106 69.3189
+lstm model prediction baseline
+lstm [9] 0.4029 0.1781 0.4673 0.2455 0.5187 27.7571 0.5976 70.2978
+process model prediction baseline (annotated transition system)
+sequence [1, 13] 0.4005 0.2387 0.4669 0.2799 0.4657 64.0161 0.5479 171.5684
+bag [1, 13] 0.3634 0.2389 0.4394 0.2797 0.4681 64.6567 0.5451 173.7963
+set [1, 13] 0.3565 0.2389 0.4381 0.2796 0.4397 63.2042 0.5588 171.4487
+bow bong pv lda lstm sequence bag set
+2 4 6 800.20.40.6
+preﬁx lengthmean absolute error (da
+ys)
+2 4 6 800.20.40.6
+preﬁx lengthmean absolute error (da
+ys)
+(a)bpic2016 customer journe
+y event log: next timestamp (left), cycle time (right).
+2 4 6 8050100
+preﬁx lengthmean absolute error (da
+ys)
+2 4 6 850100150200250
+preﬁx lengthmean absolute error (da
+ys)
+(b)mimic-iii hospital admission e
+vent log: next timestamp (left), cycle time (right).
+figure 4. prediction performance on selected metrics and logs, shown by length of trace preﬁx.
+figure 4shows the f 1score and next timestamp mae for every preﬁx trace of length 1≤k≤8
+230pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+on a selection of prediction tasks. note that the results on shorter traces are supported by
+a much larger set of traces due to preﬁx generation. for text-aware models, only the best
+encoding size is shown.
+on the customer journey log, the performance of all models correlates positively with the
+available preﬁx length of the trace. all text-aware prediction models surpass the baseline ap-
+proaches on very short preﬁx traces of length 3 or shorter, for next activity and outcome predic-
+tion: we hypothesize that the cause for this is a combination of higher availability of textual at-
+tributes in earlier events in the traces, and the high number of training samples of short lengths,
+which allow text models to generalize. the next timestamp and cycle time predictions show
+no difference between text-aware models and the lstm baseline, although they systematically
+outperform transition system-based methods.
+the hospital admission log is characterized by the alternation of admission and discharge
+events. therefore, the prediction accuracy varies between odd and even preﬁx lengths. the
+text-aware prediction models generate slightly better predictions on admission events since only
+these contain the diagnosis as text attribute. regarding the next timestamp prediction, higher
+errors after discharge events and low errors after admission events are observed. this can be
+explained by the short hospital stays compared to longer time between two hospitalizations.
+6 conclusion
+the prediction of the future course of business processes is a major challenge in business
+process mining and process monitoring. when textual artifacts in a natural language like emails
+or documents hold critical information, purely control-ﬂow-oriented approaches are limited in
+delivering accurate predictions.
+to overcome these limitations, we propose a text-aware process predictive monitoring ap-
+proach. our model encodes process traces of historical process executions to sequences of
+meaningful event vectors using the control ﬂow, timestamp, textual, and non-textual data at-
+tributes of the events. given an encoded preﬁx log of historical process executions, an lstm
+neural network is trained to predict the activity and timestamp of the next event, and the out-
+come and cycle time of a running process instance. the proposed concept of text-aware pre-
+dictive monitoring has been implemented and evaluated on real-world event data. we show that
+our approach is able to outperform state-of-the-art methods using insights from textual data.
+the intersection between the ﬁelds of natural language processing and process mining is
+a promising avenue of research. besides validating our approach on more datasets, future
+research also includes the design of a model able to learn text-aware trace and event embed-
+dings, and the adoption of privacy-preserving analysis techniques able to avoid the disclosure
+of sensitive information contained in textual attributes.
+acknowledgements
+we thank the alexander von humboldt (avh) stiftung for supporting our research interactions.
+references
+1. van der aalst, wil m.p ., m. helen schonenberg, and minseok song. ”time prediction
+based on process mining.” information systems 36.2 (2011): 450-475.
+2. abadi, mart ´ın, paul barham, jianmin chen, zhifeng chen, andy davis, jeffrey dean,
+matthieu devin et al. ”tensorﬂow: a system for large-scale machine learning.” 12th
+usenix symposium on operating systems design and implementation (osdi 16). 2016.
+3. berti, alessandro, sebastiaan j. van zelst, and wil m.p . van der aalst. ”process mining for
+231pegoraro et al. j bus. inf. sys. 1 (2021) "bis 2021"
+python (pm4py): bridging the gap between process-and data science.” in international
+conference on process mining (icpm) demo track (ceur 2374). pp. 13–16 (2019)
+4. blei, david m., andrew y . ng, and michael i. jordan. ”latent dirichlet allocation.” the
+journal of machine learning research 3 (2003): 993-1022.
+5. brown, peter f ., vincent j. della pietra, peter v. desouza, jennifer c. lai, and robert l.
+mercer. ”class-based n-gram models of natural language.” computational linguistics 18.4
+(1992): 467-480.
+6. ceci, michelangelo, pasqua fabiana lanotte, fabio fumarola, dario pietro cavallo, and
+donato malerba. ”completion time and next activity prediction of processes using se-
+quential pattern mining.” in international conference on discovery science, pp. 49-61.
+springer, cham, 2014.
+7. evermann, joerg, jana-rebecca rehse, and peter fettke. ”a deep learning approach
+for predicting process behaviour at runtime.” in international conference on business
+process management, pp. 327-338. springer, cham, 2016.
+8. le, quoc, and tomas mikolov. ”distributed representations of sentences and documents.”
+ininternational conference on machine learning, pp. 1188-1196. pmlr, 2014.
+9. navarin, nicol `o, beatrice vincenzi, mirko polato, and alessandro sperduti. ”lstm net-
+works for data-aware remaining time prediction of business process instances.” in 2017
+ieee symposium series on computational intelligence (ssci), pp. 1-7. ieee, 2017.
+10. park, gyunam, and minseok song. ”predicting performances in business processes us-
+ing deep neural networks.” decision support systems 129 (2020): 113191.
+11. pedregosa, fabian, ga ¨el varoquaux, alexandre gramfort, vincent michel, bertrand thirion,
+olivier grisel, mathieu blondel et al. ”scikit-learn: machine learning in python.” the jour-
+nal of machine learning research 12 (2011): 2825-2830.
+12. polato, mirko, alessandro sperduti, andrea burattin, and massimiliano de leoni. ”time
+and activity sequence prediction of business process instances.” computing 100.9 (2018):
+1005-1031.
+13. rogge-solti, andreas, and mathias weske. ”prediction of remaining service execution
+time using stochastic petri nets with arbitrary ﬁring delays.” in international conference
+on service-oriented computing, pp. 389-403. springer, berlin, heidelberg, 2013.
+14. tax, niek, irene teinemaa, and sebastiaan j. van zelst. ”an interdisciplinary compari-
+son of sequence modeling methods for next-element prediction.” software and systems
+modeling 19.6 (2020): 1345-1365.
+15. tax, niek, ilya verenich, marcello la rosa, and marlon dumas. ”predictive business
+process monitoring with lstm neural networks.” in international conference on advanced
+information systems engineering, pp. 477-492. springer, cham, 2017.
+16. teinemaa, irene, marlon dumas, fabrizio maria maggi, and chiara di francescomarino.
+”predictive business process monitoring with structured and unstructured data.” in inter-
+national conference on business process management, pp. 401-417. springer, cham,
+2016.
+17. uysal, merih seran, sebastiaan j. van zelst and tobias brockhoff and anahita farhang
+ghahfarokhi and mahsa pourbafrani and ruben schumacher and sebastian junglas and
+g¨unther schuh and wil m.p . van der aalst. ”process mining for production processes
+in the automotive industry” in industry forum at bpm 2020 co-located with international
+conference on business process management, springer, 2020.
+232

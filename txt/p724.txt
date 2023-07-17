@@ -1,0 +1,806 @@
+aligning event logs and process models for
+multi-perspective conformance checking: an
+approach based on integer linear programming
+massimiliano de leoni and wil m. p. van der aalst
+eindhoven university of technology, eindhoven, the netherlands
+m.d.leoni,w.m.p.v.d.aalst@tue.nl
+abstract. modern organizations have invested in collections of descriptive and/or
+normative process models, but these rarely describe the actual processes ade-
+quately. therefore, a variety of techniques for conformance checking have been
+proposed to pinpoint discrepancies between modeled and observed behavior. how-
+ever, these techniques typically focus on the control-ﬂow and abstract from data,
+resources and time . this paper describes an approach that aligns event log and
+model while taking allperspectives into account (i.e., also data, time and re-
+sources). this way it is possible to quantify conformance and analyze differences
+between model and reality. the approach was implemented using prom and has
+been evaluated using both synthetic event logs and a real-life case study.
+1 introduction
+today’s organizations are challenged to make their processes more efﬁcient and effec-
+tive; costs and response times need to be reduced in all of today’s industries. process
+models are used to guide people, discuss process alternatives, and to automate parts
+of critical business processes. often these process models are not enforced and people
+can deviate from them. such ﬂexibility is often desirable, but still it is good to analyze
+differences between modeled and observed behavior. this illustrates the relevance of
+conformance checking [1]. conformance checking techniques take an event log and a
+process model and compare the observed traces with the traces possible according to the
+model. there are different dimensions for comparing process models and event logs. in
+this paper, we focus of the ﬁtness dimension: a model with good ﬁtness allows for most
+of the behavior seen in the event log. a model has perfect ﬁtness if all traces in the
+log can be replayed by the model from beginning to end. other quality dimensions are
+simplicity ,precision , and generalization [1].
+various conformance checking techniques have been proposed in recent years [1–
+4]. unfortunately, they focus on the control-ﬂow, i.e. the ordering of activities, thereby
+ignoring the other perspectives, such as data, resources, and time. in a process model,
+each case, i.e. a process instance, is characterized by its case variables. paths taken
+during the execution may be governed by guards and conditions deﬁned over such vari-
+ables. process models deﬁne the domain of possible values to assign to each variable,
+along with modeling the variables that each activity is prescribed to write or update. in
+addition, process models describe which resources are allowed to execute which activ-
+ities. an activity is typically associated with a particular role, i.e., a selected group of
+resources. there may also be additional rules such as the “four-eyes principle” whichfig. 1. bpmn diagram describing a process to handle credit requests. besides the control-ﬂow
+perspective, also the data perspective (see data objects and conditions), the resource perspective
+(see roles), and the time perspective (see timeout) are modeled. dotted lines going from activities
+to data objects indicate the variables manipulated by each activity. each activity requires a person
+having a particular role.
+does not allow for the situation where the same resource executes two related tasks for
+the same case. finally, there may be time-related constraints, e.g., a registration activity
+needs to be followed by decision activity within 30 days.
+since existing conformance checking techniques abstract from data, resources, and
+time, many deviations remain undetected. let us consider the process model in figure 1
+(taken from [5]). the model describes a process to deal with loans requested by clients
+to buy small home appliances. after the credit request, the requester’s ﬁnancial data are
+veriﬁed and, if the veriﬁcation is positive, the request is assessed. in case of a positive
+assessment, the credit is provided and the requester is informed. in case of a negative
+assessment, requesters can try to renegotiate the credit within one week or, otherwise,
+the request is deﬁnitely rejected. in the remainder, data objects are simply referred with
+the upper-case bold initials, e.g., v=veriﬁcation , and activity names by the letter in
+boldface in brackets, e.g. a=credit request .
+let us also consider the following trace where variables are shortened with the initial
+letter and exandtxdenote the executor of xand the timestamp when xwas executed:1
+⟨(a;{a= 1000 ;r=mary; ea=pete;ta=03 jan });(b;{v=ok;eb=sue});
+(c;{i= 150 ;d=ok;ec=sue;tb=4 jan });(e;{ee=pete;a= 1000 ;te=15 jan });
+(c;{i= 150 ;d=nok; ec=sue;tc=16 jan });(g;{eg=pete;tg=17 jan });
+(h;{eh=sara;th=18 jan })⟩:
+conformance checking techniques only considering the control-ﬂow perspective can-
+not ﬁnd the following conformity’s violations: (i)the requested amount cannot be 1000:
+1notation (act;{attr 1=val1; : : : ; attr n=valn})is used to denote the occurrence of activ-
+ityactin which variables attr 1; : : : ; attr nare assigned values val1; : : : ; val n, respectively.activity dshould be executed, instead of c;(ii)for the considered credit loan, the inter-
+est is against the credit-institute’s policy for large loans; (iii)‘sue’ is not authorized
+to execute activity bsince she cannot play role assistant ;(iv)activity eis performed
+11 days after the preceding coccurrence, whereas it should not be later than 7 days;
+(v)activity hhas been executed and, hence, the last decision cannot be negative. the
+approach we propose is based on the principle of ﬁnding an alignment of event log and
+process model. the events in the log traces are mapped to the execution of activities
+in the process model. such an alignment shows how the event log can be replayed on
+the process model. we allow costs to be assigned to every potential deviation: some
+deviations may be more severe than others.
+this paper proposes a technique based on building a suitable ilp program to ﬁnd
+a valid sequence of activities that is as close as possible to the observed trace, i.e., we
+aim to minimize the cost of deviations and create an optimal alignment. to assess the
+practical feasibility and relevance, the technique has also been implemented in prom
+and tested using synthetic event logs and in a real-life case study. experimental results
+show that conformance of the different perspectives can be checked efﬁciently.
+when checking for conformance, pinpointing the deviations of every single trace
+is deﬁnitely useful, but it is not enough. process analysts need to be provided with a
+helicopter view of the conformance of the model with respect to the entire log. there-
+fore, this paper also introduces some diagnostics to clearly highlight the most frequent
+deviations encountered during the process executions and the most common causes.
+our previous work [5] provides an initial approach for multi-perspective confor-
+mance checking . however, our previous technique could not deal with variables deﬁned
+over inﬁnite domains. the ilp-based approach presented in this paper also allows for
+numerical values. our new approach is also several orders of magnitude faster. finally,
+the work reported in [5] was limited to returning optimal alignments. in this paper,
+we provide enhanced diagnostics guiding the user in ﬁnding the root-cause of speciﬁc
+conformance problems.
+our conformance-checking technique is independent of the speciﬁc formalism used
+to describe the control-ﬂow and data-ﬂow perspectives. therefore, bpmn, epc or any
+other formalism can be employed to represent these perspectives. however, we need
+a simple modeling language with clear semantics to explain our technique. for this
+purpose we use petri nets with data . the notation is brieﬂy discussed in section 2.
+section 3 illustrates the basic concepts related to aligning a process and an event log.
+section 4 details our new technique to compute optimal alignments and to provide en-
+hanced diagnostics. section 5 describes the implementation in prom and reports on the
+experimental results. finally, section 6 concludes the paper, comparing this work with
+the state of the art and describing future research directions.
+2 petri nets with data
+apetri net with data (dpn-net) is a petri net in which transitions can write variables.
+this formalism was introduced in [6] and, later, revisited in [7]. a transition modeling
+an activity performs write operations on a given set of variables and may have a data-
+dependent guard. a transition can ﬁre only if its guard is satisﬁed and all input places are
+marked. a guard can be any formula over the process variables, using logical operators
+such as conjunction ( ∧), disjunction ( ∨), and negation ( ¬).deﬁnition 1 (dpn-net). a petri net with data (dpn-net) n= (p, t, f, v, u, w, g )
+consists of:
+–a petri net (p, t, f );
+–a setvof variables;
+–a function uthat deﬁnes the values admissible, i.e., for each variable v∈v,u(v)
+is the domain of variable v;
+–a write function w:t→2vthat labels each transition with a set of write opera-
+tions , i.e. with a s the set of variables whose value needs to be written/updated;
+–a guard function g:t→ g vthat associates a guard with each transition.2
+when a variable v∈vappears in a guard g(t), it refers to the value just before the
+toccurrence. nonetheless, if v∈w(t), it can also appear as v′(i.e., with the prime
+symbol). in this case, it refers to the value after the toccurrence. some transitions can
+beinvisible and correspond to τ-steps: they do not represent actual pieces of work.
+pictorially, they are represented as black boxes in the model.
+example 1 figure 2 shows the dpn-net that models the same process as that modeled in fig-
+ure 1 through the bpmn notation. in particular, figure 2(a) depicts the control-ﬂow and the write
+operations. in addition to the variables depicted in the ﬁgure, there exists a set of variables to
+model the resource and time perspective, i.e., for each transition t, there are two variables et
+andtt. moreover, these two variables are associated with a write operation of t. figure 2(b)
+enumerates the data-perspective guards gd(t)for each transition t. when deﬁning guards, we
+assume that string values can be lexicographically ordered and, hence, it is also possible to use
+inequality operators (i.e., <and>) for strings.
+to also model the resource and time perspective, a second guard gr(t)can be associated
+with each transition t(see figure 2(c)). formally, only one guard g(t)can be assigned to t
+and, hence, we set g(t) =gd(t)∧gr(t). note the atom e′
+c̸=ecin the guard of transition
+simple assessment in figure 2(c): it models the resource constraint that the simple assessment
+cannot be performed the i-th time by the same resource that performed it the (i−1)-th time
+within the same case (i.e., the “four-eyes” principle mentioned in section 1). formula (t′
+e≤
+tc+ 7days∨t′
+e≤td+ 7days)in the guard of transition renegotiate request to model that it
+must occur within 7 days from the occurrence of the assessment, simple or advanced. conditions
+are never satisﬁed when involving variables that are not set.
+space limitations prevent us from describing a complete operational semantics of dpn-
+net. interested readers are referred to [7]. we only introduce the concepts needed later.
+the preset of a transition tis the set of its input places:•t={p∈p|(p, t)∈f}. the
+postset of tis the set of its output places: t•={p∈p|(t, p)∈f}. deﬁnitions of pre-
+and postsets of places are analogous. a marking of a petri net (with data) is a multiset
+of its places, i.e., a mapping m:p→n. we say the marking assigns to each place a
+number of tokens. a state is a pair (m, a )where mis a marking for petri net (p, t, f )
+andais a function that associates a value with each variable, i.e. a:v→d∪ {⊥} ,
+witha(v)∈u(v)∪ {⊥} .3each dpn-net deﬁnes two special places po, pe∈p, the
+initial and ﬁnal place. the initial state is(m0, a0)where the initial place p0∈p
+contains exactly one token, i.e. m0(p0) = 1 , and any other p∈p\ {p0}contains no
+tokens, i.e. m0(p) = 0 . moreover, a0(v) =⊥for each v∈v. a transition ﬁring
+s= (t, w)isvalid in state (m, a )if each place in the preset of t contains at least one
+2the guard is deﬁned over (a sub set of) variables in v. if a transition thas no guard, we set
+g(t) =true.
+3a special value ⊥is assigned to variables that have not been initialized.(a) the control-ﬂow and write operations. transitions and places are represented as squares
+and circles, respectively. each rounded orange rectangle identiﬁes a different process vari-
+able. a dotted arrow from a transition tto a variable vis a pictorial representation of the fact
+thatv∈w(t).
+transition guard
+advanced
+assessmentverication =true∧amount >5000∧
+0:1<interest′=amount <0:15
+inv1 verication =false
+inv2 decision =true
+inv3 decision =false
+open credit
+loanverication =true∧decision =true
+register deci-
+sion and inform
+customer m-zrequester ≥\m"
+register deci-
+sion and inform
+customer a-lrequester ≤\l"
+renegotiate amount′≤amount
+simple
+assessmentverication =true∧amount ≤5000∧
+0:15<interest′=amount <0:2
+(b) the guards to encode the data-
+perspective constraints.transition guard
+credit request e′
+a∈ {\pete ";\mike ";\ellen "}
+verify e′
+b∈ {\pete ";\mike ";\ellen "}
+simple assessment e′
+c∈ {\sue";\sean ";\sara "} ∧ e′
+c̸=ec
+advanced assessment e′
+d∈ {\sue";\sean ";\sara "} ∧ e′
+d̸=ed
+renegotiate requeste′
+e∈ {\pete ";\mike ";\ellen "}
+∧(t′
+e≤tc+ 7 days∨t′
+e≤td+ 7 days)
+open credit loan e′
+h= \sara "
+register decision and in-
+form customer m-ze′
+f∈ {\pete ";\mike ";\ellen "}
+register decision and in-
+form customer a-le′
+g∈ {\pete ";\mike ";\ellen "}
+(c) the guards to encode the constraints over re-
+sources and time. ei∈ {a1; : : : ; a n}is a short-
+cut for expression ei=a1∨: : :∨ei=an.
+fig. 2. the dpn-net of the working example.
+token, i.e. iff ∀p∈•t. m (p)>0,twrites all and only the variables that it is prescribed
+to and g(t)evaluates true with respect to assignment a. we introduce the following
+functions to access to the components of s:#vars(s) =wand#act(s) =t. function
+#vars is also overloaded such that #vars(s, v) =w(v)ifv∈dom(#vars(s)), or
+#vars(s, v) =⊥ifv̸∈dom(#vars(s)).4
+firing a transition sin a state (m, a )leads to a state (m′, a′)where m′assigns
+a token less than mto the t’s input places•tand a token more that mtot’s output
+places t•; the number of tokens in the other places remains unchanged. moreover, for
+eachv∈v,a′(v) =a(v)if#vars(s, v) =⊥, or, otherwise, a(v′) = # vars(s, v).
+theset of valid process traces of a dpn-net nis denoted with pnand consists of all
+ﬁring sequences σ∈(
+t×(v̸→u))∗that, from an initial state (m0, a0), lead to a
+state (mf, af)where mf(pe)>0.
+4the domain of a function fis denoted with dom(f).a dpn-net is data sound iff, for each sequence of transitions yielding a token in the
+ﬁnal place, there is a sequence of write operations for the transitions in the sequence
+such that the guard of every transition tin the sequence is satisﬁed when tﬁres.
+deﬁnition 2 (data soundness). letn= (p, t, f, v, u, w, g )be a dpn-net. let
+n′= (p, t, f, ∅, u′, w′, g′)be a dpn-net such that dom(u′) = dom(w′) =
+dom(g′) =∅. dpn-net nis data sound iff, for each ⟨s′
+1, . . . , s′
+n⟩ ∈ p n′, there exists
+a sequence ⟨s1, . . . , s n⟩ ∈ p nwhere, for all 1≤i≤n,#act(si) = # act(s′
+i).
+3 alignments of event logs and process models
+an event log contains events associated to cases, i.e., process instances. each case fol-
+lows a trace of events. each trace records the execution of a process instance. different
+instances may follow the same trace. let snbe the set of (valid and invalid) ﬁring of
+transitions of a dpn-net nwithsn. anevent log is a multi-set of traces: l ∈b(s∗
+n).5
+conformance checking requires an alignment of event log land process model p:
+the events in the event log need to be related to model elements and vice versa. such an
+alignment shows how the event log can be replayed on the process model. this is far
+from being trivial since the log may deviate from the model and not all activities may
+have been modeled and recorded.
+we need to relate “moves” in the log to “moves” in the model in order to establish
+an alignment between a process model and an event log. however, it may be the case
+that some of the moves in the log cannot be mimicked by the model and vice versa.
+we explicitly denote “no move” by ≫. for convenience, we introduce the set s⊥
+n=
+sn∪ {≫} .
+event-log trace proc
+a{a= 1000 ;r=mary}a{a= 5001 ;r=mary}
+b{v=ok) b{v=ok}
+c{i= 150 ;d=ok} c{i= 650 ;d=nok }
+inv3
+e{a= 1000 } e{a= 5001 }
+b{v=ok}
+c{i= 150 ;d=ok} c{i= 650 ;d=ok}
+inv2
+g{} g
+h{} h
+inv5
+table 1. a complete alignment.one move in an alignment is repre-
+sented by a pair (s′, s′′)∈(s⊥
+n×s⊥
+n)\
+{(≫,≫)}such that
+–(s′, s′′)is amove in log ifs′∈sand
+s′′=≫,
+–(s′, s′′)is a move in process if
+s′=≫ands′′∈s,
+–(s′, s′′)is amove in both without in-
+correct write operations ifs′∈s,
+s′′∈sand∀v∈v#vars(s′, v) =
+#vars(s′′, v),
+–(s′, s′′)is amove in both with incor-
+rect write operations ifs′∈s,s′′∈sand∃v∈v#vars(s′, v)̸= # vars(s′′, v).
+an= (s⊥
+n×s⊥
+n)\ {(≫,≫)}is the set of all legal moves .
+thealignment of two execution traces σ′, σ′′∈s∗
+nis a sequence γ∈ a∗
+nsuch
+that, ignoring all occurrences of ≫, the projection on the ﬁrst element yields to σ′and
+the projection on the second yields σ′′. in the remainder, σ′andσ′′are referred to as the
+log and the process projection of alignment γ. in particular, γis acomplete alignment
+ifσ′′∈ pn. table 1 shows a complete alignment of the process model in figure 2 and
+the log trace in section 1.
+5b(x)the set of all multi-sets over x.in order to deﬁne the severity of a deviation, we introduce a cost function on legal
+moves: κ∈sa→r+
+0. the cost of each legal move depends on the speciﬁc model
+and process domain and, hence, cost function κneeds to be deﬁned ad-hoc for every
+speciﬁc case. the cost function can be generalized to an alignment γas the sum of the
+cost of each individual move: k(γ) =∑
+(s′;s′′)∈κ(s′, s′′).
+however, we do not aim to ﬁnd any complete alignment. given a log trace σl∈ l,
+our goal is to ﬁnd a complete alignment of σlandpwhich minimizes the cost. we
+refer to it as an optimal alignment. let γl;pbe the multi-set of all complete align-
+ments of σlandp. the alignment γ∈γl;pis an optimal alignment if∀γ′∈
+γl;pk(γ)≤ k(γ′). note that there may exist several optimal alignments, i.e. several
+complete alignments having the same minimal cost.
+regarding the complexity, in [8] we discuss a polynomial-time reduction of sat
+problems (i.e., simply satisﬁability problems ) to problems of ﬁnding an optimal align-
+ment. the existence of this reduction implies that ﬁnding an optimal alignment is an
+np-hard problem. therefore, while it is clear that no deterministic algorithm can guar-
+antee an optimal alignment to be computed in polynomial time, this paper attempts to
+reduce the average computation time.
+4 the ilp-based technique and diagnostics
+in order to ﬁnd an optimal alignment of a dpn net n= (p, t, f, v, u, w, g )and a log
+traceσl, we rely on existing techniques to build an alignment that only considers the
+control-ﬂow perspective. later, we construct a problem of integer linear programming
+(ilp) to obtain an optimal alignment which also takes the other process perspectives
+into account.
+the approach assumes four functions to be provided by process analysts. functions
+κl(t)andκp(t)return a non-negative cost associated with a move in log or process for
+transition t. function kv(v)returns a non-negative cost relative to a variable vand a
+move in both (sl
+i, sp
+i)where #vars(sl
+i, v)̸=⊥and#vars(sl
+i, v)̸= # vars(sp
+i, v)
+(i.e.,sl
+iassigns to va value that is out of the domain or incompatible with some guard).
+function kn(v)returns a non-negative cost relative to a variable vand a move in both
+(sl
+i, sp
+i)where #vars(sl
+i, v) =⊥and#vars(sp
+i, v)̸=⊥(i.e.,sl
+idoes not perform
+a prescribed write operation for v). these four functions can be suitably composed to
+obtain cost functions κas deﬁned in section 3. our ilp-based technique comprises of
+three phases:
+1.we employ the off-the-shelf techniques described in [9] to build an alignment γc=
+⟨(sl
+1, sp
+1), . . . , (sl
+n, sp
+n)⟩between the petri net (p, t, f )and the log trace σlusing
+the cost functions klandkm. since such techniques only take the control-ﬂow
+into account, the process projection of γcdoes not contain write operations, i.e. if
+sp
+i̸=≫,dom(#vars(sp
+i)) =∅for all 1≤i≤n. in the remainder, γcis called
+control-ﬂow alignment and is not a complete alignment since its process projection
+is not a trace in pn.
+2.we enrich the ﬁrings of transitions in the process projection σcofγcwith the
+opportune write operations so as to minimize their difference with respect to the
+write operations observed in σl. since it is a minimization problem, ﬁnding the
+opportune write operations can be formulated as solving a certain ilp problem:
+when a solution is found, the values of certain variables of the ilp-problem denotethose to be assigned to variables in the writing operations of σc. the ilp-problem
+objective function fis the alignment cost.
+3.we compute the ﬁtness value f(σl)∈[0,1]. adriansyah et al. [9] propose a
+ﬁtness measurement where only the control-ﬂow is considered. let fc(σl)∈
+[0,1]be this measure. here, we propose a ﬁtness with respect to all perspectives:
+f(σl) =(
+fd(σl) +fc(σl))
+/2which is the mean of fc(σl)and a certain
+quantity fd(σl)∈[0,1]that considers the ﬁtness with respect to any of the non-
+control-ﬂow perspectives (data, resource, time):
+fd(σl) =fmin∑
+(sl;sp)∈o:sp̸=≫∑
+v∈#vars(sp)max(kd(v), kn(v))
+where fminis the value of the objective function for the solution found of the ilp
+problem. the denominator corresponds to the highest cost in term of deviations,
+i.e. for each move (sl, sp)in both, the deviations between the write operations of
+slandsphave the highest cost.
+section 4.1 discusses how to build an ilp problem to obtain optimal solutions. to keep
+the discussion simple, each guard is assumed to be atomic (e.g., amount >5000 ).
+however, this limitation can be easily addressed, as discussed in [8]. the technique
+report also discusses how to convert date- and string-typed variables into integers and,
+hence, to support these types of variables. section 4.2 discusses our proposal for a
+helicopter view where common deviations and their causes are shown.
+4.1 construction of the ilp problem
+given a dpn-net nand a log trace σl, the outcome of the ﬁrst phase is a control-ﬂow
+alignment γc=⟨(sl
+1, sp
+1), . . . , (sl
+n, sp
+n)⟩.
+example 2 in order to maintain the example of a reasonable size, in the remainder, we only
+consider the data perspective (i.e., we ignore the guards in figure 2(c)). let us assume l(t) =
+p(t) = 1 for each transition t∈t\ {inv1; inv 2; inv 3; inv 4}andl(t) =p(t) = 0 for
+each transition t∈ {inv1; inv 2; inv 3; inv 4}. the latter transitions are invisible and, hence,
+by deﬁnition, they never appear in the log. therefore, they are always associated with moves in
+process, without them being real deviations. figure 3(a) is a possible control-ﬂow alignment 
+for the trace considered in section 1, which is returned by the technique reported in [9]. this is
+the output of the ﬁrst phase, which needs to be extended to obtain an optimal alignment.
+in order to build the ilp problem, we introduce a helper function #v(γ, v)that returns
+the number of write operations that are prescribed to happen for variable v, considering
+the transitions ﬁred in the process projection of γ.
+for each write operation that is prescribed to happen for a variable v∈v, there exist
+an ilp variable vi. the set of such variables is denoted with vilp:vilp ={vi:v∈
+v∧0< i≤#v(γ, v)}.
+by analyzing the control-ﬂow alignment, it is possible to determine whether the i-
+th write operation for vhas or has not occurred. in remainder, constant videnotes the
+actual value observed in the log trace , with vi=⊥if the i-th write operation has not
+been observed. for instance, considering the control-ﬂow alignment in figure 3(a) and,
+speciﬁcally, the ﬁrst move, it can be observed that a1= 1000 andr1= 1000 , whereas,
+considering the 6th move (i.e., for transition b),v2=⊥. in addition to the variables inevent-log trace proc
+a{a= 1000 ; r=mary}a
+b{v=ok) b
+c{i= 150 ;d=ok} c
+inv3
+e{a= 1000 } e
+b
+c{i= 150 ;d=nok }c
+inv2
+g{} g
+h{} h
+inv5
+(a) control-ﬂow
+alignment.min 10 + cv1+ci1+dd1+da1
++da2+ci2+dd2+dr1
+v1= 1
+i1>0:1a1
+i1<0:15a1
+d1= 0
+a2<0:6a1
+i2>0:1a2
+i2<0:1a2
+i2<0:15a2
+d2= 0
+r1<\m"
+a1=1000 ⇔da1=0
+r1= \mary "⇔dr1=0
+i1=150⇔ci1=0
+a2=1000 ⇔da1=0
+i2=150⇔ci2=0
+d2=1⇔dd2=0
+(b) the ilp problem to
+ﬁnd an optimal alignment.event-log trace proc
+a{a= 1000 ;r=mary}a{a=a∗
+1;r=r∗
+1}
+b{v=ok) b{v=v∗
+1}
+c{i= 150 ;d=ok} c{i=i∗
+1;d=d∗
+1}
+inv3
+e{a= 1000 } e{a=a∗
+2}
+b{v=v∗
+2}
+c{i= 150 ;d=nok }c{i=i∗
+2;d=d∗
+2}
+inv2
+g{} g
+h{} h
+inv5
+(c) optimal alignment obtained as
+solution of an ilp problem: v∗
+ide-
+notes the value assigned to variable
+viin the ilp-problem solution that
+is found.
+fig. 3. the technique applied to the working example. first, a control-ﬂow alignment is built,
+which, later, is used to build an ilp problem, whose solution allows for extending the control-
+ﬂow alignment to obtain the write operations of the process projection. the constraints in bold
+in figure 3(b) are non-linear. nevertheless, as discussed in the text, each can be transformed into
+two equivalent linear constraints.
+vilp, the ilp problem also includes a boolean variable bvi, for each vi∈vilp such
+thatvi̸=⊥. for the solution found for the ilp problem, variable bviis assigned value
+1if variable viis not assigned value vi, i.e. there is a deviation relative to the i-th write
+operation for variable v. otherwise, bviis given value 0.
+we create a set φcof ilp-problem constraints as follow. for each preﬁx γ′
+c=
+⟨(sl
+1, sp
+1), . . . , (sl
+i, sp
+i)⟩of control-ﬂow alignment γc, there exists a constraint ϕ∈
+φcifsp
+i̸=≫. constraint ϕis obtained starting from g(#act(sp
+i))and replacing, for
+eachv∈v, all occurrences of vwithvk−1∈vilpand all occurrences of v′(i.e., with
+the prime symbol) with vk∈vilp, where k= # v(γ′
+c, v).
+example 3 by analyzing the control-ﬂow in figure 3(a), variables v;i;dneed to be written
+twice each and variable ronce. therefore, following variables v1; v2; i1; i2; d1; d2andr1
+are introduced to the ilp problem. moreover, besides the write operation for vassociated with
+the 6th move of the control-ﬂow alignment (i.e., the second execution of transition b), they have
+all occurred. therefore the following boolean variables cv1; ;bi1;bi2;cd1;cd2;cr1needs to be in-
+troduced, i.e. cv2is excluded. figure 3(b) shows the ilp problem to ﬁnd the optimal alignment:
+the constraints not in bold are those in , i.e. relative to the transitions’ guards. each occur-
+rence vandv′is replaced with the respective variable vi−1andviof ilp problem, as described
+above. to enhance the example’s comprehension, string constants are not converted into their
+respective numeric representations. nonetheless, the conversion is necessary to be able to solve
+the ilp problem.
+once these elements are introduced, the structure of the entire ilp problem can be
+described. let cn(γc, kn)be the cost relative to missing write operations:
+cn(γc, kn) =∑
+(sl
+i;sp
+i)∈cs.t.sp
+i̸=≫( ∑
+v∈(dom(#vars(sp
+i))\dom(#vars(sl
+i)))kn(v))the objective function to minimize is the cost associated with deviations of any per-
+spective different from the control-ﬂow:
+min(
+cn(γc, kn) +∑
+vi∈vilp:vi̸=⊥(
+kd(v)·bvi))
+(1)
+subject to the constraints in φcand the following ones:
+∀vi∈vilps.t.vi̸=⊥. vi=vi⇔bvi= 0 (2)
+and
+∀vi∈vilp. vi∈u(v);∀vi∈vilps.t.vi̸=⊥.bvi∈[0,1]
+the constraints in equation 2 are clearly not linear. nonetheless, each of these con-
+straints can also be written as a pair of linear constraints:
+vi−mbvi≤vi;−vi−mbvi≤ −vi
+where mis a sufﬁciently large number (e.g., the maximum machine-representable num-
+ber). the equivalence of each pair of these constraints can be easily observed: in the so-
+lution of the ilp problem, if bvi= 0, then vi=vimust hold; otherwise any value can be
+assigned to vi. nonetheless, we aim to minimize the objective function in equation 1;
+hence, bvi= 1only if value vicannot be assigned to vi.
+example 4 let us suppose that kn(v) = 10 andkd(v) = 1 for each v∈v. in figure 3(b),
+the constraints in bold are those which are introduced to enforce that bvi= 0 iffvi=vi, i.e.
+the constraints of the type described in equation 2. figure 3(c) shows the optimal alignment in
+function of the solution of the ilp problem. it contains write operations of form v=v∗
+iwhere v∗
+i
+is the value assigned to variable viin the solution found for the ilp problem. note the objective
+function has an added constant 10, which is relative to the only missing write operation, which is
+forv.
+the following theorem discusses the admissibility of the ilp problems constructed as
+described above (see [8] for a sketch of the proof):
+theorem 1 (admissibility of the ilp problem). letn= (p, t, f, v, u, w, g )be a
+data-sound dpn-net and σlbe a log trace. the ilp problem constructed as mentioned
+above to ﬁnd an optimal alignment of σlandnis always admissible.
+4.2 a helicopter view on the optimal alignments
+alignments can be projected on the process model to obtain a helicopter view. transi-
+tions and variables are colored based on their level of conformance : a value between 0
+and 1. extreme values 1 and 0 identify the situations in which, according to the behavior
+in an event log l, the executions of a transition or the write operations for a variable are
+always or never conforming with the model. when projecting deviations on the model,
+transitions and variables are colored according to their level of conformance: if the level
+is 1 or 0, a white or black color is used, with intermediate values associated with in-
+termediate shades of color, including different intensities of yellow, orange, red, purple
+and brown. readers are referred to [8] for more details on how levels of conformance
+are computed.each transition tis also associated with a decision tree that relates the deviations for
+t(e.g., moves in log) to the typical causes, e.g. the typical dpn-net states (m, a )when
+such deviations occurred. decision trees classify instances by sorting them down in a
+tree from the root to some leaf node. each non-leaf node speciﬁes a test of some clas-
+siﬁcation feature and each branch descending from that node corresponds to a range of
+possible values for the feature. leaf nodes are relative to the value for the classiﬁcation
+feature.
+decision trees are constructed starting from a set of training instances. in our case, a
+different training instance− →ois associated with each preﬁx γ′=⟨(sl
+1, sp
+1), . . . , (sl
+i, sp
+i)⟩
+of every optimal alignment γ∈γ. instance− →ois used to train the decision tree for
+transition #act(sp
+i), ifsp
+i̸=≫, or#act(sl
+i), ifsp
+i=≫. the possible value of the clas-
+siﬁcation feature in− →ocorresponds to one of 4 types of moves, i.e. moves in process, in
+log, as well as moves in both with or without incorrect write operations. let σ′
+lbe the
+log projection of alignment preﬁx ⟨(sl
+1, sp
+1), . . . , (sl
+i−1, sp
+i−1)⟩, i.e., ignoring the last
+move in γ′. ifγoccurs multiple times in γ, i.e. # (γ)>1, each γpreﬁx generates
+# (γ)training instances, which are giving the same values to all classiﬁcation features.
+for each variable v∈v, there exist two classiﬁcation features: vandv′. the value
+of the classiﬁcation feature vis the value of the last write operation for vin log trace σ′
+l.
+if there is no write operation for vinσ′
+l, no value is assigned to the feature. as a matter
+of fact, decision-tree construction algorithms can deal with missing values of features.
+the value of the classiﬁcation feature v′is the value assigned to vby log event sl
+i, i.e.
+#vars(v, sl
+i). ifsl
+i=≫or#vars(v, sl
+i) =⊥, no value is assigned to the feature. we
+also add an additional feature #tfor each transition t∈t. the value for feature #tis
+the number of ﬁrings of transition tinσ′
+l, i.e. the number of execution of tbefore the
+last move of γ′.
+5 implementation and experiments on real life event logs
+ourmulti-perspective conformance checking approach is realized through two software
+plug-ins of prom, a generic open-source framework for implementing process mining
+tools in a standard environment.6a ﬁrst prom plug-in, the data-aware conformance
+checker , takes a process model in form of a dpn-net and an event log as input and
+operationalizes the techniques described in section 4, including the extensions for non-
+atomic formulas. the output is a set of optimal alignments, one for each trace in the
+event log. a second plug-in, the data-aware conformance projector , projects the op-
+timal alignments onto the process model, operationalizing the approach described in
+section 4.2. to solve ilp problems our implementation uses the lpsolve library, which
+is based on the revised simplex method combined with a branch-and-bound method
+for the integers.7to construct decision trees, we leverage on the implementation of the
+c4.5 algorithm in the weka toolkit.8
+to assess the practical feasibility of the approach, the two prom plug-ins have been
+tested on a real-life case study involving a dutch insurance institute. we used an event
+log containing 12319 traces (i.e. process instances), where, on average, each trace is
+composed by around 7 events, with a minimum of 4 events and a maximum of 11
+6http://www.promtools.org/
+7http://lpsolve.sourceforge.net/
+8http://weka.sourceforge.netfig. 4. the prom user interface to show the optimal alignments.
+fig. 5. the process model relative to the case study of a dutch insurance institute. the alignments
+have been projected on the model to pinpoint where deviations occur more often.
+events. the event log has been generated through xesame, which is bundled in prom.
+xesame allowed us to extract the event log from the database of the insurance insti-
+tute. a control-ﬂow process model has been designed in collaboration with a process
+analyst of the institute. figure 5 shows the dpn-net for the case study. each transition t
+modeling an activity tis associated with a guard g(t) =gr(t)∧gd(t)where formulas
+gr(t)andgd(t)encode the constraints on the resource and data perspective, respec-
+tively. we have derived gr(t)for every transition tafter a number of talks with the
+process analyst; formulas gd(t)have automatically been mined through the decision
+miner [7] and validated with the process analyst. although the event log contains 32
+data attributes, only ﬁve are actually involved in the guards of the activities. therefore,
+we did not include the others in the process model to preserve the model’s readability.
+these ﬁve attributes are written once with the start activity when a insurance claim is
+submitted and never updated. here, the data-aware conformance checker plug-in is
+used to evaluate whether this process model is a good representation of the real behav-
+ior observed in the event log. the process analyst could not identify some deviations as
+more severe than others. therefore, the four cost functions were deﬁned so as to return
+1for any control-ﬂow and data-ﬂow deviation.
+visualization of the optimal alignments in prom. figure 4 shows how the optimal
+alignments are visualized in prom: the optimal alignment of each log trace is shownfig. 6. the decision tree associated with activity/transition quick scan . each tree leaf corresponds
+to one of the possible types of moves: in log, in process and in both, with or without incorrect
+write operations.
+as a sequence of triangles, each representing an alignment’s move. each triangle is
+colored according to the move that it represents. the green and white colors are used to
+identify moves in both without or with incorrect write operations, respectively; yellow
+and purple are for moves in the log or in the process, respectively. finally, the gray is
+used for moves for invisible transitions. when the user passes over a triangle with the
+mouse, the plug-in highlights the two transition ﬁrings slandspassociated with the
+move (sl, sp). speciﬁcally, the ﬁgure refers to a move in both with an incorrect write
+operation for variable availability employment history . the value next to the optimal
+alignment for every trace σlis the ﬁtness value f(σl). on the top of the screen view,
+the average ﬁtness of all traces is shown.
+enhanced diagnostics in prom. figure 5 illustrates the output of the data-aware
+conformance projector in prom. activities and variables are colored according to their
+level of conformance, as discussed in section 4.2. activity start is the most involved
+in deviations, since the rectangle of respective transition is ﬁlled with the darkest color.
+similarly, br11 self resigner is the variables for which there is the highest num-
+ber of incorrect write operations. when passing over a transition/activity or variable
+with the mouse, more information is given: the ﬁgure shows that activity start is 3249
+moves in both with incorrect write operations and 9070 moves without incorrect write
+operations. it is worthy observing that variable resis ﬁlled with a white color, which
+implies activities are generally performed by authorized resources. when clicking on a
+transition’s rectangle, as discussed in section 4.2, an associated decision tree is shown
+which classiﬁes the types of deviations relative to the transition as function of the pro-
+cess state when the deviations occurred. figure 6 shows the decision tree associated
+with transition quick scan . in brackets, each tree leaf shows the number of moves in
+the computed optimal alignments that are classiﬁed in that leaf. some moves can beincorrectly classiﬁed: the type of moves may be different from what the values of the
+classiﬁcation features would suggest. in these cases, after the slash, a second number is
+shown, which is the number of wrongly classiﬁed moves. the labels around the deci-
+sion tree, i.e. variables ,conﬁguration andsummary , allow users, on the one hand, to
+access information about the quality of the decision tree and, on the other hand, to set
+the conﬁguration parameters and the classiﬁcation features to consider when construct-
+ing the decision tree. by analyzing the tree in figure 6, one can observe that activity
+quick scan is usually correctly executed if it has never been previously executed (i.e.,
+#3quickscan = 0) and the claim’s request channel is known and the previous activity
+is performed by any resource different from #6011, #29313, #32478, #6024, #17338.
+this statement is not conﬁrmed in only 7 out of 1248 moves as indicated by the label
+“move in both without incorrect write operation (1248/7)” associated with the tree’s
+leaf. in any different state of the dpn-net when quick scan was performed, a move in
+log is expected.
+event log & model new previous
+dutch insurance institute 3+7.02 >2hs
+synthetic log (n= 4) 0.17+0.38 13.3
+synthetic log (n= 5) 0.2+0.21 48
+synthetic log (n= 6) 0.2+0.44 205
+table 2. execution time comparison be-
+tween the new technique and the technique
+in [5] for some log-model combinations.
+when unspeciﬁed, the time units are sec-
+onds.execution-time analysis. as men-
+tioned in the introduction, our new
+technique is several orders of mag-
+nitude faster than it predecessor de-
+scribed in [5]. to support this claim,
+we performed a number of experi-
+ments with different combinations of
+event logs and process models.
+the experimental results are summarized
+in table 2: the second column is relative
+to the results for our new technique, i.e.
+the ilp-based technique described in this
+paper, whereas the third refers to the pre-
+vious technique. for the new technique, the execution time is reported as x+ywhere
+xandyare, respectively, the execution times to compute the control-ﬂow alignments
+and to complement them to consider the other perspectives.
+fig. 7. scalability of the approach with event
+logs of different sizes.the ﬁrst row is relative to the
+real-life event log of the dutch insur-
+ance institute used before to show-
+case the implementation. along with
+the real-life event log, we have em-
+ployed the same process models that
+were used for execution-time analy-
+sis reported in section 5 of paper [5].
+in particular, a process model has
+been considered with nparallel ac-
+tivities. each of nparallel activities
+performs a write operation for a dif-
+ferent integer variable, which can be
+assigned a value between 0and42.
+after the nactivities, a different ac-
+tivity is performed which is associ-
+ated with a guard involving the nvariables. further details on the model are givenin [5]. to perform the comparison, we have conducted experiments for n= 4,5or6.
+for each of these three values, we have generated an event log that contained 60 traces
+with data-related deviations on the write operations. finally, we have employed both of
+techniques and compared the execution time to ﬁnd the 60 optimal alignments. com-
+paring the results reported in table 2, the improvements of the new ilp-based technique
+are evident.
+as further evaluation, we performed detailed experiments to see how the approach
+scales up with logs of different sizes. to this purpose, we generated 7 events logs by
+simulating the model in figure 2 with cpntools9. each event log contained a different
+number of events while the number of traces were always 3000 (i.e., the average length
+of traces was different in each of 7 event logs). to generate event logs of different
+sizes, we instructed the simulation in a way that, on average, each loan request required
+a different number of renegotiations (i.e., the loop was executed a large number of
+times in each trace). after the generation of the logs, 20% of events were moved to a
+different position in the respective trace to introduce deviations. figure 7 shows the the
+execution time required to compute the optimal alignments for the traces in the 7 event
+logs. the dotted line indicates the general trend. this shows that optimal alignments
+can be computed efﬁciently (at least, for the considered example): the execution time
+grows almost linearly with event logs of increasing sizes.
+6 conclusion
+various conformance checking techniques have been proposed in recent years. as men-
+tioned in section 1, they only focus on the control-ﬂow thereby ignoring, e.g., incorrect
+routing decisions, incorrect values assigned to variables, delayed activities, and unqual-
+iﬁed resources executing activities.
+this paper presents a technique that consider data, resources and time when check-
+ing for process conformance. the proposed technique using state-of-the-art techniques
+to ﬁrst create control-ﬂow alignments. such alignments are extended to incorporate
+the other perspectives. to extend alignments with other perspectives, an additional ilp
+problem is constructed and solved for each log trace. the conformance-checking tech-
+nique discussed in this paper has been implemented in prom and was tested with various
+synthetic log-model combinations and, also, using a real-life case study. this way we
+were able to demonstrate the practical relevance and feasibility of the technique.
+our approach goes much further than existing techniques for data-aware behav-
+ioral compliance checking [10, 11]. the setting considered in [10, 11] is different from
+ours: a set of compliance rules rather than a multi-set of log traces is checked. there
+also exist efﬁcient algorithms to perform sequence alignments (e.g., the algorithms of
+needleman-wunsch and smith-waterman). similarly, in process mining, j.c. bose et
+al. [12] have proposed techniques to efﬁciently align pairs of log traces. unfortunately,
+they cannot be applied to ﬁnd an alignment between a log trace and a process model.
+in our setting, we do not know a priori the process trace to align with the log trace;
+conversely, the process trace needs to be chosen, thus minimizing the severity of the
+deviations. moreover, sequence and trace alignments only focus on the activity names,
+i.e. the control-ﬂow perspective, ignoring the other perspectives.
+9http://cpntools.org/montali [13] developed some techniques to check the conformity of running process
+instances with respect to a set of temporal- and data-related constraints. certainly, these
+techniques can also be applied for a-posteriori analysis, but they would not be able to
+pinpoint where the deviations exactly occur, which we aim to do. for this purpose,
+one could also leverage on existing techniques in the ﬁeld of distributed systems for
+system debugging [14, 15]. unfortunately, they would also be limited to alert deviations,
+without highlighting where they actually occur.
+references
+1.van der aalst, w.m.p.: process mining - discovery, conformance and enhancement of
+business processes. springer (2011)
+2.rozinat, a., van der aalst, w.m.p.: conformance checking of processes based on monitor-
+ing real behavior. information systems 33(march 2008) 64–95
+3.weidlich, m., polyvyanyy, a., desai, n., mendling, j.: process compliance measurement
+based on behavioural proﬁles. in: proceedings of the 22nd international conference on
+advanced information systems engineering. caise’10, springer-verlag (2010) 499–514
+4.cook, j., wolf, a.: software process validation: quantitatively measuring the correspon-
+dence of a process to a model. acm transactions on software engineering and methodol-
+ogy (tosem) 8(april 1999) 147–176
+5.de leoni, m., van der aalst, w.m.p., van dongen, b.f.: data- and resource-aware con-
+formance checking of business processes. in: 15th international conference on business
+information systems. volume 117 of lnbip., springer verlag (2012) 48–59
+6.sidorova, n., stahl, c., tr ˇcka, n.: soundness veriﬁcation for conceptual workﬂow nets
+with data: early detection of errors with the most precision possible. information systems
+36(7) (2011) 1026–1043
+7.de leoni, m., van der aalst, w.m.p.: data-aware process mining: discovering decisions in
+processes using alignments. in: proc. of the 28th acm symposium on applied computing
+(sac’13), acm (2013)
+8.de leoni, m., van der aalst, w.m.p.: aligning event logs and process models for multi-
+perspective conformance checking: an approach based on integer linear programming
+(2013) bpm center report bpm-13-05.
+9.adriansyah, a., van dongen, b.f., van der aalst, w.m.: conformance checking using cost-
+based fitness analysis. in: ieee international enterprise distributed object computing
+conference, ieee computer society (2011) 55–64
+10.ly, l., rinderle-ma, s., knuplesch, d., dadam, p.: monitoring business process compliance
+using compliance rule graphs. in: proceedings of onthemove federated conferences &
+workshops: otm 2011. volume 7044 of lncs. springer (2011) 82–99
+11.belardinelli, f., lomuscio, a., patrizi, f.: veriﬁcation of gsm-based artifact-centric sys-
+tems through finite abstraction. in: proceedings of the 10th international conference on
+service-oriented computing (icsoc’12). volume 7636 of lncs. springer (2012) 17–31
+12.jagadeesh chandra bose, r.p., van der aalst, w.m.p.: process diagnostics using trace
+alignment: opportunities, issues, and challenges. information systems 37(2) (2012)
+13.montali, m.: speciﬁcation and veriﬁcation of declarative open interaction models - a
+logic-based approach. volume 56 of lecture notes in business information processing.
+springer (2010)
+14.reynolds, p., killian, c., wiener, j.l., mogul, j.c., shah, m.a., vahdat, a.: pip: detecting
+the unexpected in distributed systems. in: proceedings of the 3rd conference on networked
+systems design & implementation - volume 3, usenix association (2006) 115–128
+15.xu, w., huang, l., fox, a., patterson, d., jordan, m.i.: detecting large-scale system prob-
+lems by mining console logs. in: proceedings of the acm sigops 22nd symposium on
+operating systems principles, acm (2009) 117–132

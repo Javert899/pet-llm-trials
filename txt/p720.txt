@@ -1,0 +1,789 @@
+hierarchical conformance checking of
+process models based on event logs
+jorge munoz-gama1, josep carmona1, and wil m.p. van der aalst2
+1universitat politecnica de catalunya, barcelona (spain)
+2eindhoven university of technology, eindhoven (the netherlands)
+jmunoz@lsi.upc.edu ,jcarmona@lsi.upc.edu ,w.m.p.v.d.aalst@tue.nl
+abstract. process mining techniques aim to extract knowledge from
+event logs. conformance checking is one of the hard problems in pro-
+cess mining: it aims to diagnose and quantify the mismatch between
+observed and modeled behavior. precise conformance checking implies
+solving complex optimization problems and is therefore computationally
+challenging for real-life event logs. in this paper a technique to apply hi-
+erarchical conformance checking is presented, based on a state-of-the-art
+algorithm for deriving the subprocesses structure underlying a process
+model. hierarchical conformance checking allows us to decompose prob-
+lems that would otherwise be intractable. moreover, users can navigate
+through conformance results and zoom into parts of the model that have
+a poor conformance. the technique has been implemented as a prom
+plugin and an experimental evaluation showing the signicance of the
+approach is provided.
+keywords: process mining, conformance checking, process diagnosis
+1 introduction
+process mining emerged as a crucial discipline for addressing challenges related
+to business process management (bpm) and \big data"[1]. information sys-
+tems record an overwhelming amount of data representing the footprints left by
+process executions. for example, boeing jet engines can produce 10 terabytes
+of operational information every 30 minutes, and walmart logs may store one
+million customer transactions per hour [2].
+process mining tackles three challenges relating event data (i.e., log les) and
+process models: discovery of a process model from an event log, conformance
+checking given a process model and a log, and enhancement of a process model
+with the information obtained from a log. process mining research has produced
+a multitude of algorithms that demonstrated to be of great value for undertaking
+small or medium-sized problem instances. however, it is well-accepted that most
+of the existing algorithms are unable to handle problems of industrial size. in our
+opinion, as has happened in other areas (vlsi, manufacturing, among others)
+where the size of the input prevents from solving the problem straight away,
+the next generation of algorithms for process mining must incorporate high-leveltechniques that enable the problem decomposition in a divide-and-conquer style.
+this paper proposes decomposition techniques for conformance checking.
+in spite of its signicance, few conformance checking algorithms exist in the
+literature. the seminal work by rozinat et al. [3] was the rst in formalizing the
+problem and enumerating the four dimensions to consider for determining the
+adequacy of a model in describing a log: tness ,precision ,generalization and
+simplicity . in this paper we focus on the rst two: tness, that quanties the
+capability of the model in reproducing the traces of the log, and precision, that
+quanties how precise is the model in representing the log. in this paper, we will
+decompose state-of-the-art approaches for conformance checking. on the one
+hand, we will use alignment techniques . these provide a crucial step into relat-
+ing model and log traces for untting models or models with duplicate/invisible
+transitions [4,5]. on the other hand, a novel precision technique based on super-
+posing log and model behavior and detecting accordingly model's escaping points
+will allow us to quantify precision [6]. both approaches have been combined in
+order to derive a robust estimation of precision [5]. the high-level technique
+presented in this paper is grounded on the aforementioned work.
+to decompose process models, we use a technique to create the so-called
+rened process structure tree (rpst) originally proposed in [7]. this decom-
+position computes fragments of the net that have a single-entry and a single-exit
+node, thus intuitively resembling isolated subprocesses within the general model.
+remarkably, it is a structural decomposition that can be computed in linear
+time on the underlying graph structure. additionally, a tree-like structure may
+be derived representing the hierarchy between the computed components. this
+tree will be used in the strategy presented in this paper for hierarchical con-
+formance checking: each component in the tree is processed in order to satisfy
+the requirements for conformance checking of [5] (e.g., nd an initial and nal
+marking, determine whereas it belongs to a cyclic part of the net), and nally a
+conformance checking problem instance is solved on the component and the log
+projected into the participating activities. unlike the decomposition approaches
+proposed in [8,9], our approach uses a hierarchy of semantically meaningful pro-
+cess fragments. the rpst structure recursively splits the process into smaller
+fragments that are understandable for the analyst. moreover, the hierarchy can
+be used to navigate to problematic parts of the process.
+the approach has been implemented as a prom plugin, and experiments have
+been performed on dierent dimensions, ranging from a comparison between the
+manual decomposition made by a human and the one presented in this paper,
+to the application of the technique to a set of benchmarks. also, experiments
+illustrating the dierences with the passage-based approach [8] are reported.
+the paper is organized as follows: sect. 2 presents the theoretical background
+of the paper. sect. 3 presents the main stages of the methodology for hierarchi-
+cal conformance checking, while sect. 4 describes how to apply the approach to
+sound and safe workow nets (a important class of petri nets tailored towards
+business processes). sect. 5 describes related work. sect. 6 shows several experi-ments illustrating the usefulness of the suggested approach. finally, conclusions
+and future work are reported in sect. 7.
+2 preliminaries
+the starting point for conformance checking are an event log and a model . an
+event log records the execution of all cases (i.e. process instances). each case is
+described by a trace, i.e., an activity sequence. dierent cases may have exactly
+the same trace, i.e., an event log is a multiset of traces. a model represents
+the possible ows of the process. in this approach we use petri net as a formal
+model of processes. a petri net pn is a tuple ( p;t;a;m i;mo) wherepand
+trepresent nite sets of places and transitions, respectively, with p\t=;.
+functiona: (pt)[(tp)!nrepresents the weighted ow relation. the
+markings over a petri net are dened as multisets and we use multiset notation
+accordingly, e.g., m= [p2;q] orm= [p;p;q ] for a marking mwithm(p) = 2,
+m(q) = 1, andm(x) = 0 for all x62fp;qg. the initial and nal markings of pn
+are denoted as miandmorespectively.3given a marking mand a setn,m#n
+denotes the projection of monn, e.g., [a;a;b;c ]#[a;c]= [a;a;c ].
+3 methodology for hierarchical conformance checking
+in this section we introduce the approach for decomposing a model in a hierar-
+chical manner in order to perform conformance checking. algorithm 1 presents
+the approach, which has three stages: the decomposition stage (sec. 3.1) where
+the model is decomposed into components, the post-processing stage (sec. 3.2)
+where the components are processed to enable the analysis, and nally the con-
+formance stage (sec. 3.3) where conformance is analyzed for every component.
+3.1 decomposition stage
+the rst stage corresponds with the decomposition phase: the model is decom-
+posed into hierarchical components, i.e., the decomposition is not a partitioning
+(which is the case in [8]) but instead for each component dierent of the net itself
+there is always another component containing it. this enables the analysis at
+dierent degrees of granularity and independence, similar to zooming in and out
+using online maps, to get a better understanding of the underlying process. in
+order to be able to navigate through dierent layers of the model properly, three
+ingredients are needed: 1) a subprocesses decomposition, 2) a hierarchy relating
+these subprocesses, and 3) a mechanism to enhance and propagate additional
+information about the components within the hierarchy.
+3in some approaches such as [3,6] only an initial marking is considered. however, in
+[5] (cornerstone of the conformance checking of this paper) the authors introduce
+analogously the need of the nal marking.algorithm 1 decomposed conformance algorithm
+procedure deconf (net; log; m i; mo)
+fc1: : : c ng decompose (net) .decomposition stage
+h build hierarchy (fc1: : : c ng)
+h enrich hierarchy (h; net )
+for all subprocess c2hdo
+pnc compute petri net(c; net ) .post-processing stage
+mic compute initial marking (c; net; m i)
+moc compute final marking (c; net; m o)
+logc compute log(log; pn c)
+compute conformance (logc; pnc; mic; moc) .conformance stage
+end for
+end procedure
+t1 t2t3
+t4
+t5t6
+t7t8 t9
+t28t10t11
+t12
+t13 t18 t23 t26t27t29t24
+t25t19 t14
+t15
+t16t17t22t20
+t21
+fig. 1: illustrative example of process modeled as a petri net.
+subprocesses decomposition given that the nal goal of this approach is
+the conformance analysis and the diagnosis of potential deviations, we propose
+a decomposition based on the identication of subprocesses within the main
+process. in particular, these subprocesses that match the single-entry-single-
+exit pattern, also known as sese s [10], are detected. sese represents a well-
+dened part of a general process. note that, this decomposition refers to the
+structure of the model (not its behavior). therefore, the sese detection is not
+performed directly over the model, but over the underlying graph of the model,
+called workow graph .
+in our case, given a petri net pn= (p;t;a ) we dene its workow graph
+simply as graph g= (v;e) with no distinction between places and transitions,
+i.e.,v=p[tande=f(x;y)2vvja(x;y)>0g. for example, considering
+the example process of fig. 1 modeled as a petri net, its corresponding workow
+graph is shown in fig. 2. similar representations can be obtained for other mod-
+eling notations such as bpmn, epcs, or uml, and therefore, the hierarchical
+conformance approach presented in this paper is fully generic and can be applied
+to other notations. however, in this work, we focus on petri nets.
+in the remaining denitions, the following context is assumed: let gbe the
+workow graph of a given petri net, and let gf= (vf;f) be a connected
+subgraph of gformed by a set of edges fand the vertexes vfinduced by f.denition 1 (interior and boundary nodes [7]). a nodex2vfisinterior
+with respect to gfi it is connected only to nodes in vf; otherwise xis a
+boundary node ofgf.
+for instance, in the graph of fig. 2, given the subgraph composed by the
+edges in d and its induced vertexes, t2 andt8 are boundary nodes, while the
+rest are interior nodes. a boundary node is an entry or exit node if additional
+requirements are satised.
+denition 2 (entry and exit nodes [7]). a boundary node xofgfis an
+entry ofgfi no incoming edge of xbelongs tofor if all outgoing edges of x
+belong tof. a boundary node xofgfis an exit ofgfi no outgoing edge of
+xbelongs tofor if all incoming edges of xbelong tof.
+following with the example above, t2 would be an entry, and t8 an exit. now
+we can dene a sese as follows:
+denition 3 (sese, trivial sese and canonical sese [7]). feis
+asese (single-exit-single-entry) of graph g= (v;e)igfhas exactly two
+boundary nodes: one entry and one exit. a sese is trivial if it is composed
+by a single edge. fis a canonical sese ofgif it does not overlap with any
+other sese of g, i.e., given any other sese f0ofg, they are nested ( ff0
+orf0f), or they are disjoint ( f\f0=;). by denition, the source of a
+workow graph is an entry to every fragment it belongs to and the sink of the
+net is an exit from every fragment it belongs to.
+for the sake of clarity and unless otherwise is stated, in the rest of the paper
+we will refer to canonical seses simply as seses. note also that the seses are
+dened as a set of edges (not as subgraphs). however, for simplicity we will refer
+also to the subgraph as sese when the context is clear. given that a single edge
+is a sese, in the remainder of the paper we will only consider seses above
+a given threshold size4. figure 2 shows the canonical seses of the example in
+fig. 1 having size greater than 4 nodes (i.e., a,. . . r).
+component hierarchical structure next we construct the rened process
+structure tree (rpst) between canonical seses. this tree-like structure will
+group all non-overlapping siblings at the same level that give rise, in an upper
+level, to the canonical sese that includes all of them. this will allow us to
+navigate through the dierent levels of the tree thus providing views at dierent
+level of granularity.
+denition 4 (rened process structure tree (rpst) [7]). therened
+process structure tree (rpst) ofgis the tree composed by the set of all its
+canonical seses, such that, the parent of a canonical sese f is the smallest
+canonical sese that strictly contains f. the root of the tree is the entire graph,
+the leaves are the trivial seses.
+4on sect. 6.1 we provide an experiment to estimate this threshold size based on
+manual decompositions.a
+bcd e
+f
+ghi
+j
+kl
+mo
+p
+q
+r
+p
+milo
+rqk
+jhe
+f
+gd
+c b at2 t8p10fig. 2: workow graph of the example in fig. 1, and its canonical seses with
+size greater than 4 nodes. on the bottom-right corner we show the corresponding
+rpst.
+figure 2 shows the rpst for the seses found in example of the same gure.
+note that, due to the denition of canonical sese, all siblings of a tree node
+will never have overlapping edges. however, it is not required that the union of
+all the siblings results in the entire parent canonical fragment (i.e., the parent
+of a sese may have arcs not included in any of its children). for example, the
+edge (t8,p10) belonging to cis neither included on dnorh. the computation
+of the canonical seses and it's corresponding rpst of a workow graph is a
+well studied problem in the literature, and can be computed in linear time. in
+[11], the authors proposed the original algorithm for constructing an rpst. in
+[7,10], the computation of the rpst is considerably simplied by introducing
+a pre-processing step that reduces the implementation eort considerably. the
+existence of rpst is guaranteed, i.e., the trivial rpst with the net as root and
+the trivial seses as leaves is always possible. besides providing an explicit hi-
+erarchy among seses, the rpst structure satises additional properties useful
+for our approach: the rpst is unique (i.e., same graph will always result in the
+same rpst) and modular (i.e., a local change in the workow graph only results
+in a local change of the tree).
+structure enhancement next, we enrich the hierarchical structure obtained
+(the rpst) with additional information that may be used to improve the confor-
+mance checking result. in this step we detect when a subprocess can be repeated
+more than once in a process execution. the idea behind this is that in order
+to perform the conformance checking analysis correctly, one must determine
+whether the subprocess reected in a component can appear more than once
+within the same trace, i.e., within the same instance of the whole process, this
+subprocess can be executed several times. such knowledge is highly relevant for
+the conformance evaluation.
+in order to incorporate this information, rst we must determine the cyclic
+behavior of the model. we will use this information to determine if a compo-
+nent may be iterated to reproduce a trace. finally, this information is going to
+be transmitted to the rpst, and propagated through the tree. we will use thestructural theory of petri nets to determine potential iterative behaviors. in par-
+ticular, we will use t-invariants [12] to determine potential repetitive behavior
+(see sect. 4 for further details).
+3.2 component post-processing stage
+to perform a multilayer ne-grained conformance checking as the one presented
+in this paper, we must rst derive the log and the net for each one of the sub-
+processes considered. for the log, the complete log refers to actions of the whole
+model. therefore, we must project it only over the actions involved in the com-
+ponent we are analyzing, i.e., to analyze a component xthat models only the set
+of taskstx, we must remove from the log all events not in tx. besides the net
+itself, we must determine also the initial and nal markings of the petri net for
+analyzing conformance. this step, and how it is performed, depends on the type
+of petri net considered. in sect. 4 we will show how to perform this processing
+for a well-known class of petri nets used to model business processes.
+3.3 conformance stage
+finally, the last stage is the actual conformance checking, i.e., ultimate goal of the
+approach presented in this paper. in process mining, checking the conformance
+refers to the procedure of analyzing if the model considered is an appropriate
+and faithful representation of the reality reected in the log. literature clearly
+shows that conformance of a model with respect to a log is a multidimensional
+property. there is consensus on four orthogonal dimensions: tness, precision,
+generalization and simplicity [1,3,13]. in this paper, we will focus on the rst two:
+tness and precision. however, we would like to stress that the whole approach
+presented in this paper is not restricted to any particular conformance algorithm,
+i.e., it can be used in combination with any other conformance technique for the
+four dimensions.
+fitness measures if the model is able to represent all the behavior in the log.
+for example, consider the models and event log shown in fig 3. model a) ts
+perfectly the log d) because it is able to reproduce both traces. however, model
+b) fails to reproduce the second trace. precision, on the other hand, measures if
+the model is precise modeling the log. for instance, a) models the log precisely
+(i.e., no more behavior is allowed than the one reected), while c) is completely
+imprecise (it allows much more behavior than the one in the log, and therefore,
+it underts the process it is meant to describe).
+the dierence between the hierarchical conformance checking (as presented
+in this paper) and existing approaches is that the conformance analysis is com-
+puted at dierent levels (not only in the complete model and log). by combining
+the conformance results of the dierent layers, we will be able to navigate and
+perform a complete diagnosis analysis of our system in both a top-down and
+bottom-up way. the tness and precision checking proposed in this paper is
+based on cost-optimal alignment between traces in the log and possible runs of
+the model. such alignments are then used as reference to compute tness andcb
+a
+d e
+b a c d elog traces
+a b c d e
+a b d c ec
+db e aa)
+b)c)d)fig. 3: illustrative examples of tness and precision with respect to a log d).
+model a) ts better than b), and is more precise than c).
+precision (cf. fig 4). the technique presented in [5] only requires a log and a
+petri net with an initial and nal marking.
+modellog
+alignmentsa
+cb
+d0.9
+0.8ﬁtness
+precisiona b c d e f g h i
+b a c d g g h
+a c c b g  
+fitness analysis
+precision analysis
+fig. 4: conformance checking based on cost-optimal alignment
+cost-optimal alignment in order to check conformance, given a trace in
+the log, we need to nd the model execution (trace) that best represents such
+log trace. this is done by aligning the trace with all possible executions of the
+model, assigning a cost to each alignment, and choosing the optimal one. an
+alignment is dened as sequence of pairs (called moves ), where each pair can
+be: a) a 'move' in the model b) a 'move' in the log, and c) a 'move' both in the
+model and the log. for example, here are two possible alignments between the
+only two traces of the model in fig.3a (abcde and abdce) and the log trace
+abcde:
+1=abcde
+abcde2=abcd?e
+ab?dce
+for each alignment 1and2, the upper row represents moves in the log, and
+the lower row represents moves in the model. the alignment between the trace
+and the execution abcde (shown as 1) is composed of synchronized moves
+(i.e., moves in both model and log), whereas the other alignment ( 2) contains
+both a move on the log ( c;?) and a move on the model ( ?;c) to be able to
+align the model execution and the trace. to measure the cost of an alignment,
+we dene a cost function. for instance, we dene a function that, for each pair,
+assigns a cost of '0' when it is a synchronized pair, and '1' otherwise (model and
+log disagree). the total cost of the alignment is the sum of the costs of individualt2 t4 t5t3 t6 t8
+t4 t3 t7t5t7 t3
+t8t3
+t3 t6
+t2 t4 t8t2 t5 t8
+t2t3t6t8t8
+t7d
+f
+egb)t2 t4 t5t3 t6 t8
+t4 t3 t7t5t7 t3
+t1
+t8t3
+t3 t6...a)fig. 5: imprecisions for the example: a) prex automaton for the model of fig. 1,
+b) prex automata for seses f,eandg.
+moves5. given such function, the costs of the alignments in the example above
+are 0 for1and 2 for2. in [4,14], the authors propose various approaches to
+eciently compute an optimal alignment for a given log trace.
+precision in order to compute precision from the optimal alignments, the bot-
+tom rows of all optimal alignments are used to build a prex automaton de-
+scribing the modeled behavior observed in reality. note that the alignments help
+to squeeze observed behavior into the model even in case of deviations. then,
+this prex automaton describing the actual observed behavior is compared with
+the modeled behavior, leading to the detection of the so called imprecisions , i.e.,
+points in the process where the model allows for more behavior that actually
+observed in the event log. due to space constraints, we refer to [5] for further
+details. the main dierence between the approach in the literature, and the one
+proposed here, is that precision checking is performed for every subprocess (i.e.,
+sese), not only for the complete system.
+the dierences are illustrated using the following example: imagine the initial
+model of fig.1, and consider a log composed of two traces: t1t2t4t5t3t6t8[:::] and
+t1t2t5t4t3t7t8[:::] and the model of fig.1 (for sake of simplicity in this example
+we focus only on the part of the model between t2andt8). the correspond-
+ing prex automaton shown fig. 5 reects two main imprecisions: those nodes
+marked in dark gray represent the possibility in the model of executing concur-
+rently the three branches (the branch starting at t4, the one at t5and the one
+att3). the other imprecision (in light gray) is derived from the choice between
+t6andt7. the process has three concurrent branches (notice that the log only
+reects the concurrency among the t4 andt5 ones), and all the behavior modeled
+5for the sake of simplicity, we use the default unit cost function. however, arbitrary
+complex user-dened cost functions can be used [4].in each individual branch is reected in the log (including the the choice between
+t6andt7where both options appear in the log). and this is precisely what we
+can see in a precision analysis using the hierarchical approach: the conformance
+analysis of sese d(cf. fig. 2) is similar to the previous approach, i.e., will derive
+a similar prex automaton. however, in the hierarchical approach the analysis
+will also be done for the interior seses e,fandg, which will reect a perfect
+precision, e.g., eprecisely represents the projected log for (traces t2t3t6t8[:::]
+andt2t3t7t8[:::]). a process-analyst can see that the conformance problems in
+dare not within any of its interior subprocesses but instead is a problem related
+to the sequencing of the subprocesses.
+fitness once the optimal alignment for each trace is found, the non-sync moves
+are used to detect the tness anomalies, i.e., points where the model does not
+reect the log, or points where the log does not reect the model. various tness
+metrics have been proposed, penalizing such anomalies. due to space constraints,
+we refer to [4] for further details. similar to the precision case, our hierarchical
+helps to diagnose of the process: one can navigate through the hierarchy, dis-
+carding subprocesses that are perfectly tting, and focusing the analysis only on
+those that have tness problems. for example, given long and repetitive traces
+such ast1t2t3t4t5t6t7t8[:::]t28t2t3t4t5t6t7t8[:::]t28t2t3t4t5t6t7t8[:::]t29,
+note thatt6andt7are sequential in this trace. looking at component e, one
+may clearly diagnose the tness problem i.e., t6andt7are in conict in the
+model.
+4 the case of business processes
+in this section we apply the approach on a particular subclass of petri nets
+tailored towards business processes: sound and safe workow nets [15].
+workow nets are a well studied model in the business process management
+literature, and therefore, they are the target of various conformance approaches,
+(e.g., [3]). this section instantiates the methodology presented in the previous
+section to this class of nets. in the remainder we consider petri nets satisfying the
+following seven conditions. the process models used for conformance checking
+must be a workow net: 1) there is a single source place in, i.e.,fp2pjp=
+;g=fing, 2) there is a single sink place out, i.e,fp2pjp=;g=foutg, 3)
+every node is on a path from intoout. the workow net must be sound : 4)have
+the option to complete, i.e., starting from the initial marking (just a token in
+placein), it is always possible to reach the marking with one token in place out
+(marking [out]), 5) have proper completion, i.e., at the moment a token is put in
+placeout, all the other places should be empty, 6) there are no dead transitions
+starting from the initial state [ in]. and nally, the sound workow net must be
+safe: 7) the number of tokens of any place at any time must be at most one.
+we now present the details of the post-processing stage for safe and sound
+workow nets. in particular, given gf= (vf;f), a sese obtained during the
+decomposition phase, we describe how to build a sese-net sn0from it, andhow to determine its initial and nal markings. in other words, we aim to build
+a petri net sn0= (p0;t0;a0;i0;o0;p0
+i;p0
+o;m0
+i;m0
+o), wherep0;t0;a0dene the
+net,p0
+i;p0
+oare the source and sink places of the net, m0
+i;m0
+oare its initial and
+nal markings, and o0;i0dene the nodes of the petri net (transition or place)
+representing the single-entry and the single-exit of the sese.
+in the remainder of this section the following context is assumed: let wf=
+(p;t;a;p i;po;mi;mo) be the workow net to be analyzed, and g= (v;e) its
+corresponding workow graph. let gf= (vf;f) dene a canonical sese of g,
+and leti;o2vfbe the entry and exit nodes of gf, respectively.
+given that the sese decomposition is performed over the workow graph,
+the rst step is to determine which nodes of the original net wfare included in
+sn0. in other words, for all x2vf:x2p=)x2p0andx2t=)x2t0.
+similar, the projection over the arcs is done, i.e., if x2fthenx2a0. for
+example, given the sese dof the running example, shown in fig. 6a, t2:::t8
+andp3:::p 9are the transitions and places of the original net included in this
+sese-net, respectively.
+t2p3
+p4
+p5t5 p8t4t3 p6t6
+t7p9
+p7 t8
+εa)b)
+i opi'i' o'po'
+fig. 6: a) sese and b) its corresponding sese-net
+note that, by denition, gfcontains a single start and end node: iando.
+therefore, we dene i0;o0asi0=iando0=o. the existence of such single-entry
+and single-exit is an appropriate property in order to determine the source and
+sink places of the sn0. since the sese decomposition is performed over the
+workow graph (where there is no distinction between places and transitions),
+it is not guaranteed that i0ando0are places (they may be transitions). this
+is the case of the component dof fig. 6. in such cases where the entry (or
+the exit) node is a transition, a pre-processing of the sn0is required, i.e., an
+articial place is created and linked with an articial arc to such transition. the
+transformation is informally illustrated in fig. 7. an example is shown in fig. 6a,
+where both the entry and the exit nodes are transitions. therefore, two articial
+places are created (and its corresponding arcs) to represent the p0
+iandp0
+oof the
+sese-net, as it is shown in fig. 6b.
+as discussed in the previous section, a net can contain cyclic behavior, i.e.,
+subprocesses that are repeated several times within the main process execution.
+in the decomposition phase, the cyclic behavior is detected by determining those
+seses that are covered by t-invariants (i.e., if all transitions in a sese belong
+to some t-invariant, we assume that the component can be repeated) and theaa
+zzfig. 7: pre-processing of the sese-net to guarantee a place-bordered net.
+hierarchical structure is enhanced with this information. formally, a t-invariant
+is a vector x:t!zsuch that cx= 0, where cis the incidence matrix of the
+net [12]. intuitively, a t-invariant is a set of transitions such that the marking
+reached after executing them is the same as the one before its execution. clearly,
+t-invariants provide only an approximation of the real repetitive behavior, but
+we have seen in practice that this heuristic approximation works ne. moreover,
+if repetition is possible, a corresponding t-invariant exists.
+potential cyclic behavior has to be transferred to the subprocess level, i.e.,
+sn0has to reect the possibility of being executed more than once. in order
+to do that, the sn0isshort-circuited using a silent transition , i.e., when the
+execution of the subprocess reaches the end, there is the possibility to re-start,
+though the ring of a transition that leaves no track on the log (i.e., it is silent ).
+formally, if gfis detected as cyclic, then 2t0and (p0
+o;);(;p0
+i)2a0, where
+62t. this is the case for the subprocess in fig. 6a: the two minimal t-invariants
+fft2;t3;t4;t5;t6;t8;t9;t10;t11;t12;t13;t15;t16;t17;t18;t20;t22;t23;t25;t26;t27;
+t28g;ft2;t3;t4;t5;t7;t8;t9;t10;t11;t12;t13;t15;t16;t17;t18;t20;t22;t23;t25;t26;
+t27;t28ggof the initial net (fig.1) include the transitions of the sese and there-
+fore it is tagged as cyclic. hence, a silent transition short-circuit is created as it
+is shown in fig. 6b.
+next, we need to determine the initial and nal markings ( m0
+iandm0
+o) of the
+subprocess. given the workow net nature of the subprocess and the original
+workow net, we dene the initial and nal markings as [ p0
+i] and [p0
+i] respectively
+(cf. fig. 6b).
+after post-processing we obtain a new petri net sn0modeling the subprocess
+behavior. when iteration is detected, due to the type of nets we are restricting
+in this section (safe and sound workow nets), the modication done to the
+original sese-net enables the iterative behavior in the modied sese-net. the
+nal sese-net (with or without iteration), is used to do conformance analysis.
+likewise it is done in [9] for tness, it should be possible to establish formal
+guarantees relating both tness and precision metrics evaluated in the subpro-
+cesses with respect to the ones of the original net. however, since neither tness
+nor precision are monotonic with respect to subprocess inclusion, the weakest
+conditions under which a formal guarantee relating model and subprocesses t-
+ness/precision can be given will be investigated in the future. the example in
+fig. 8 illustrates the non-monotonic nature of the hierarchical approach.egevent log
+a b c d f g 
+a e g
+a b c d f e g
+a b c d gc
+db f
+aa)b) c) a
+bcd
+e
+fc
+e
+fdba(0.95 / 0.89)
+(0.92 / 0.85)
+(0.97 / 0.80)
+(0.97 / 0.80)
+(0.96 / 1.0)
+(0.96 / 1.0)fig. 8: the hierarchical approach is non-monotonic with respect to subprocess
+inclusion. each node in the hierarchy c) of the seses detected in b) is annotated
+with a pair of real numbers, representing the tness and precision of the corre-
+sponding sese-net for the log obtained after projecting the event log of a) for
+the participating activities. for instance, the tness (rst number in the nodes)
+for nodesa(0.95),b(0.92) andc(0.97) is neither increasing nor decreasing.
+5 related work
+as it was mentioned in sec.1, few conformance checking algorithms exists in
+the literature, e.g., [16,3,4,6,5,17]. however, given the complexity of the confor-
+mance analysis, recently a technique for decomposed conformance checking has
+appeared: in [8] the authors propose a non-hierarchical decomposition based on
+passages, also meant to be applied to the same class of petri nets as the one
+considered in this paper. a passage is a pair of two non-empty sets of transitions
+(x;y ) such that the set of direct successors of xisy, whilst the set of direct
+predecessors of yisx. any graph can be decomposed into minimal passages rep-
+resenting a partitioning of its transition set, and in [8] authors demonstrate how
+both discovery and conformance problems can be decomposed using passages.
+there are signicant dierences between the passage decomposition approach
+and the one presented in this paper. we enumerate here the most important ones:
+1. the passages approach computes a 1-level partitioning, whereas our ap-
+proach derives a hierarchy of components. note that once 1-level passages are
+obtained, they may be united to form higher-level passages, since the union
+of passages is a passage. however, algorithms for this high-level post-process
+to form a hierarchy have not been proposed nor implemented.
+2. the components in the passages approach represent causality fragments be-
+tween two sets of transitions, whilst components in our approach denote
+parts of the model which interface with the rest of the system only through
+two boundary nodes. in other words, components derived by each one of
+the approaches are incomparable, i.e., a typical passage cannot be obtained
+through our approach whilst a typical sese (like the one shown in fig. 6a)
+is not a passage.
+in the next section an empirical comparison for a set of benchmarks is pro-
+vided that witness the previous claims.6 experimental results
+in this section we present the experimental results supporting the claims made in
+earlier sections. most of the models have been generated with the plgtool [18].
+two main type of experiments are provided in two subsections: sect. 6.1 is
+structured in two parts: in part i we compare the hierarchical approach presented
+in this paper with manual decompositions performed by some persons, and in
+part ii we test the approach through a set of experiments, comparing it with
+the approaches in the literature and especially with the one presented in [8].
+sect. 6.2 describes an experiment illustrating how the approach can be applied
+for a large example, where it is not possible to handle large subprocesses and
+therefore only nodes of the rpst that have a size less than a certain value can
+be analyzed in practice. an implementation of the approach presented in this
+paper can be found as a plugin within the prom framework6.
+6.1 empirical evaluation
+part i: similarities with human-made model decomposition
+the rst set of experiments is designed to study one of the strong points of
+the approach proposed: the process-like decomposition (based on single entry
+single exit components) and its intuitive relation with the mental schema of
+process analyst. a set of process models ( man01 toman06 ) has been prepared
+in order to be manually decomposed by possible actors of the approach, and
+the resulting components have been compared with the ones obtained by the
+approach of this paper. the set of benchmarks is composed by six petri nets
+modeling plausible processes. each model contains the most common patterns
+found on process modeling: choice, concurrency, sequencing, invisible tasks, and
+loops. the manual decomposition has been performed by 7 persons, all them
+with complete liberty to decide their own decomposition. the results of the
+experiments are shown in table 17. the table shows, the number of transitions
+and places of the initial petri net, whether all persons used hierarchy in the
+decomposition (hierarchy ?), the (average of the 7 persons) maximum number
+of levels in the hierarchy ( h- max ), and the corresponding maximum number of
+levels in the hierarchy computed by our approach (with a 4-nodes threshold).
+also, the number of components computed by all the persons is shown ( jcj), and
+the percentage of components having less than 5 nodes reported ( jsize(c)<5j).
+finally, we provide the percentage of the components that satisfy the sese
+property (column % sese-like).
+the rst conclusion raised from the experiment is related with the intuitive
+use of hierarchy for decomposition. this is one of the main dierences of the
+approach proposed in this paper compared with other approaches such as [8].
+the results show that in all benchmarks, all persons use hierarchy. second, the
+6under the package jorgemunozgama .
+7in the link http://www.lsi.upc.edu/ ~jmunoz/files/pn2013benchmarks.zip the
+reader can inspect the manual decompositions.table 1: manual decomposition compared with the hierarchical approach.
+jtjjpjhierarchy ? h-max h-sese jcjjsize(c)<5j% sese-like
+man01 44 45 yes 3.4 8 63 14% 91%
+man02 16 16 yes 2.4 5 28 7% 97%
+man03 31 34 yes 3.3 6 50 16% 89%
+man04 31 31 yes 3.3 7 51 16% 96%
+man05 48 50 yes 3.7 7 79 14% 92%
+man06 45 51 yes 3.6 8 71 3% 94%
+average number of levels in the hierarchy used by the 7 persons is smaller than
+the one computed by our approach. the main reasons for that is that the persons
+have not considered components that dier from each other of very few nodes
+which is the case for a parent and sibling having a high degree of overlapping.
+for instance, in fig. 2, the only dierence between sese aand sesebis the
+four edges in anot inb. this suggests to rene the sese detection algorithm
+to collapse in the rpst nodes that dier on very few edges, in order to remove
+this type of redundancy, e.g., collapse nodes aandbas one single sese in the
+example.
+note that persons prefer larger and process-like components instead of small
+and oversimple ones. for example, from column jcj, the percentage of small
+components ranges from 3% to 16% (and in most of the cases they correspond
+with components of size four: a choice of two transitions). this motivates the
+use of a threshold in the approach proposed in this paper. and nally, there
+is a direct relation between the components suggested manually and the ones
+provided by the approach, i.e., the vast majority of the components correspond
+with seses, as it is shown in % sese-like column.
+part ii: evaluation through a set of benchmarks
+this second set of experiments focuses on the actual hierarchical conformance
+checking. the experiment is composed by six models of dierent sizes, and their
+corresponding logs. for each of the benchmark model and log combinations, the
+decomposition is obtained and the conformance analysis is performed per com-
+ponent. the results are shown in table 2 (comparison with respect to the passage
+approach), and table 3, where the results for approaches in the literature [4,5,6]
+are provided. notice that the conformance checking performed in this paper
+provides metrics for sese components. therefore in table 2 we present some
+intuitive metrics that combine the individual metrics into one single metric, to
+have an intuitive estimation of the conformance of the whole model. in table 2
+the number of places and transitions per benchmark are reported, and for each
+one of the decomposition approaches (passages or hierarchical), the number of
+components obtained (column jcj) is reported. the table also provides the av-
+erage tness/precision with respect to the number of components ( comp ), and
+with respect to the size of the components ( node), i.e., in node larger compo-
+nents have larger weight on the average tness/precision computation. the tabletable 2: conformance results: passages vs. hierarchical
+passages hierarchical
+fitness fitness precision
+jtjjpjjcjcomp node max min jcjcomp node max min comp node max min
+lu01 81 74 50 1 1 1 1 48 1 1 1 1 .958 .761 1 .293
+lu02 45 51 29.897 .898 .942 .84 34.926 .912 1 .883 .978 .899 1 .649
+lu03 86 80 50 1 1 1 1 55 1 1 1 1 .918 .719 1 .327
+lu04 43 38 23 1 1 1 1 27 1 1 1 1 .837 .710 1 .343
+lu05 91 82 50.976 .977 1 .939 59.914 .915 1 .480 .955 .789 1 .362
+lu06 59 54 36.988 .988 1 .955 28.992 .989 1 .98 .92 .689 1 .272
+table 3: conformance results: results for non-decomposition approaches in the
+literature.
+fitness precision
+[4] [5] [6]
+lu01 1 .301 .301
+lu02 .884 .65 .72
+lu03 1 .335 .335
+lu04 1 .35 .35
+lu05 .965 .22 .22
+lu06 .988 .283 .295
+provides the maximum and minimum tness/precision value obtained for each
+benchmark (max and min)8. finally, table 3 reports the conformance analysis
+(tness and precision) by other approaches in the literature.
+regarding the comparison between the passages approach and the hierar-
+chical, it should be noted that there is a tendency for the passages approach
+to derive less components, which in fact are considerably small. on the tness
+reported, both approaches report perfect tness for the tting models lu01,lu03
+and lu04, and some dierences for the rest. interestingly, in lu05 a component
+with a tness value of 0.480 is detected, representing the diagnosis of a tness
+problem in a particular subprocess of the model.
+by comparing the values in table 3 of the non-decomposition approaches in
+the literature with the ones in table 2, a clear tendency of the decomposition
+techniques to provide higher average values (both in the comp and the node
+columns) is detected. this is especially manifested in the precision dimension,
+where although the precision problems are still detected and equally evaluated
+as in the non-decomposition approaches (see column min for the hierarchical
+precision), they are reported at the level of the subprocess, thus identifying the
+real portion of the model that represents the conformance problem.
+hence, the results for the hierarchical approach, divided into components,
+provide an useful tool for diagnosis. this is complemented by the tree visual-
+8only the tness calculation is implemented in the approach [8].ization provided by the implementation, where the conformance results of each
+component are displayed over its corresponding node in the hierarchy using a
+intuitive code of colors, aiming at localizing problems within the process (see
+fig. 9). as an example, in some processes such as lu03 (shown in fig. 9), the
+dierences in precision between comp and node is considerable, reecting that
+while the vast majority of components have a high precision, the larger compo-
+nents have a low one. this is conrmed in the conformance results obtained for
+each particular component: while the two largest components have a precision
+of 0.33 and 0.32 respectively (shown in the gure as nodes in red in the rpst),
+the rest of components (of signicant smaller size) have precisions close to or
+exactly 1.0. an introspective view of this conformance problem shows that a
+big component allows the concurrent execution of three subprocesses, each one
+having no conformance problems. however, in the log there is a real sequencing
+on these three components, and therefore a precision problem has been identied
+between these three subprocesses.
+6.2 handling a large conformance problem
+the hierarchical approach presented in this paper can be used to limit the com-
+plexity of the conformance analysis by bounding the size of the conformance
+instances to solve. this may be done by selecting a partitioning in the rpst
+selecting those seses whose size do not exceed a given threshold size. this sec-
+tion illustrates how this strategy can be used to perform conformance analysis
+for problems of industrial size.
+with the plgtool, we have created a model of 693 nodes, depicted in fig. 10,
+and its corresponding log9. then we have used the approach in [4] to estimate
+the tness of the model with respect to the log, establishing a time limit of 1
+hour. within this limit, the aforementioned approach did not completed the t-
+ness computation. if instead the hierarchical approach is applied together with
+a restriction on the size of subprocesses to consider (we have set 200 nodes as
+maximum sese size), we have been able to analyze conformance for the sub-
+processes forming the partitioning shown in fig. 10 in less than 2 minutes. this
+conformance analysis revealed, for instance, that the subprocess in green (lef-
+most) has a poor precision (0.318) and therefore it may be inspected in isolation
+to determine the causes of the conformance problem, while the process in pink
+has a perfect precision of 1.0.
+9to ease subprocess identication, we have used colors in fig. 10 which will only be
+visible in the electronic version or in a colored printed version of the paper.fig. 9: the hierarchical view of conformance checking: the tree-view (left panel) provides the rpst together with the confor-
+mance results. fitness and precision metrics for each sese (node in the rpst) are provided as two colored squares, following
+a semaphore code: green (100-90%), yellow (89-75%), orange (74-50%) and red (49-0 %). by selecting a particular node in the
+rpst, the corresponding sese is highlighted in the right panel.fig. 10: partitioning based on seses for conformance analysis: we have high-
+lighted in colors the seses for which a conformance analysis has been done.
+7 conclusions and future work
+in this paper we presented a hierarchical approach for conformance checking that
+enables process analysts to investigate deviations between modeled and observed
+behavior. the technique combines previous work on conformance checking and
+model decomposition techniques in order to identify subprocesses within a given
+model for which an isolated conformance checking can be done, oering a hier-
+archical structure that can be used to navigate through the conformance results.
+the experiments show both the usefulness of the approach and the dierence
+with related techniques.
+the future work aims to extend the result in various directions. we plan to
+investigate the theoretical guarantees and extend the proposed technique to a
+larger class of petri nets. regarding algorithms, we plan to study new algorithms
+to improve both the quality and the performance of the proposed methodology,
+e.g., proposing a reduction of the rpst to avoid too much overlapping between
+seses and nding ways to propagate in a bottom-up manner the conformance
+results. the latter is very important to be able for real-life conformance checking
+where performance is an issue. finally, although the approach as been proved to
+handle models of industrial size, further experiments considering real-life models
+and logs will reveal the real diagnosis value of the contribution presented in this
+paper.
+acknowledgements
+this work has been partially supported by the spanish ministerio de educaci on
+(ap2009-4959) and by the projects tin-2011-22484 and tin-2007-66523.
+references
+1. van der aalst, w.m.p.: process mining: discovery, conformance and enhancement
+of business processes. springer (may 2011)2. rogers, s.: big data is scaling bi and analytics-data growth is about to accelerate
+exponentially. information and management - brookeld 21(5) (2011) 14
+3. rozinat, a., van der aalst, w.m.p.: conformance checking of processes based on
+monitoring real behavior. inf. syst. 33(1) (2008) 64{95
+4. adriansyah, a., van dongen, b.f., van der aalst, w.m.p.: conformance checking
+using cost-based tness analysis. in: edoc, ieee computer society (2011) 55{64
+5. adriansyah, a., munoz-gama, j., carmona, j., van dongen, b.f., van der aalst,
+w.m.p.: alignment based precision checking. in: business process management
+workshops. (2012)
+6. munoz-gama, j., carmona, j.: a general framework for precision checking.
+international journal of innovative computing, information and control (ijicic)
+8(7b) (july 2012) 5317{5339
+7. polyvyanyy, a., vanhatalo, j., v olzer, h.: simplied computation and generaliza-
+tion of the rened process structure tree. in bravetti, m., bultan, t., eds.: ws-fm.
+volume 6551 of lecture notes in computer science., springer (2010) 25{41
+8. van der aalst, w.m.p.: decomposing process mining problems using passages.
+in haddad, s., pomello, l., eds.: petri nets. volume 7347 of lecture notes in
+computer science., springer (2012) 72{91
+9. van der aalst, w.m.p.: decomposing petri nets for process mining: a generic
+approach. technical report bpm-12-20, bpm center (september 2012)
+10. polyvyanyy, a.: structuring process models. phd thesis, university of potsdam
+(2012)
+11. vanhatalo, j., v olzer, h., koehler, j.: the rened process structure tree. in
+dumas, m., reichert, m., shan, m.c., eds.: bpm. volume 5240 of lecture notes
+in computer science., springer (2008) 100{115
+12. silva, m., teruel, e., colom, j.m.: linear algebraic and linear programming tech-
+niques for the analysis of place or transition net systems. in reisig, w., rozenberg,
+g., eds.: petri nets. volume 1491 of lecture notes in computer science., springer
+(1996) 309{373
+13. rozinat, a., de medeiros, a.k.a., g unther, c.w., weijters, a.j.m.m., van der
+aalst, w.m.p.: the need for a process mining evaluation framework in research
+and practice. in ter hofstede, a.h.m., benatallah, b., paik, h.y., eds.: busi-
+ness process management workshops. volume 4928 of lecture notes in computer
+science., springer (2007) 84{89
+14. adriansyah, a., sidorova, n., van dongen, b.f.: cost-based tness in conformance
+checking. in caillaud, b., carmona, j., hiraishi, k., eds.: acsd, ieee (2011) 57{
+66
+15. van der aalst, w.m.p., van hee, k.m., ter hofstede, a.h.m., sidorova, n., verbeek,
+h.m.w., voorhoeve, m., wynn, m.t.: soundness of workow nets: classication,
+decidability, and analysis. formal asp. comput. 23(3) (2011) 333{363
+16. cook, j., wolf, a.: software process validation: quantitatively measuring the cor-
+respondence of a process to a model. acm transactions on software engineering
+and methodology 8(2) (1999) 147{176
+17. weerdt, j.d., backer, m.d., vanthienen, j., baesens, b.: a multi-dimensional
+quality assessment of state-of-the-art process discovery algorithms using real-
+life event logs. information systems 37(7) (2012) 654{676
+18. burattin, a., sperduti, a.: plg: a framework for the generation of business process
+models and their execution logs. in zur muehlen, m., su, j., eds.: business process
+management workshops. volume 66 of lecture notes in business information
+processing., springer (2010) 214{219

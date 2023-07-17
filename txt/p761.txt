@@ -1,0 +1,547 @@
+discovering block-structured process models from
+event logs containing infrequent behaviour
+sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+eindhoven university of technology, the netherlands
+fs.j.j.leemans, d.fahland, w.m.p.v.d.aalst g@tue.nl
+abstract given an event log describing observed behaviour, process discovery
+aims to ﬁnd a process model that ‘best’ describes this behaviour. a large variety of
+process discovery algorithms has been proposed. however, no existing algorithm
+returns a sound model in all cases (free of deadlocks and other anomalies), han-
+dles infrequent behaviour well and ﬁnishes quickly. we present a technique able
+to cope with infrequent behaviour and large event logs, while ensuring soundness.
+the technique has been implemented in prom and we compare the technique with
+existing approaches in terms of quality and performance.
+keywords: process mining, process discovery, block-structured process models, sound-
+ness, ﬁtness, precision, generalisation
+1 introduction
+process mining techniques aim to support organisations in improving their business
+processes. event logs of historical behaviour can be used to discover process models of
+the real processes as present in the organisation, as opposed to manually created models
+that reﬂect wishful thinking, should-be or as-it-was-two-years-ago behaviour. auditing
+of discovered models can prove compliance with organisational and governmental regu-
+lations [3], and replay of historical behaviour on the discovered model can reveal social
+networks and bottlenecks [17,15,4].
+e
+da
+b
+cf τ
+figure 1: unsound process model.the challenge in process discovery is to ﬁnd
+the ‘best’ process model given recorded histori-
+cal behaviour. which process model is ‘best’ is
+typically evaluated using several quality criteria.
+four important quality criteria are ﬁtness, preci-
+sion, generalisation and simplicity. an un ﬁtting
+model cannot reproduce all behaviour recorded in
+the log. an im precise model allows for too much
+additional behaviour that is not described in the log. a non- general model only de-
+scribes the behaviour in the log and therefore might disallow future behaviour absent
+in the log. a non- simple model needs a lot of places, transitions and arcs to express its
+behaviour and might be hard to read.
+another important quality criterion is soundness : all process steps can be executed
+and some satisfactory end state, the ﬁnal marking , is always reachable. for instance, the2 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+petri net in figure 1 is not sound as it contains a deadlock from which the ﬁnal marking
+with only a single token in the ﬁnal place can never be reached. an unsound process
+model can still be useful, but applying tasks such as evaluation, auditing, ﬁnding social
+networks and bottlenecks can be difﬁcult if not impossible. therefore, for most use
+cases an unsound process model can be discarded without even considering the event
+log it is supposed to represent.
+traces in a log might follow many different paths through the process. in most real-
+life event logs, some paths are taken infrequently, or traces only differ by occurrence of
+infrequent activities. such logs contain infrequent behaviour and challenge discovery
+algorithms, as a process model scoring well on all quality criteria might not exist. if
+infrequent behaviour is included in the model, simplicity might be sacriﬁced, if infre-
+quent behaviour is excluded from the model, ﬁtness might be sacriﬁced. fortunately,
+the pareto principle (also known as the 8020 rule) often applies to event logs. typically,
+80% of the observed behaviour can be explained by a model that is only 20% of the
+model required to describe all behaviour. the 80% model shows the “highways” in the
+process. hence, it is more intuitive, but can also be used as a starting point for outlier
+detection. [2].
+to obtain an 80% model, a classical approach is to globally ﬁlter the log before
+discovering a model. this has numerous disadvantages, as it is difﬁcult to identify in-
+frequent behaviour, and even when infrequent behaviour is ﬁltered out, discovery al-
+gorithms ([6], b’ [16], ilp [21]) might still produce undesirable models. other ap-
+proaches were designed to ignore infrequent behaviour and can produce an 80% model
+but may perform less on other quality criteria: genetic approaches [5,9] have long run
+times and a heuristic approach [20] produces unsound models.
+as of today, no technique has been proposed that discovers a sound 80% model,
+does that fast and is able to ﬁlter infrequent behaviour . several existing approaches
+apply divide-and-conquer techniques [10,22,16], in which the event log is split and
+a model is constructed recursively. in this paper we present an extension of such an
+approach, im, called inductive miner - infrequent (imi), that aims to discover a sound
+80% model fast. we introduce infrequent behaviour ﬁlters in all steps of im, such that
+infrequent behaviour is ﬁltered locally.
+imi is implemented in the inductiveminer package of the prom framework [14]. to
+evaluate imi, we compare its performance and its discovered models to other discovery
+algorithms by means of the quality criteria using real-life logs.
+the remainder of this paper starts with a description of logs, process trees and im.
+in section 3, imi is introduced. in section 4 imi is compared to existing mining algo-
+rithms. section 5 concludes the paper.
+2 preliminaries
+event logs. anevent log is a collection of traces. each trace is a sequence of events
+that represent occurrences of activities of a process execution in the respective order.
+note that a trace might appear multiple times in an event log. the trace without events
+is denoted with .discovering process models constructively without infrequent behaviour 3
+process trees. the block-structured process models discovered by im, etm and imi
+are process trees. a process tree is an abstract representation of a sound block-structured
+workﬂow net [6]. a tree represents a language, a leaf describes the singleton language
+of an activity, and a non-leaf node is an operator that describes how the languages of
+its children are combined. in this paper, we will consider four operators: ,!,^and
+	. theoperator denotes the exclusive choice between its children, !the sequential
+composition and^the interleaved parallel composition. the 	(m1;m2:::m n)has
+two groups of children: m1is the loop body andm2:::m nis the loop redo part. a
+trace in the language of 	(m1;m2:::m n)starts with a trace from m1, followed by a
+repetition of a trace from any m2:::m nand a trace from m1again. for instance, the
+language of 	(a;b;c )isfhai;ha;b;ai;ha;c;ai;ha;b;a;c;ai:::g.
+another example of a process tree is (!(a;b);^(c;d);	(e;f)), denoting the lan-
+guage (ab)j(cd)j(dc)j(e(fe)). for a formal deﬁnition, please refer to [16].
+inductive miner in this paper, we extend an existing divide-and-conquer approach to
+process discovery. divide-and-conquer has been used in process discovery before. for
+instance, [ ?] combines it with transition systems and regions; [22] combines it with
+trace alignments. in this paper we extend the inductive miner (im) [16], of which we
+ﬁrst give its basic algorithmic idea and illustrate it with a running example.
+im works by recursively a) selecting the root operator that best ﬁts l, b) dividing
+the activities in log linto disjoint sets and c) splitting lusing these sets into sublogs.
+these sublogs are then mined recursively, until a sublog contains just a single activity.
+we ﬁrst introduce how im selects an operator and an activity division, and illustrate it
+with a running example.
+consider log l:[ha;b;c;a;b;e;fi50;ha;b;f;ei100;hd;e;fi100;hd;f;ei100]. in a
+directly-follows graph , each node represents an activity and an edge from node ato node
+bis present if and only if ais directly followed by bsomewhere in l. the frequency
+of edge (a;b) is how often this happens. figure 2a shows the directly-follows graph of
+l. im searches for a characteristic division of activities into disjoint sets, a cut, of the
+directly-follows graph. each operator ( ,!,^or	) has a characteristic cut of the
+directly-follows graph. if such a characteristic matches, im selects the corresponding
+operator. otherwise, a ﬂower model , allowing for all sequences of activities, is returned.
+the dashed line in figure 2a is a !cut: all edges crossing it go from left to
+right. using the cut fa;b;c;dg;fe;fg, im splits the log by splitting each trace cor-
+responding to the cut: l1= [ha;b;c;a;bi50;ha;bi100;hdi200]for the left branch, l2=
+[he;fi150;hf;ei200]for the right branch. then, im recurses. we ﬁrst consider l1. fig-
+ure 2b shows its directly-follows graph, the dashed line denotes an cut, as no edge
+crosses the cut. the log l1is split inl3= [ha;b;c;a;bi50;ha;bi100]andl4= [hdi200].
+l4consists of only a single activity, so for l4im discovers the leaf d. the discovered
+process tree up till now is !((:::;d );:::).
+im recurses further. figure 2c shows the directly-follows graph of l2with its^cut,
+which splits l2intol5= [hei350]andl6=hfi350]. figure 2d shows the directly-
+follows graph of l3with its 	cut. im splits l3intol7= [ha;bi200]andl8= [hci50].
+the complete process tree discovered by im is !((	(!(a;b);c);d);^(e;f)). fig-
+ure 2e shows the corresponding petri net. for more details, see [16].4 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+a bcd e
+f100
+100
+50
+100150 200
+20050 50
+(a)lwith!cut
+a bcd
+50 50
+200 (b)l1withcut
+e
+f200
+150 (c)l2with^cut
+a bc
+20050 50
+(d)l3with	cut
+τe
+fa b
+cτ τd
+τ (e) discovered petri net
+figure 2: directly-follows graphs. dashed lines denote cuts. edges have their frequen-
+cies denoted. (e) is the mined petri net.
+3 extending im
+in this section, we introduce inductive miner - infrequent (imi) by adding infrequent
+behaviour ﬁlters to all steps of im. for each of the operational steps of im it is de-
+scribed how infrequent behaviour affects the step and how distinguishing frequent and
+infrequent behaviour can be used to improve discovery of the 80% model. in each re-
+cursion step, imi ﬁrst applies the steps of im unaltered. only if this fails and im would
+return a ﬂower model, the ﬁlters are applied.
+frequencies of traces and events are ignored by im but are taken into account by
+imi in order to distinguish frequent and infrequent behaviour. in the operator and cut
+selection steps, two techniques are applied: ﬁltering the directly-follows graph for in-
+frequent edges and using a variant of the directly-follows graph for selection of !.
+filters are added to base case detection to ﬁlter accumulated artifacts of ﬁltering over
+recursions. in the following, kdenotes a user-deﬁned threshold value between 0and1
+to separate frequent and infrequent behaviour. filters on the operator and cut selection
+steps are described ﬁrst, followed by ﬁlters on base cases, and ﬁlters on log splitting.
+3.1 filters on operator & cut selection
+in the operator and cut selection steps, a heuristics-style ﬁlter is applied by imi. in case
+of!, a variation of the directly-follows graph can be used.
+heuristics-style filtering. consider log l1:[ha;b;c;a;b;e;fi50;ha;b;f;ei100;
+hd;e;fi100;hd;f;ei100;hd;e;d;fi1], which is the log used in section 2 extended with
+an infrequent trace hd;e;d;fi. figure 3a shows its directly-follows graph. compared to
+figure 2a, the infrequent trace introduces the edge (e;d), and therefore the dashed line
+is not a!cut.
+similar to the technique used in hm, imi ﬁlters the directly-follows graph to only
+contain the most frequent edges. the edge (e;d)is relatively infrequent compared to
+the other outgoing edges of e. an outgoing edge of a node is too infrequent if it has
+a frequency of less than ktimes the frequency of the strongest outgoing edge of that
+node. all too infrequent edges are ﬁltered out in imi before cuts of ,!and	are
+detected.discovering process models constructively without infrequent behaviour 5
+eventually-follows graph. despite heuristics-style ﬁltering, infrequent edges might
+remain in the directly-follows graph. consider log l2= [ha;c;d;e;bi;ha;b;a;e;d;ci;
+ha;e;c;b;di;ha;d;b;c;ei]. the second trace is the only trace containing two as: the
+secondais infrequent. figure 3b shows the directly-follows graph of l2. the dashed
+line in figure 3b is not a sequence cut as edge (b;a), introduced by the infrequent a,
+crosses it in the wrong direction. as all outgoing edges of bhave frequency 1, no value
+ofkcould ﬁlter edge (b;a).
+similar to a technique used in [19] (”weak order relation”), imi uses the eventually-
+follows graph , which is the transitive closure of the directly-follows relation: an edge
+(a;b)is present if and only if ais followed by bsomewhere in the log.
+the eventually-follows graph of l2is shown in figure 3c. in this graph, all outgoing
+edges ofbare ampliﬁed, except the infrequent edge (b;a), which can then be ﬁltered
+out.
+in this example, using the eventually-follows graph allows imi to deal with infre-
+quent behaviour.
+an infrequent occurrence of an activity still increases frequency of infrequent edges,
+but adds at most 1 to each of them. the eventually-follows graph ampliﬁes all other be-
+haviour, so using the eventually-follows graph for !cut detection increases robustness
+against infrequent behaviour. imi uses a ﬁltered eventually-follows graph to detect !
+cuts and if it ﬁnds one, selects !as operator.
+a bcd e
+f101
+101
+50
+100150 200
+20050 501
+(a) directly-follows graph
+with an infrequent edge. the
+dashed line is not a !cut as
+(e; d)crosses it in the wrong
+direction.
+a
+b c
+d e2
+1111
+1
+1
+11
+111
+111
+1 (b) directly-follows graph
+a
+b c
+d e5
+5145
+2
+2
+22
+222
+222
+22 (c) eventually-follows graph
+figure 3: directly and eventually follows graphs.
+3.2 filters on base cases
+in addition to the single-activity base case in im, as an artifact of ﬁltering it is possible
+that traces without events, , remain. on both base cases ﬁlters are introduced.
+single activities. assume the following two logs:
+l1= [100;hai100;ha;ai100;ha;a;ai100]
+l2= [1;hai100;ha;ai1;ha;a;ai1]
+bothl1andl2consist of a single activity, cannot be split further and are base cases.
+given the representational bias of imi, for both logs either a ﬂower model or a single6 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+activityacan be discovered. in l1, all traces are frequent and a ﬂower model is ob-
+viously the best choice. in l2however, onlyhaiis frequent and abest represents the
+frequent behaviour.
+choosing either option inﬂuences quality dimensions: discovering aforl1sacri-
+ﬁces ﬁtness, while discovering a ﬂower model for l2sacriﬁces precision. ais only
+discovered by imi if the average number of occurrences per trace of ain the log is close
+enough to 1, dependent on the relative threshold k.
+empty traces. assume the following log: l= [ha;b;di100;ha;c;di100;ha;di]. in the
+ﬁrst recursion, imi selects the !operator and splits lintol1= [hai201],l2=
+[1;hbi100;hci100]andl3= [hdi201].
+considerl2. a ﬁtting solution for the empty trace in l2would be to mine(;:::)
+and recurse on l2nfg. forl2,is infrequent and discovering (;:::)would sacriﬁce
+simplicity. this is a tradeoff, but for l2clearly(;:::)is preferred. to overcome this
+problem, imi only discovers (;:::)ifis frequent enough compared to the number
+of traces in the log and with respect to k. ifis not frequent enough, imi ﬁlters from
+l2and recurses on l2nfg.
+3.3 filters on log splitting
+assuming the operator and cut have been selected, some infrequent behaviour in the
+log might not ﬁt the chosen operator and cut. if not ﬁltered out, this unﬁtting behaviour
+might accumulate over recursions and obscure frequent behaviour.
+this section describes how infrequent behaviour can be ﬁltered during log splitting.
+it is assumed that the operator and cut are correctly selected and that any behaviour that
+violates this selection is infrequent. for each operator, we describe the types of viola-
+tions that can be detected and how they are ﬁltered by imi, illustrated by an example.
+in these examples, 1=fag;2=fbgis the chosen cut and l1,l2are the sublogs
+to-be-created.
+behaviour that violates the operator is the presence of activities from more than
+one subtree in a single trace. for instance, the trace t1=ha;a;a;a;b;a;a;a;a i
+contains activities from both 1and2.1explains the most activities, is most
+frequent. all activities not from 1are considered infrequent and are discarded:
+ha;a;a;a;a;a;a;ai2l1.
+!behaviour that violates the !operator is the presence of events out of order ac-
+cording to the subtrees. for instance, in the trace t2=ha;a;a;a;b;b;b;b;a;b i, the
+lastaoccurs after a b, which violates the !. filtering infrequent behaviour is an
+optimisation problem: the trace is to be split in the least-events-removing way.
+int2, the splitha;a;a;ai2l1,hb;b;b;b;bi2l2discards the least events.
+^a parallel operator allows for any sequence of behaviour of its subtrees. there-
+fore, no behaviour violates ^and infrequent behaviour can be neither detected nor
+ﬁltered while splitting the log.
+	behaviour that violates the 	operator is when a trace does not start or end with the
+loop body: for instance, 	(a;b), is violated by all traces that do not start and end
+with ana. for each such invalid start or end of a trace, an empty trace is added todiscovering process models constructively without infrequent behaviour 7
+l1to increase ﬁtness of the resulting model. considering the trace t3=hb;a;bi,
+then[2;hai1]l1and[hbi2]l2.
+in each recursion step, ﬁrst the operator and cut selection steps of im are performed
+by imi. if that would result in the ﬂower model, the procedure is applied again, with
+the infrequent behaviour ﬁlters in operator and cut selection, base cases and log split-
+ting, such that in all steps of im ﬁlters are applied by imi. in the next section, imi is
+compared to existing process discovery mining techniques.
+4 comparison to other discovery algorithms
+in this section, we compare imi to existing mining algorithms on performance and
+quality criteria of discovered models, using ideas from [18,11]. we ﬁrst describe the
+experimental setup and the used logs, and ﬁnish with a discussion of the results.
+4.1 experimental setup
+we compare the mining algorithms im, imi, hm, ilp and etm using the following
+quality criteria: we compare performance and measure soundness, ﬁtness, precision,
+generalisation and simplicity. to provide a baseline, we include a ﬂower model (fm),
+allowing for all sequences of activities. and a trace model (tm)1. figure 4 gives an
+overview of the experimental setup.
+preprocess 
+log apply miner
+convert to 
+petri netmeasure /f_itness, 
+precision, 
+generalisationdetermine 
+soundnessdetermine 
+simplicity
+mining time
+figure 4: experimental setup
+preprocessing. as a preprocessing step, we add artiﬁcial start and end events to the
+logs. mining algorithms might require single start and end events, and these events help
+to determine soundness.
+mining. secondly, the miners are applied: im imi, ilp, hm, etm, fm and tm. we
+compare all mining algorithms using their default settings. like in [11], parameter op-
+timisation is outside the scope of this paper. hm and etm do not produce a petri net.
+therefore the output of each of these miners is converted to a petri net, measured min-
+ing time includes this conversion. we report an indicative mining time on a dual intel
+xeon e5-2630 hexacore, having 64gb of ram, running 64-bit windows 7. as we
+want to mine models fast, we set a maximum mining time of two hours. ilp is stopped
+abruptly after this bound, etm is allowed to ﬁnish its round of genetic steps.
+1a trace model allows for all traces in the event log, but no other behaviour.8 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+measuring. we are permissive in the soundness check: we add obvious ﬁnal markings
+to the discovered models if the mining algorithm does not provide it, and each reason-
+able ﬁnal marking in the discovered models is considered to be a valid ﬁnal marking to
+be reached by the process.
+to measure ﬁtness [7], precision [8] and generalisation [1] of the mined models we
+use the pnetreplayer package in the prom framework [14]. for these measures, ﬁrst a
+projection of the log on the discovered model is computed, an alignment . the technique
+described in [7] provides an alignment that shows the least deviation between log and
+model.
+for computation of the alignment, the ﬁnal marking to be reached is relevant. on
+the models discovered by miners that do not provide a ﬁnal marking, we compute the
+alignment assuming that every marking is a ﬁnal marking. for ﬁtness, this yields an
+upper bound2. experiments show that the upper bound is not necessarily tight: we found
+differences of 0.3 in ﬁtness between measured with and without ﬁnal marking. in the
+results, we denote these upper bound ﬁtness values using italics .
+from the alignment, a graph of reached and reachable markings, and edges between
+them is computed. on the markings in this graph, the number of edges that is never used
+in the alignment is a measure for precision [8], while the frequency of the edges used in
+the alignment is a measure for generalisation. the values of precision and generalisation
+highly depend on the chosen optimal alignment. therefore, the results with and without
+ﬁnal marking should not be compared for precision and generalisation. experiments
+show that the values are quite close: we found differences with a maximum of about
+0.1 in precision when there is no ﬁnal marking, and 0.005 for generalisation. we denote
+values obtained without ﬁnal marking in italics .
+we assess simplicity by measuring the number of arcs, places and transitions in the
+petri nets.
+4.2 logs
+to compare the mining algorithms, we use 12 real-life event logs. table 1 characterises
+the different logs. a process from the gynaecology department of an academic hospital
+is logged in the bpic’11 log [12]. the bpic’12 log [13] originates from an appli-
+cation process for a personal loan or overdraft within a global ﬁnancial organisation.
+furthermore, we use non-public logs of a building permit approval process in ﬁve mu-
+nicipalities, resulting from the coselog project3. we include these ﬁve both untouched,
+wabo 1 through 5, and ﬁltered to contain only activities common to all ﬁve, wabo
+1c through 5 c.
+4.3 results
+table 1 shows the results. 7indicates an unsound model, 3a sound. a dash (-) indicates
+that the miner did not produce a result, an empty space indicates that measurement could
+not be obtained on our machine due to memory restrictions. for some experiments,
+2we adapted the ﬁtness computation in the pnetreplayer package to achieve this.
+3see http://www.win.tue.nl/coselog/wiki/start.discovering process models constructively without infrequent behaviour 9
+mining took longer than two hours. this is denoted with (1). the experiments for which
+a ﬁnal marking had to be guessed are denoted with (2).
+a model with a deadlock is denoted with (10). (11) denotes that the model contains
+a dead transition, (12) that the model contains either an unbounded or an unreachable
+transition.
+table 1: log sizes and results.bpic‘11
+bpic‘12
+wabo 1
+wabo 1 c
+wabo 2
+wabo 2 c
+wabo 3
+wabo 3 c
+wabo 4
+wabo 4 c
+wabo 5
+wabo 5 c
+traces 1143 13087 434 434 286 286 481 481 324 324 432 432
+events 150291 262200 13571 9287 10439 6898 16566 11846 9743 6650 13370 8752
+activities 624 36 173 44 160 44 170 44 133 44 176 44remarksim
+imi
+hm (1) (2) (2) (2) (2) (2) (2) (2) (2) (2) (2) (2)
+ilp (1) (1) (1) (1) (1)
+etm
+fm
+tm (1) (1)soundnessim 3 3 3 3 3 3 3 3 3 3 3 3
+imi 3 3 3 3 3 3 3 3 3 3 3 3
+hm -(12)7(10)7(11)7(10)7(11)7(12)7(12)7(12)7(12)7(12)7(12)7
+ilp -(12)7 -(12)7 (12)7 - - -(12)7 (12)7
+etm 3 3 3 3 3 3 3 3 3 3 3 3
+fm 3 3 3 3 3 3 3 3 3 3 3 3
+tm - - 3 3 3 3 3 3 3 3 3 3mining time (s)im 68.3 5.6 0.8 0.2 0.6 0.2 0.9 0.3 0.4 0.1 0.6 0.2
+imi 182.3 8.1 5.1 0.4 1.7 0.6 1.8 0.5 0.8 0.6 1.3 0.6
+hm 7200.0 2519.2 1.9 0.2 2.5 2.1 1.9 0.2 1.1 0.1 2.0 2.3
+ilp 7200.0 5085.3 7200.0 319.8 1343.5 123.3 7200.0 7200.0 7200.0 1406.2 1452.4 185.1
+etm 7220.7 51.1 7261.7 2189.1 6018.9 2539.8 5524.2 7282.5 7260.2 2998.1 4268.5 4828.4
+fm 1.1 0.0 0.1 0.0 0.1 0.0 0.1 0.0 0.0 0.0 0.1 0.0
+tm 7200.0 7200.0 320.6 27.9 252.6 25.1 361.3 87.1 115.8 16.8 131.1 19.4ﬁtnessim 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000
+imi 0.698 0.931 0.756 0.780 0.977 0.888 1.000 0.874 0.993 0.757 0.990 0.833
+hm - 0.940 0.957 0.979 0.960
+ilp -1.000 -1.000 1.000 - - -1.000 1.000 1.000
+etm 0.158 0.022 0.372 0.709 0.464 0.616 0.520 0.593 0.403 0.698 0.562 0.680
+fm 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000
+tm - - 1.000 1.000 1.000 1.000 1.000precisionim 0.009 0.040 0.090 0.034 0.077 0.035 0.075 0.070 0.090 0.038 0.083
+imi 0.300 0.637 0.042 0.465 0.078 0.599 0.091 0.605 0.058 0.644
+hm - 0.744 0.725 0.489 0.622
+ilp -0.306 -0.537 0.413 - - -0.352 0.324 0.391
+etm 0.927 1.000 0.937 0.913 0.973 0.994 0.920 0.952 0.961 0.890 1.000 0.895
+fm 0.002 0.051 0.011 0.043 0.009 0.037 0.010 0.040 0.012 0.040 0.009 0.039
+tm - - 1.000 1.000 1.000 1.000 1.000generalisationim 1.000 0.999 1.000 1.000 0.999 1.000 1.000 0.999 0.999 0.999 1.000
+imi 0.999 1.000 0.999 1.000 0.999 1.000 0.999 0.999 0.998 1.000
+hm - 0.998 0.998 0.923 0.895
+ilp -0.997 -0.803 0.916 - - -0.824 0.690 0.784
+etm 1.000 1.000 1.000 0.999 1.000 1.000 1.000 0.998 1.000 0.992 1.000 0.992
+fm 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 1.000 0.999 1.000
+tm - - 0.046 0.039 0.035 0.050 0.044
+4.4 discussion
+first observation is that for all logs a model was discovered within two hours by im,
+imi, fm and etm. imi was for all logs a bit slower than im, while taking a lot less time10 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+table 2: simplicity (#arcs,#places,#transitions).
+im imi hm ilp etm fm tm
+bpic‘11 1256,5,628 1290,27,645 - - 16,7,8 1256,3,628 -
+bpic‘12 80,7,40 166,41,81 90375,76,16737 919,88,38 2,2,1 80,3,40 -
+wabo 1 368,12,184 474,97,237 1071,350,496 - 32,15,16 354,3,177 19582,9513,9791
+wabo 1 c96,5,48 122,37,61 249,92,121 802,73,46 72,32,35 96,3,48 6056,2890,3028
+wabo 2 336,8,168 406,43,202 870,324,419 4560,215,162 56,28,26 328,3,164 17340,8454,8670
+wabo 2 c120,16,60 112,25,56 235,92,116 770,62,46 44,21,22 96,3,48 5754,2766,2877
+wabo 3 378,18,189 358,14,179 946,344,459 - 50,24,23 348,3,174 20128,9813,10064
+wabo 3 c122,15,61 116,32,58 279,92,135 - 42,21,18 96,3,48 10604,5116,5302
+wabo 4 304,23,152 290,21,145 764,270,362 - 34,16,17 274,3,137 12186,5907,6093
+wabo 4 c100,7,50 108,33,54 230,92,114 1239,80,46 78,35,31 96,3,48 4742,2255,2371
+wabo 5 368,8,184 392,30,196 910,356,451 5479,233,178 46,22,22 360,3,180 12628,6136,6314
+wabo 5 c96,5,48 116,36,58 254,92,122 786,60,46 64,32,27 96,3,48 5052,2418,2526
+than ilp, etm and tm. a noticeable difference exists between etm and imi; etm
+took much longer for each log. second observation is that, not considering fm and tm,
+no miner has a log on which it performs best on all ﬁtness, precision and generalisation.
+tradeoffs have to be made.
+im and ilp did not manage to discover a good 80% model: to achieve perfect ﬁt-
+ness, im sacriﬁces precision, while ilp sacriﬁces precision and simplicity. an 80%
+model was discovered for most logs by hm, but were less simple, not sound, and for
+some logs discovery took a long time. etm, with its default settings as tested, focuses
+on precision and therefore achieves a lower ﬁtness. moreover, discovery took a long
+time. imi discovered sound 80% models quickly in all cases. regarding precision, two
+groups of event logs can be identiﬁed:
+–bpic‘11 and wabo 1 to wabo 5 . on these logs, imi produces 80% models with
+better precision than im and the baseline fm. fitness of imi on all these logs is, as
+expected for 80% models, higher than etm, but lower than im. a manual inspec-
+tion of the resulting models shows that imi returns a sequence of activities, whereas
+im returns a ﬂower model. still, some sequential elements are ﬂower models, caus-
+ing the low precision. figure 5b shows a part of the model discovered by imi for
+wabo 4.
+–bpic‘12 and wabo 1 c to wabo 5 c. on these logs, imi discovers good 80%
+models that can keep up with other miners. figure 5 shows the results of three
+miners on the wabo 2 c log. the model discovered by etm contains the least
+number of transitions and is obviously the simplest model, but its ﬁtness (0.506) is
+considerably lower than of imi (0.946). the main difference is that imi adds two
+ﬂower submodels not discovered by etm, giving a precision of 0.430 for imi and
+0.994 for etm. for generalisation, both models have the perfect score. of the 44
+activities in wabo 2 c, 23 are not in the model discovered by etm and only 2 are
+not in the model discovered by imi. therefore, a future trace is more likely to be
+accepted by the imi-model than by the etm-model. also, note that imi returned a
+model in 0.1 seconds and etm needed 42 minutes, showing that imi can achieve
+better results in signiﬁcantly less time.discovering process models constructively without infrequent behaviour 11
+(a) imi on wabo 2 c
+ (b) imi on wabo 4 (part of).
+(c) ilp on wabo 2 c (part of)
+(d) etm on wabo 2 c
+figure 5: results of discovery.
+5 conclusion
+in this paper, we presented the inductive miner - infrequent (imi), an extension of the
+inductive miner (im, called b’ in [16]) that ﬁlters infrequent behaviour locally in each
+algorithmic step of im: selecting an operator and a cut, splitting the log and the base
+cases of the recursion.
+unlike other approaches, imi can create the so-called 80% model using the pareto
+principle while guaranteeing to return a sound process model in a short time. we com-
+pared imi to several existing techniques using performance and soundness, ﬁtness, pre-
+cision, generalisation and simplicity of the discovered models. im, hm, ilp and etm
+were applied to twelve real-life logs. compared with im, models discovered by imi
+have a lower ﬁtness, higher precision, equal generalisation and comparable simplicity.
+imi always returned a sound 80% model fast, and on all logs scores good on all qual-
+ity criteria except precision. results for precision are twofold: on half of the logs, imi
+discovered sound 80% models fast, having a lower precision due to discovery of ﬂower
+models early in the recursion. note that for many logs, a model scoring well on all qual-
+ity criteria doesn’t exist: process discovery is a tradeoff. on the other half of the logs,
+imi discovered better 80% models faster than any other discovery technique, showing
+the potential of the constructive approach.
+future work. the parallel operator ^remains problematic in operator and cut selec-
+tion, as none of the features proposed in this paper can ﬁlter infrequent behaviour and
+incompleteness related to this construct. efﬁcient detection of non-complete parallel
+logs remains a subject of further research.
+references
+1. van der aalst, w., adriansyah, a., van dongen, b.: replaying history on process models
+for conformance checking and performance analysis. wiley interdisciplinary reviews: data
+mining and knowledge discovery 2(2), 182–192 (2012)
+2. van der aalst, w.m.p., et al.: process mining manifesto. in: business process management
+workshops (1). lecture notes in business information processing, vol. 99, pp. 169–194.
+springer (2011)12 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+3. van aalst, w.m., van hee, k.m., van werf, j.m., verdonk, m.: auditing 2.0: using process
+mining to support tomorrow’s auditor. computer 43(3), 90–93 (2010)
+4. van der aalst, w.m., song, m.: mining social networks: uncovering interaction patterns
+in business processes. in: business process management, lncs, vol. 3080, pp. 244–260.
+springer (2004)
+5. van der aalst, w., de medeiros, a., weijters, a.: genetic process mining. applications and
+theory of petri nets 2005 3536, 985–985 (2005)
+6. van der aalst, w., weijters, t., maruster, l.: workﬂow mining: discovering process models
+from event logs. knowledge and data engineering, ieee transactions on 16(9), 1128–1142
+(2004)
+7. adriansyah, a., van dongen, b., van der aalst, w.: conformance checking using cost-based
+ﬁtness analysis. in: enterprise distributed object computing conference (edoc), 2011
+15th ieee international. pp. 55–64. ieee (2011)
+8. adriansyah, a., munoz-gama, j., carmona, j., van dongen, b.f., van der aalst, w.m.:
+alignment based precision checking. in: business process management workshops. pp.
+137–149. springer (2013)
+9. buijs, j., van dongen, b., van der aalst, w.: a genetic algorithm for discovering process
+trees. in: evolutionary computation (cec), 2012 ieee congress on. pp. 1–8. ieee (2012)
+10. carmona, j.: projection approaches to process mining using region-based techniques. data
+mining and knowledge discovery 24(1), 218–246 (2012)
+11. de weerdt, j., de backer, m., vanthienen, j., baesens, b.: a multi-dimensional quality as-
+sessment of state-of-the-art process discovery algorithms using real-life event logs. informa-
+tion systems 37, 654–676 (2012)
+12. van dongen, b.: bpi challenge 2011 dataset (2011),
+http://dx.doi.org/10.4121/uuid:d9769f3d-0ab0-4fb8-803b-0d1120ffcf54
+13. van dongen, b.: bpi challenge 2012 dataset (2012),
+http://dx.doi.org/10.4121/uuid:3926db30-f712-4394-aebc-75976070e91f
+14. van dongen, b., de medeiros, a., verbeek, h., weijters, a., van der aalst, w.: the prom
+framework: a new era in process mining tool support. applications and theory of petri nets
+2005 3536, 444454 (2005)
+15. van dongen, b.f., adriansyah, a.: process mining: fuzzy clustering and performance visu-
+alization. in: business process management workshops. pp. 158–169. springer (2010)
+16. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured process
+models from event logs - a constructive approach. in: petri nets. lecture notes in computer
+science, vol. 7927, pp. 311–329. springer (2013)
+17. mans, r., schonenberg, m., song, m., van der aalst, w., bakker, p.: application of process
+mining in healthcare–a case study in a dutch hospital. in: biomedical engineering systems
+and technologies, pp. 425–438. springer (2009)
+18. de medeiros, a., weijters, a., van der aalst, w.: genetic process mining: an experimental
+evaluation. data mining and knowledge discovery 14(2), 245–304 (2007)
+19. smirnov, s., weidlich, m., mendling, j.: business process model abstraction based on syn-
+thesis from well-structured behavioral proﬁles. international journal of cooperative infor-
+mation systems 21(01), 55–83 (2012)
+20. weijters, a., van der aalst, w., de medeiros, a.: process mining with the heuristics miner-
+algorithm. technische universiteit eindhoven, tech. rep. wp 166 (2006)
+21. van der werf, j., van dongen, b., hurkens, c., serebrenik, a.: process discovery using inte-
+ger linear programming. fundamenta informaticae 94, 387412 (2010)
+22. yzquierdo-herrera, r., silverio-castro, r., lazo-cort ´es, m.: sub-process discovery: oppor-
+tunities for process diagnostics. in: enterprise information systems of the future, pp. 48–57.
+springer (2013)

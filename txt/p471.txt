@@ -1,0 +1,787 @@
+discovery, veri¯cation and conformance of
+work°ows with cancellation
+w.m.p. van der aalst
+department of mathematics and computer science,
+eindhoven university of technology
+p.o. box 513, nl-5600 mb, eindhoven, the netherlands.
+w.m.p.v.d.aalst@tue.nl
+abstract. petri nets are frequently used for the modeling and analysis
+of work°ows. their graphical nature, well-de¯ned semantics, and analysis
+techniques are attractive as information systems become more \process-
+aware". unfortunately, the classical petri net has problems modeling can-
+cellation in a succinct and direct manner. modeling cancellation regions
+in a classical net is impossible or results in a \spaghetti-like" net. can-
+cellation regions are supported by many work°ow management systems,
+but these systems do not support advanced analysis techniques (process
+mining, veri¯cation, performance analysis, etc.). this paper proposes to
+usereset work°ow nets (rwf-nets) and discusses (1) the discovery of
+rwf-nets (i.e., extracting information from event logs to construct such
+models), (2) the veri¯cation of rwf-nets (i.e., checking whether a work-
+°ow process has deadlocks, livelocks, etc.), and (3) the conformance of an
+event log with respect to a rwf-net (i.e., comparing real with modeled
+behavior).
+keywords : petri nets, reset nets, soundness, veri¯cation, and process mining.
+1 introduction
+information systems have become \process-aware", i.e., they are driven by pro-
+cess models [26]. often the goal is to automatically con¯gure systems based on
+process models rather than coding the control-°ow logic using some conven-
+tional programming language. early examples of process-aware information sys-
+tems were called workflow management (wfm) systems [5, 30, 36, 50]. in more
+recent years, vendors prefer the term business process management (bpm) sys-
+tems. bpm systems have a wider scope than the classical wfm systems and
+are not just focusing on process automation. bpm systems tend to provide more
+support for various forms of analysis and management support. both wfm and
+bpm aim to support operational processes that we refer to as \work°ow pro-
+cesses" or simply \work°ows".
+the °ow-oriented nature of work°ow processes makes the petri net formalism
+a natural candidate for the modeling and analysis of work°ows. figure 1 shows
+a so-called work°ow net (wf-net), i.e., a petri net with a start place and anend place such that all nodes are on some path from start to end. wf-nets were
+introduced in [1, 2].1
+fig. 1. a wf-net n1modeling the booking of trips. note that after one \nok" the
+trip will be cancelled eventually. there are 23¡1 = 7 situations modeled by transitions
+c1; c2; : : : ; ; c 7. although the model is already complicated it fails to model that there
+should not be any booking activities after the ¯rst \nok", because the trip will be
+cancelled anyway.
+the wf-net in figure 1 models the booking of trips. after registration a
+°ight, a hotel, and a car are booked. each of these booking activities can suc-
+ceed (\ok") or fail (\nok"). for reasons of simplicity, only the successful or
+unsuccessful completion of these activities is shown in figure 1 (i.e., activities
+are considered to be atomic). if all booking activities succeed, then a payment
+follows. if one of them fails, a cancellation activity follows. since each of the 3
+booking activities can succeed or fail, there are 23= 8 scenarios. only for one
+of these eight scenarios, payment is executed. for all other seven scenarios, the
+trip is cancelled.
+figure 1 is already rather complex but fails to model that there should not
+be any unnecessary work, i.e., after the ¯rst failure (\nok"), no other booking
+activities should be executed as cancellation is inevitable. to model this, the
+seven c-transitions ( c1; c2; : : : ; ; c 7) are not adequate as there are 33¡23= 19
+1according to google scholar (visited on april 23rd, 2008), [2] got more than thou-
+sand references illustrating the interest in the topic. in fact, [2] is the second most
+cited work°ow paper after [30].possible states after registration and before payment/cancellation in which there
+is at least one \nok". hence, 19 ¡7 = 12 additional c-transitions are needed to
+capture this. moreover, we simpli¯ed the model by assuming that the activities
+are atomic. this is not realistic because the booking of the °ight, the hotel, and
+the car may happen in parallel and if one of them fails the other ones need to
+be withdrawn. if we incorporate this in the model, there there are 43¡33= 37
+states after registration and before payment/cancellation in which there is at
+least one \nok".2this implies that to fully model the example 37 c-transitions
+are needed to remove the tokens from the right places. this illustrates that
+cancellation is di±cult to model in wf-nets. therefore, we propose to use reset
+arcs[24, 25, 29]. a reset arc removes tokens from a place but does not block the
+corresponding transition if the place is empty. this is a very useful construct
+that allows for the modeling of various cancellation operations supported by
+contemporary work°ow languages, e.g., the withdraw construct of sta®ware, the
+cancellation region of yawl, the cancel event of bpmn, etc. in our example, the
+37c-transitions that are needed to remove the tokens from the right places, can
+be replaced by a single transition with reset arcs. this illustrates the usefulness
+and relevance of reset arcs. therefore, we introduce the so-called reset workflow
+nets (rwf-nets) as an extension to the classical wf-nets [1, 2].
+taking rwf-nets as a starting point we explore a spectrum of analysis ques-
+tions. concretely, we investigate the following three challenges:
+{discovering rwf-nets. given an event log extracted from some database,
+transaction log, or set of use cases/audit trails, we want to automatically infer
+a process model. since cancellation is important when modeling work°ows,
+it is also important to discover cancellations when observing systems and
+processes.
+{veri¯cation of rwf-nets. many of the modern work°ow languages o®er
+some form of cancellation. hence, it is important to be able to verify such
+models and point out deadlocks, livelocks, etc.
+{conformance with respect to a rwf-net. the alignment of model and sys-
+tems on the one hand and real-life processes on the other often leaves much
+to be desired. therefore, it is important to be able to compare event logs
+with models. since real-live processes and their models exhibit cancellation,
+it is important to take this into account when checking conformance of event
+logs and models.
+the remainder of this paper is organized as follows. first, we present reset
+work°ow nets and introduce three challenges (discovery, veri¯cation, and con-
+formance), followed by section 3 which introduces the concept of event logs.
+section 4 focuses on the veri¯cation of work°ows with cancellation. section 5
+shows that conformance can be checked by \playing the token game" based on
+the event log. section 6 presents the challenge to discover reset work°ow nets.
+2each of the booking activities has 4 states: enabled, running, succeeded (i.e., \ok"),
+and failed (i.e., \nok"). therefore, there are 43= 64 possible states and 33= 27
+of these states are non-failure states.an overview of related work is provided in section 7 and section 8 concludes
+the paper.
+2 reset work°ow nets
+the wf-net in figure 1 is a nice illustration of the inability of classical petri
+nets to model cancellation. therefore, we use reset nets , i.e., classical petri net
+extended with reset arcs.
+de¯nition 1 (reset net). areset net is a tuple (p; t; f; w; r ), where:
+{(p; t; f )is a classical petri net with places p, transitions t, and °ow rela-
+tionfµ(p£t)[(t£p),
+{w2f!i nn f0gis an (arc) weight function, and
+{r2t!2pis a function de¯ning reset arcs.
+a reset net extends the classical petri net with reset arcs. these are used to
+remove all tokens from a place independent of the number of tokens. r(t) is the
+set of places that are emptied when ¯ring t. also note that we are using arc
+weights. arc weights specify the number of tokens to be consumed or produced.
+w(p; t) is the number of tokens transition tconsumes from input place pand
+w(t; p) is the number of tokens transition tproduces for output place p.
+figure 2 shows a reset net. in this example all arc weights are 1, i.e., w(x; y) =
+1 for ( x; y)2f. transition chas seven reset arcs connected to it. when c¯res
+all tokens are removed from places fok,hok ,cok,nok ,bf,bh, and bc. for
+the enabling of cthese reset arcs is irrelevant, i.e., cis enabled if and only if
+there is a token in place nok .
+the state of a reset net, also referred to as marking , is described as a multiset.
+therefore, we introduce some notation. let abe a set, e.g., the set of places p.
+i b(a) =a!i n is the set of multi-sets (bags) over a, i.e., x2i b(a) is a multi-
+set where for each a2a:x(a) denotes the number of times ais included in the
+multi-set. the sum of two multi-sets ( x+y), the di®erence ( x¡y), the presence
+of an element in a multi-set ( x2x), and the notion of sub-multi-set ( x·y)
+are de¯ned in a straightforward way and they can handle a mixture of sets and
+multi-sets. ¼a0(x) is the projection of xonto a0µa, i.e., ( ¼a0(x))(a) =x(a)
+ifa2a0and ( ¼a0(x))(a) = 0 if a62a0.
+to represent a concrete multi-set we use square brackets, e.g., [ fok;hok;
+cok] is the marking with a token in each of the \ok places" and [ nok3] is
+the marking with three tokens in place nok .
+because of the arc weights the classical preset and postset operators re-
+turn bags rather than sets: ²a= [xw(x;y)j(x; y)2f^a=y] and a²=
+[yw(x;y)j(x; y)2f^a=x]. for example, ²pay= [fok;hok;cok] is the
+bag of input places of payandpay²= [end] is the bag of output places of pay.
+now we can formalize the notions of enabling and ¯ring.
+de¯nition 2 (firing rule). letn= (p; t; f; w; r )be a reset net and m2
+i b(p)be a marking.fig. 2. a rwf-net n2modeling the booking of trips. note that unlike the wf-net in
+figure 1, unnecessary work is avoided. moreover, the number of nodes to handle the
+cancellation is constant and the number of arcs is linear in the number of booking ac-
+tivities (°ight, hotel, car, etc.) and activity states (enabled, running, succeeded, failed,
+etc.).
+{a transition t2tis enabled, notation (n; m )[ti, if and only if, m¸ ²t.
+{an enabled transition tcan ¯re while changing the state to m0, notation
+(n; m )[ti(n; m0), if and only if, m0=¼pnr(t)(m¡ ²t) +t².
+the resulting marking m0=¼pnr(t)(m¡²t)+t²is obtained by ¯rst removing
+the tokens required for enabling: m¡ ²t. then all tokens are removed from the
+reset places of tusing projection. applying function ¼pnr(t)removes all tokens
+except the ones in the non-reset places pnr(t). finally, the speci¯ed numbers
+of tokens are added to the output places. note that t²is abagof tokens
+(n; m )[ti(n; m0) de¯nes how a petri net can move from one marking to
+another by ¯ring a transition. we can extend this notion to ¯ring sequences.
+suppose ¾=ht1; t2; : : : ; t niis a sequence of transitions present in some petri net
+nwith initial marking m. (n; m )[¾i(n; m0) means that there exists a sequence
+of markings hm0; m1; : : : ; m niwhere m0=m,mn=m0, such that for any 0 ·
+i < n : (n; m i)[ti+1i(n; m i+1). using this notation we de¯ne the set of reachable
+markings r(n; m ) as follows: r(n; m ) =fm02i b(p)j 9¾(n; m )[¾i(n; m0)g.note that by de¯nition m2r(n; m ) because the initial marking mis trivially
+reachable via the empty sequence ( n= 0).
+we would like to emphasize that any reset net with arc weights can be trans-
+formed into a reset net without arc weights, i.e., all arcs have weight 1. therefore,
+in proofs can assume arc weights of 1 when convenient and still use them in con-
+structs. see [6] for a construction.
+the idea of a work°ow process is that many cases (also called process in-
+stances ) are handled in a uniform manner. the work°ow de¯nition describes the
+ordering of activities to be executed for each case including a clear start state
+andend state . these basic assumptions lead to the notion of a workflow net
+(wf-net) [1, 2] which can easily be extended in the presence of reset arcs.
+de¯nition 3 (rwf-net). an reset net n= (p; t; f; w; r )is a reset work-
+flow net (rwf-net) if and only if
+{there is a single source place i, i.e., fp2pj ²p=;g=fig.
+{there is a single sink place o, i.e., fp2pjp²=;g=fog.
+{every node is on a path from itoo, i.e., for any n2p[t:(i; n)2f¤and
+(n; o)2f¤.
+{there is no reset arc connected to the sink place, i.e., 8t2to62r(t).
+figures 1 and 2 both show a rwf-net. the requirement that 8t2to62r(t) has
+been added to emphasize that termination should be irreversible, i.e., it is not
+allowed to complete (put a token in o) and then undo this completion (remove
+the token from o).
+let us now compare ¯gures 1 and 2 showing rwf-nets n1andn2respec-
+tively. in the the original net without reset arcs ( n1) the number of cancellation
+transitions is exponential in the number of bookings while in the second net ( n2)
+there is just one cancellation transition and the number of reset arcs is linear in
+the number of bookings. also note that in n2tokens are also removed from the
+input places of the booking activities to make sure than no unnecessary work
+is conducted. extending n1to obtain the same behavior requires the addition
+of 12 more cancellation transitions. this clearly shows the bene¯ts of using re-
+set arcs. moreover, ¯gures 1 and 2 also illustrate the need for the modeling of
+cancellations in real-life work°ow processes.
+3 event logs
+traditionally, the focus of work°ow analysis at design-time has been on model-
+based veri¯cation and simulation while at run-time the focus has been on mea-
+suring simple key performance indicators such as °ow times, service levels, etc.
+because more and more information about processes is recorded by information
+systems in the form of so-called \event logs", it seems vital to also use this
+information while analyzing processes. a wide variety of process-aware infor-
+mation systems [26] is recording excellent data on actual events taking place.
+erp (enterprise resource planning), wfm (workflow management), crm(customer relationship management), scm (supply chain management), and
+pdm (product data management) systems are examples of such systems. de-
+spite the omnipresence and richness of these event logs, most software vendors
+have been focusing on relatively simple questions under the assumption that the
+process is ¯xed and known , e.g., the calculation of simple performance metrics
+like utilization and °ow time. however, in many domains processes are evolv-
+ing and people typically have an oversimpli¯ed and incorrect view of the actual
+business processes. therefore, process mining techniques attempt to extract non-
+trivial and useful information from event logs. one aspect of process mining is
+control-°ow discovery , i.e., automatically constructing a process model (e.g., a
+petri net) describing the causal dependencies between activities [11, 12, 17, 20].
+later in this paper, we discuss process discovery and conformance checking
+using rwf-nets. these are particular process mining techniques that require
+event logs as input. therefore, we de¯ne the notion of an event log.
+de¯nition 4 (event log). letabe a set of activities. a trace ¾can be de-
+scribed as a sequence of activities, i.e., ¾2a¤. an event log lis a multiset of
+traces, i.e., l2i b(a¤).
+a trace can be considered as the execution path of a single process instance
+(case). note that this is a rather simpli¯ed view, i.e., in real life events have times-
+tamps (when did the activity happen?), resource information (who executed
+the activity?), data (what information was used and produced?), etc. how-
+ever, for this paper we focus on the control-°ow only. a trace possible according
+to figure 2 is ¾=hregister ;book °ight nok ;c;cancel i. an example event log
+consisting of 5 traces is l= [hregister ;book hotel nok ;c;cancel i3;hregister ;
+book hotel ok;book carok;book °ight ok;payi2].
+as already indicated in section 1, this paper focuses on three challenges:
+{discovering rwf-nets. given an event log l, we want to infer a rwf-net
+n.
+{veri¯cation of rwf-nets. given a rwf-net n, we want to discover errors
+such as deadlocks, etc.
+{conformance with respect to a rwf-net. given an event log land a rwf-
+netn, we want to discover discrepancies between landn.
+the remainder of this paper will focus on these three challenges. we start by
+elaborating on the veri¯cation of rwf-nets.
+4 veri¯cation of rwf-nets
+based on the notion of rwf-nets we now investigate the fundamental question:
+\is the work°ow correct?". if one has domain knowledge, this question can be
+answered in many di®erent ways. however, without domain knowledge one can
+only resort to generic questions such as: \does the work°ow terminate?", \are
+there any deadlocks?", \is it possible to execute activity a?", etc. such kinds of
+generic questions triggered the de¯nition of soundness [1, 2]. di®erent soundnessnotions have been proposed, e.g., k-soundness [32, 33], weak soundness [39], gen-
+eralized soundness [32, 33], relaxed soundness [21], etc. however, here we focus
+on the original de¯nition given in [1].
+de¯nition 5 (classical soundness [1, 2]). letn= (p; t; f; w; r )be a
+rwf-net. nis sound if and only if the following three requirements are sat-
+is¯ed:
+{option to complete: 8m2r(n;[i])[o]2r(n; m ).
+{proper completion: 8m2r(n;[i])(m¸[o]))(m= [o]).
+{no dead transitions: 8t2t9m2r(n;[i])(n; m )[ti.
+a rwf-net such as the one sketched in figure 1 is sound if and only if the
+following three requirements are satis¯ed: (1) option to complete : for each case it
+is always still possible to reach the state which just marks place end, (2) proper
+completion : if place endis marked all other places are empty for a given case,
+and (3) no dead transitions : it should be possible to execute an arbitrary activity
+by following the appropriate route through the rwf-net. it is easy to see that
+n1andn2(¯gures 1 and 2) are sound.
+fig. 3. a rwf-net n3that is not sound. from the initial marking [ start] e.g. the mark-
+ing shown (i.e., [ bh;fok;end]) is reachable. this shows that the ¯rst two requirements
+stated in de¯nition 5 do not hold.
+rwf-net n3shown in figure 3 is an example of a work°ow that is not sound.
+since cdoes not remove tokens from the places before the booking activities,tokens may be left behind. in fact, it is still possible to book a hotel after
+transition cancel has put a token in end(cf. figure 3). this example shows that
+it is easy to make errors when modeling work°ows with cancellation.
+in [1, 2] it was shown that soundness is decidable for wf-nets, i.e., rwf-
+nets without reset arcs. a wf-net n= (p; t; f ) (without reset arcs and arc
+weights) is sound if and only if the short-circuited net ( n;[i]) with n= (p; t[
+ft¤g; f[f(o; t¤);(t¤; i)g) is live and bounded. since liveness and boundedness are
+both decidable, soundness is also decidable. for some subclasses (e.g., free-choice
+nets), this is even decidable in polynomial time [1, 2].
+since the mid-nineties many people have been looking at the veri¯cation of
+work°ows. these papers all assume some underlying model (e.g., wf-nets) and
+some correctness criterion (e.g., soundness). however, in many cases a rather
+simple model is used (wf-nets or even less expressive) and practical features
+such as cancellation are missing. many practical languages have a cancellation
+feature, e.g., sta®ware has a withdraw construct, yawl has a cancellation re-
+gion, bpmn has cancel, compensate, and error events, etc. therefore, it is in-
+teresting to investigate the notion of soundness in the context of rwf-nets, i.e.,
+wf-nets with reset arcs [24, 25, 29]. unfortunately, soundness is notdecidable
+for rwf-nets with reset arcs.
+theorem 1 (undecidability of soundness). soundness is undecidable for
+rwf-nets.
+for a proof we refer to [6]. although far from trivial, it is possible to construct
+a rwf-net n0given an arbitrary reset net nsuch that n0is sound if and only
+ifm0isnotreachable from minn. since reachability is undecidable for reset
+nets [24, 25, 29], this implies that soundness is also undecidable for rwf-nets.
+theorem 1 is non-trivial because properties such as coverability (is it possible
+to reach a marking m0that covers m, i.e., m0¸m?) are decidable for reset
+nets.
+note that although soundness is undecidable for rwf-nets, for many rep-
+resentatives of this class, it may still be possible to conclude soundness or non-
+soundness. there may be rules of the form \if wf-net nhas property x, then
+nis sound" or \if wf-net nhas property y, then nis not sound". as shown
+in [41] it is possible to ¯nd many errors using such an approach. in [41] a set
+of more than 2000 process models from practice (including more than 600 pro-
+cesses from the sap reference model) was analyzed. it could be shown that at
+least 10 percent of these models is not sound. these examples show that even if
+soundness is undecidable, errors can be discovered . similarly, for many models it
+is still possible to guarantee soundness even if the general veri¯cation problem
+is undecidable.
+in the related work section, we provide some pointers to analysis techniques
+using brute force (e.g. coverability graphs), structural techniques (invariants),
+and/or reduction rules. for example, rwf-nets can be reduced using the reduc-
+tion rules presented in [48] to speed-up analysis and improve diagnostics.5 conformance with respect to a rwf-net
+as indicated in section 3, lion's share of analysis e®orts has been devoted to
+model-based analysis (veri¯cation, simulation, etc.) and measuring simple per-
+formance indicators. however, given the abundance of event logs it is interesting
+to \discover models" based on event logs (see section 6) or to measure the con-
+formance of existing models based on the real behavior recorded in logs. in this
+section, we focus on the latter question, i.e., \do the model and the log conform
+to each other?". conformance checking aims at the detection of inconsistencies
+between a process model nand its corresponding execution log l, and their
+quanti¯cation by the formation of metrics. in [4, 42, 43] two basic conformance
+notions have been identi¯ed (¯tness and appropriateness). first of all, the ¯t-
+ness between the log and the model is measured (i.e., \does the observed process
+comply with the control °ow speci¯ed by the process model?"). second, the ap-
+propriateness of the model can be analyzed with respect to the log (i.e., \does
+the model describe the observed process in a suitable way?"). appropriateness
+can be evaluated from both a structural and a behavioral perspective [43].
+in this paper, we only consider ¯tness. however, it is important to stress that
+a model with good ¯tness may not be appropriate. for example, the model with
+just a single place that serves as a self-loop for all transitions tis able to parse
+any trace in t¤[4, 42, 43].
+one way to measure the ¯t between event logs and process models is to
+\replay" the log in the model and somehow measure the mismatch. the replay
+of every trace starts with the marking of the initial place in the model, e.g.,
+[start] in figure 1. then, the transitions that belong to the logged events in the
+trace are ¯red one after another. while replay progresses, we count the number
+of tokens that had to be created arti¯cially (i.e., the transition belonging to the
+logged event was not enabled and therefore could not be successfully executed )
+and the number of tokens that were left in the model, which indicate that the
+process was not properly completed . based on counting the number of missing
+tokens during replay and the number of remaining tokens after replay, we de¯ne
+a function fthat has a value between 0 (=poor ¯tness) and 1 (=good ¯tness).
+de¯nition 6 (fitness). letn= (p; t; f; w; r )be a rwf-net and let l2
+i b(a¤)be an event log where we assume that t=a. let kbe the number
+of traces in event log l. for each log trace i(1·i·k),miis the number
+of missing tokens, riis the number of remaining tokens, ciis the number of
+consumed tokens, and piis the number of produced tokens during log replay of
+trace i. the token-based ¯tness metric fis de¯ned as follows:
+f(n; l) =1
+2(1¡pk
+i=1mipk
+i=1ci) +1
+2(1¡pk
+i=1ripk
+i=1pi)
+note that the above de¯nition is rather informal. in [42, 43] this metric was
+de¯ned for wf-nets, i.e., work°ows without cancellation. however, as shown
+here the metric can easily be extended for rwf-nets. let us consider sometrace iconsisting of a sequence of nevents ¾i=he1; e2; : : : ; e ni 2t¤. the
+initial state of nis [i] and the desired end state is [ o]. if ( n;[i])[¾ii(n;[o]),
+then there is a perfect ¯t, i.e., the trace can be replayed without leaving to-
+kens behind. so, ( n;[i])[¾ii(n;[o]) if and only if f(n;[¾i]) = 1. let ¾1=
+hregister ;book hotel nok ;c;cancel i. it is easy to see that f(n2;[¾1]) = 1, i.e.,
+the trace can be replayed without missing or remaining tokens. (recall that n2is
+the rwf-net shown in figure 2.) now consider ¾2=hregister ;book hotel ok;c;
+payi. it is possible to execute the partial trace hregister ;book hotel oki. how-
+ever, to execute c, there has to be a token in nok (i.e., one token is missing). if
+we force cto ¯re anyway, the resulting state is [ ec]. in this state, we cannot ¯re
+payas there are three missing tokens. this brings the number of missing tokens
+to 4. after forcing payto ¯re, the resulting state is [ ec;end]. hence one token
+remains in place ec.
+we can show the calculation of the values m2,r2,c2, and p2step-by-step
+using four temporary variables. initially, m= 0 (no missing tokens), r= 0
+(no remaining tokens), c= 0 (no consumed tokens), and p= 1 (prior to the
+execution of register the net is in state [ start], so the environment already put
+a token in the initial place). after start ¯res state [ bf;bh;bc] is obtained and
+m= 0, c= 0 + 1 = 1, and p= 1 + 3 = 4. after book hotel ok¯res marking
+[bf;bc;hok ] is reached and m= 0,c= 1+1 = 2, and p= 4+1 = 5. after c¯res
+state [ ec] is obtained and m= 0 + 1 = 1 (missing token in nok ),c= 2 + 4 = 6
+(four tokens are removed, one by a \normal" arc and three by reset arcs), and
+p= 5 + 1 = 6. after pay¯res state [ ec;end] is reached and m= 1 + 3 = 4,
+c= 6 + 3 = 9, and p= 6 + 1 = 7. finally, the token is removed from end
+and the remaining token is recorded, i.e., c= 9 + 1 = 10 and r= 1. note
+that in the calculation the marking of the source place is considered to be a
+production step while the removal of the token from the sink place is considered
+to be a consumption step. also note that the removal of tokens through reset
+arcs is calculated as a consumption step. hence, m2= 4, r2= 1, c2= 10, and
+p2= 7. therefore, f(n2;[¾2]) =1
+2(1¡4
+10) +1
+2(1¡1
+7) =51
+70»=0:73. the ¯tness
+off(n2;[¾1; ¾2]) =1
+2(1¡0+4
+7+10) +1
+2(1¡0+1
+7+7) =403
+476»=0:85.
+several de¯nitions of ¯tness are possible. for example, de¯nition 6 gives equal
+weights to missing tokens and remaining tokens. by replacing the weights1
+2by
+e.g. weight3
+4and weight1
+4in de¯nition 6, more emphasis is put on problems
+related to missing tokens and less on proper termination.
+several metrics for ¯tness and various appropriateness notions have been im-
+plemented in prom for wf-nets [42, 43]. as shown in this section, these metrics
+can be adapted for rwf-nets in a straightforward manner. figure 4 illustrates
+the current functionality of prom. for a speci¯c log, the ¯tness is calculated
+with respect to the wf-net shown in figure 1. as figure 4 shows the ¯tness
+is 0.80908644 (metric is shown in top right corner). several places are anno-
+tated with one or two numbers. positive numbers refer to remaining tokens (i.e.,pk
+i=1rifor a particular place) and negative tokens refer to missing tokens (i.e.,pk
+i=1mifor a particular place). the input place of cancel (i.e., place ecin fig-
+ure 1) has the number \ ¡25" indicating that in the whole log there were 25fig. 4. the conformance checker in prom applied to the wf-net shown in figure 1
+and an event log containing 42 cases and 172 events.
+situations where according to the log cancel had to ¯re while according to the
+model this was not possible because ecwas empty. as shown in figure 4, nice
+diagnostics can be given showing were in the model mismatches occur and how
+severe they are.
+note that the transitions c1; c2; : : : ; ; c 7 in figure 1 are depicted di®erently
+in the conformance checker (cf. figure 4). the reason is that there are no events
+related to c1; c2; : : : ; ; c 7 in the log, i.e., these are \silent transitions" and cannot
+be observed. the conformance checker in prom can deal with such situations
+using state-space analysis. the same technique is used to deal with \duplicates",
+i.e., two transitions having the same label. see [43] for details. interestingly, all
+ideas from [43] can be generalized to work°ows with cancellation.
+6 discovering rwf-nets
+the last challenge addressed in this paper is the discovery of work°ows with
+cancellation, i.e., based on some event log lwe want to automatically construct
+a rwf-net nthat \captures" the behavior seen in the log. many techniques
+have been proposed in literature [11, 8, 12, 17, 20, 22, 23, 49]. however, none of
+these techniques discovers work°ow models with cancellation features .
+figure 5 illustrates the concept of process discovery. given an event log with-
+out any explicit process information, we want to discover a process model. on
+the right-hand side of figure 5, a fragment of a larger event log is shown. as dis-
+cussed in section 3, event logs tend to have more information (e.g., timestamps,register book_flight_ok book_hotel_ok book_car_ok pay
+register book_hotel_ok book_flight_ok book_car_ok pa y
+register book_hotel_nok book_flight_ok book_car_ok c2 cancel
+register book_car_ok book_hotel_ok book_flight_ok pay
+register book_hotel_nok book_flight_ok book_car_ok c2 cancel
+register book_flight_ok book_hotel_ok book_car_ok pay
+register book_flight_ok book_hotel_ok book_car_nok c 1 cancel
+register book_hotel_nok book_flight_ok book_car_ok c2 cancel
+register book_flight_ok book_car_ok book_hotel_ok pa y
+register book_flight_nok book_car_nok book_hotel_nok  c7 cancel
+register book_hotel_ok book_car_ok book_flight_ok pa y
+register book_car_ok book_flight_ok book_hotel_ok pa y
+register book_flight_nok book_car_nok book_hotel_nok  c7 cancel
+register book_hotel_ok book_car_nok book_flight_nok c6 cancel
+...fig. 5. based on a complete event log, the ®-algorithm [11] can discover the wf-net
+shown in figure 1.
+data, etc.), but here was assume that an event log is simply a multiset of traces.
+for example, the ¯rst trace in figure 5 refers to a scenario were all bookings
+succeeded. the ®-algorithm [11] is a very basic process mining algorithm that is
+able to discover the model shown in figure 5. since the traces shown correspond
+to possible traces of the wf-net n1shown in figure 1, it is nice to see that the
+®-algorithm is actually able to discover n1(modulo renaming of places). the ®-
+algorithm [11] is very simple but not very suitable for real-life applications. the
+algorithm makes strong assumptions about the routing constructs to be used
+and the completeness of the log. for example, it is not realistic that one actually
+observes the routing transitions c1; c2; : : : ; ; c 7. unlike transition cancel which is
+a real activity, c1; c2; : : : ; ; c 7 have only been added for routing purposes. for-
+tunately, better process mining algorithms are available today (see section 7).
+however, these do not capture cancellation as the underlying models do not allow
+for a direct representation of such constructs .
+the goal is to develop process mining algorithms that discover cancellations
+in event logs and treat cancellation as a basic construct. concretely, we want
+todiscover a rwf-net nwith \suitable" reset arcs based on some event log l.
+since we do not what to develop a process mining algorithm from scratch, we
+try to extend existing techniques.
+the basic idea behind most of the existing process mining algorithms is to
+add a causal dependency based on an analysis of the log. for example, a >lbi®
+there is a trace in lwhere ais directly followed by banda!wbi®a >wband
+b6>wa. using such information places are added, e.g., aandbare connected
+through some place if a!wb. hence, the places provide information about one
+activity triggering another activity. however, there is no explicit information inthe log on disabling events (i.e., there is no \negative information" in the log).
+therefore, we suggest to use existing algorithms and do some post-processing
+using reset arcs as a cleanup. below is an informal sketch of the basic idea:
+step 1 given an event log lconstruct a rwf-net n= (p; t; f; w; r ) using
+conventional process mining techniques (initially r(t) =;for all t2t). it
+is best to use a technique that avoids blocking transitions, i.e., no missing
+tokens ( mi) in the sense of de¯nition 6.
+step 2 construct a relation 6àlµt£tsuch that a6àlbif and only if ais
+never followed by b.
+step 3 replay the log in n= (p; t; f; w; r ) and record places with remain-
+ing tokens and calculate the ¯tness. if there are no remaining tokens or all
+alternatives below have been tried, return n.
+step 4 pick a place pthat has the most remaining tokens. let tpbe the set of
+output transitions of p, i.e., tp=p².
+step 5 t0=ft02tntpj 8t2tpt06àlt^p62r(t0)g, i.e., transitions that
+\seem" to disable tptransitions but do not actually disable these transitions
+yet. if t0=;, then go to step 3, otherwise pick a tr2t0. take the \earliest"
+transition in t0, e.g., using a relation similar to àl.
+step 6 add a reset arc to nconnecting pandtr, i.e., n0= (p; t; f; w; r0)
+where r0(tr) =r(tr)[ fpgandr0(t) =r(t) for all other t.
+step 7 return to step 3 using n=n0.
+note that the above is notindented to be a concrete algorithm. it is merely
+a solution approach that needs to be made speci¯c in the context of a concrete
+process mining algorithm. to illustrate this let us use a log l2that contains all
+possible behaviors of the rwf-net shown in figure 2. in the log transition cis
+not visible as it is just there for routing purposes, i.e., an example trace in l2
+ishregister ;book °ight nok ;cancel i. applying the ®-algorithm to l2gives an
+incorrect and rather meaningless result because of the invisible routing activity c
+and the cancellation construct. if we apply the region-based approach presented
+in [9, 44], then we obtain the petri net shown in figure 6. the region-based
+approach guarantees that it is possible to replay all traces in the log without
+missing tokens, but there may be remaining tokens. in terms of de¯nition 6,
+this means mi= 0 and ri¸0 for any trace i. this makes the technique of [9, 44]
+suitable for the post-processing mentioned above. note that there are six places
+where tokens may remain.
+the petri net in figure 6 is able to execute the sequence hregister ;book °ight
+nok ;cancel ibut leaves two tokens behind. note that the central place in-
+between register andpayacts as a mutex place blocking all activities after the
+¯rst \nok". also note that there is a not a sink place in figure 6, i.e., it is
+not a wf-net. this is due to the implementation of the plug-in in prom and
+is merely a technicality that can be resolved easily (e.g., by adding a dummy
+end transition). using the 7 steps described above reset arcs are added from the
+six places with remaining tokens to transition cancel . however, also super°uous
+reset arcs are added, e.g., from some of places with remaining tokens to pay.
+this can be optimized in various ways. first of all, additions that do not improvefig. 6. using regions, a petri net is discovered that captures the behavior but where
+tokens are left behind. the ¯tness is 0.897 as shown in top right corner.
+¯tness can be discarded. second, improving t0to ¯lter out transitions that do
+not appear in traces that have problems (i.e., if there is no problem related to
+sequences where transition t0appears, then no reset of t0onpis needed). both
+optimizations would get rid of the super°uous reset arcs. the resulting model
+nicely captures the behavior recorded in the log including the cancellation after
+the ¯rst \nok" result.
+there are alternatives to the post-processing approach described above. first
+of all, it would be relatively easy to extend the genetic miner in prom [7, 40]
+to deal with reset arcs. for genetic mining basically only a good representa-
+tion (rwf-nets) and ¯tness function (de¯nition 6) are needed [7, 40]. second,
+it would be interesting to extend mining approaches based on language-based
+regions [45] to come up with special arcs. figure 7 shows the application of the
+language-based region miner in prom using a very conservative setting for log
+l2, i.e., the same log as used to construct figure 6. because of the conserva-
+tive setting just a few places were added, however, a correct characterization of
+the behavior is given. this shows the basic principle that a petri net without
+any places can parse any log and that adding places corresponds to adding con-
+straints. since this approach uses integer linear programming as a basis, it is
+versatile and seems to be a good platform to add special types of arcs such as
+reset arcs, inhibitor arcs, etc.fig. 7. a petri net constructed using language-based regions theory [45].
+7 related work
+since the mid nineties, many researchers have been working on work°ow veri¯-
+cation techniques. it is impossible to give a complete overview here. moreover,
+most of the papers on work°ow veri¯cation focus on rather simple languages,
+e.g., and/xor-graphs which are even less expressive than classical petri nets.
+therefore, we only mention the work directly relevant to this paper.
+the use of petri nets in work°ow veri¯cation has been studied extensively.
+in [1, 2] the foundational notions of wf-nets and soundness are introduced.
+in [32, 33] two alterative notions of soundness are introduced: k-soundness and
+generalized soundness. these notions allow for dead parts in the work°ow but
+address problems related to multiple instantiation. in [39] the notion of weak
+soundness is proposed. this notion allows for dead transitions. the notion of
+relaxed soundness is introduced in [21]. this notion allows for potential deadlocks
+and livelocks, however, for each transition there should be at least one proper
+execution.
+most soundness notions (except generalized soundness [32, 33]) can be inves-
+tigated using classical model checking techniques that explore the state space.
+however, such approaches can be intractable or even impossible because the
+state-space may be in¯nite. therefore, alternative approaches that avoid con-
+structing the (full) state space have been proposed. [3] describes how structural
+properties of a work°ow net can be used to detect the soundness property. [46, 47]
+presents an alternative approach for deciding relaxed soundness in the presence
+of or-joins using invariants. the approach taken results in the approximation
+of or-join semantics and transformation of yawl nets into petri nets with
+inhibitor arcs. in [51] it is shown that the backward reachability graph can be
+used to determine the enabling of or-joins in the context of cancellation. in thegeneral area of reset nets, dufourd et al.'s work has provided valuable insights
+into the decidability status of various properties of reset nets including reach-
+ability, boundedness and coverability [24, 25, 29]. moreover, in [48] it is shown
+that reduction rules can be applied to reset nets (and even to inhibitor nets) to
+speed-up analysis and improve diagnostics.
+since the mid-nineties several groups have been working on techniques for
+process mining [11, 8, 12, 17, 20, 22, 23, 49], i.e., discovering process models based
+on observed events. in [10] an overview is given of the early work in this do-
+main. the idea to apply process mining in the context of work°ow management
+systems was introduced in [12]. in parallel, datta [20] looked at the discovery
+of business process models. cook et al. investigated similar issues in the context
+of software engineering processes [17]. herbst [34] was one of the ¯rst to tackle
+more complicated processes, e.g., processes containing duplicate tasks.
+most of the classical approaches have problems dealing with concurrency.
+the®-algorithm [11] is an example of a simple technique that takes concurrency
+as a starting point. however, this simple algorithm has problems dealing with
+complicated routing constructs and noise (like most of the other approaches
+described in literature). in [22, 23] a more robust but less precise approach is
+presented. the classical \theory of regions" [13, 14, 18, 19, 27] can also be used
+to discover petri-net-based models as shown in [9, 44]. recently, some work on
+language-based regions theory appeared [16, 45, 37, 38]. in [16, 45] it is shown
+how this can be applied to process mining.
+in this paper we do not consider issues such as noise. heuristics [49] or genetic
+algorithms [7, 40] have been proposed to deal with issues such as noise.
+for an overview of related work with respect to conformance checking we
+refer to [4, 42, 43]. note that so far no process mining techniques (discovery
+and/or conformance) have been proposed for models with cancellation such as
+rwf-nets.
+to conclude this related work section, we provide some pointers to the rela-
+tionships between petri nets and graph grammars/transformations [28, 31]. the
+relationships between petri nets and graph grammars have been well known for
+quite some time [35]. in fact, graph grammars can be seen as a proper gen-
+eralization of petri nets. the ¯ring of a transition corresponds to applying a
+\production" to a graph while ¯ring sequences correspond to graph derivations.
+reset arcs can easily be encoded in terms of graph grammars. in section 3.2 of
+[31], extensions of graph rewriting using multi objects are discussed, i.e., uni-
+versally quanti¯ed operations are used to remove all objects of a particular type
+in one go. such ideas directly apply to reset nets. in [15] the relation between
+\extended petri nets" and graph rewriting is investigated in detail. in this pa-
+per, petri nets having read, inhibitor and reset arcs are mapped onto graph
+grammars. thus far little work has been done on the relation between graph
+grammars/transformations on the one hand and work°ow veri¯cation and pro-
+cess discovery on the other. it would be interesting to explore this further.8 conclusion
+in this paper we explored various analysis questions related to work°ows with
+cancellations. as a modeling language we used reset work°ow nets (rwf-nets).
+taking rwf-nets as a starting point we explored challenges related to discovery
+(process mining), veri¯cation , and conformance . for example, it was shown that
+soundness is undecidable for rwf-nets. however, despite this result, analysis
+is possible in most cases using e.g. reduction rules and structural techniques as
+shown in [48]. conformance checking can be done in a straightforward manner
+by adapting the techniques described in [42, 43] to rwf-nets. from a process
+mining viewpoint, no prior work has been done on the discovery of processes
+with cancellations. in this paper we made some initial suggestions to develop
+process discovery algorithms for rwf-nets. given the importance of cancellation
+in work°ows, it is interesting to develop techniques and tools to further address
+the challenges mentioned in this paper.
+references
+1.w.m.p. van der aalst. veri¯cation of work°ow nets. in p. az¶ ema and g. balbo,
+editors, application and theory of petri nets 1997 , volume 1248 of lecture notes
+in computer science , pages 407{426. springer-verlag, berlin, 1997.
+2.w.m.p. van der aalst. the application of petri nets to work°ow management.
+the journal of circuits, systems and computers , 8(1):21{66, 1998.
+3.w.m.p. van der aalst. work°ow veri¯cation: finding control-flow errors using
+petri-net-based techniques. in w.m.p. van der aalst, j. desel, and a. oberweis,
+editors, business process management: models, techniques, and empirical stud-
+ies, volume 1806 of lecture notes in computer science , pages 161{183. springer-
+verlag, berlin, 2000.
+4.w.m.p. van der aalst. business alignment: using process mining as a tool
+for delta analysis and conformance testing. requirements engineering journal ,
+10(3):198{211, 2005.
+5.w.m.p. van der aalst and k.m. van hee. work°ow management: models, methods,
+and systems . mit press, cambridge, ma, 2004.
+6.w.m.p. van der aalst, k.m. van hee, a.h.m. ter hofstede, n. sidorova, h.m.w.
+verbeek, m. voorhoeve, and m.t. wynn. soundness of work°ow nets: classi¯ca-
+tion, decidability, and analysis. bpm center report bpm-08-02, bpmcenter.org,
+2008.
+7.w.m.p. van der aalst, a.k. alves de medeiros, and a.j.m.m. weijters. genetic
+process mining. in g. ciardo and p. darondeau, editors, applications and theory
+of petri nets 2005 , volume 3536 of lecture notes in computer science , pages
+48{69. springer-verlag, berlin, 2005.
+8.w.m.p. van der aalst, h.a. reijers, a.j.m.m. weijters, b.f. van dongen, a.k.
+alves de medeiros, m. song, and h.m.w. verbeek. business process mining: an
+industrial application. information systems , 32(5):713{732, 2007.
+9.w.m.p. van der aalst, v. rubin, b.f. van dongen, e. kindler, and c.w. gä unther.
+process mining: a two-step approach using transition systems and regions.
+bpm center report bpm-06-30, bpmcenter.org, 2006.10.w.m.p. van der aalst, b.f. van dongen, j. herbst, l. maruster, g. schimm, and
+a.j.m.m. weijters. work°ow mining: a survey of issues and approaches. data
+and knowledge engineering , 47(2):237{267, 2003.
+11.w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. work°ow mining:
+discovering process models from event logs. ieee transactions on knowledge
+and data engineering , 16(9):1128{1142, 2004.
+12.r. agrawal, d. gunopulos, and f. leymann. mining process models from work-
+°ow logs. in sixth international conference on extending database technology ,
+pages 469{483, 1998.
+13.e. badouel, l. bernardinello, and p. darondeau. the synthesis problem for ele-
+mentary net systems is np-complete. theoretical computer science , 186(1-2):107{
+134, 1997.
+14.e. badouel and p. darondeau. theory of regions. in w. reisig and g. rozenberg,
+editors, lectures on petri nets i: basic models , volume 1491 of lecture notes in
+computer science , pages 529{586. springer-verlag, berlin, 1998.
+15.p. baldan, a. corradini, and u. montanari. relating spo and dpo graph rewrit-
+ing with petri nets having read, inhibitor and reset arcs. electronic notes in
+theoretical computer science , 127(2):5{28, 2005.
+16.r. bergenthum, j. desel, r. lorenz, and s. mauser. process mining based on
+regions of languages. in g. alonso, p. dadam, and m. rosemann, editors, inter-
+national conference on business process management (bpm 2007) , volume 4714
+oflecture notes in computer science , pages 375{383. springer-verlag, berlin,
+2007.
+17.j.e. cook and a.l. wolf. discovering models of software processes from event-
+based data. acm transactions on software engineering and methodology ,
+7(3):215{249, 1998.
+18.j. cortadella, m. kishinevsky, l. lavagno, and a. yakovlev. synthesizing petri
+nets from state-based models. in proceedings of the 1995 ieee/acm interna-
+tional conference on computer-aided design (iccad '95) , pages 164{171. ieee
+computer society, 1995.
+19.j. cortadella, m. kishinevsky, l. lavagno, and a. yakovlev. deriving petri nets
+from finite transition systems. ieee transactions on computers , 47(8):859{882,
+august 1998.
+20.a. datta. automating the discovery of as-is business process models: proba-
+bilistic and algorithmic approaches. information systems research , 9(3):275{301,
+1998.
+21.j. dehnert and w.m.p. van der aalst. bridging the gap between business models
+and work°ow speci¯cations. international journal of cooperative information
+systems , 13(3):289{332, 2004.
+22.b.f. van dongen and w.m.p. van der aalst. multi-phase process mining: building
+instance graphs. in p. atzeni, w. chu, h. lu, s. zhou, and t.w. ling, editors, in-
+ternational conference on conceptual modeling (er 2004) , volume 3288 of lecture
+notes in computer science , pages 362{376. springer-verlag, berlin, 2004.
+23.b.f. van dongen and w.m.p. van der aalst. multi-phase mining: aggregating
+instances graphs into epcs and petri nets. in d. marinescu, editor, proceedings of
+the second international workshop on applications of petri nets to coordination,
+work°ow and business process management , pages 35{58. florida international
+university, miami, florida, usa, 2005.
+24.c. dufourd, a. finkel, and ph. schnoebelen. reset nets between decidability and
+undecidability. in k. larsen, s. skyum, and g. winskel, editors, proceedings of the25th international colloquium on automata, languages and programming , volume
+1443 of lecture notes in computer science , pages 103{115, aalborg, denmark,
+july 1998. springer-verlag.
+25.c. dufourd, p. jan· car, and ph. schnoebelen. boundedness of reset p/t nets. in
+j. wiedermann, p. van emde boas, and m. nielsen, editors, lectures on concur-
+rency and petri nets , volume 1644 of lecture notes in computer science , pages
+301{310, prague, czech republic, july 1999. springer-verlag.
+26.m. dumas, w.m.p. van der aalst, and a.h.m. ter hofstede. process-aware infor-
+mation systems: bridging people and software through process technology . wiley
+& sons, 2005.
+27.a. ehrenfeucht and g. rozenberg. partial (set) 2-structures - part 1 and part 2.
+acta informatica , 27(4):315{368, 1989.
+28.h. ehrig, h.j. kreowski, u. montanari, and g. rozenberg. handbook of graph
+grammars and computing by graph transformation, volume 3: concurrency,
+parallelism, and distribution . world scienti¯c, 1999.
+29.a. finkel and ph. schnoebelen. well-structured transition systems everywhere!
+theoretical computer science , 256(1{2):63{92, april 2001.
+30.d. georgakopoulos, m. hornick, and a. sheth. an overview of work°ow manage-
+ment: from process modeling to work°ow automation infrastructure. distributed
+and parallel databases , 3:119{153, 1995.
+31.r. heckel. graph transformation in a nutshell. electronic notes in theoretical
+computer science , 148(1):187{198, 2006.
+32.k.m. van hee, n. sidorova, and m. voorhoeve. soundness and separability of
+work°ow nets in the stepwise re¯nement approach. in w.m.p. van der aalst
+and e. best, editors, application and theory of petri nets 2003 , volume 2679 of
+lecture notes in computer science , pages 335{354. springer-verlag, berlin, 2003.
+33.k.m. van hee, n. sidorova, and m. voorhoeve. generalised soundness of work°ow
+nets is decidable. in j. cortadella and w. reisig, editors, application and theory
+of petri nets 2004 , volume 3099 of lecture notes in computer science , pages
+197{215. springer-verlag, berlin, 2004.
+34.j. herbst. a machine learning approach to work°ow management. in proceedings
+11th european conference on machine learning , volume 1810 of lecture notes in
+computer science , pages 183{194. springer-verlag, berlin, 2000.
+35.h.j. kreowski. a comparison between petri-nets and graph grammars. in
+h. noltemeier, editor, graph theoretic concepts in computer science , volume
+100 of lecture notes in computer science , pages 306{317. springer-verlag, berlin,
+1981.
+36.f. leymann and d. roller. production work°ow: concepts and techniques .
+prentice-hall ptr, upper saddle river, new jersey, usa, 1999.
+37.r. lorenz, r. bergenthum, j. desel, and s. mauser. synthesis of petri nets from
+finite partial languages. in t. basten, g. juh¶ as, and s.k. shukla, editors, in-
+ternational conference on application of concurrency to system design (acsd
+2007) , pages 157{166. ieee computer society, 2007.
+38.r. lorenz and g. juh¶ as. how to synthesize nets from languages: a survey. in
+s.g. henderson, b. biller, m. hsieh, j. shortle, j. d. tew, and r. r. barton,
+editors, proceedings of the wintersimulation conference (wsc 2007) , pages 637{
+647. ieee computer society, 2007.
+39.a. martens. analyzing web service based business processes. in m. cerioli, editor,
+proceedings of the 8th international conference on fundamental approaches to
+software engineering (fase 2005) , volume 3442 of lecture notes in computer
+science , pages 19{33. springer-verlag, berlin, 2005.40.a.k.a. de medeiros. genetic process mining . phd thesis, eindhoven university
+of technology, eindhoven, 2006.
+41.j. mendling, g. neumann, and w.m.p. van der aalst. understanding the occur-
+rence of errors in process models based on metrics. in f. curbera, f. leymann,
+and m. weske, editors, proceedings of the otm conference on cooperative infor-
+mation systems (coopis 2007) , volume 4803 of lecture notes in computer science ,
+pages 113{130. springer-verlag, berlin, 2007.
+42.a. rozinat and w.m.p. van der aalst. conformance testing: measuring the fit
+and appropriateness of event logs and process models. in c. bussler et al., editor,
+bpm 2005 workshops (workshop on business process intelligence) , volume 3812
+oflecture notes in computer science , pages 163{176. springer-verlag, berlin,
+2006.
+43.a. rozinat and w.m.p. van der aalst. conformance checking of processes based
+on monitoring real behavior. information systems , 33(1):64{95, 2008.
+44.v. rubin, c.w. gä unther, w.m.p. van der aalst, e. kindler, b.f. van dongen,
+and w. schä afer. process mining framework for software processes. in q. wang,
+d. pfahl, and d.m. ra®o, editors, international conference on software process,
+software process dynamics and agility (icsp 2007) , volume 4470 of lecture notes
+in computer science , pages 169{181. springer-verlag, berlin, 2007.
+45.j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, , and a. serebrenik.
+process discovery using integer linear programming. computer science report
+(08-04), eindhoven university of technology, eindhoven, the netherlands, 2008.
+46.h.m.w. verbeek and w.m.p. van der aalst. analyzing bpel processes using petri
+nets. in d. marinescu, editor, proceedings of the second international workshop
+on applications of petri nets to coordination, work°ow and business process
+management , pages 59{78. florida international university, miami, florida, usa,
+2005.
+47.h.m.w. verbeek, w.m.p. van der aalst, and a.h.m. ter hofstede. verifying work-
+°ows with cancellation regions and or-joins: an approach based on relaxed
+soundness and invariants. the computer journal , 50(3):294{314, 2007.
+48.h.m.w. verbeek, m.t. wynn, w.m.p. van der aalst, and a.h.m. ter hofstede.
+reduction rules for reset/inhibitor nets. bpm center report bpm-07-13, bpm-
+center.org, 2007.
+49.a.j.m.m. weijters and w.m.p. van der aalst. rediscovering work°ow models
+from event-based data using little thumb. integrated computer-aided engi-
+neering , 10(2):151{162, 2003.
+50.m. weske. business process management: concepts, languages, architectures .
+springer-verlag, berlin, 2007.
+51.m.t. wynn, w.m.p. van der aalst, a.h.m. ter hofstede, and d. edmond. verify-
+ing work°ows with cancellation regions and or-joins: an approach based on re-
+set nets and reachability analysis. in s. dustdar, j.l. faideiro, and a. sheth, edi-
+tors, international conference on business process management (bpm 2006) , vol-
+ume 4102 of lecture notes in computer science , pages 389{394. springer-verlag,
+berlin, 2006.

@@ -1,0 +1,757 @@
+earth movers' stochastic conformance checking
+sander j.j. leemans1, anja f. syring2, and wil m. p. van der aalst2
+1queensland university of technology, brisbane, australia
+2process and data science (informatik 9),
+rwth aachen university, d-52056 aachen, germany
+abstract. process mining aims to support business process manage-
+ment (bpm) by extracting information about processes from real-life
+process executions recorded in event logs. in particular, conformance
+checking aims to measure the quality of a process model by quantify-
+ing dierences between the model and an event log or another model.
+even though event logs provide insights into the likelihood of observed
+behaviour, most state-of-the-art conformance checking techniques ignore
+this point of view. in this paper, we propose a conformance measure that
+considers the stochastic characteristics of both the event log and the pro-
+cess model. it is based on the \earth movers' distance" and measures the
+eort to transform the distributions of traces of the event log into the
+distribution of traces of the model. we formalize this intuitive confor-
+mance metric and provide an approximation and a simplied variant.
+the latter two have been implemented in prom and we evaluate them
+using several real-life examples.
+keywords: stochastic process mining stochastic conformance check-
+ing stochastic languages stochastic petri nets.
+1 introduction
+today's information systems provide an abundance of information about ac-
+tivities performed by or for customers, employees, machines etc. databases and
+transaction les can be converted to event logs ready for analysis. process mining
+aims to provide analysts with procedures and tools to obtain insights from these
+recorded event logs. for instance, process models , which describe the process
+steps in the process ( activities ), which activities are to be executed and in what
+order activities can be executed, are used to document and prescribe processes.
+a process model can be obtained manually, by human analysts modelling, or
+automatically, by process discovery algorithms using recorded event data [1].
+both human analysts and process discovery algorithms might leave out cer-
+tain behaviour of the process to make the model more readable or to capture
+only the \happy ow". in order to not limit the model to seen behaviour only,
+they also include other behaviour and generalise the model in this way. there-
+fore, before drawing conclusions from a model, it should be evaluated using a
+conformance checking technique. such a technique compares a process model
+with an event log and highlights their dierences. using conformance checking,2 s.j.j. leemans et al.
+deviations between log and model can be unearthed, as well as dierences be-
+tween dierent versions of a business process, for instance the same process in
+geographic regions or dierent periods [8]. furthermore, stochastic conformance
+checking is used to evaluate discovered process models and process discovery
+algorithms.
+in typical real-life processes, not all parts of the processes are executed
+equally often: rarely executed exception handling routines or infrequent paths
+might be included in the model. knowledge of the likelihood of such paths is
+necessary to gain insights into performance aspects of a business process, for
+instance to predict the remaining duration of a running trace [20] or, given a
+particular deadline, to estimate the probability of missing the deadline [6]. we
+refer to a process model that denes likelihoods for its traces as a stochastic
+process model . such models can be automatically discovered from event logs by
+stochastic process discovery techniques, such as [12]. consequently, stochastic
+conformance checking compares an event log with a stochastic process model
+and highlights their dierences.
+for instance, consider the event log [ ha;bi1;hb;ai99] and the stochastic pro-
+cess model expressing the stochastic language [ ha;bi0:99;hb;ai0:01]. even though
+only 2% of the log and model's stochastic language overlaps, any conformance
+checking technique that does not take the stochastic perspective into account
+will consider the log and model to have a perfect tness and precision.
+in this paper, we rst propose an intuitive theoretical stochastic conformance
+checking measure. this measure is based on the earth movers' distance, that is,
+given two distributions (piles of earth), the eort to transform one pile into the
+other in terms of dirt that needs to be moved times the distance over which dirt
+has to be moved. this measure is dened for stochastic languages with possi-
+bly innitely many traces (process models with loops may have innitely many
+possible behaviours), but challenging to compute automatically for the general
+case. therefore, second, we introduce an approximation and a simplication.
+we provide algorithms and implementations for both these last two measures,
+and illustrate their dierences with conformance checking techniques that do not
+take probabilities into account.
+we apply the measures to several real-life logs and automatically discovered
+stochastic process models to show their applicability.
+in the remainder of this paper, we rst explore related work in section 2 and
+introduce concepts in section 3. in section 4, we introduce the three measures,
+after which we evaluate and analyse them in section 5. section 6 concludes the
+paper.
+2 related work
+stochastic process formalisms. several formalisms to describe stochastic lan-
+guages have been proposed. next to stochastic petri nets (spns) and gener-
+alised gspns which we will introduce in section 3, several extensions have been
+proposed. for instance, markov regenerative spns [18] and generally distributed
+transition spns [13] allow for the modelling of generally distributed timed events.earth movers' stochastic conformance checking 3
+fluid spns extend spns with continuous uid quantities to model physical sys-
+tems [19], and controlled spns extend spns for decision support purposes [11].
+for a more elaborate overview, please refer to [5], in which several types of spn
+are discussed, as well as the feasibility to compute their case-duration distribu-
+tion. several of the spn types support inhibitor arcs, but silent transitions are
+not supported. typically, stochastic petri nets are used to express and compute
+the temporal perspective of business processes, while we focus on the combina-
+tion of the control ow and stochastic perspectives of the traces in the model.
+however, none of these works considers spns with silent transitions.
+an exception is [3], in which stochastic petri nets with silent transitions are
+considered. in [3], a method is proposed to, given an spn, (a set of) initial
+marking(s) and a trace, compute the possible markings the spn can be in after
+executing the trace, and how likely each marking is.
+in section 3, we introduce our formalisation of generalised stochastic la-
+belled petri nets (gslpn), which diers from the variants in the mentioned
+papers by including silent transitions. even though our implementation targets
+gslpns, our measures work for any stochastic process model, as long as it
+represents a stochastic language.
+stochastic conformance checking. conformance checking on non-stochastic
+process models has been addressed by many techniques (e.g. token-based replay
+and alignments, for an overview please refer to [4]). such techniques typically
+consider two directions of inclusion: tness (behaviour of the log is included in
+the model) and precision (behaviour of the model is included in the log). how-
+ever, these notions of language inclusion do not apply to stochastic behaviour,
+as a stochastic language cannot include another stochastic language (for both
+languages, the probabilities of traces sum to 1). therefore, a single similarity
+measure is more appropriate in a stochastic setting.
+in [9], standard petri nets are enriched with frequency information (that is,
+each transition gets a probability corresponding to the frequency of its label in
+the event log), and a most-probable alignment is computed in order to nd the
+root cause of deviations. however, this approach is not intended to cope with
+arbitrary stochastic languages.
+hidden markov models (hmms) have been used to model stochastic pro-
+cesses and to check conformance, for instance in [14]. hmms express that transi-
+tions between states and the execution of activities in states can happen with cer-
+tain probabilities. in section 5.4.3 of [14], tness and precision of non-stochastic
+petri nets without concurrency are computed by translating the net to an hmm
+assuming that all transitions are equally likely. this approach might be applica-
+ble to verify the conformance of general stochastic languages as well, as long as
+the language can be expressed as an hmm.
+3 preliminaries
+stochastic languages. letbe a nite alphabet of activities (the dierent steps
+executed in a process) and be the set of all possible sequences ( traces ) over
+the alphabet . astochastic language is a collection of traces with attached4 s.j.j. leemans et al.
+probabilities. formally, a stochastic language is a function f:![0;1] that
+maps each trace onto a probability such thatp
+t2f(t) = 1. for instance,
+[ha;b;ci2
+3;ha;c;bi1
+3] is a stochastic language consisting of 2 traces, the rst of
+which has a probability of2
+3and for which rst an activity awas executed,
+followed by a band ac. we denote the set of traces of a stochastic language m
+that have a nonzero probability with fm=ft2jm(t)>0g.
+event logs. an event log is a nite multiset of traces, which can be easily
+transformed into a stochastic language by normalising the trace quantities by
+dividing each trace's occurrences by the total number of traces. for instance,
+an event log consisting of 20 times ha;b;ciand 10 timeshb;a;ciwould have a
+corresponding stochastic language [ ha;b;ci20
+30;hb;a;ci10
+30]. in this paper, we will
+use the term \event log" for the stochastic language belonging to an event log.
+earth movers' distance. the earth movers' distance or wasserstein distance
+describes the distance between two distributions [16]. in an analogy, given two
+piles of earth (the distributions), it expresses the eort required (in terms of
+quantity of earth and the horizontal distance it needs to be moved) to transform
+one pile into the other.
+stochastic petri nets. alabelled petri net is a tuple (p,t,f,,l), in which
+pis a nite set of places, tis a nite set of transitions, f: (pt)!(tp)
+is a ow relation, is a nite alphabet of activities and l:t![fgis a
+labelling function, such that p\t=;and =2. amarking is a multiset
+of places2p, indicating the state of the net. a transition is enabled if each
+of its incoming places contains a token. when a transition res, it changes the
+marking of the net by consuming and producing tokens to/from its connected
+places. if a transition t2tis labelled with an activity l(t) =a2, thena
+is executed whenever tres. note that multiple transitions might share a. a
+transitiont02tthat is unlabelled ( l(t0) =) is a silent transition: when t0res,
+it may change the marking of the net but it does not correspond to the execution
+of an activity. a path through the model is a sequence of transition rings that
+starts in the initial marking and ends in a marking in which no transitions are
+enabled (a deadlock ). that is, we consider each deadlock to be a nal marking.
+the corresponding trace is the sequence of labelled transitions in a path.
+ageneralised stochastic labelled petri net (gslpn) is a tuple ( p,t,f,
+,l,ti,tt) where (p;t;f;;l ) is a labelled petri net, titis a set of imme-
+diate transitions and tttis a set of timed transitions such that ti\tt=;.
+immediate transitions t2titake precedence over t02tt: timed transitions
+cannot re if an immediate transition is enabled. a transition t2tiisimme-
+diate , it has a weightw(t) attached (this weight may depend on the marking)
+and if multiple transitions t0tiare enabled, a transition tis chosen to re
+with probability w(t)=p
+t02t0w(t0). a timed transition thas an exponentially
+distributed waiting/enabling time, with ring rate parameter (t). due to the
+memory-less property of the exponential distribution, given a set of enabledearth movers' stochastic conformance checking 5
+timed transitions t0tt, the probability that a particular transition twill re
+rst is(t)=p
+t02t0(t0) [12].
+the probability of a trace is dened as the sum of the probabilities over
+all paths through the model that produce the trace. given a trace and a path
+through the model that produces the trace, then the probability of the trace is
+the product of the probabilities of the choices made in the model along the path.
+the stochastic language of an gslpn is the weighted set of all traces through
+the model.
+for instance, figure 1 contains a gslpn in which all transitions are imme-
+diate. the stochastic language of this model consists of two traces, ha;biand
+ha;ci. in the model, there are innitely many paths resulting in these traces,
+and their probabilities are geometric series. for ha;bi:
+1
+2+1
+21
+21
+2+1
+21
+21
+21
+21
+2+:::=1x
+n=01
+2(1
+4)n=1
+2
+1 1
+4=2
+3
+forha;ci:
+1
+21
+2+1
+21
+21
+21
+2+1
+21
+21
+21
+21
+21
+2+:::=1x
+n=01
+4(1
+4)n=1
+4
+1 1
+4=1
+3
+this example illustrates that for gslpns, it might be challenging to establish
+the stochastic language.3to the best of our knowledge, this challenge has not
+been solved yet for our gslpns (in particular, for silent transitions) [3,15],
+however an in-depth discussion is outside the scope of this paper.
+a11
+21
+2
+b1
+2c1
+2
+fig. 1: example of a generalised stochastic petri net. all transitions are imme-
+diate.
+please note that livelocks, that is the inability to reach a nal marking with
+nonzero probability, invalidate the stochastic language, as paths that enter the
+livelock with a certain probability pcannot terminate, thus the total probability
+of the corresponding stochastic language will be at most 1  prather than 1.
+therefore, in this paper, we assume that gslpns do not have livelocks.
+the ring of transitions in gslpns only depends on the current state of the
+model: immediate transitions are randomly chosen by weight and timed tran-
+sition are exponentially distributed and hence memoryless. therefore, gslpns
+satisfy the markov property and can be translated to markov chains.
+3notice that in case of duplicated labels, there might be exponentially, but nitely,
+many paths through the model for a particular trace.6 s.j.j. leemans et al.
+4 method
+in this section, we introduce our measure for stochastic conformance checking.
+we rst introduce the theoretical measure and illustrate it with a running ex-
+ample. second, we provide a method to compute the measure.
+4.1 earth movers' stochastic conformance
+in this section, we transform the analogy of the earth movers' distance to
+stochastic languages: our measure expresses the cost of transforming the distri-
+bution of traces of one language into the distribution of the other language.
+first, we introduce the concept of reallocation functions, which indicate how
+a stochastic language is transformed into another stochastic language. second,
+we introduce a distance function, which expresses the cost of transforming one
+trace into another trace. third, we introduce a cost function that expresses the
+cost of a particular reallocation function. finally, we dene the measure and we
+give a variant that considers unit trace distances.
+reallocation. we rst introduce a function that indicates the movement of
+probability mass between two stochastic languages. let landmbe stochastic
+languages, then a reallocation functionr:elfm![0;1] describes how lcan
+be transformed into m. that is,r(t;t0) describes the probability mass of t2el
+that should be moved to t02fm. the function r(t;t) indicates the probability
+mass oft2elthat remains at t2fm.
+to ensure that a reallocation function properly transforms lintomthe
+probability mass of each t2elshould be accounted for. hence, the row for t
+should sum up to l(t).
+8t2ell(t) =x
+t02fmr(t;t0) (1)
+similarly, the mass of traces t02mshould be preserved:
+8t02fmm(t0) =x
+t2elr(t;t0) (2)
+we refer to the set of all reallocation functions rthat adhere to equations (1)
+and (2) asr(note thatrdepends on landm).
+for instance, consider the stochastic languages le= [hai1
+4;ha;ai3
+4] andme=
+[hai1
+2;ha;ai1
+4;ha;a;ai1
+8;ha;a;a;ai1
+16:::]. an example reallocation function reis:
+rehaiha;aiha;a;aiha;a;a;aiha;a;a;a;ai. . .
+hai1
+40 0 0 0 . . .
+ha;ai1
+41
+41
+81
+161
+32. . .
+in this tabular visualisation, equation (1) states that each row should sum
+up to the corresponding value in language le(e.g. the rst row sums up to1
+4
+asle(hai) =1
+4). similarly, equation (2) expresses that each column should sum
+up to the corresponding mass in me.earth movers' stochastic conformance checking 7
+trace distance. second, a trace distance function dexpresses the \distance"
+between traces: d:![0;1]. this function is 0 if and only if two traces
+are equal:d(t;t0) = 0,t=t0. furthermore, this function is required to be
+symmetrical, that is d(t;t0) =d(t0;t).
+for example, we can use the normalised string edit (levenshtein) distance.
+the levenshtein distance expresses the minimum number of edit operations re-
+quired to transform a trace into another trace using the event insertion, deletion
+and substitution operations [10]. as this distance has an upper bound in the
+number of events in the longest of the two traces, it can be normalised: we
+choosedl(t;t0) to be the levenshtein distance divided by the maximum length
+oftandt0.
+for instance, consider our two stochastic languages leandmeagain. then,
+the normalised levenshtein distance dlis:
+haiha;aiha;a;aiha;a;a;aiha;a;a;a;ai. . .
+hai01
+22
+33
+44
+5. . .
+ha;ai1
+201
+32
+43
+5. . .
+cost. given two stochastic languages, several reallocation functions might ex-
+ist. however, the earth movers' distance problem aims to express the shortest
+distance between the two languages, that is, the least probability mass movement
+over the least distance between traces.
+therefore, the cost to transform a stochastic language linto a stochastic
+languagemusing a reallocation function ris the inner product of reallocation
+and distance:
+cost(r;l;m ) =rd=x
+t2elx
+t02fmr(t;t0)d(t;t0) (3)
+by construction, dreturns values between 0 and 1, hence 0 cost(r;l;m )
+1 for anyr,landm.
+for instance, considering our example with le,meandreagain, the cost of
+regivenleandmeis computed as follows:
+cost(re;le;me) =1
+40 + 01
+2+ 02
+3+ 03
+4+ 04
+5+:::
+1
+41
+2+1
+40 +1
+81
+3+1
+162
+4+1
+323
+5+:::
+=1
+8+1x
+n=3n 2
+2nn=13
+8 log 4
+0:238706
+earth movers' stochastic conformance. finally, the earth movers' stochas-
+tic conformance (emsc) measure is dened as the lowest cost for any realloca-
+tion function rand givenlandm. to align emsc with existing conformance8 s.j.j. leemans et al.
+checking measures, it is mirrored such that 1 indicates perfect conformance and
+0 indicates the worst conformance.
+emsc(l;m ) = 1 min
+r2rcost(r;l;m ) (4)
+in our running example, reis an optimal reallocation function, thus emsc( le;me)
+0:761294.
+unit distances. if we choose the trace distance function ddierently, another
+version of emsc appears: this function can also be chosen such that each pair
+of traces is either classied as equal with value 0 or as unequal with value 1.
+intuitively, the earth movers' distance expresses the amount of earth that has
+to be moved times the (possibly normalised) distance it has to be moved. the
+new choice for unit distances takes the distance out of the equation: the earth
+(traces) is either moved or not, but the distance over which it is moved is not
+taken into account.
+hence, in our conformance measure with unit distances, we only need to take
+into account how much probability mass of lis to be moved, and not where this
+probability mass will be put in m. this simplies the reallocation function r
+considerably and removes the need for the minimisation step of equation (4),
+yielding a much simpler measure for unit trace distances uemsc:
+uemsc(l;m ) = 1 x
+t2elmax(l(t) m(t);0) (5)
+intuitively, the unit distance measure expresses the mass probability (\amount")
+of behaviour in lthat is not supported or in surplus of the behaviour in m,
+without considering distances between traces.
+ifelis nite, for instance if lis an event log, then this sum is nite and can
+be computed without constructing the full stochastic language of mexplicitly;
+monly needs to be queried for probabilities of traces that appear in l(which
+might still be challenging for gslpns as shown in section 3).
+4.2 truncated earth movers' stochastic conformance
+computing emsc measure in the previous section poses several challenges: the
+stochastic language might have innitely many traces and many reallocation
+functionsrmight apply and need to be evaluated.
+to address these challenges, we introduce a derivative measure truncated
+emsc (temsc) that truncates innite languages and searches for an optimal
+reallocation function. in the remainder of this section, we discuss how temsc
+addresses the two challenges, we analyse the new measure and we discuss its
+implementation.
+handling models with innite languages. if the stochastic language mhas in-
+nitely many traces, then equation (3) has innitely many terms, making emsc
+challenging to compute in practice. to handle such a process model, we truncateearth movers' stochastic conformance checking 9
+its language to only contain a certain user-chosen mass of probability ( m). we
+chose to do this in a breadth-rst prioritised fashion, consequently shorter likely
+traces tend to be included before longer unlikely traces.
+as a side eect, equation (2) does not hold for truncated stochastic lan-
+guages, as the probabilities of traces in such a language do not sum up to 1.
+therefore, this equation is weakened to:
+8t02fmm(t0)x
+t2elr(t;t0) (6)
+letr0denote the set of all reallocation functions that adhere to equations (1)
+and (6). furthermore, let mmdenote a truncated stochastic language of msuch
+that at least mofm's probability mass is included:p
+t2mmmm(t)mand
+8t2mmmm(t)m(t). then:
+temsc(l;m;m ) = 1 min
+r2r0cost(r;l;mm) (7)
+then, by construction:
+corollary 1. letlandmbe stochastic languages. then, for mapproaching
+1,temsc andemsc coincide: emsc(l;m ) = limm!1temsc(l;m;m ).
+in a model-model comparison context, lmight have innitely many traces
+as well. then, a symmetric argument applies, but an extra requirement on the
+reallocation function is necessary, that is, the sum of this function should be 1.
+an alternative to weakening the equation is to normalise the probability mass
+of the model after truncation. however, as this alters the stochastic language
+which is an input for the conformance calculation, we discard this option.
+another option to determine the point of truncation could be to unfold the
+model until we included all traces that have the same length as the longest
+trace of the event log. for the included traces of the model, we calculate the
+reallocation cost as dened before. all traces part of the excluded probability
+mass are longer than all traces of the event log. based on this, we assume all
+excluded traces of the model to be untting with distance 1. therefore, this
+measure gives a lower bound to emsc. however, we leave this option for future
+work.
+ecient minimisation. given a trace distance function dierent from the de-
+scribed unit costs, the goal is to obtain an optimal reallocation function that
+yields minimal costs. this can be achieved by solving a linear programming
+problem.
+linear programming is a technique that optimises a given linear function,
+the objective function, with respect to given linear constraints. based on this
+objective function the linear programming algorithm nds the minimal/maximal
+value in the region of feasible solutions dened by the constraints [17].
+to nd the optimal reallocation function with minimal cost, we chose equa-
+tion (3) as our objective function. the constraints of the optimisation problem10 s.j.j. leemans et al.
+are dened by equations (1) and (6). hence, only reallocation functions that pre-
+serve the probability mass of each t2elas well as the mass of t02fmare valid.
+to complete the construction of the solution space, we dene the reallocation
+r(t;t0) to be non-negative.
+considering our two stochastic languages leandme, and the distances given
+by the normalised levenshtein distance function, the linear programming prob-
+lem is constructed as follows:
+minimiser(t1;t0
+1)0 +r(t1;t0
+2)1
+2+r(t1;t0
+3)2
+3+:::;
+subject to1
+4r(t1;t0
+1) +r(t1;t0
+2) +r(t1;t0
+3) +:::;
+:::
+1
+2r(t1;t0
+1) +r(t2;t0
+1);
+1
+4r(t1;t0
+2) +r(t2;t0
+2);
+:::
+0r(t1;t0
+1);r(t1;t0
+2);r(t1;t0
+3):::
+4.3 example & implementation
+example. consider the following event logs: l1= [ha;b;c;ei0:25,ha;c;b;ei0:25,
+ha;d;ei0:5] andl2= [ha;b;c;ei0:45;ha;c;b;ei0:45;ha;d;ei0:1]. furthermore, con-
+sider the gslpns shown in figure 2, and the corresponding temsc and uemsc
+measures in table 1. model m1is a model that supports any behaviour (a ower
+model), with uniform probabilities of the individual activities and ending the
+trace. intuitively, this model diers considerably from both logs l1andl2, which
+is reected in the low measures. models m2andm3have the same language, but
+their stochastic perspective diers markedly. a conformance checking technique
+that is not stochastic aware would consider these models to be equivalent, result-
+ing in equivalent measures, even though their behaviour is very dierent from
+a stochastic perspective: dis much less likely in m3. intuitively, m2is closer to
+l1than tom3, (which is closer to l2) and this is reected in all our measures.
+finally, from m4the traceha;d;eiis missing, and, accordingly, the measures
+being lower for l1than forl2indicates that this trace had a higher probability
+inl1.
+with respect to temsc and uemsc, observe that both measures are con-
+sistent in their ranking of the logs and models.
+implementation. both temsc and uemsc have been implemented as plug-ins
+of the prom framework [7]. the plug-in of temsc takes an event log and an
+gslpn (as returned by a stochastic process discovery technique [12]), and con-
+structs the full stochastic language of the log, as well as the truncated stochastic
+language of the gslpn, with a user-specied m. second, a linear programmingearth movers' stochastic conformance checking 11
+11
+6a1
+6
+b1
+6
+c
+1
+6d
+1
+6e
+1
+6
+(a) flower model m1.a11
+2b1
+2
+c1
+21
+d1
+2e1
+(b) model m2.
+a19
+10b1
+2
+c1
+21
+d1
+10e1
+(c) model m3.a1b1
+2
+c1
+2e1
+(d) model m4.
+fig. 2: four example gslpns, in which all transitions are immediate.
+table 1: our measures on the example logs and models.
+model temsc ( m= 0:8) uemsc
+l1l2 l1 l2
+m1 0.46 0.45 0.0010288065843622 0.0010288065843621
+m2 1 0.8 1 0.6
+m3 0.8 1.0 0.6 1.0
+m4 0.75 0.95 0.5 0.9
+problem is constructed and solved using the lpsolve library [2]. for uemsc,
+the gslpn is not allowed to have executable loops of silent transitions (see sec-
+tion 3). the source code of both plug-ins is available at https://svn.win.tue.nl/
+repos/prom/packages/earthmoversstochasticconformancechecking/trunk/.
+5 evaluation
+in this section, we evaluate the newly introduced measures: the theoretical
+emsc, the truncated temsc and the unit-distance uemsc. first, we illus-
+trate these on our running example. second, we apply the measures to real-life
+logs to show their applicability.
+example. for illustrative purposes, we apply temsc and uemsc to our run-
+ning example consisting of the stochastic languages le= [hai1
+4;ha;ai3
+4] and12 s.j.j. leemans et al.
+me= [hai1
+2;ha;ai1
+4;ha;a;ai1
+8;ha;a;a;ai1
+16:::] to show the inuence of truncat-
+ing on a simple loop. we apply temsc to leandmefor increasing m.
+60 80 10000:20:40:60:81
+% probability mass included ( m)temsc
+(a) varying parameter ( m).0 5 10 15 20
+number of traces
+(b) varying number of traces with in-
+creasing loop unfoldings.
+fig. 3: temsc measured over our example leandme. the dashed lines indicate
+the emsc values.
+figure 3a shows the results, as well as the theoretical emsc value for leand
+me. after an initial climb when the two traces of the log are not represented by
+the truncated model, temsc temporarily stabilises at 0.875. this stable range
+ofmindicates that the truncation includes more probability mass than m, that
+is, if we choose m= 52% then the truncation nevertheless includes 74% of the
+probability mass. only at m= 76%, another trace is included in the truncated
+language. after this point, the truncation includes more and more traces that are
+not in the event log, thus temsc drops and seems to approach the theoretical
+emsc value shown in section 4.
+to illustrate the convergence to emsc, we repeat the experiment where we
+manually create stochastic languages for leandme, where we unfold the loop
+ofmean increasing number of times. figure 3b shows these results. from this
+graph, it is clear that temsc quickly converges to the theoretical emsc value
+with every trace and loop unfolding added. at 6 traces, which corresponds to
+m= 98%, the dierence is a negligible 0.01.
+the run time for these examples was too small to warrant any conclusion.
+real-life event logs. in this experiment, we evaluate the applicability of
+temsc and uemsc to 16 publicly available real-life logs and stochastic process
+models. first, we apply the stochastic miner (sm) [12] to these logs to obtain
+stochastic petri nets. as these nets contain silent transitions, they can be seen as
+gslpns (section 3). table 2 shows the logs and their complexity. furthermore,
+it shows that a gslpn was discovered for only 6 logs in the 24bgb of ram
+we had available, which illustrates the need for more research into stochastic
+process discovery techniques and their implementations.earth movers' stochastic conformance checking 13
+table 2: real-life event logs used in the evaluation.
+activities traces events discovery [12] uemsc rank
+bpic12 36 13087 262200 out of memory
+bpic15-1 398 1199 52217 out of memory
+bpic15-2 410 832 44354 out of memory
+bpic15-3 383 1409 59681 out of memory
+bpic15-4 356 1053 47293 out of memory
+bpic15-5 389 1156 59083 out of memory
+bpic18 control summary 7 43808 161296 3 0.599 1
+bpic18 department control 6 29297 46669 3 0.120 2
+bpic18 entitlement application 20 15620 293245 out of memory
+bpic18 geo parcel documents 16 29059 569209 out of memory
+bpic18 inspection 15 5485 197717 out of memory
+bpic18 parcel document 10 14750 132963 31:1510-45
+bpic18 payment application 24 43809 984613 out of memory
+bpic18 reference alignment 6 43802 128554 30:2210-23
+road traffic fines 11 150370 561470 32:8810-44
+sepsis 16 1050 15214 31:5210-146
+second, we apply our new measures to the logs and the six discovered gslpns.
+for temsc, we use various parameters m(see equation (7)) to study how the
+inclusion of mass inuences the returned values. in the remainder of this section,
+we rst discuss run times, then the results of temsc followed by the results of
+uemsc.
+0 20 40 60 80 100102105108
+% probability mass included ( m)run time (ms)bpic18 control summary
+bpic18 department control
+bpic18 parcel document
+bpic18 reference alignment
+road traffic fines
+fig. 4: run time of temsc for several real-life logs.
+run time. the run times of uemsc were negligible: all measures nished within
+a second. for temsc, run times are shown in figure 4. please note that y-axis
+is logarithmic, and that due to the inherent nondeterministic nature of temsc
+and the multithreadedness of the implementation, these measures are indicative
+only, especially for lower m.
+some of the values could not be obtained: for bpic18 parcel document
+withm= 80, the linear programming optimisation ran out of memory, while
+forsepsis with anym, the explicit creation and truncation of the stochas-
+tic language ran out of memory. for 4 out of 6 logs, computation took less
+than a few seconds, which was considerably less than the discovery technique,
+which could take hours on these logs. however, a general trend towards longer
+run times is visible as mapproaches 100%. for bpic18 parcel document and
+bpic18 reference alignment , computation could take up to little over an
+hour. a manual inspection revealed that this is caused by the size of the language
+described in the stochastic models: especially in models that combine concur-
+rency with looping behaviour. in such models, the probability mass per trace14 s.j.j. leemans et al.
+decreases and more traces are necessary to cover a certain probability mass,
+which makes it very challenging to obtain a high probability mass m. this is
+a clear limitation of the current technique, which might be addressed in future
+work.
+truncated emsc ( temsc ).second, we discuss the returned values of temsc,
+which are shown in figure 5 for m(that is, the minimum probability mass
+covered in the truncation step) varying from 2% to 98%.
+0 20 40 60 80 10000:20:40:60:81
+% probability mass included ( m)temscbpic18 control summary
+bpic18 department control
+bpic18 parcel document
+bpic18 reference alignment
+road traffic fines
+fig. 5: temsc with varying mass truncation parameter ( m).
+most measures show expected behaviour with increasing m: due to nondeter-
+minism of the truncation, for lower mthey vary considerably, but stabilise with
+mapproaching 100%. an exception is bpic18 reference alignment , which
+increases to 0.98 for m= 52, after which it decreases almost linearly. a man-
+ual inspection revealed that the gslpn contains many loops, while most of the
+event log's traces do not exhibit repeating activities. as mincreases, more traces
+are added by unfolding loops and, as these new traces are not in the log, the
+measured temsc drops.
+unit-distance emsc ( uemsc ).the results for uemsc are shown in table 2.
+as identied in section 3, loops of silent transitions challenge the computation
+of the probability of a trace in an gslpn ( m(t) in equation (5)). a manual
+inspection revealed that none of the discovered models contained such loops.
+however, most models contained lots of concurrency, which makes the state
+space of the model huge and thus the probability of individual traces in the
+model is very low, leading to low uemsc measures.
+if the use case at hand involves choosing a stochastic process model that
+best represents a given event log, then uemsc and temsc mostly agree: of the
+10 possible pairs of models (out of which the model closest to the log is to be
+chosen), 8 times uemsc and temsc agree on which model is the closest.
+reproducibility. the experiments were performed on a single machine with 3.5ghz
+quadcore cpu and 24gb ram available for each experiment process, running
+fully patched windows 7 in january 2019. the source code is available.earth movers' stochastic conformance checking 15
+6 conclusion
+recently the interest in stochastic-aware conformance checking increased within
+the process mining community. despite a larger awareness about the importance
+of a stochastic view on the process model, to this day there are only a few
+conformance checking techniques that consider the stochastic characteristics of
+both event log and model. this paper, however, presents conformance checking
+measures that compare the stochastic languages of event logs and process models.
+in essence, this is achieved by measuring \how much probability mass that has
+to be moved how far" to transform one language into the other. we introduced
+three variations of the measure: a theoretical and two adapted versions, which
+are also feasible on process models with an innite set of traces.
+these adapted variants were implemented and their practical relevance was
+illustrated on real-life event logs. the experiments showed the inuence of the
+probability mass parameter on the run time and the results of the measure. the
+evaluation showed the trade-os between run time and memory usage, and accu-
+racy, and it would be interesting for future work to inspect dierent strategies of
+choosing this parameter. additionally, it would be interesting to investigate the
+inuence of dierent distance functions, since the current work only compares
+the levenshtein distance to a simple unit distance. however, the measure could
+easily be extended to use other distance functions as well.
+although emsc simply requires two stochastic languages, its implementa-
+tion starts from an event log and a stochastic petri net. currently, it is challeng-
+ing to establish the language of a gslpn as well as calculating the probability
+of a single trace in the net. especially loops of silent transitions are shown to
+be problematic. extending the technique with a new method which solves this
+problem will improve the reliability of the measure. furthermore, for models
+with a large state space where each trace only has a low probability, the tech-
+nique would benet from a more ecient truncation implementation. searching
+the model until the required probability mass has been collected is a time critical
+part of the measure.
+in [9], a technique to calculate the most probable alignment between a model
+and a log is proposed, based on the probabilities of behaviour observed in the
+event log. for future work, it would be interesting to incorporate their technique
+in our reallocation function. instead of achieving the result with the lowest cost,
+the algorithm would aim for the most probable reallocation.
+in general, with this paper we want to stress the importance of stochastic-
+aware process mining and hope to inspire more discussion and contributions on
+this topic, for instance on the need for dual (recall/precision) measures vs. single
+measures or on dependencies of choices in models.
+references
+1. van der aalst, w.m.p.: process mining - data science in action. springer (2016)
+2. berkelaar, m., eikland, k., notebaert, p.: lp solve 5.5. software (may 1 2004)
+3. cabasino, m.p., hadjicostis, c.n., seatzu, c.: probabilistic marking estimation in
+labeled petri nets. ieee trans. automat. contr. 60(2), 528{533 (2015)16 s.j.j. leemans et al.
+4. carmona, j., van dongen, b.f., solti, a., weidlich, m.: conformance checking -
+relating processes and models. springer (2018)
+5. ciardo, g., german, r., lindemann, c.: a characterization of the stochastic pro-
+cess underlying a stochastic petri net. ieee tse 20(7), 506{515 (1994)
+6. conforti, r., fink, s., manderscheid, j., r oglinger, m.: prism - a predictive risk
+monitoring approach for business processes. in: bpm. pp. 383{400 (2016)
+7. van dongen, b.f., et al.: the prom framework: a new era in process mining tool
+support. in: petri nets. pp. 444{454 (2005)
+8. van eck, m.l., lu, x., leemans, s.j.j., van der aalst, w.m.p.: pm ^2 : a process
+mining project methodology. in: caise. pp. 297{313 (2015)
+9. koorneef, m., solti, a., leopold, h., reijers, h.a.: automatic root cause identi-
+cation using most probable alignments. in: bpm workshops. pp. 204{215 (2017)
+10. levenshtein, v.i.: binary codes capable of correcting deletions, insertions, and
+reversals. in: soviet physics doklady. vol. 10, pp. 707{710 (1966)
+11. de meer, h., d usterh oft, o.: controlled stochastic petri nets. in: srds. pp. 18{25
+(1997)
+12. rogge-solti, a., van der aalst, w.m.p., weske, m.: discovering stochastic petri
+nets with arbitrary delay distributions from event logs. in: bpm workshops. pp.
+15{27 (2013)
+13. rogge-solti, a., weske, m.: prediction of business process durations using non-
+markovian stochastic petri nets. inf. syst. 54, 1{14 (2015)
+14. rozinat, a.: process mining : conformance and extension. ph.d. thesis, ph. d.
+thesis, eindhoven university of technology (2010)
+15. ru, y., hadjicostis, c.n.: bounds on the number of markings consistent with label
+observations in petri nets. ieee trans. automation science and engineering 6(2),
+334{344 (2009)
+16. r uschendorf, l.: the wasserstein distance and approximation theorems. proba-
+bility theory and related fields 70(1), 117{129 (1985)
+17. sierksma, g.: linear and integer optimization : theory and practice. chapman &
+hall/crc, boca raton (2015)
+18. trivedi, k.s., puliato, a., logothetis, d.: from stochastic petri nets to markov
+regenerative stochastic petri nets. in: mascots. pp. 194{198 (1995)
+19. tun, b., chen, d.s., trivedi, k.s.: comparison of hybrid systems and uid
+stochastic petri nets. discrete event dynamic systems 11(1-2), 77{95 (2001)
+20. verenich, i., dumas, m., rosa, m.l., maggi, f.m., teinemaa, i.: survey and cross-
+benchmark comparison of remaining time prediction methods in business process
+monitoring. corr 1805.02896 (2018)

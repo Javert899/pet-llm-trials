@@ -1,0 +1,1494 @@
+using genetic algorithms to mine process
+models: representation, operators and results
+a.k. alves de medeiros, a.j.m.m. weijters and w.m.p. van der aalst
+department of technology management, eindhoven university of technology
+p.o. box 513, nl-5600 mb, eindhoven, the netherlands.
+{a.k.medeiros, a.j.m.m.weijters, w.m.p.v.d.aalst }@tm.tue.nl
+abstract. the topic of process mining has attracted the attention of
+both researchers and tool vendors in the business process management
+(bpm) space. the goal of process mining is to discover process models
+from event logs, i.e., events logged by some information system are usedto extract information about activities and their causal relations. several
+algorithms have been proposed for process mining. many of these algo-
+rithms cannot deal with concurrency. other typical problems are thepresence of duplicate activities, hidden activities, non-free-choice con-
+structs, etc. in addition, real-life logs contain noise (e.g., exceptions or
+incorrectly logged events) and are typically incomplete (i.e., the eventlogs contain only a fragment of all possible behaviors). to tackle these
+problems we propose a completely new approach based on genetic algo-
+rithms. in this paper, we present a new process representation, a ﬁtnessmeasure and the genetic operators used in a genetic algorithm to mine
+process models. our focus is on the use of the genetic algorithm for min-
+ing noisy event logs. additionally, in the appendix we elaborate on therelation between petri nets and this representation and show that genetic
+algorithms can be used to discover petri net models from event logs.
+keywords : process mining, genetic mining, genetic algorithms.
+1 introduction
+buzzwords such as business process intelligence (bpi) and business activ-
+ity monitoring (bam) illustrate the practical interest in techniques to extractknowledge from the information recorded by today’s information systems. most
+information systems support some form of logging. for example, enterprise re-
+source planning (erp) systems such as sap r/3, peoplesoft, oracle, jd ed-wards, etc. log transactions at various levels. any workﬂow management (wfm)
+system records audit trails for individual cases. the sarbanes-oxley act is forcing
+organizations to log even more information. the availability of this informationtriggered the need for process mining techniques that analyze event logs.
+the goal of process mining is to extract information about processes from
+transaction logs [5]. we assume that it is possible to record events such that
+(i) each event refers to an activity (i.e., a well-deﬁned step in the process), (ii)
+each event refers to a case(i.e., a process instance), (iii) each event canhave
+aperformer also referred to as originator (the actor executing or initiating the
+activity), and (iv) events canhave a timestamp and are totally ordered. table 1
+shows an example of a log involving 18 events and 8 activities. in addition tothe information shown in this table, some event logs contain more information
+on the case itself, i.e., data elements referring to properties of the case.
+case id activity id originator timestamp
+case 1 activity a john 9-3-2004:15.01
+case 2 activity a john 9-3-2004:15.12
+case 3 activity a sue 9-3-2004:16.03
+case 3 activity d carol 9-3-2004:16.07
+case 1 activity b mike 9-3-2004:18.25
+case 1 activity h john 10-3-2004:9.23
+case 2 activity c mike 10-3-2004:10.34
+case 4 activity a sue 10-3-2004:10.35
+case 2 activity h john 10-3-2004:12.34
+case 3 activity e pete 10-3-2004:12.50
+case 3 activity f carol 11-3-2004:10.12
+case 4 activity d pete 11-3-2004:10.14
+case 3 activity g sue 11-3-2004:10.44
+case 3 activity h pete 11-3-2004:11.03
+case 4 activity f sue 11-3-2004:11.18
+case 4 activity e clare 11-3-2004:12.22
+case 4 activity g mike 11-3-2004:14.34
+case 4 activity h clare 11-3-2004:14.38
+table 1. an event log (audit trail).
+event logs such as the one shown in table 1 are used as the starting point
+for mining. we distinguish three diﬀerent mining perspectives: (1) the process
+perspective, (2) the organizational perspective and (3) the case perspective. the
+process perspective focuses on the control-ﬂow, i.e., the ordering of activities.
+the goal of mining this perspective is to ﬁnd a good characterization of all
+possible paths, expressed in terms of a process model (e.g., expressed in terms
+of a petri net [38] or event-driven process chain (epc) [23, 24]). the orga-
+nizational perspective focuses on the originator ﬁeld, i.e., which performers are
+involved and how they are related. the goal is to either structure the orga-
+nization by classifying people in terms of roles and organizational units or toshow relation between individual performers (i.e., build a social network [4]).
+thecase perspective focuses on properties of cases. cases can be characterized
+by their path in the process or by the originators working on a case. how-ever, cases can also be characterized by the values of the corresponding data
+elements. for example, if a case represents a replenishment order it is interest-
+ing to know if delayed orders have common properties. the process perspective
+is concerned with the “how?” question, the organizational perspective is con-
+cerned with the “who?” question, and the case perspective is concerned withthe “what?” question. in this paper we will focus completely on the process
+perspective, i.e., the ordering of the activities. this means that here we ignore
+the last two columns in table 1. for the mining of the other perspectives werefer to [5] and http://www.processmining.org.
+note that the prom tool described in this paper is able to mine the other
+perspectives and can also deal with other issues such as transactions, e.g., in
+2the prom tool we consider diﬀerent event types such as “schedule”, “start”,
+“complete”, “abort”, etc. however, for reasons of simplicity we abstract fromthis in this paper and consider activities to be atomic as shown in table 1.
+if we abstract from the other perspectives, table 1 contains the following
+information: case 1 has event trace a,b,h , case 2 has event trace a,c,h ,c a s e
+3 has event trace a,d,e,f,g,h , and case 4 has event trace a,d,f,e,g,h .
+if we analyze these four sequences we can extract the following information
+about the process (assuming some notion of completeness and no noise). the
+underlying process has 8 activities ( a,b,c,d,e,f,gandh).ais always the
+ﬁrst activity to be executed and his always the last one. after ais executed,
+activities b,cordcan be executed. in other words, after a, there is a choice
+in the process and only one of these activities can be executed next. when b
+orcare executed, they are followed by the execution of h(see cases 1 and 2).
+when dis executed, both eandfcan be executed in any order. since we do
+not consider explicit parallelism, we assume eandfto be concurrent (see cases
+3 and 4). activity gsynchronizes the parallel branches that contain eandf.
+activity his executed whenever b,corghas been executed. we can use a
+petri net [38] as shown in figure 1 to model the four cases of the event log in
+table 1.
+petri nets are a formalism to model concurrent processes. graphically, petri
+nets are bipartite directed graphs with two node types: places andtransitions .
+the places represent conditions in the process. the transitions represent actions.
+the activities in the event logs correspond to transitions in petri nets. the stateof a petri net (or process for us) is described by adding tokens (black dots)
+to places. the dynamics of the petri net is determined by the ﬁring rule .a
+transition can be executed (i.e. an action can take place in the process) whenall of its input places (i.e. pre-conditions) have at least a number of tokens
+that is equal to the number of directed arcs from the place to the transition.
+after execution, the transition removes tokens from the input places (one tokenis removed for every input arc from the place to the transition) and produces
+tokens for the output places (again, one token is produced for every output arc).
+besides, the petri nets that we consider have a single start place and a single
+end place. this means that the processes we describe have a single start point
+and a single end point. for the petri net in figure 1, the process’ initial state
+has only one token in place start. this means that ais the only transition that
+can be executed in the initial state. when aexecutes (or ﬁres), one token is
+removed from the place start and one token is added to the place p1.
+the petri net shown in figure 1 is a good model for the event log containing
+the four cases. note that each of the four cases can be “reproduced” by the
+petri net shown in figure 1, i.e. the petri net contains all observed behavior.
+in this case, all possible ﬁring sequences of the petri net shown in figure 1are contained in the log. generally, this is not the case since in practice it is
+unrealistic to assume that all possible behavior is always contained in the log,
+cf. the discussion on completeness in [7].
+3ab
+dec
+fgh
+start p1
+p2
+p3p4
+p5p6 end
+fig. 1. petri net discovered based on the event log in table 1.
+existing approaches for mining the process perspective [5, 7, 8, 10, 19, 29, 42]
+have problems dealing with issues such as duplicate activities, hidden activities,non-free-choice constructs, noise, and incompleteness. the problem with dupli-
+cate activities occurs when the same activity can occur at multiple places in the
+process. this is a problem because it is no longer clear to which activity someevent refers. the problem with hidden activities is that essential routing deci-
+sions are not logged but impact the routing of cases. non-free-choice constructs
+are problematic because it is not possible to separate choice from synchroniza-tion. we consider two sources of noise: (1) incorrectly logged events (i.e., the log
+does not reﬂect reality) or (2) exceptions (i.e., sequences of events corresponding
+to “abnormal behavior”). clearly noise is diﬃcult to handle. the problem ofincompleteness is that for many processes it is not realistic to assume that all
+possible behavior is contained in the log. for processes with many alternative
+routes and parallelism, the number of possible event traces is typically expo-
+nential in the number of activities, e.g., a process with 10 binary choices in a
+sequence will have 1024 possible event sequences and a process with 10 activi-ties in parallel will have even 3628800 possible event sequences. in this paper we
+focus on noise and incompleteness.
+we can consider process mining as a search for the most appropriate process
+out of the search space of candidate process models. mining algorithms can usediﬀerent strategies to ﬁnd the most appropriate model. two extreme strategies
+can be distinguished (i) local strategies primarily based on a step by step building
+of the optimal process model based on very local information, and (ii) global
+strategies primarily based on an one strike search for the optimal model. most
+process mining approaches use a local strategy. an example of an algorithm
+using a local strategy is the α-algorithm [7] where only very local information
+about binary relations between events is used. a genetic search is an example of
+a very global search strategy; because the quality or ﬁtness of a candidate model
+is calculated by comparing the process model with all traces in the event log the
+search process becomes very global. for local strategies there is no guarantee that
+the outcome of the locally optimal steps (at the level of binary event relations)will result in a globally optimal process model. hence, the performance of local
+mining techniques can be seriously hampered when the necessary information
+is not locally available (e.g. one erroneous example can completely mess up thederivation of a right model). therefore, we started to use genetic algorithms
+(ga).
+in this paper, we present a genetic algorithm to discover a petri net given
+a set of event traces. genetic algorithms are adaptive search methods that try
+4to mimic the process of evolution [15, 31]. these algorithms start with an ini-
+tial population of individuals (in this case process models). populations evolveby selecting the ﬁttest individuals and generating new individuals using genetic
+operations such as crossover (combining parts of two of more individuals) and
+mutation (random modiﬁcation of an individual). our initial experiences showedthat a representation of individuals in terms of a petri net is not a very conve-
+nient. first of all, the petri net contains places that are not visible in the log.
+note that in figure 1 we cannot assign meaningful names to places. second,the classical petri net is not very convenient notation for generating an initial
+population because it is diﬃcult to apply simple heuristics. third, the deﬁni-
+tion of the genetic operators (crossover and mutation) is cumbersome. finally,the expressive power of petri nets is in some cases too limited (combinations of
+and/or-splits/joins). therefore, we use an new representation named casual
+matrix .
+the remainder of this paper is organized as follows. section 2 describes the
+process representation used in our ga approach. section 3 explains the detailsof the ga (i.e. the initialization process, the ﬁtness measure, and the crossover
+and mutation operations). section 4 discusses the experimental results. section 5
+discusses some related work. section 6 has the conclusions and future work. forthe readers familiar with petri nets, appendix a explains and formalizes the
+relation between the causal matrix and petri nets.
+2 internal representation
+in this section we ﬁrst explain the causal matrix that we use to encode individuals
+(i.e. processes) in our genetic population. after that we discuss the semantics of
+causal matrices.
+a process model describes the routing of activities for a given business pro-
+cess. the routing shows which activities are a direct cause for other activities.
+when an activity is the single cause of another activity, there is a sequential
+routing (see figure 2 - sequence). when an activity enables the execution of mul-
+tiple concurrent activities, there is a parallel routing (see figure 2 - parallelism).
+when an activity enables the execution of multiple activities but only one of
+these activities can actually be executed, there is a choice routing (see figure 2
+- choice). note that the basic routing constructs sequence, parallelism and choicecan be combined to model more complex ones (for instance, a loop can be seen
+as the combination of a sequence and a choice where the or-join precedes the
+or-split.). given these observations about routing constructs, a process modelmust express (i) the process’ activities, (ii) which activities cause/enable others,
+and (iii) if the causal relation between activities are combined in a sequential,
+parallel or choice routing.
+2.1 causal matrices
+a process model is conceptually a matrix with boolean expressions associated
+to its rows and columns. the matrix shows the causal relations ( →) between
+5a xa
+x
+a'
+and-joina
+x
+a'
+or-joina
+x
+a'
+and-splita
+x
+a'
+or-split
+(sequence) (parallelism) (choice)
+fig. 2. petri net building blocks for the three basic routing constructs that are used
+when modelling business processes.
+the activities in the process. for this reason, we call it the causal matrix .t h e
+causal matrix has size n×n, where nis the number of process’ activities. the
+boolean expressions are used to describe the routing constructs. because the
+boolean expressions describe and/or-split/join situations, they only contain
+the boolean operators and(∧)a n dor(∨).
+as an example, we show how the petri net in figure 1 can be described by the
+casual matrix shown in table 2. the petri net in figure 1 has 8 activities ( a...h),
+so the corresponding individual is represented by an 8 ×8 causal matrix. an entry
+(row, column) in the causal matrix describes if there is a causal relation between
+two activities. if causal (row, column) = 1, there is such a causal relation. if it
+equals 0, there is no such relation. the boolean expressions in the input row
+describe which activities should occur to enable the occurrence of an activity
+at a column. for instance, consider activity hin figure 1. this activity can
+occur whenever activity borcorgoccurs. thus, column hhas the boolean
+expression b∨c∨gassociated to it. similarly, the boolean expressions in the
+output column show which activities may execute after the execution of anactivity at a row. for instance, row dhas as output the boolean expression
+e∧f.
+input
+true a a a d de∧fb∨c∨g
+→ a b c d e f g h output
+a 0 1 1 1 0 0 0 0 b∨c∨d
+b 0 0 0 0 0 0 0 1 h
+c 0 0 0 0 0 0 0 1 h
+d 0 0 0 0 1 1 0 0 e∧f
+e 0 0 0 0 0 0 1 0 g
+f 0 0 0 0 0 0 1 0 g
+g 0 0 0 0 0 0 0 1 h
+h 0 0 0 0 0 0 0 0 true
+table 2. a causal matrix is used for the internal representation of an individual.
+6activity input output
+a {} {{b,c,d }}
+b {{a}} {{h}}
+c {{a}} {{h}}
+d {{a}} {{e},{f}}
+e {{d}} {{g}}
+f {{d}} {{g}}
+g {{e},{f}} {{h}}
+h {{b,c,g }} {}
+table 3. a more succinct encoding of the individual shown in table 2.
+given the conceptual description of individuals, let us explain how it is ac-
+tually encoded in our genetic algorithm1. first of all, the algorithm only keeps
+track of an individual’s activities’ input and output boolean expressions.because the complete causal matrix can be directly derived from the boolean
+expressions, the causal matrix is not explicitly stored but only used during the
+initialization process. by looking at the boolean expressions you derive whichentries are set to 1 and which are set to 0 in the causal matrix. second, the
+boolean expressions are mapped to sets of subsets. activities in a subset have an
+or-relation and subsets are in an and-relation. for instance, the boolean ex-pression ( e∨f)∧gequals the set representation {{e,f},{g}}. table 3 shows
+how the conceptual encoding in table 2 is mapped to the implementation one.
+note that table 3 assumes a “normal form”, i.e., a conjunction of disjunctions.this reduces the state space but also limits the expressiveness, cf. appendix a.
+2.2 parsing semantics
+our ga mining approach searches for a process model that is in accordance with
+the information in the event log. testing if all traces can be parsed by the mined
+process model is one possibility to check this. the parsing semantics of a processmodel is relatively simple. it sequentially reads one activity at a time from an
+event trace and it checks if this activity can be executed or not. an activity
+can execute when its input boolean expression is true (i.e. at least one of theactivities of each subset has the value 1). let us use an example to clarify how
+the parsing works. consider the parsing of the event trace for case 3 in table
+1 - the trace “ a,d,e,f,g,h ” - and the process model described in table 2.
+the parsing of this trace is depicted in figure 3. the element being parsed (see
+left column) is in gray. the right column shows which activities’ markings of the
+individual have being aﬀected by the previous parsed element (also highlightedin gray). note that parsing an element aﬀects the marking of the activities in its
+output boolean expression. the values (0 or bigger) are used to keep track
+of true (= 1) or false (= 0) value of the individual marking elements. besides,because start activities have a single input place and end activities have a single
+output place, we use two auxiliary elements in the marking: startandend.r o w
+1a detailed explanation of the genetic algorithm is given in section 3
+7(i) shows the initial situation. ais the ﬁrst activity to be parsed. its input
+boolean expression is true. this means that activity ais a start activity and a
+can be executed whenever the start element has the value 1. this is indeed the
+situation at row (i). after executing a, the activities’s markings are updated.
+in this case, the startelement gets value 0 and the activities associated to a’s
+output get their values increased by 1. note that during the marking update,
+or-situations are treated in a diﬀerent way of and-situations. as an example
+of an or-situation, consider row (ii) in which dis the activity to be parsed. d
+can be executed because its input shows that it can be executed whenever a
+has the entry d= 1 in its marking. however, the execution of dalso aﬀects a’s
+marking for activities bandcbecause a’s output describes that activities
+b,canddhave an or-relation. the ﬁnal result is at row (iii), which contains
+an example of an and-situation. at row (iii), eis the next activity to be parsed.
+note that ecan be parsed, but the related activities’ markings are updated in
+a diﬀerent way from the situation just described for the parsing of d. the entry
+d:...,f= 1 is not aﬀected because d’s output shows that eandfare in
+anand -situation. thus, the execution of edoes not disable the execution of
+f, and vice-versa. as shown in figure 3, the trace “ a,d,e,f,g,h ” is indeed
+successfully parsed by the individual in table 2 because the endelement is the
+only one to be marked 1 when the parsing stops.
+3 genetic algorithm
+in this section we explain how our genetic algorithm works. figure 4 describes its
+main steps. the following subsections respectively describe (i) the initialization
+process, (ii) the ﬁtness calculation, (iii) the stop criteria and (iv) the geneticoperators (i.e. crossover and mutation) of our genetic algorithm.
+3.1 initialization of the population
+if we directly use the input and output-subsets for the initialization of our
+start population, the number of diﬀerent possible individuals appears enormous.
+ifnis the number of activities in the event log, the number of diﬀerent process
+models is roughly (2
+n×2n)n. even for the simple example this results in 2128dif-
+ferent possibilities. therefore we chose to guide the genetic algorithm during the
+building of the initial population by using a dependency measure . the measure-
+ments are based on our experience with the heuristic mining tool little’s thumb
+[42]. in the next paragraph we explain how the dependency measure is used dur-
+ing initialization. the main idea is that if the substring “ t1t2” appears frequently
+and “t2t1” only as an exception, than there is a high probability that t1andt2
+are in a causal relation. we use follows (t1,t2) as an notation for the number of
+times that the substring t1t2appears in the event log, and causal (t1,t2)=1t o
+indicate that the causal matrix has the value 1 in row t1and column t2. before
+we present our deﬁnition of the dependency measure we need two extra nota-
+tions for short loops: l1l(t1) indicates the number of times the substring “ t1t1”
+8b: h = 0
+c: h = 0
+d: e = 0, f = 0b: h = 0
+c: h = 0
+d: e = 0, f = 0
+e: g = 0a, d, e, f, g, helement being
+parsedindividual's currentmarking
+a, d, e, f, g, ha: b = 0, c = 0, d = 0
+b: h = 0
+c: h = 0
+d: e = 0, f = 0
+e: g = 0
+a: b = 1, c = 1, d = 1
+a, d, e, f, g, h a: b = 0, c = 0, d = 0
+d: e = 1, f = 1
+a, d, e, f, g, h a: b = 0, c = 0, d = 0
+d: e = 0, f = 1
+a, d, e, f, g, h
+a, d, e, f, g, ha: b = 0, c = 0, d = 0
+a: b = 0, c = 0, d = 0
+a, d, e, f, g, h(i)
+(ii)
+(iii)
+(iv)
+(v)
+(vi)
+(vii)start = 1
+end = 0
+start = 0
+end = 0f: g = 0
+g: h = 0
+f: g = 0g: h = 0
+b: h = 0
+c: h = 0
+e: g = 0start = 0end = 0f: g = 0
+g: h = 0
+c: h = 0
+e: g = 1start = 0end = 0b: h = 0 f: g = 0
+g: h = 0
+d: e = 0, f = 0c: h = 0
+e: g = 1start = 0
+end = 0b: h = 0 f: g = 1g: h = 0
+e: g = 0start = 0
+end = 0f: g = 0
+g: h = 1
+a: b = 0, c = 0, d = 0
+b: h = 0
+c: h = 0
+d: e = 0, f = 0
+e: g = 0start = 0end = 1f: g = 0
+g: h = 0
+fig. 3. illustration of the parsing process of the event trace a,d,e,f,g,hfor case
+3 in table 1 by the process model in table 2.
+9step description
+i read event logii calculate dependency relations among activities
+iii build the initial population
+iv calculate individuals' fitnessv stop and return the fittest individuals?
+vi create next population - use genetic operationsstart i ii iii iv
+viv endyes
+no
+fig. 4. main steps of our genetic algorithm.
+appears in the event log (length-one loop) and l2l(t1,t2) the number of times
+the substring “ t1t2t1” appears (length-two loop). the dependency measure is
+deﬁned as follows:
+deﬁnition 3.1. (dependency measure) lett1andt2be two activities in
+event log t. then:
+d(t1,t2)=⎧
+⎪⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎪⎩l2l(t1,t2)+l2l(t2,t1)
+l2l(t1,t2)+l2l(t2,t1)+1ift1/negationslash=t2andl2l(t1,t2)>0
+follows (t1,t2)−follows (t2,t1)
+follows (t1,t2)+ follows (t2,t1)+1ift1/negationslash=t2andl2l(t1,t2)=0
+l1l(t1,t2)
+l1l(t1,t2)+1ift1=t2
+the “+ 1” in the denominator of deﬁnition 3.1 is used to beneﬁt more frequent
+occurrences. additionally to the dependency measure, we use a start-measure
+and an end-measure. these two measures are used to determine the startand
+endactivity of a mined process model. to calculate them we simple add an
+additional activity start andendto each trace. the start measure for activity t
+(notation s(t)) is equal to d(start,t ) and the end measure (notation e(t)) to
+e(t,end).
+building the initial population is a random process driven by the dependency
+measures between activities. first we determine the boolean values of the causal
+matrix. the basic idea is that if, for two activities t1,t2, the dependency measure
+d(t1,t2) is high than there is a high probability that causal (t1,t2) is true (value
+1). below the procedure for the initialization of a process model is given.
+1. for all activities t1andt2generate a random number r.i fr<(d(t1,t2))p
+thencausal (t1,t2)=1e l s e causal (t1,t2)=0 .
+2. for all activities tifr<(s(t))pthen the complete causal (t)-column is set
+to 0.
+3. for all activities tifr<(e(t))pthen the complete causal (t)-row is set to 0.
+4. for every column t1in the causal matrix the input set is a random partition
+of the set xi:={t2|causal (t2,t1)=1}.
+5. for every row t1in the causal matrix the output set is a random partition
+of the set xi:={t2|causal (t1,t2)=1}.
+10the power value pis introduced to manipulate the eagerness of the initializa-
+tion process to introduce causal relations. note that pneeds to be odd to keep
+negative values negative. a high value of p(e.g.,p= 9) results in relatively few
+causal relations, a low value in relatively many causal relations (e.g., p= 1).
+for every entry in the causal matrix a new random number ris drawn. activi-
+ties with a high s-value ( start-value) have a high probability that the complete
+column is set to 0 and activities with a high e-value have a high probability
+that the complete row is 0. this is done because, as explained in section 2, thealgorithm assumes that start-activities have a single input place (which does
+not have ingoing arcs), and end-activities have a single output place (which does
+not have outgoing arcs). for every column in the causal matrix, the algorithmretrieves the activities whose entry (activity, column) equals 1. these activities
+are randomly combined in a boolean input expression that (i) does not repeat
+symbols (i.e. an activity cannot appear more than once in a boolean expression)
+and (ii) is a conjunction of disjuncts. as an example, consider activity hin the
+causal matrix in table 2. the retrieved activities for column hareb,candg.
+so, the possible random combinations for these three activities are: b∧c∧g,
+(b∧c)∨g,(b∧g)∨c,(c∧g)∨b,b∨g∨c. the analogue procedure is
+used to construct an output expression.
+individual1
+activity input output
+a {} {{b,c,d }}
+b {{a}} {{h}}
+c {{a}} {{h}}
+d {{a}} {{e}}
+e {{d}} {{g}}
+f {} {{g}}
+g {{e},{f}} {{h}}
+h {{c,b,g }} {}individual2
+activity input output
+a {} {{b,c,d }}
+b {{a}} {{h}}
+c {{a}} {{h}}
+d {{a}} {{e,f}}
+e {{d}} {{g}}
+f {{d}} {{g}}
+g {{e},{f}} {{h}}
+h {{c},{b},{g}} {}
+table 4. causal matrix of two randomly created individuals for the log in table 1.
+as an example, we show in table 4 and in figure 5 two individuals that could
+be randomly built for the initial population, for the log in table 1. the nextstep in the genetic algorithm is the calculation of the ﬁtness of individuals.
+3.2 fitness calculation
+for a noise-free log, the genetic search aims at ﬁnding an optimal process that
+complies with the information in the event log. testing if all traces can be parsed
+by the mined process model pmis one possibility to check this
+2. thus, a simple
+2normally, we don’t have negative examples at our disposal. if we have negative
+examples, we can check if the parsing indeed fails.
+11ab
+dec
+fgh ab
+dec
+fgh
+individual 1 individual 2
+fig. 5. petri net of two randomly created individuals for the log in table 1.
+ﬁtness measure can just calculate the number of correct parsed traces divided by
+the number of traces in the log l. however, such a ﬁtness measure is too naive
+because it gives a very coarse indication about a process model’s compliance toa given log. for instance, assume that for one process model pm
+1the parsing
+usually gets stuck in the ﬁrst part of a trace and in an other process model
+pm 2usually at the end of the trace. although pm 2is a better candidate to
+crossover because it contains more correct material, this ﬁtness does not indicate
+that. moreover, we like a proper completion of the parsing process. this means
+that only the value of the auxiliary element endequals 1 (cf. subsection 2.2)
+and all the other values are 0. in deﬁnition 3.2 we present a ﬁtness measure
+that incorporate these observations. the notation used is as follows. numactiv-
+itieslog (l)a n dnumtraceslog (l) respectively indicate the number of activities
+and traces in the log. for instance, the log in table 1 has 18 activities and 4
+traces. allparsedactivities (pm,l ) gives the sum of all parsed activities for all
+traces in the event log. allcompletedlogtraces (pm,l ) gives the number of com-
+pletely parsed traces. allproperlycompletedlogtraces (pm,l ) gives the number
+of completely parsed traces in which the auxiliary element endequals 1 and all
+other values equals 0. note the subscript “ s” for some of the terms in deﬁnition
+3.2. these are used to distinguish the “stop semantics” from the “continuous
+semantics” (we will elaborate on this later). also note the three coeﬃcients inthis deﬁnition. we did some experiments to get reasonable coeﬃcient values for
+both ﬁtness measures presented in this section.
+deﬁnition 3.2. (fitness
+s)letlbe an event log and pmbe a process model.
+then:
+fitness s(pm,l )=0 .20×allparsedactivities s(pm,l )
+numactivitieslog (l)+
+0.30×allcompletedlogtraces s(pm,l )
+numtraceslog (l)+0.50×allproperlycompletedlogtraces s(pm,l )
+numtraceslog (l)
+deﬁnition 3.2 assumes a stop semantics, i.e., when parsing event traces the pars-
+ing stops the moment the log indicates that an activity should be executed while
+this is not possible in the process model. all remaining events in the event trace
+are subsequently ignored. as a result, fitness shas the disadvantage that it will
+stop parsing whenever a parsing error occurs (the subscript s in the naming of
+fitness sindicates the stop semantics). a consequence is that if we have two
+process models pm 1andpm 2, where pm 1has only one error close to an start
+12activity and pm 2has the same error but also many errors the remainder of its
+net structure, the ﬁtness of both models will be equal. also errors that occur atthe start of a model have a higher penalty than errors at the end of the model.
+repairing this problem is obvious: simply do not stop the parsing process af-
+ter identifying an error. instead, register the error and go on with the parsingprocess. another possible gain of this continuous semantics parsing procedure
+is a better behavior in case of noisy traces because it gives information about
+the complete process model (i.e. not biased to only the ﬁrst part of the processmodel) and the behavior for the whole trace (not only for the ﬁrst, error free part
+of a trace). the ﬁtness measure in deﬁnition 3.3 incorporates such a continuous
+semantics. (note the subscript “
+c”.)
+deﬁnition 3.3. (fitness c)letlbe an event log and pmbe a process model.
+then:
+fitness c(pm,l )=
+0.40×allparsedactivities c(pm,l )
+numactivitieslog (l)+0.60×allproperlycompletedlogtraces c(pm,l )
+numtraceslog (l)
+in the next section we will report our experimental results for both ﬁtness mea-
+sures and their behavior in case of noise in the event log. but ﬁrst we will ﬁnish
+this section with describing more details of our ga.
+3.3 stop criteria
+the mining algorithm stops when (i) it ﬁnds an individual with a ﬁtness of 1; or
+(ii) it computes ngenerations, where nis the maximum number of generation
+that is allowed; or (iii) the ﬁttest individual has not changed for n/2 generations
+in a row. when the algorithm does not stop, it creates a new population byusing the genetic operations that are described in the next section.
+3.4 genetic operations
+we use elitism, crossover and mutation to build the individuals of the next ge-
+netic generation. elitism means that a percentage of the ﬁttest individuals in
+the current generation is copied to the next generation. crossover and mutation
+are the basic genetic operations. crossover creates new individuals (oﬀsprings)
+based on the ﬁttest individuals (parents) in the current population. so, crossoverrecombines the ﬁttest material in the current population in the hope that the
+recombination of useful material in one of the parents will generate an even ﬁtter
+individual. the mutation operation will change some minor details of an indi-vidual. the hope is that the mutation operator will insert new useful material in
+the population. in this section we show the crossover and mutation algorithms
+that turned out to give good results during our experiments. the algorithm tocreate a next generation works as follows:
+input : current population, elitism rate, crossover rate and mutation rate
+output : new population
+131. copy “elitism rate ×population size” of the best individuals in the current popu-
+lation to the next population.
+2. while there are individuals to be created do:
+(a) use tournament selection to select parent1.
+(b) use tournament selection to select parent2.
+(c) select a random number rbetween 0(inclusive) and 1(exclusive).
+(d) if rless than the crossover rate:
+thendo crossover with parent1andparent2. this operation generates two
+oﬀsprings: oﬀspring1andoﬀspring2.
+elseoﬀspring1equals parent1andoﬀspring2equals parent2.
+(e) mutate oﬀspring1andoﬀspring2. (this step is only needed if the mutation
+rate is non-zero.)
+(f) copy oﬀspring1andoﬀspring2to the new population.
+3. return the new population.
+tournament selection the tournament selection is used to select two parents
+to crossover. given a population, it randomly selects 5 individuals and it returns
+the ﬁttest individual among the ﬁve selected ones.
+crossover an important operation in our genetic approach is the crossover
+operation. this is also the most complex genetic operation. starting point of
+the crossover operation are two parents (i.e. parent1andparent2). the result of
+applying the crossover operation are two oﬀsprings ( oﬀspring1andoﬀspring2).
+first, the crossover algorithm randomly selects an activity tto be the crossover
+point. second, parent1is copied to oﬀspring1andparent2tooﬀspring2. third,
+the algorithm randomly selects a swap point for the input( t) sets in both oﬀ-
+springs and another swap point for the output( t) sets. the respective input
+and output sets of the crossover point at the two oﬀsprings are then recom-
+bined by interchanging the subsets from the swap point until the end of theset. the recombined input/output sets are then checked to make sure that
+they are proper partitions. finally, the two oﬀsprings undergo a repair operation
+called “update related elements”. the pseudo-code for the crossover is as follows:
+input : two individuals
+output : two recombined individuals
+1. if the individuals are equal, go to step 11.
+2. randomly select an activity tto be the individuals’ crossover point.
+3. set1 = input(t) in the ﬁrst individual.4. set2 = input(t) in the second individual.
+5. select a swap point sp1to crossover in set1. the swap point has a value between
+0 (before the ﬁrst subset) and the number of subsets in the set minus 1.
+6. select a swap point sp2to crossover in set2.
+7. swap the selected parts. the parts go from the swap point to the end of the set.
+148. if there are overlaps in the subsets, with an equal probability either merge the
+sets whose intersection is non-empty orremove the intersecting activities from the
+subset that is not being swapped.
+9. update the related activities.
+10. repeat steps 3 to 9 but use the output sets instead of the input sets.
+11. return the two recombined individuals.
+update related activities when the individuals have diﬀerent causal matri-
+ces, the crossover operation may generate inconsistencies. note that the boolean
+expression may contain activities whose respective cell in the causal matrix is
+zero. similarly, an activity may not appear in the boolean expression after thecrossover and the causal matrix still has a non-zero entry for it. so, after the
+input/output sets have being recombined, we need to check the consistency
+of the recombined sets with respect to the other activities’ boolean expressions
+and the causal matrix. when they are inconsistent, we need to update the causal
+matrix and the related boolean expressions of the other activities. the algorithmworks as follows:
+input : an individual, an activity tthat was the crossover point
+output : an updated individual
+1. update the causal matrix.
+explanation: the input( t)i su s e dt ou p d a t et h ec o l u m n tin the causal matrix.
+the output( t)i su s e dt ou p d a t et h er o w tin the causal matrix. every activity
+t/primein the input( t)h a scausal (t/prime,t) = 1. all the other entries at the column are
+set to zero. a similar procedure is done for the activities in output( t).
+2. check the boolean expressions of the other activities against the column and row
+fortin the causal matrix.
+explanation: whenever there are inconsistencies between the entries in the causal
+matrix and the boolean expression, the activities whose entry is zero in the causal
+matrix are eliminated from the respective boolean expression, and activities whose
+entry is 1 are included in one of the subsets in the boolean expression.
+figure 6 illustrates a crossover operation that involves the two individuals in
+figure 5. let activity dbe the randomly selected crossover point. since in-
+put1(d) equals input2(d), the crossover has no real eﬀect for d’s input.
+let us look at the d’s output sets. both d’s output sets have a sin-
+gle subset, so the only possible swap point to select equals 0, i.e., before theﬁrst and only element. after swapping the subsets oﬀpring1 (parent
+1after
+crossover) has input1(d)= {{a}}and output1(d)= {{e,f}}. note that
+output1(d) now also points to f. so, the update related elements algorithm
+makes input1(f)= {{d}}.oﬀspring2is updated in a similar way. the internal
+representation for the two oﬀsprings is showns in table 5.
+mutation the mutation works on the input and output boolean expres-
+sions of an activity. for every activity tin an individual, a new random number
+15parent 1 parent 2
+offspring 1 - before
+update of related tasksoffspring 2 - before
+update of related tasks
+offspring 1offspring 2ab
+dec
+fgh ab
+dec
+fgh
+ab
+ec
+fgh a
+de
+fab
+ec
+fgh a
+de
+ab
+ec
+fgh a
+de
+fab
+ec
+fgh a
+de
+fig. 6. example of the crossover operation for the two individuals in figure 5. the
+crossover point is activity d.
+oﬀspring1
+activity input output
+a {} {{b,c,d }}
+b {{a}} {{h}}
+c {{a}} {{h}}
+d {{a}} {{e,f}}
+e {{d}} {{g}}
+f {{d}} {{g}}
+g {{e},{f}} {{h}}
+h {{c,b,g }} {}oﬀspring2
+activity input output
+a {} {{b,c,d }}
+b {{a}} {{h}}
+c {{a}} {{h}}
+d {{a}} {{e}}
+e {{d}} {{g}}
+f {} {{g}}
+g {{e},{f}} {{h}}
+h {{c},{b},{g}} {}
+table 5. example of two oﬀsprings that can be produced after a crossover between
+the two individuals in table 4. the crossover point is activity d.
+16ris selected. whenever rless than the “mutation rate”, the subsets in input( t)
+are randomly merged or split. the same happens to output( t). the mutation
+algorithm works as follows:
+input : an individual
+output : a possibly mutated individual.
+1. for every activity in the individual do:
+(a) select a random number rbetween 0(inclusive) and 1(exclusive).
+(b) if rless than the speciﬁed mutation rate:
+i. build a new expression for the input of this activity.
+ii. build a new expression for the output of this activity.
+2. return the individual.
+as an example, consider oﬀspring1in table 5. assume that the random number
+rwas less than the mutation rate for activity d. after applying the mutation,
+output(d) changes from {{e,f}}to{{e},{f}}. note that this mutation
+does not change an individual’s causal relations, only its and-or/join-splitmay change.
+4 experiments and results
+to test our genetic approach and the eﬀect of the two diﬀerent ﬁtness measures
+fitness sandfitness cwe use 4 diﬀerent process models with 8, 12, 22 and 32
+activities. these nets are respectively described in figures 1, 7, 8 and 9. thenets were artiﬁcially generated and contain concurrency and loops. to test the
+behavior of the genetic algorithm for event logs with noise, we used 6 diﬀerent
+noise types: missing head ,missing body ,missing tail ,missing activity ,exchanged
+activities andmixed noise . if we assume a event trace σ=t
+1...tn−1tn, these
+noise types behave as follows. missing head, body andtailrespectively randomly
+remove subtraces of activities in the head, body and tail of σ. the head goes from
+t1totn/3. the body goes from t(n/3)+1tot(2n/3). the tail goes from t(2n/3)+1to
+tn.missing activity randomly removes oneactivity from σ.exchanged activities
+exchange two activities in σ.mixed noise is a fair mix of the other 5 noise types.
+real life logs will typically contain mixed noise. however, the separation between
+the noise types allow us to better assess how the diﬀerent noise types aﬀect thegenetic algorithm.
+for every noise type, we generated logs with 5%, 10% and 20% of noise. so,
+every process model in our experiments had 6 ×3 = 18 noisy logs. besides,
+we also ran the experiments for noisy-free logs of the process models because
+our approach should also work for noisy-free logs. thus, every process model in
+our experiments has in total 19 logs. every event log had 1000 traces. for eachevent-log the genetic algorithms ran 10 experiments with diﬀerent seeds. the
+populations had 500 individuals and were iterated for at most 100 generations.
+the crossover rate was 1.0 and the mutation rate was 0.01. the elitism rate was
+17s
+completef
+completeg
+complete
+h
+completei
+complete
+k
+complete
+e
+complete
+b
+completed
+completej
+complete
+c
+completee
+complete
+fig. 7. petri net for process model with 12 activities.
+s
+completep
+completea
+complete
+f
+complete
+h
+completeg
+complete
+r
+completek
+complete
+s
+completem
+complete
+t
+completev
+completee
+completen
+completeo
+complete
+u
+completeb
+completed
+completej
+complete
+i
+completec
+completee
+complete
+fig. 8. petri net for process model with 22 activities.
+18s
+completep
+completer
+completet
+complete
+s
+completev
+complete
+uv4
+complete
+a
+completeb
+completec
+completes1
+complete
+e
+completes2
+complete
+j
+completes3
+complete
+m
+completer5
+complete
+n
+complete n6
+completen7
+complete
+n8
+completeo
+complete
+f
+completeh
+complete
+g
+completei
+completek
+completek10
+completee
+completeu
+complete
+h9
+completed
+complete
+fig. 9. petri net for process model with 32 activities.
+0.01. the power for the causal relation (cf. subsection 3.1) was 9. the initial
+population might contain duplicate individuals.
+an important general question is how to measure the quality of mined models
+in the case of noisy logs. in the experimental setting we know that the model that
+is used to generate the event logs and you may expect that the genetic algorithm
+will come up with exactly this model. in a more realistic situation, you will notknow the underlying model, you are searching for it. the problem is that it is
+very diﬃcult to distinguish low frequent behavior from noise. not modelled low
+frequent possible behavior registered in the event log can be interpreted as anerror. however, low or even high frequent registered noise that is incorporated
+in the model are errors. in a practical situation the only sensible solution seems
+the deﬁnition of an appropriate ﬁtness measure. however, in our experimentalsetting we are experimenting with diﬀerent ﬁtness measures. therefore we cannot
+use one of them as themeasure. in our experimental setting the simplest solution
+to measure the quality of an genetic algorithm is counting the number of runs inwhich the genetic search comes up with exactly the process model that is used
+during the creation of the noise-free event logs. even in the case that noise is
+added to the event log we will use this measure.
+let us ﬁrst have a look at the results for the noisy-free logs. as shown in
+figure 10 and table 6, the genetic algorithm works for noise-free logs. for both
+ﬁtness types, the smaller the net, the more frequently the algorithm ﬁnds the
+19desired process model. for process models that contain more activities, the ga
+usingfitness cseems to work better than the ga using fitness s. although the
+correct process model was not found for all runs (25 out of 40 for the ga using
+fitness sand 32 out of 40 for the ga using fitness c), the other runs returned
+nearly correct individuals.
+however, our main aim is to use genetic algorithms to mine noisy logs. the
+results for the mixed noise type in figures 11 to 13 show that the genetic al-
+gorithm indeed works for noisy logs as well. again we see that the smaller thenet, the more frequently the algorithm ﬁnds the correct process model; and the
+higher the noise percentage, the lower the probability the algorithm will end up
+with the original process model. however, the ga using fitness
+cis more ro-
+bust to noise. tables 7 to 10 have the detailed results. by looking at the results
+for the diﬀerent noise types we have the following observations. the algorithm
+can handle well the missing tail noise type for both ﬁtness types because of the
+high impact of proper completion .t h e missing head impacts more the experi-
+ments using the fitness cthan the fitness sbecause the former ﬁtness punishes
+more the process models that do not properly complete. the exchanged activities
+noise type impacts less the performance of the algorithm than the missing body
+and the missing activity noise types because of the heuristics that are used dur-
+ing the building of the initial population. removing an activity t2from a trace
+“...t1t2t3...” generates “fake” subtraces t1t3that will not be counter balanced
+by subtraces t3t1. consequently, the probability that the algorithm will causally
+relate t1andt3is increased.
+noisy-free logs
+0510152025303540
+fs fc
+fitnessnumber of successful runs
+fig. 10. results for noisy-free logs. fsandfcrespectively show the results for fit-
+nesssandfitness c.
+in this section we presented some results for the genetic mining approach
+presented in this paper. in contrast to most of the existing approaches, our
+ga process mining is able to deal with noise. however, more improvements are
+20number of activities number of successful runs
+in process model fs fc
+8 10 10
+12 10 10
+22 02 04
+32 03 08
+table 6. results of applying the genetic algorithm for noise-free logs. the table shows
+the number of times the perfect individual was found in 10 runs. fsandfcrespec-
+tively show the results for fitness sandfitness c.
+noise 5%
+0510152025303540
+fs fc
+fitnessnumber of successful runsmissing head
+missing tail
+missing body
+missing activity
+exchanged activities
+mixed noise
+fig. 11. results for logs with 5% of noise. fsandfcrespectively show the results
+forfitness sandfitness c.
+noise type
+missing missing missing missing exchanged mixed
+noise head tail body activity activities noise
+percentage fsfcfsfcfsfcfsfcfsfc fsfc
+5% 10101010005139 31
+10% 10101010011135 13
+20% 1001010000000 12
+table 7. results of applying the genetic algorithm for noisy logs of the process models
+with8 activities . the table shows the number of times the perfect individual was found
+in10 runs .fsandfcrespectively show the results for fitness sandfitness c.
+21noise 10%
+0510152025303540
+fs fc
+fitnessnumber of successful runsmissing head
+missing tail
+missing body
+missing activity
+exchanged activities
+mixed noise
+fig. 12. results for logs with 10% of noise. fsandfcrespectively show the results
+forfitness sandfitness c.
+noise 20%
+0510152025303540
+fs fc
+fitnessnumber of successful runsmissing head
+missing tail
+missing body
+missing activity
+exchanged activities
+mixed noise
+fig. 13. results for logs with 20% of noise. fsandfcrespectively show the results
+forfitness sandfitness c.
+22noise type
+missing missing missing missing exchanged mixed
+noise head tail body activity activities noise
+percentage fsfcfsfcfsfcfsfcfsfc fsfc
+5% 101010100000210 32
+10% 1011010000009 03
+20% 1011010000028 02
+table 8. results of applying the genetic algorithm for noisy logs of the process models
+with12 activities . the table shows the number of times the perfect individual was
+found in 10 runs .fsandfcrespectively show the results for fitness sandfitness c.
+noise type
+missing missing missing missing exchanged mixed
+noise head tail body activity activities noise
+percentage fsfcfsfcfsfcfsfcfsfc fsfc
+5% 2105020604 04
+10% 0002000103 00
+20% 0005000000 00
+table 9. results of applying the genetic algorithm for noisy logs of the process models
+with22 activities . the table shows the number of times the perfect individual was
+found in 10 runs .fsandfcrespectively show the results for fitness sandfitness c.
+noise type
+missing missing missing missing exchanged mixed
+noise head tail body activity activities noise
+percentage fsfcfsfcfsfcfsfcfsfc fsfc
+5% 2036230512 16
+10% 2035002500 04
+20% 0012200000 00
+table 10. results of applying the genetic algorithm for noisy logs of the process models
+with32 activities . the table shows the number of times the perfect individual was found
+in10 runs .fsandfcrespectively show the results for fitness sandfitness c.
+23fig. 14. a screenshot of the geneticminer plugin in the prom framework analyzing
+the event log in table 1 and generating the correct process models, i.e., the one shown
+in figure 1.
+still needed. for instance, the ﬁtness should consider the number of tokens that
+remained in the individual after the parsing is ﬁnished as well as the number
+of tokens that needed to be added during the parsing. besides, the dependency
+relations that are used during the building of the initial population should bemodiﬁed to become less sensitive to the missing body andmissing activity noise
+types.
+the genetic mining algorithm presented in this paper is supported by a plugin
+in the prom framework (cf. http://www.processmining.org). figure 14 shows a
+screenshot of the plugin showing the result for the process model with 8 activities
+in terms of petri nets and in terms of event-driven process chains (epcs). notethat the internal representation used by the geneticminer plugin is the causal
+matrix. however, the prom framework allows the user to convert this result to
+other notations such as petri nets and epcs.
+5 related work
+the idea of process mining is not new [6, 8, 10–12, 20–22, 26, 28, 39, 40, 5, 42].cook and wolf have investigated similar issues in the context of software en-
+gineering processes. in [10] they describe three methods for process discovery:
+one using neural networks, one using a purely algorithmic approach, and onemarkovian approach. the authors consider the latter two the most promising
+approaches. the purely algorithmic approach builds a ﬁnite state machine where
+states are fused if their futures (in terms of possible behavior in the next k steps)are identical. the markovian approach uses a mixture of algorithmic and sta-
+tistical methods and is able to deal with noise. note that the results presented
+in [10] are limited to sequential behavior. cook and wolf extend their work toconcurrent processes in [11]. they propose speciﬁc metrics (entropy, event type
+counts, periodicity, and causality) and use these metrics to discover models out
+of event streams. however, they do not provide an approach to generate explicit
+24process models. recall that the ﬁnal goal of the approach presented in this paper
+is to ﬁnd explicit representations for a broad range of process models, i.e., wewant to be able to generate a concrete petri net rather than a set of dependency
+relations between events. in [12] cook and wolf provide a measure to quantify
+discrepancies between a process model and the actual behavior as registeredusing event-based data. the idea of applying process mining in the context of
+workﬂow management was ﬁrst introduced in [8]. this work is based on workﬂow
+graphs, which are inspired by workﬂow products such as ibm mqseries work-ﬂow (formerly known as flowmark) and inconcert. in this paper, two problems
+are deﬁned. the ﬁrst problem is to ﬁnd a workﬂow graph generating events ap-
+pearing in a given workﬂow log. the second problem is to ﬁnd the deﬁnitionsof edge conditions. a concrete algorithm is given for tackling the ﬁrst problem.
+the approach is quite diﬀerent from other approaches: because the nature of
+workﬂow graphs there is no need to identify the nature (and or or) of joins
+and splits. as shown in [25], workﬂow graphs use true and false tokens which
+do not allow for cyclic graphs. nevertheless, [8] partially deals with iterationby enumerating all occurrences of a given activity and then folding the graph.
+however, the resulting conformal graph is not a complete model. in [28], a tool
+based on these algorithms is presented. schimm [39, 40] has developed a miningtool suitable for discovering hierarchically structured workﬂow processes. this
+requires all splits and joins to be balanced. herbst and karagiannis also address
+the issue of process mining in the context of workﬂow management [21, 20, 22]using an inductive approach. the work presented in [22] is limited to sequential
+models. the approach described in [21, 20] also allows for concurrency. it uses
+stochastic activity graphs as an intermediate representation and it generates aworkﬂow model described in the adonis modeling language. in the induction
+step activity nodes are merged and split in order to discover the underlying pro-
+cess. a notable diﬀerence with other approaches is that the same activity canappear multiple times in the workﬂow model, i.e., the approach allows for dupli-
+cate activities. the graph generation technique is similar to the approach of [8,
+28]. the nature of splits and joins (i.e., and or or) is discovered in the transfor-mation step, where the stochastic activity graph is transformed into an adonis
+workﬂow model with block-structured splits and joins. in contrast to the previ-
+ous papers, our work [26, 42] is characterized by the focus on workﬂow processes
+with concurrent behavior (rather than adding ad-hoc mechanisms to capture
+parallelism). in [42] a heuristic approach using rather simple metrics is used toconstruct so-called “dependency/frequency tables” and “dependency/frequency
+graphs”. the preliminary results presented in [42] only provide heuristics and
+focus on issues such as noise. in [3] the emit tool is presented which uses anextended version of the α-algorithm to incorporate timing information. for a
+detailed description of the α-algorithm and a proof of its correctness we refer
+to [7]. for a detailed explanation of the constructs the α-algorithm does not
+correctly mine and an extension to mine short-loops, see [29, 30].
+process mining can be seen as a tool in the context of business (process)
+intelligence (bpi). in [17] a bpi toolset on top of hp’s process manager is de-
+25scribed. the bpi tools set includes a so-called “bpi process mining engine”.
+however, this engine does not provide any techniques as discussed before. insteadit uses generic mining tools such as sas enterprise miner for the generation of
+decision trees relating attributes of cases to information about execution paths
+(e.g., duration). in order to do workﬂow mining it is convenient to have a so-called “process data warehouse” to store audit trails. such as data warehouse
+simpliﬁes and speeds up the queries needed to derive causal relations. in [14, 34,
+35] the design of such warehouse and related issues are discussed in the contextof workﬂow logs. moreover, [35] describes the pisa tool which can be used to
+extract performance metrics from workﬂow logs. similar diagnostics are provided
+by the aris process performance manager (ppm) [23]. the later tool is com-mercially available and a customized version of ppm is the staﬀware process
+monitor (spm) [41] which is tailored towards mining staﬀware logs. note that
+none of the latter tools is extracting the process model. the main focus is on
+clustering and performance analysis rather than causal relations as in [8, 10–12,
+20–22, 26, 28, 39, 40, 42].
+more from a theoretical point of view, the rediscovery problem discussed in
+this paper is related to the work discussed in [9, 16, 36]. in these papers the lim-
+its of inductive inference are explored. for example, in [16] it is shown that thecomputational problem of ﬁnding a minimum ﬁnite-state acceptor compatible
+with given data is np-hard. several of the more generic concepts discussed in
+these papers could be translated to the domain of process mining. it is possi-ble to interpret the problem described in this paper as an inductive inference
+problem speciﬁed in terms of rules, a hypothesis space, examples, and criteria
+for successful inference. the comparison with literature in this domain raisesinteresting questions for process mining, e.g., how to deal with negative exam-
+ples (i.e., suppose that besides log wthere is a log vof traces that are not
+possible, e.g., added by a domain expert). however, despite the many relationswith the work described in [9, 16, 36] there are also many diﬀerences, e.g., we
+are mining at the net level rather than sequential or lower level representations
+(e.g., markov chains, ﬁnite state machines, or regular expressions). for a surveyof existing research, we also refer to [5].
+there have been some papers combining petri nets and genetic algorithms,
+cf. [27, 33, 32, 37]. however, these papers do not try to discover a process modelbased on some event log. the approach in this paper is the ﬁrst approach using
+genetic algorithms for process discovery. the goal of using genetic algorithms is
+to tackle problems such as duplicate activities, hidden activities, non-free-choice
+constructs, noise, and incompleteness, i.e., overcome the problems of some of the
+traditional approaches.
+6 conclusion and future work
+in this paper we presented a new genetic algorithm (i.e. a more global tech-
+nique) to mine process models. after the introduction of process mining and
+its practical relevance, we motivated our genetic approach. the use of a genetic
+26approach seems specially attractive if the event log contains noise. after the
+introduction of a new process representation formalism (i.e. the causal matrix)and its semantics, we presented the details of our ga: the genetic operators and
+two ﬁtness measures fitness
+sandfitness c. both ﬁtness measures are related
+to the successful parsing of the material in the event log, but fitness sparsing
+semantics stops when a error occurs. fitness cis a more global ﬁtness measure
+in the sense that its parsing semantics will not stop when an error occurs: the
+error is registered and the parsing continues.
+in the experimental part we presented the results of the genetic process min-
+ing algorithm on event logs with and without noise. we specially focused on
+the performance diﬀerences between the two ﬁtness measures (i.e. fitness sand
+fitness c). the main result is that for both noise-free and noisy event logs, the
+performance of the ga with the most global ﬁtness measure ( fitness c) appears
+to be better.
+if we look at the performance behavior of the ga for the diﬀerent noise
+types (i.e. missing head ,missing body ,missing tail ,missing activity ,exchanged
+activities andmixed noise ), we observe special mining problems for the missing
+bodyandmissing activity noise types; it happens that they introduce superﬂuous
+connections in the process model. a possible solution is an improvement of the
+ﬁtness measure so that simple process models are preferred above more complexmodels.
+the genetic mining algorithm presented in this paper is supported by a plug-
+in in the prom framework (cf. http://www.processmining.org). the reader is
+encouraged to download the tool and experiment with it (there are also sev-eral adaptors for commercial systems). we also invite other research groups to
+contribute to this initiative by adding additional plugins.
+acknowledgements
+the authors would like to thank boudewijn van dongen, peter van den brand,
+minseok song, laura maruster, eric verbeek, monique jansen-vullers, and hajoreijers for their on-going work on process mining techniques and tools at eind-
+hoven university of technology.
+references
+1. w.m.p. van der aalst. the application of petri nets to workﬂow management.
+the journal of circuits, systems and computers , 8(1):21–66, 1998.
+2. w.m.p. van der aalst. business process management demystiﬁed: a tutorial on
+models, systems and standards for workﬂow management. in j. desel, w. reisig,
+and g. rozenberg, editors, lectures on concurrency and petri nets , volume 3098
+oflecture notes in computer science , pages 1–65. springer-verlag, berlin, 2004.
+3. w.m.p. van der aalst and b.f. van dongen. discovering workﬂow performance
+models from timed logs. in y. han, s. tai, and d. wikarski, editors, international
+conference on engineering and deployment of cooperative information systems
+(edcis 2002) , volume 2480 of lecture notes in computer science , pages 45–63.
+springer-verlag, berlin, 2002.
+274. w.m.p. van der aalst and m. song. mining social networks: uncovering interac-
+tion patterns in business processes. in j. desel, b. pernici, and m. weske, editors,
+international conference on business process management (bpm 2004) ,v o l u m e
+3080 of lecture notes in computer science , pages 244–260. springer-verlag, berlin,
+2004.
+5. w.m.p. van der aalst, b.f. van dongen, j. herbst, l. maruster, g. schimm, and
+a.j.m.m. weijters. workﬂow mining: a survey of issues and approaches. data
+and knowledge engineering , 47(2):237–267, 2003.
+6. w.m.p. van der aalst and a.j.m.m. weijters, editors. process mining ,s p e c i a l
+issue of computers in industry, volume 53, number 3. elsevier science publishers,
+amsterdam, 2004.
+7. w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. workﬂow mining:
+discovering process models from event logs. ieee transactions on knowledge
+and data engineering , 16(9):1128–1142, 2004.
+8. r. agrawal, d. gunopulos, and f. leymann. mining process models from work-
+ﬂow logs. in sixth international conference on extending database technology ,
+pages 469–483, 1998.
+9. d. angluin and c.h. smith. inductive inference: theory and methods. computing
+surveys , 15(3):237–269, 1983.
+10. j.e. cook and a.l. wolf. discovering models of software processes from event-
+based data. acm transactions on software engineering and methodology ,
+7(3):215–249, 1998.
+11. j.e. cook and a.l. wolf. event-based detection of concurrency. in proceedings
+of the sixth international symposium on the foundations of software engineering(fse-6) , pages 35–45, 1998.
+12. j.e. cook and a.l. wolf. software process validation: quantitatively measuring
+the correspondence of a process to a model. acm transactions on software
+engineering and methodology , 8(2):147–176, 1999.
+13. j. dehnert and w.m.p. van der aalst. bridging the gap between business models
+and workﬂow speciﬁcations. international journal of cooperative information
+systems , 13(3):289–332, 2004.
+14. j. eder, g.e. olivotto, and wolfgang gruber. a data warehouse for workﬂow
+logs. in y. han, s. tai, and d. wikarski, editors, international conference on
+engineering and deployment of cooperative information systems (edcis 2002) ,
+volume 2480 of lecture notes in computer science , pages 1–15. springer-verlag,
+berlin, 2002.
+15. a.e. eiben and j.e. smith. introduction to evolutionary computing .n a t u r a l
+computing. springer-verlag, berlin, 2003.
+16. e.m. gold. complexity of automaton identiﬁcation from given data. information
+and control , 37(3):302–320, 1978.
+17. d. grigori, f. casati, u. dayal, and m.c. shan. improving business process qual-
+ity through exception understanding, prediction, and prevention. in p. apers,
+p. atzeni, s. ceri, s. paraboschi, k. ramamohanarao, and r. snodgrass, ed-itors, proceedings of 27th international conference on very large data bases
+(vldb’01) , pages 159–168. morgan kaufmann, 2001.
+18. k. van hee, n. sidorova, and m. voorhoeve. soundness and separability of work-
+ﬂow nets in the stepwise reﬁnement approach. in w.m.p. van der aalst and
+e. best, editors, application and theory of petri nets 2003 , volume 2679 of lec-
+ture notes in computer science , pages 335–354. springer-verlag, berlin, 2003.
+2819. j. herbst. a machine learning approach to workﬂow management. in proceedings
+11th european conference on machine learning , volume 1810 of lecture notes in
+computer science , pages 183–194. springer-verlag, berlin, 2000.
+20. j. herbst. dealing with concurrency in workﬂow induction. in u. baake, r. zo-
+bel, and m. al-akaidi, editors, european concurrent engineering conference .s c s
+europe, 2000.
+21. j. herbst. ein induktiver ansatz zur akquisition und adaption von workﬂow-
+modellen . phd thesis, universit¨ at ulm, november 2001.
+22. j. herbst and d. karagiannis. integrating machine learning and workﬂow man-
+agement to support acquisition and adaptation of workﬂow models. international
+journal of intelligent systems in accounting, finance and management , 9:67–92,
+2000.
+23. ids scheer. aris process performance manager (aris ppm): measure, ana-
+lyze and optimize your business process performance (whitepaper). ids scheer,
+saarbruecken, gemany, http://www.ids-scheer.com, 2002.
+24. g. keller and t. teufel. sap r/3 process oriented implementation . addison-
+wesley, reading ma, 1998.
+25. b. kiepuszewski. expressiveness and suitability of languages for control flow
+modelling in workﬂows . phd thesis, queensland university of technology, bris-
+bane, australia, 2003. available via http://www.workﬂowpatterns.com.
+26. l. maruster, a.j.m.m. weijters, w.m.p. van der aalst, and a. van den bosch.
+process mining: discovering direct successors in process logs. in proceedings of
+the 5th international conference on discovery science (discovery science 2002) ,
+volume 2534 of lecture notes in artiﬁcial intelligence , pages 364–373. springer-
+verlag, berlin, 2002.
+27. h. mauch. evolving petri nets with a genetic algorithm. in e. cantu-paz and
+j.a. foster et al., editors, genetic and evolutionary computation (gecco 2003) ,
+volume 2724 of lecture notes in computer science , pages 1810–1811. springer-
+verlag, berlin, 2003.
+28. m.k. maxeiner, k. k¨ uspert, and f. leymann. data mining von workﬂow-
+protokollen zur teilautomatisierten konstruktion von prozemodellen. in proceed-
+ings of datenbanksysteme in b¨ uro, technik und wissenschaft , pages 75–84. infor-
+matik aktuell springer, berlin, germany, 2001.
+29. a.k.a. de medeiros, w.m.p. van der aalst, and a.j.m.m. weijters. workﬂow
+mining: current status and future directions. in r. meersman, z. tari, and d.c.
+schmidt, editors, on the move to meaningful internet systems 2003: coopis,
+doa, and odbase , volume 2888 of lecture notes in computer science ,p a g e s
+389–406. springer-verlag, berlin, 2003.
+30. a.k.a. de medeiros, b.f. van dongen, w.m.p. van der aalst, and a.j.m.m. wei-
+jters. process mining: extending the α-algorithm to mine short loops. beta
+working paper series, wp 113, eindhoven university of technology, eindhoven,
+2004.
+31. m. mitchell. an introduction to genetic algorithms . the mit press, 1996.
+32. j.h. moore and l.w. hahn. petri net modeling of high-order genetic systems using
+grammatical evolution. biosystems , 72(1-2):177–86, 2003.
+33. j.h. moore and l.w. hahn. an improved grammatical evolution strategy for
+hierarchical petri net modeling of complex genetic systems. in g.r. raidl et al.,
+editor, applications of evolutionary computing, evoworkshops 2004 , volume 3005
+oflecture notes in computer science , pages 63–72. springer-verlag, berlin, 2004.
+2934. m. zur m¨ uhlen. process-driven management information systems combining
+data warehouses and workﬂow technology. in b. gavish, editor, proceedings of
+the international conference on electronic commerce research (icecr-4) ,p a g e s
+550–566. ieee computer society press, los alamitos, california, 2001.
+35. m. zur m¨ uhlen and m. rosemann. workﬂow-based process monitoring and con-
+trolling - technical and organizational issues. in r. sprague, editor, proceedings
+of the 33rd hawaii international conference on system science (hicss-33) , pages
+1–10. ieee computer society press, los alamitos, california, 2000.
+36. l. pitt. inductive inference, dfas, and computational complexity. in k.p. jan-
+tke, editor, proceedings of international workshop on analogical and inductive
+inference (aii) , volume 397 of lecture notes in computer science , pages 18–44.
+springer-verlag, berlin, 1889.
+37. j.p. reddy, s. kumanan, and o.v.k. chetty. application of petri nets and a
+genetic algorithm to multi-mode multi-resource constrained project scheduling.international journal of advanced manufacturing technology , 17(4):305–314, 2001.
+38. w. reisig and g. rozenberg, editors. lectures on petri nets i: basic models ,
+volume 1491 of lecture notes in computer science . springer-verlag, berlin, 1998.
+39. g. schimm. process mining. http://www.processmining.de/.
+40. g. schimm. process miner - a tool for mining process schemes from event-
+based data. in s. flesca and g. ianni, editors, proceedings of the 8th european
+conference on artiﬁcial intelligence (jelia) ,v o l u m e2 4 2 4o f lecture notes in
+computer science , pages 525–528. springer-verlag, berlin, 2002.
+41. staﬀware. staﬀware process monitor (spm). http://www.staﬀware.com, 2002.
+42. a.j.m.m. weijters and w.m.p. van der aalst. rediscovering workﬂow models
+from event-based data using little thumb. integrated computer-aided engi-
+neering , 10(2):151–162, 2003.
+a relating the causal matrix and petri nets
+in this section we relate the causal matrix to petri nets. we will map petri nets
+(in particular wf-nets) onto the notation used by our genetic algorithm, i.e.,
+the causal matrix. then we consider the mapping of the causal matrix onto petri
+nets. however, ﬁrst we introduce some basic notions (e.g., petri net, wf-nets,and soundness).
+a.1 preliminaries
+this subsection introduces the basic petri net terminology and notations, and
+also discusses concepts such as wf-nets andsoundness .
+the classical petri net is a directed bipartite graph with two node types called
+places andtransitions . the nodes are connected via directed arcs.
+deﬁnition 1 (petri net). a petri net is a triple (p,t,f ):
+-pis a ﬁnite set of places,
+-tis a ﬁnite set of transitions ( p∩t=∅),
+-f⊆(p×t)∪(t×p)is a set of arcs (ﬂow relation)
+30a place pis called an input place of a transition tiﬀ there exists a directed arc
+fromptot. place pis called an output place of transition tiﬀ there exists a
+directed arc from ttop.for any relation/directed graph g⊆n×nwe deﬁne
+the preset •n={(m1,m2)∈g|n=m2}and postset n•={(m1,m2)∈g|n=
+m1}for any node n∈n.w eu s eg•norng•to explicitly indicate the context
+gif needed. based on the ﬂow relation fwe use this notation as follows. •t
+denotes the set of input places for a transition t. the notations t•,•pandp•
+have similar meanings, e.g., p•is the set of transitions sharing pas an input
+place. note that we do not consider multiple arcs from one node to another.
+at any time a place contains zero or more tokens , drawn as black dots. the
+state, often referred to as marking, is the distribution of tokens over places, i.e.,
+m∈p→i n. to compare states we deﬁne a partial ordering. for any two states
+m1andm2,m1≤m2iﬀ for all p∈p:m1(p)≤m2(p)
+the number of tokens may change during the execution of the net. transi-
+tions are the active components in a petri net: they change the state of the netaccording to the following ﬁring rule :
+(1) a transition tis said to be enabled iﬀ each input place poftcontains at least
+one token.
+(2) an enabled transition may ﬁre. if transition tﬁres, then tconsumes one
+token from each input place poftandproduces one token for each output
+place poft.
+given a petri net ( p,t,f ) and a state m
+1, we have the standard notations for
+a transition tthat is enabled in state m1and ﬁring tinm1results in state
+m2(notation: m1t→m2) and a ﬁring sequence σ=t1t2t3...tn−1leads from
+statem1to state mnvia a (possibly empty) set of intermediate states (notation:
+m1σ→mn). a state mnis called reachable fromm1(notation m1∗→mn)i ﬀ
+there is a ﬁring sequence σsuch that m1σ→mn. note that the empty ﬁring
+sequence is also allowed, i.e., m1∗→m1.
+in this appendix, we will focus on a particular type of petri nets called work-
+flow nets (wf-nets) [1, 2, 13, 18].
+deﬁnition 2 (wf-net). a petri net pn =(p,t,f )is a wf-net (workﬂow
+net) if and only if:
+(i) there is one source place i∈psuch that •i=∅.
+(ii) there is one sink place o∈psuch that o•=∅.
+(iii) every node x∈p∪tis on a path from itoo.
+a wf-net represents the life-cycle of a case that has some initial state repre-
+sented by a token in the unique input place ( i) and a desired ﬁnal state rep-
+resented by a token in the unique output place ( o). the third requirement in
+deﬁnition 2 has been added to avoid “dangling transitions and/or places”. inthe context of workﬂow models or business process models, transitions can be
+interpreted as activities ortasks and places can be interpreted as conditions .
+although the term “workflow net” suggests that the application is limited to
+31workﬂow processes, the model has wide applicability, i.e., any process where
+each case has a life-cycle going from some initial state to some ﬁnal state ﬁtsthis basic model.
+the three requirements stated in deﬁnition 2 can be veriﬁed statically, i.e.,
+they only relate to the structure of the petri net. to characterize desirable dy-namic properties, the notation of soundness has been deﬁned [1, 2, 13, 18].
+deﬁnition 3 (sound). a procedure modeled by a wf-net pn =(p,t,f )is
+sound if and only if:
+(i) for every state mreachable from state i, there exists a ﬁring sequence leading
+from state mto state o. formally: ∀
+m(i∗→m)⇒(m∗→o).3
+(ii) state ois the only state reachable from state iwith at least one token in
+place o. formally: ∀m(i∗→m∧m≥o)⇒(m=o).
+(iii) there are no dead transitions in (pn,i). formally: ∀t∈t∃m,m/primei∗→mt→
+m/prime.
+note that the soundness property relates to the dynamics of a wf-net. the
+ﬁrst requirement in deﬁnition 3 states that starting from the initial state (state
+i), it is always possible to reach the state with one token in place o(state o).
+the second requirement states that the moment a token is put in place o, all
+the other places should be empty. the last requirement states that there are nodead transitions (activities) in the initial state i.
+a.2 mapping a petri net onto a causal matrix
+in this paper, we use the concept of a causal matrix to represent an individual.
+table 3 and table 2 show two alternative visualizations. in this section, we ﬁrst
+formalize the notion of a causal matrix. this formalization will be used to map
+a causal matrix onto a petri net and vice versa.
+deﬁnition 4 (causal matrix). a causal matrix is a tuple cm =(a,c,i,o ),
+where
+-ais a ﬁnite set of activities,
+-c⊆a×ais the causality relation,
+-i∈a→p(p(a))is the input condition function,
+4
+-o∈a→p(p(a))is the output condition function,
+such that
+-c={(a1,a2)∈a×a|a1∈/uniontexti(a2)},5
+-c={(a1,a2)∈a×a|a2∈/uniontexto(a1)},
+3note that there is an overloading of notation: the symbol iis used to denote both
+theplace i and the statewith only one token in place i.
+4p(a) denotes the powerset of some set a.
+5/uniontext
+i(a2) is the union of the sets in set i(a2).
+32-∀a∈a∀s,s/prime∈i(a)s∩s/prime/negationslash=∅⇒ s=s/prime,
+-∀a∈t∀s,s/prime∈o(a)s∩s/prime/negationslash=∅⇒ s=s/prime,
+-c∪{(ao,ai)∈a×a|aoc•=∅∧c•ai=∅}is a strongly connected graph.
+the mapping of table 3 onto cm=(a,c,i,o ) is straightforward (the latter
+two columns represent iando). note that ccan be derived from both iand
+o. its main purpose is to ensure consistency between iando. for example,
+ifa1has an output condition mentioning a2, then a2has an input condition
+mentioning a1(and vice versa). this is enforced by the ﬁrst two constraints.
+the third and fourth constraint indicate that some activity amay appear only
+once in the conjunction of disjunctions, e.g., {{a,b},{a,c}}is not allowed
+because aappears twice. the last requirement has been added to avoid that the
+causal matrix can be partitioned in two independent parts or that nodes are noton a path from some source activity a
+ito a sink activity ao.
+the mapping from an arbitrary petri net to its corresponding causal matrix
+illustrates the expressiveness of the internal format used for genetic mining. first,we give the deﬁnition of the mapping π
+pn→cm.
+deﬁnition 5 ( πpn→cm).let pn =(p,t,f )be a petri net. πpn→cm(pn)=
+(a,c,i,o ), i.e., the mapping of pn, where
+-a=t,
+-c={(t1,t2)∈t×t|t1•∩•t2/negationslash=∅},
+-i∈t→p(p(t))such that ∀t∈ti(t)={•p|p∈•t},
+-o∈t→p(p(t))such that ∀t∈to(t)={p•|p∈t•}.
+letpnbe the petri net shown in figure 1. it is easy to check that πpn→cm(pn)
+is indeed the causal matrix in table 2. however, there may be petri nets pnfor
+which πpn→cm(pn) is not a causal matrix. the following lemma shows that
+for the class of nets we are interested in, i.e., wf-nets, the requirement that
+there may not be two diﬀerent places in-between two activities is suﬃcient to
+prove that πpn→cm(pn) represents a causal matrix as deﬁned in deﬁnition 4.
+lemma 1. let pn =(p,t,f )be a wf-net with no duplicate places in between
+two transitions, i.e., ∀t1,t2∈t|t1•∩•t2|≤1.πpn→cm(pn)represents a causal
+matrix as deﬁned in deﬁnition 4.
+proof. letπpn→cm=(a,c,i,o ). clearly, a=tis a ﬁnite set, c⊆a×a,
+andi,o∈a→p(p(a)).c={(a1,a2)∈a×a|a1∈/uniontexti(a2)}because
+a1∈/uniontexti/prime(a2) if and only if a1•∩•a2/negationslash=∅. similarly, c={(a1,a2)∈a×a|a2∈/uniontexto(a1)}.∀a∈a∀s,s/prime∈i(a)s∩s/prime/negationslash=∅⇒ s=s/primebecause ∀t1,t2∈t|t1•∩•t2|≤1.
+similarly, ∀a∈a∀s,s/prime∈o(t)s∩s/prime/negationslash=∅⇒ s=s/prime. finally, it is easy to verify that
+c∪{(ao,ai)∈a×a|ao•=∅∧• ai=∅}is a strongly connected graph. /intersectionsq/unionsq
+the requirement ∀t1,t2∈t|t1•∩• t2|≤1 is a direct result of the fact that
+in the conjunction of disjunctions in iando, there may not be any overlaps.
+this restriction has been added to reduce the search space of the genetic mining
+algorithm, i.e., the reason is more of a pragmatic nature. however, for the success
+of the genetic mining algorithm such reductions are of the utmost importance.
+33a.3 a naive way of mapping a causal matrix onto a petri net
+the mapping from a causal matrix onto a petri net is more involved because we
+need to “discover places” and, as we will see, the causal matrix is slightly moreexpressive than classical petri nets.
+6let us ﬁrst look at a naive mapping.
+deﬁnition 6 ( πn
+cm→pn).let cm =(a,c,i,o )be a causal matrix. πn
+cm→pn
+(cm)=(p,t,f ), i.e., the naive petri net mapping of cm, where
+-p={i,o}∪{it,s|t∈a∧s∈i(t)}∪{ot,s|t∈t∧s∈o(t)},
+-t=a∪{mt1,t2|(t1,t2)∈c},
+-f={(i,t)|t∈a∧c•t=∅} ∪ { (t,o)|t∈a∧tc•=∅} ∪ { (it,s,t)|t∈
+a∧s∈i(t)}∪{(t,ot,s)|t∈a∧s∈o(t)}∪{(ot,s,mt1,t2)|(t1,t2)∈
+c∧t∈a∧s∈o(t)∧t=t1∧t2∈s}∪{(mt1,t2,it,s)|(t1,t2)∈
+c∧t∈a∧s∈i(t)∧t=t2∧t1∈s}.
+the mapping πn
+cm→pnmaps activities onto transitions and adds input places
+and output places to these transitions based on functions iando. these places
+are local to one activity. to connect these local places, one transition mt1,t2is
+added for every ( t1,t2)∈c. figure 15 shows a causal matrix and the naive
+mapping πn
+cm→pn(we have partially omitted place/transition names).
+activity input output
+a {} {{c,d}}
+b {} {{d}}
+c {{a}} {}
+d {{a, b}} {}a
+bc
+d
+a
+bc
+d(a) naive translation.
+(b) incorrect translation.
+fig. 15. a causal matrix (left) and two potential mappings onto petri nets (right).
+figure 15 shows two wf-nets illustrating the need for “silent transitions”
+of the form mt1,t2. the dynamics of the wf-net shown in figure 15(a) is con-
+sistent with the causal matrix. if we try to remove the silent transitions, the
+best candidate seems to be the wf-net shown in figure 15(b). although this is
+a sound wf-net capturing incorporating the behavior of the wf-net shown in
+figure 15(a), the mapping is notconsistent with the causal matrix. note that
+figure 15(b) allows for a ﬁring sequence where bis followed by c. this does
+not make sense because c/negationslash∈/uniontexto(b)a n d b/negationslash∈/uniontexti(c). therefore, we use the
+mapping given in deﬁnition 6 to give petri-net semantics to causal matrices.
+it is easy to see that a causal matrix deﬁnes a wf-net. however, note that
+the wf-net does not need to be sound.
+6expressiveness should not be interpreted in a formal sense but in the sense of con-
+venience when manipulating process instances, e.g., crossover operations.
+34lemma 2. let cm =(a,c,i,o )be a causal matrix. πn
+cm→pn(cm)is a
+wf-net.
+proof. it is easy to verify the three properties mentioned in deﬁnition 2. note
+that the “short-circuited” cis strongly connected and that each mt1,t2transition
+makes a similar connection in the resulting petri net. /intersectionsq/unionsq
+figure 16 shows that despite the fact that πn
+cm→pn(cm) is a wf-net, the
+introduction of silent transitions may introduce a problem. figure 16(b) shows
+the wf-net based on deﬁnition 6, i.e., the naive mapping. clearly, figure 16(b)
+is not sound because there are two potential deadlocks, i.e., one of the input
+places of eis marked and one of the input places of fis marked but none of
+them is enabled. the reason for this is that the choices introduced by the silenttransitions are not “coordinated” properly. if we simply remove the silent tran-
+sitions, we obtain the wf-net shown in figure 16(a). this network is consistent
+with the causal matrix. this can easily be checked because applying the map-pingπ
+pn→cmdeﬁned in deﬁnition 5 to this wf-net yields the original causal
+matrix shown in figure 16.
+activity input output
+a {} {{b},{c,d}}
+b {{a}} {{e,f}}
+c {{a}} {{e}}
+d {{a}} {{f}
+e {{b},{c}} {{g}}
+f {{b},{d}} {{g}}
+g {{e},{f}} {}
+a c
+db e
+fga c
+db e
+fg
+(a) mapping without silent transitions.
+(b) naive mapping.
+fig. 16. another causal matrix (left) and two potential mappings onto petri nets
+(right).
+figures 15 and 16 show a dilemma. figure 15 demonstrates that silent tran-
+sitions are needed while figure 16 proves that silent transitions can be harmful.
+there are two ways to address this problem taking the mapping of deﬁnition 6as a starting point.
+first of all, we can use relaxed soundness [13] rather than soundness [1]. this
+implies that we only consider so-called sound ﬁring sequences and thus avoid
+the two potential deadlocks in figure 16(b). see [13] for transforming a relaxed
+sound wf-net into a sound one.
+35second, we can change the ﬁring rule such that silent transitions can only ﬁre
+if they actually enable a non-silent transition. the enabling rule for non-silenttransitions is changed as follows: a non-silent transition is enabled if each of its
+input places is marked or it is possible to mark all input places by just ﬁring
+silent transitions , i.e., silent transitions only ﬁre when it is possible to enable a
+non-silent transition. note that non-silent and silent transitions alternate and
+therefore it is easy to implement this semantics in a straightforward and localized
+manner.
+in this appendix we use the second approach, i.e., a slightly changed enabling/-
+ﬁring rule is used to specify the semantics of a causal matrix in terms of a wf-
+net. this semantics allows us also to deﬁne a notion of ﬁtness required for thegenetic algorithms. using the petri-net representation we can play the “token
+game” to see how each event trace in the log ﬁts the individual represented by
+a causal matrix. note that in figure 3, the token game is played in the context
+of the causal matrix. however, the semantics used is exactly the same.
+a.4 a more sophisticated mapping
+although not essential for the genetic algorithms, we elaborate a bit on the
+dilemma illustrated by ﬁgures 15 and 16. the dilemma shows that the causalnet representation is slightly more expressive than ordinary petri nets. (note
+the earlier comment on expressiveness!) therefore, it is interesting to see which
+causal matrices can be directly mapped onto a wf-net without additional silenttransitions. for this purpose we ﬁrst deﬁne a mapping π
+r
+cm→pnwhich only
+works for a restricted class of causal matrices.
+deﬁnition 7 ( πr
+cm→pn).let cm =(a,c,i,o )be a causal matrix. πr
+cm→pn
+(cm)=(p,t,f ), i.e., the restricted petri net mapping of cm, where
+-x={(ti,to)∈p(a)×p(a)|∀t∈tito∈o(t)∧∀ t∈toti∈i(t)}
+-p=x∪{i,o},
+-t=a,
+-f={(i,t)|t∈t∧c•t=∅} ∪ { (t,o)|t∈t∧tc•=∅} ∪ { ((ti,to),t)∈
+x×t|t∈to}∪{(t,(ti,to))∈t×x|t∈ti}.
+if we apply this mapping to the causal matrix shown in figure 16, we obtain the
+wf-net shown in figure 16(a), i.e., the desirable net without the superﬂuoussilent transitions. however, in some cases the π
+r
+cm→pndoes not yield a wf-
+net because some connections are missing. for example, if we apply πr
+cm→pn
+to the causal matrix shown in figure 15, then we obtain a result where there
+are no connections between a,b,c,a n d d. this makes sense because there
+does not exist a corresponding wf-net. this triggers the question whether it is
+possible to characterize the class of causal matrices for which πr
+cm→pnyields
+the correct wf-net.
+deﬁnition 8 (simple). let cm =(a,c,i,o )be a causal matrix. cm is sim-
+ple if and only if ∀ta,tb∈t∀ta∈o(ta)∀tb∈o(tb)∀tc∈(ta∩tb)∀tc∈i(tc){ta,tb}⊆
+36tc⇒ta=tband∀ta,tb∈t∀ta∈i(ta)∀tb∈i(tb)∀tc∈(ta∩tb)∀tc∈o(tc)
+{ta,tb}⊆tc⇒ta=tb.
+figure 17 illustrates the notion of simplicity. note that the diagrams shown
+do not represent petri nets but causal matrices, i.e., the circles should not be
+interpreted as places but as disjunctions. (recall that the input and outputsets of an activity are conjunctions of disjunctions.) the left-hand side shows a
+requirement on two activities ( t
+aandtb) pointing to the same activity ( tc). in
+this case, taandtbshould coincide. the left-hand side of figure 17 shows the
+requirement on two activities ( taandtb) pointed to by the same activity ( tc).
+in this case, taandtbshould also coincide.
+tata
+tbtbtctc
+tbtctc
+tbtata
+fig. 17. a causal matrix is simple if in the situations shown ta=tb. if one can ﬁnd
+a pattern like one of the two shown and ta/negationslash=tb, then the causal matrix is not simple.
+clearly the causal matrix shown in figure 16 is simple while the one in
+figure 15 is not. in the remainder of this appendix we will show that πr
+cm→pn
+provides indeed the correct mapping if the causal matrix is simple.
+lemma 3. let cm =(a,c,i,o )be a causal matrix. if cm is simple, then
+each of the following properties holds:
+(i)∀(t1,t2)∈c∃t1,t2∈p(a)t1∈t1∧t2∈t2∧(∀t∈t1t2∈o(t))∧(∀t∈t2t1∈
+i(t)),a n d
+(ii)πr
+cm→pn(cm)is a wf-net.
+proof. first, we prove property (i). assume two activities t1andt2such that
+(t1,t2)∈c. there is exactly one t2∈o(t1) such that t2∈t2because ( t1,t2)∈
+cand disjunctions cannot overlap. similarly, there is exactly one t1∈i(t2)
+such that t1∈t1. remains to prove that ∀t∈t1t2∈o(t)a n d ∀t∈t2t1∈i(t).
+suppose t∈t1. clearly, there is an x∈o(t) such that t2∈x. now we can
+apply the left-hand side of figure 17 with ta=t1,tc=t2,tb=t,ta=t2,
+tc=t1,a n d tb=x. this implies that t2=xand hence ∀t∈t1t2∈o(t).
+similarly, we can show that ∀t∈t2t1∈i(t).
+the second property (property (ii)) follows from the ﬁrst one because if
+(t1,t2)∈cthen a connecting place between t1andt2is introduced by the set
+37xused in the construction of πr
+cm→pn(cm) (cf. deﬁnition 7). the rest of the
+proof is similar to the proof of lemma 2. /intersectionsq/unionsq
+the two properties given in lemma 3 are used to prove that mapping a causal
+matrix to a petri net using πr
+cm→pn(cm) and then applying the mapping of
+a petri net to a causal matrix πpn→cmon the result, yields again the original
+causal matrix.
+theorem 1. let cm =(a,c,i,o )be a causal matrix. if cm is simple, then
+πpn→cm(πr
+cm→pn(cm)) =cm.
+proof. consider an activity tincmwith input sets i(t) and output sets o(t).
+every p∈i(t) is mapped onto an input place in πr
+cm→pn(cm) bearing the
+label ( ti,to) such that p=ti. lemma 3 can be used to show that such a
+place exists if cmis simple. every p∈o(t) is mapped onto an output place in
+πr
+cm→pn(cm) bearing the label ( ti,to) such that p=to. again, lemma 3 can
+be used to show that such a place exists. therefore, no information is lost duringthe mapping onto the wf-net π
+r
+cm→pn(cm) and that πpn→cmretranslates
+the sets tiandtoin the places of xto functions iando. hence the original
+causal matrix is reconstructed. /intersectionsq/unionsq
+in this appendix, we discussed the relation between the representation used by
+our genetic algorithm and petri nets. we used this relation to give semanticsto our representation. it was shown that this representation is slightly more ex-
+pressive than petri nets because any wf-net can be mapped into causal matrix
+while the reverse is only possible after introducing silent transitions and modi-fying the ﬁring rule or using relaxed soundness. we also characterized the class
+of causal matrices that can be mapped directly.
+38

@@ -1,0 +1,1402 @@
+noname manuscript no.
+(will be inserted by the editor)
+discovering more precise process models from event
+logs by filtering out chaotic activities
+niek tax natalia sidorova wil m. p.
+van der aalst
+received: date / accepted: date
+abstract process discovery is concerned with the automatic generation of a
+process model that describes a business process from execution data of that
+business process. real life event logs can contain chaotic activities . these activities
+are independent of the state of the process and can, therefore, happen at rather
+arbitrary points in time. we show that the presence of such chaotic activities
+in an event log heavily impacts the quality of the process models that can be
+discovered with process discovery techniques. the current modus operandi for
+ltering activities from event logs is to simply lter out infrequent activities. we
+show that frequency-based ltering of activities does not solve the problems that
+are caused by chaotic activities. moreover, we propose a novel technique to lter
+out chaotic activities from event logs. we evaluate this technique on a collection
+of seventeen real-life event logs that originate from both the business process
+management domain and the smart home environment domain. as demonstrated,
+the developed activity ltering methods enable the discovery of process models
+that are more behaviorally specic compared to process models that are discovered
+using standard frequency-based ltering.
+keywords information systems business process intelligence process mining
+knowledge discovery
+1 introduction
+process mining [1] is a scientic discipline that bridges the gap between process
+analytics and data analysis and focuses on the analysis of event data logged during
+the execution of a business process. events contain information on what was done,
+by whom, for whom, where, when, etc. such event data is often readily available
+from information systems such as erp, crm, or bpm systems. process discovery ,
+which plays a prominent role in process mining, is the task of automatically
+department of mathematics and computer science
+eindhoven university of technology
+p.o. box 513, 5600mb eindhoven, the netherlands
+email: e-mail: fn.tax,n.sidorova,w.m.p.v.d.aalst g@tue.nlarxiv:1711.01287v1  [cs.db]  3 nov 20172 niek tax et al.
+generating a process model that accurately describes a business process based on
+such event data. many process discovery techniques have been developed over the
+last decade (e.g. [ 7,15,16,17,20,33,47]), producing process models in various
+forms, such as petri nets [29], process trees [7], and bpmn models [30].
+figure 1b shows an example process model from [ 1] that describes a compen-
+sation request process. the process model consists of eight process steps (called
+activities): (a) register request ,(b) examine thoroughly ,(c) examine casually ,(d)
+check ticket ,(e) decide ,(f) re-initiate request ,(g) pay compensation , and (h)
+reject request . figure 1a shows a small example event log consisting of six execution
+trails of the process model. the inductive miner [ 20] process discovery algorithm
+provides the guarantee that it can re-discover the process model from an event log
+given that all pairs of activities that can directly follow each other in the process
+are present in the event log, i.e., the log is directly-follows complete . since the log
+in figure 1a is directly-follows complete, applying the inductive miner to this log
+results in the process model in figure 1b, which generated the log.
+however, the presence of activities that can occur spontaneously at any point in
+the process execution, which we will call chaotic activities , substantially impacts the
+quality of the resulting process models obtained with process discovery techniques.
+figure 2a contains the event log obtained from the one in figure 1a by adding
+activity (x) the customer calls at random points, since customers can call the call
+center multiple times at any point in time during the execution of the process.
+figure 2b shows the resulting process model discovered by the inductive miner
+[20] from the event log of figure 2a. the process model discovered from the \clean"
+example log without activity x (figure 1b) was very simple, interpretable, and
+accurate with respect to the behavior allowed in the process. in contrast, the
+process model discovered from the log containing x (figure 2b) is very complex,
+hard to interpret, and it overgeneralizes by allowing for too much behavior that
+is not possible in the process. we consider x to be a so-called chaotic activity
+because it does not have a clear position in the process model and it complicates
+the discovery of the rest of the process. the reason for the decline in the quality
+of process models discovered from logs with chaotic activities is that the directly
+follows relations, which many process discovery algorithms operate on, are aected
+by chaotic activities. examples of such process discovery algorithms include the
+inductive miner [ 19], the heuristics miner [ 45], and fodina [ 4]. in a sequence of
+activitiesh:::;a;c;:::i, whereawas directly followed by c, the addition of a
+chaotic activity xcan turn the sequence into h:::;a;x;c;:::i, thereby obfuscating
+the directly-follows relation between activities a and c.
+event sequences
+ha,b,d,e,hi
+ha,d,c,e,gi
+ha,c,d,e,f,b,d,e,g i
+ha,d,b,e,hi
+ha,c,d,e,f,d,c,e,f,c,d,e,h i
+ha,c,d,e,gi
+(a)ab
+c
+deg
+h
+f
+(b)
+fig. 1 (a)event log with a=register request, b=examine thoroughly, c=examine casually,
+d=check ticket, e=decide, f=re-initiate request, g=pay compensation, h=reject request, and
+(b)the petri net mined from this log with the inductive miner [20].title suppressed due to excessive length 3
+event sequences
+hx,a,b,d,e,hi
+ha,d,c,e,gi
+ha,x,c,d,e,f,b,d, x,e,gi
+ha,d,b,e,hi
+ha,c,d,e,f,d,c,e,f,c,d,e, x,hi
+ha,c,x,d,e,gi
+(a)ad
+e
+fbx
+cg
+h
+(b)
+fig. 2 (a)the event log from figure 1a with an added chaotic activity x, and (b)the petri
+net mined from this log with the inductive miner [20].
+in this paper, we show that existing approaches do not solve the problem of
+chaotic activities and we present a technique to handle the issue. this paper is
+structured as follows: in section 2 we introduce basic concepts used throughout
+the paper. in section 3 we propose an approach to lter out chaotic activities.
+in section 4 we evaluate our technique using synthetic data where we articially
+insert chaotic activities and check whether the ltering techniques can lter out
+the inserted chaotic activities. additionally, section 4 proposes a methodology
+to evaluate activity ltering techniques in a real-life setting where there is no
+ground truth knowledge on which activities are truly chaotic, and motivates this
+methodology by showing that its results are consistent with the synthetic evaluation
+on the synthetic datasets. in section 5 the results on a collection of seventeen
+real-life event logs are discussed. in section 6 we discuss how the activity ltering
+techniques can be used in a toggle-based approach for human-in-the-loop process
+discovery. in section 7 we discuss related techniques in the domains of process
+discovery and the ltering of event logs. section 8 concludes this paper and discusses
+several directions for future work.
+2 preliminaries
+in this section, we introduce concepts and notation throughout this paper.
+x=fa1;a2;:::;angdenotes a nite set. p(x) denotes the power set of x,
+i.e., the set of all possible subsets of x.xnydenotes the set of elements that
+are in setxbut not in set y, e.g.,fa;b;cgnfa;cg=fbg.xdenotes the set of all
+sequences over a set xand=ha1;a2;:::;anidenotes a sequence of length n,
+with(i) =aiandhithe empty sequence. xis the projection of onx, e.g.
+ha;b;c;a;b;cifa;cg=ha;c;a;ci.12denotes the concatenation of sequences 1
+and2, e.g.,ha;b;cihd;ei=ha;b;c;d;ei.
+a partial function f2x9ywith domain dom(f) can be lifted to sequences
+overxusing the following recursive denition: (1) f(hi) =hi; (2) for any 2x
+andx2x:4 niek tax et al.
+f(hxi) =f() if x=2dom(f);
+f()hf(x)iifx2dom(f):
+a multiset (or bag) over xis a function b:x!nwhich we write as
+[aw1
+1;aw2
+2;:::;awnn], where for 1inwe haveai2xandwi2n+. the set of all
+multisets over xis denotedb(x).
+in the context of process mining, we assume the set of all process activities 
+to be given. event logs consist of sequences of events where each event represents
+a process activity.
+denition 1 (event, trace, and event log) aneventein an event log is
+the occurrence of an activity e2. we call a (non-empty) sequence of events 2+
+atrace. an event logl2b(+) is a multiset of traces.
+l=[ha;b;ci2;hb;a;ci3] is an example event log over process activities =fa;b;cg,
+consisting of 2 occurrences of trace ha;b;ciand three occurrences of trace hb;a;ci.
+activities (l) denotes the set of process activities that occur in l, e.g., activities (l) =
+fa;b;cg. #(a;l) denotes the number of occurrences of activity ain logl, e.g.,
+#(a;l) = 5.
+a process model notation that is frequently used in the area of process mining
+is the petri net. petri nets can be automatically transformed into process model
+notations that are commonly used in business environments, such as bpmn
+and bpel [ 23]. a petri net is a directed bipartite graph consisting of places
+(depicted as circles) and transitions (depicted as rectangles), connected by arcs. a
+transition describes an activity, while places represent the enabling conditions of
+transitions. labels of transitions indicate the type of activity that they represent.
+unlabeled transitions ( -transitions) represent invisible transitions (depicted as
+gray rectangles), which are only used for routing purposes and are not recorded in
+the event log.
+denition 2 (labeled petri net) alabeled petri net n=hp;t;f;`iis a tuple
+wherepis a nite set of places, tis a nite set of transitions such that p\t=;,
+f(pt)[(tp) is a set of directed arcs, called the ow relation, and `:t9is
+a partial labeling function that assigns a label to a transition, or leaves it unlabeled
+(the-transitions).
+we writenandnfor the input and output nodes of n2p[t(according
+tof). a state of a petri net is dened by its markingm2b(p) being a multiset
+of places. a marking is graphically denoted by putting m(p) tokens on each place
+p2p. state changes occur through transition rings. a transition tis enabled (can
+re) in a given marking mif each input place p2tcontains at least one token.
+oncetres, one token is removed from each input place p2tand one token is
+added to each output place p02t, leading to a new marking m0=m t+t.
+a ring of a transition tleading from marking mto marking m0is denoted as
+stepmt !m0. steps are lifted to sequences of ring enabled transitions, written
+m !m0and2tis aring sequence .
+dening an initial and a set of nal markings allows dening the language
+accepted by a petri net as a set of nite sequences of activities.
+denition 3 (accepting petri net) anaccepting petri net is a triplet apn =
+(n;m 0;mf), wherenis a labeled petri net, m02b(p) is its initial marking, andtitle suppressed due to excessive length 5
+mfb(p) is its set of possible nal markings. a sequence 2is a trace of
+an accepting petri net apn if there exists a ring sequence m0 !mfsuch that
+mf2mf,2tand`()=.
+in the petri nets that are shown in this paper, places that belong to the initial
+marking contain a token and places belonging to a nal marking contain a bottom
+right labelfiwithia nal marking identier or are simply marked as in case of
+a single nal marking.
+the language l(apn ) is the set of all its traces, i.e., l(apn ) =fl()j
+2t^9mf2mfm0 !mfg, which can be of innite size when apn contains
+loops. while we dene the language for accepting petri nets, in theory, l(m) can
+be dened for any process model mwith formal semantics. we denote the universe
+of process models as m. for eachm2m,l(m)+is dened.
+a process discovery method is a function pd:b(+)!m that provides a
+process model for a given event log. the goal is to discover a process model that is
+a good description of the process from which the event log was obtained, i.e., it
+should allow for all the behavior that was observed in the event log (called tness )
+while it should not allow for too much behavior that was not seen in the event log
+(called precision ). for an event log l,~l=f2+jl()>0gis the trace set ofl.
+for example, for log l=[ha;b;ci2;hb;a;ci3],~l=fha;b;cihb;a;cig. for an event log
+land a process model m, we say that listting onmif~ll(m).precision is
+related to the behavior that is allowed by a model mthat was not observed in the
+event logl, i.e., l(m)n~l.
+3 information-theoretic approaches to activity filtering
+we consider a chaotic activity to be an activity that can occur at any point in
+the process and that thereby complicates the discovery of the rest of the process
+by obfuscating the directly-follows relations of the event log. in this section, we
+propose a technique to detect chaotic activities in event logs and to lter them out
+from those event logs.
+we extend the function #( a;l) to the function #( ;l) to count the number
+of occurrence of a sequence , inl:
+#(;l)=p
+02ljf0ij0j jj81jjj0(i+j)=(j)gj.
+the directly-follows ratio , denoted dfr(a;b;l ), represents the ratio of the events
+of activityathat are directly followed by an event of activity bin event log l, i.e.,
+dfr(a;b;l )=#(ha;bi;l)
+#(a;l).
+likewise, the directly-precedes ratio , denoted dpr(a;b;l ), represents the ratio
+of the events of activity athat are directly preceded by an event of activity bin
+event logl, i.e., dpr(a;b;l )=#(hb;ai;l)
+#(a;l).
+lccontains the traces of event log lappended with an articial end event that
+we represent with c. for each=he1;e2;:::;eniin log l, log lccontains a trace
+c=he1;e2;:::;en;ci. likewise, lbcontains the traces of event log lprepended
+with an articial start event b, i.e., for each =he1;e2;:::;eniin log l, log lb
+contains a trace b=hb;e1;:::;eni. the articial start and endevents allow us
+to dene the ratio of start events of an activity, e.g., dfr(a;c;lc) and dpr(a;b;lb)6 niek tax et al.
+represent the ratio of events of activity athat respectively occur at the end of a
+trace and at the beginning of a trace.
+assuming an arbitrary but consistent order over the set of process activi-
+ties activities (l),dfr(a;l) represents the vector of values dfr(a;b;lc) for all
+b2activities (l)[fcg and dpr(a;l) represents the vector of values dpr(a;b;lb)
+for allb2activities (l)[fbg . from a probabilistic point of view, we can regard
+dfr(a;l) and dpr(a;l) as the empirical estimates of the categorical distributions
+over respectively the activities directly prior to aand directly after a, where the
+empirical estimates are based on #( a;l) trials.
+3.1 direct entropy-based activity filtering
+we dene the entropy of an activity in an event log lbased on its directly-follows
+ratio vector and the directly-precedes ratio vector by using the usual denition of
+function for the categorical probability distribution: h(x) = p
+x2xxlog2(x). we
+dene the entropy of activity a2activities (l) in loglas:h(a;l) =h(dfr(a;l))+
+h(dpr(a;l)). in case there are zero probability values in the directly follows or
+directly precedes vectors, i.e., 0 2dfr(a;l)_02dpr(a;l), then the value of the
+corresponding summand 0 log2(0) is taken as 0, which is consistent with the limit
+lim
+p!0+plog2(p) = 0.
+for example, let event log l= [ha;b;c;xi10;ha;b;x;ci10;ha;x;b;ci10], then
+dfr(a;l) =h0;20
+30;0;10
+30;0i, using the arbitrary but consistent ordering ha;b;c;x;ci,
+indicating that 20 out of 30 events of activity aare followed by band 10 out of 30
+byx. likewise dpr(a;l)=h0;0;0;0;1i, using the arbitrary but consistent ordering
+ha;b;c;x;bi, indicating that all events of activity aare preceded byb. this leads
+toh(dfr(a;l)) = 0:918,h(dpr(a;l)) = 0, and h(a;l) = 0:918. furthermore,
+h(b;l) = 1:837,h(c;l) = 1:837, andh(x;l) = 3:170, showing that activity xhas
+the highest entropy of the probability distributions for preceding and succeeding
+activities. we conjecture that activities that are chaotic and behave randomly to a
+high degree have high values of h(a;l).
+algorithm 1 an activity ltering approach based on entropy.
+input: event logl
+output: list of event logs q
+initialisation :
+1:l0=l
+2:q=hl0i
+main procedure:
+3:whilejactivities (l0)j>2do
+4: acts=activities (l0)
+5:a0= arg max a2actsh(a;l0)
+6:l0=l0actsnfa0g
+7:q=qhl0i
+8:end while
+9:returnqtitle suppressed due to excessive length 7
+algorithm 1 describes a greedy approach to iteratively lter the most randomly
+behaving (chaotic) activity from the event log. the algorithm takes an event log l
+as input and produces a list of event logs, such that the rst element of the list
+contains a version of lwith one activity ltered out, and each following element of
+the list has one additional activity ltered out compared to the previous element.
+in the example event log l, algorithm 1 starts by ltering out activity x,
+followed by activity borc. the algorithm stops when there are two activities left in
+the event log. the reason not to lter any more activities past this point is closely
+related to the aim of process discovery: uncovering relations between activities.
+from an event log with less than two activities no relations between activities can
+be discovered.
+3.2 the entropy of infrequent activities and laplace smoothing
+we dened entropy of the activities in an event log lis based on the directly-follows
+ratios dfrand the directly-precedes ratios dprof the activities in l. the empirical
+estimates of the categorical distributions dfr(a;l) and dpr(a;l) become unreliable
+for small values of #( a;l). in the extreme case, when #( a;l)=1,dfr(a;l) assigns
+an estimate of 1 to the activity that the single activity ainlhappens to be
+preceded by and contains a probability of 0 for the other activities. likewise, when
+#(a;l)=1,dpr(a;l) assigns value 1 to one activity and value 0 to all others.
+therefore, #( a;l)=1 leads toh(dfr(a;l))=0 andh(dfr(a;l))=0. this shows an
+undesirable consequence of algorithm 1, infrequent activities are unlikely to be
+ltered out. in the extreme case, the activities that occur only once, which are the
+last in line activities to be ltered out. this eect is undesired, as very infrequent
+activities should not be the primary focus of the process model discovered from an
+event log.
+we aim to mitigate this eect by applying laplace smoothing [ 48] to the
+empirical estimate of the categorical distributions over the preceding and succeeding
+activities. therefore, we dene a smoothed version of the directly-follows and
+directly-precedes ratios, dfrs(a;b;l )=+ #(ha;bi;l)
+(jactivities (l)j+1)+#(a;l), with smoothing
+parameter2r0. the value of dfrs(a;b;l ) will always be between the empirical
+estimate dfr(a;b;l ) and the uniform probability1
+jactivities (l)j+1, depending on
+the value. similar to dfrand dpr,dfrs(a;l) represents the vector of values
+dfrs(a;b;lc) for allb2activities (l)[fcg and dprs(a;l) represents the vector
+of values dprs(a;b;lb) for allb2activities (l)[fbg . from a bayesian point
+of view, laplace smoothing corresponds to the expected value of the posterior
+distribution that consists of the categorical distribution given by dfr(a;l) and a
+dirichlet distributed prior that assigns equal probability to each of the possible
+number of next activities jactivities (l)j+ 1 (includingc). parameter indicates
+the weight that is assigned to the prior belief w.r.t. the evidence that is found in
+the data. an alternative denition of the entropy of log l, based on the smoothed
+distributions over the preceding and succeeding activities, is as follows: hs(a;l) =
+h(dfrs(a;l)) +h(dprs(a;l)). the smoothed direct entropy-based activity lter is
+similar to algorithm 1, where function hin line 5 of the algorithm is replaced by
+hs. functionh(a;l) starts from the assumption that an activity is non-chaotic
+unless we see sucient evidence in the data for it's chaoticness, function hs(a;l)8 niek tax et al.
+algorithm 2 an indirect activity ltering approach based on entropy.
+input: event logl
+output: list of event logs q
+initialisation :
+1:l0=l
+2:q=hl0i
+main procedure:
+3:whilejactivities (l0)j>2do
+4: acts=activities (l0)
+5:a0= arg min a2actsh(l0actsnfag)
+6:l0=l0actsnfa0g
+7:q=qhl0i
+8:end while
+9:returnq
+in contrast starts from the assumption that is is chaotic, unless we see evidence
+sucient evidence in the data for it's non-chaoticness.
+categorical distribution dfr(a;l) consists ofjactivities (l)j+ 1, therefore, the
+maximum entropy of an activity decreases as more activities get ltered out of
+the event log. the keep the values of hs(a;l) comparable between iterations of
+the ltering algorithm, we propose to gradually increase the weight of the prior by
+setting weight parameter to1
+jactivities (l)j.
+3.3 indirect entropy-based activity filtering
+an alternative approach to the method proposed in algorithm 1 is to lter out
+activities such that the other activities in the log become less chaotic. we dene
+the total entropy of an event log las the sum of the entropies of the activities in
+the log, i.e., h(l) =p
+a2activities (l)h(a;l).
+algorithm 2 describes a greedy approach that iteratively lters out the activity
+that results in the lowest total log entropy. we call this approach the indirect
+entropy-based activity lter , as opposed to the direct entropy-based activity lter
+(algorithm 1), which selects the to-be-ltered activity directly based on the activity
+entropy, instead of based on the total log entropy after removal.
+3.4 an indirect entropy-based activity filter with laplace smoothing
+just like the direct entropy-based activity lter, the indirect entropy-based activity
+lter is sensitive to infrequent activities. to deal with this problem, the ideas of
+the indirect entropy-based activity ltering method and laplace smoothing can be
+combined, using the following denition for smoothed log entropy:
+hs(l) =p
+a2activities (l)hs(a;l).
+the algorithm for indirect entropy-based activity ltering with laplace smooth-
+ing is identical to algorithm 2, in which function hin line 5 is replaced by function
+hs.title suppressed due to excessive length 9
+process modelsynthetic
+event loglog with frequent
+randomly-positioned
+activities
+k= 1;2;:::
+log with infrequent
+randomly-positioned
+activities
+k= 1;2;:::
+log with uniform
+randomly-positioned
+activities
+k= 1;2;:::filtered event log
+filtered event log
+filtered event log(1) generate(2)insert kfrequent
+randomly-positioned activities
+(2)insert kinfrequent
+randomly-positioned activities
+(2)insert k
+uniform
+randomly-positioned activities(3) lter activities
+(3) lter activities
+(3) lter activities
+(4) compare
+fig. 3 an overview of the proposed evaluation methodology on synthetic data.
+4 evaluation using synthetic data
+in this section we evaluate the activity ltering techniques using synthetic data.
+figure 3 gives an overview of the evaluation methodology. first, as step (1), we
+generate a synthetic event log from a process model such that we know that
+all activities of this model are non-chaotic. we take well-known process models
+introduced by maruster et al. [ 27], which respectively consist of 12 and 22 activities
+and are commonly referred to as the maruster a12, a22 models. the maruster
+a12 and a22 models are shown respectively in figures 4a and 5a. we generated
+25 traces by simulation from maruster a12 to form log la12and generated 400
+traces from maruster a22 to form log la22. then, in step (2), we articially
+insert activities that we position at random positions in the log. since we chose the
+positions in the log of those activities randomly, we assume those activities to be
+chaotic . we vary the number ( k) of randomly-positioned activities that we insert,
+to assess how well the chaotic activity ltering techniques are able to deal with
+dierent numbers of randomly-positioned activities in the event log. furthermore,
+we vary the frequency of the randomly-positioned activities that we insert, where
+we distinguish between three types of randomly-positioned activities:
+frequent randomly-positioned activities the number of events inserted for
+allkrandomly-positioned activities is max a2activities (l)#(a;l).
+infrequent randomly-positioned activities the number of events inserted for
+allkrandomly-positioned activities is min a2activities (l)#(a;l).
+uniform randomly-positioned activities for each of the kinserted randomly-
+positioned activities the frequency is chosen at randomly from a uniform proba-
+bility distribution with minimum value mina2activities (l)#(a;l) and maximum
+value max a2activities (l)#(a;l).
+in step (3)we lter out all the inserted randomly-positioned activities from the
+event log, by removing activities one-by-one using the activity ltering approaches,
+until allkarticially inserted activities have been removed again. we then count how
+many of the activities that were originally in the process model we also removed
+during this procedure (step (4)). using this approach, we compare the direct
+entropy-based activity ltering approach (with and without laplace smoothing)10 niek tax et al.
+(a)
+(b)
+(c)
+fig. 4 (a)the synthetic process model maruster a12, from which we generate an event log l,
+consisting of 25 traces, from which the process model can be rediscovered with the inductive
+miner [ 19],(b)the process model discovered by the inductive mining when we insert one
+uniform randomly-positioned activity x to la12, and (c)the process model discovered by the
+inductive miner after inserting a second randomly-positioned activity y to la12.
+with the indirect entropy-based activity ltering approach (with and without
+laplace smoothing). furthermore, we compare those activity ltering techniques
+with activity ltering techniques that are based on the frequency of activities,
+such as ltering out the activities starting from the least frequent activity (least-
+frequent-rst), or starting from the most frequent activity (most-frequent-rst).
+frequency-based activity ltering techniques are the current default approach for
+ltering activities from event logs.
+the original process models a12 and a22 can be rediscovered from generated
+event logsla12andla22with the inductive miner [ 19] when there are no added
+randomly-positioned activities. figure 4b shows the process model discovered by
+the inductive miner [ 19] after inserting one uniform randomly-positioned activity,title suppressed due to excessive length 11
+(a)
+(b)
+fig. 5 (a)the synthetic process model maruster a22, from which we generate an event
+logla22, consisting of 400 traces, from which the process model is re-discoverable with the
+inductive miner [ 19], and (b)the process model discovered by the inductive miner after inserting
+a uniform randomly-positioned activity x to la22.
+activityx, intola12. the insertion of activity xcauses the inductive miner to
+create a model that overgeneralizes the behavior of the event log, as indicated by
+many silent transitions in the process model that allow activities to be skipped.
+adding a second uniform randomly-positioned activity ytola12results in the
+inductive miner discovering a process model (shown in figure 4c) that overgeneral-
+izes even further, allowing for almost all sequences over the set of activities. figure
+5b shows the process model discovered by the inductive miner after inserting two
+uniform randomly-paced activities ( xandy) intola22. the addition of xand
+yhas the eect that activity cis no longer positioned at the correct place in the
+process model, but it is instead put in parallel to the whole process, making the
+process model overly general, as it wrongly allows for activity cto occur before a
+andb, or afterd,e,f, andg. figures 4b, 4c and 5b further motivate the need
+for ltering out chaotic activities.12 niek tax et al.
+table 1 the number of incorrectly ltered activities per ltering approach on la12andla22
+withkadded uniform (u) / frequent (f) /infrequent (i) chaotic activities.
+maruster a12 (number of inserted randomly-positioned activities !)
+approach 1 2 4 8 16 32 64 128
+u f i u f i u f i u f i u f i u f i u f i u f i
+direct 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 012 4 012 10 112
+direct (=1
+jaj) 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 4 0 6 6 212
+indirect 0 0 0 0 0 0 0 0 0 0 0 1 1 0 1 1 0 1 2 0 1 3 1 6
+indirect (=1
+jaj) 0 0 0 0 0 0 0 0 0 0 0 1 1 0 1 1 0 1 2 0 1 2 110
+least-frequent-rst 912 0 11 12 0 612 0 11 12 0 11 12 0 12 12 0 12 12 0 12 12 0
+most-frequent-rst 11 012 3 012 7 012 10 012 12 012 12 012 12 012 12 012
+maruster a22 (number of inserted randomly-positioned activities !)
+approach 1 2 4 8 16 32 64 128
+u f i u f i u f i u f i u f i u f i u f i u f i
+direct 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 5
+direct (=1
+jaj) 0 0 0 0 0 0 0 0 0 0 0 1 0 0 0 0 0 0 0 0 0 0 0 5
+indirect 0 0 0 0 0 0 0 0 0 0 0 1 0 0 1 1 0 1 1 0 1 1 0 1
+indirect (=1
+jaj) 0 0 0 0 0 0 0 0 0 0 0 1 0 0 1 1 0 1 0 0 1 1 0 1
+least-frequent-rst 16 22 0 17 22 0 622 0 21 22 0 19 22 0 22 22 0 22 22 0 22 22 0
+most-frequent-rst 7 022 8 022 19 022 17 022 19 022 22 022 22 022 22 022
+frequent randomly-positioned activities will impact the quality of process mod-
+els discovered with process discovery to a higher degree than infrequent randomly-
+positioned activities. each randomly-positioned activity that is inserted at a random
+position in the event log is placed in-between two existing events in that log (or at the
+start or end of the trace). by inserting randomly-positioned activity x in-between
+two events of activities a and c respectively, the directly-follows relation between
+activities a and c gets weakened. therefore, the impact of randomly-positioned
+activity x is proportional to its frequency #( x;l).
+4.1 results
+table 1 reports the number of activities that were originally part of the synthetic
+process models a12 and a22 that were wrongly ltered out from la12andla22
+as an eect of removing all inserted randomly-positioned activities from these
+logs. if this number is 12 for maruster a12 or 22 for maruster a22 this indicates
+that all activities of the original process model needed to be ltered out before
+the activity ltering technique was able to remove all inserted chaotic activities.
+the results show that the direct ltering approach can perfectly distinguish be-
+tween actual activities from the process and articial chaotic activities for up
+to 32 uniform randomly-positioned activities inserted activities to la12, up to
+64 frequent randomly-positioned activities, and up to 16 infrequent randomly-
+positioned activities. infrequent randomly-positioned activities are the hardest type
+of randomly-positioned activities to correctly lter out, as their infrequency can
+have the eect that the probability distributions over their surrounding activities
+canby chance have low entropy. using laplace smoothing with =1
+jactivities (l)j
+mitigates this eect, but does not completely solve it: the number of incorrectly
+removed activities drops from 12 to 0 as an eect of laplace smoothing for 32
+added randomly-positioned activities, and from 12 to 6 for 64 added randomly-
+positioned activities. the indirect activity lter starts making errors already at
+lower numbers of added randomly-positioned activities than the direct activity
+lter; however, it is more stable to errors for higher numbers of added randomly-
+positioned activities, i.e., fewer activities get incorrectly removed for 64 and 128title suppressed due to excessive length 13
+added randomly-positioned activities. in contrast to direct activity ltering, laplace
+smoothing does not seem to reduce the number of wrongly removed activities for
+indirect activity ltering. in fact, surprisingly, the number of incorrectly removed
+activities even increased from 6 to 10 as an eect of using laplace smoothing for 128
+infrequent randomly-positioned activities added to la12. the direct and indirect
+ltering approaches, both with and without laplace smoothing, outperform the
+currently widely used approach of ltering out infrequent activities from the event
+log (least-frequent-rst ltering). furthermore, a second frequency-based activity
+ltering technique is included in the evaluation in which the most-frequent activities
+are removed from the event log (most-frequent rst ltering). both frequency-based
+ltering approaches are not able to lter out the randomly-positioned activities
+inserted to la12andla22, even for small numbers of added randomly-positioned
+activities.
+4.2 an evaluation methodology for event data without ground truth
+information
+in a real-life data evaluation that we perform in the following section, there is
+no ground truth knowledge on which activities of the process are chaotic. this
+motivates a more indirect evaluation in which we evaluate the quality of the process
+model discovered from the event log after ltering out activities with the proposed
+activity ltering techniques. in this section we propose a methodology for evaluation
+of activity ltering techniques by assessing the quality of discovered process models,
+we apply this evaluation methodology to the maruster a12 and maruster a22
+event logs, and we discuss the agreement between the ndings of table 1 and the
+quality of the discovered process models.
+there are several ways to quantify the quality of a process model for an event
+log. ideally, a process model mshould allow for all behavior that was observed in
+the event log l, i.e., ~lnl(m) should be as small as possible, preferably empty.
+the tness quality dimension covers this. furthermore, model mshould not allow
+for too much additional behavior that was notseen in the event log, i.e., l(m)n~l
+should be as small as possible. this aspect is called precision . for each process
+model that we discovered, we measure tness and precision with respect to the
+ltered log. fitness is measured using the alignment-based tness measure [ 3] and
+we measure precision using negative event precision [ 44]. based on the tness and
+precision results we also calculate f-score [11], i.e., the harmonic mean between
+tness and precision.
+precision is likely to increase by ltering out one or more activities from an
+event log independently of which activities are removed from the log , as a result of
+two factors. first, precision measures express l(m)n~lin terms of the number
+of activities that are enabled at certain points in the process, w.r.t. the number
+of activities seen that were actually observed at these points in the process. with
+the log and model containing fewer activities after ltering, the number of enabled
+activities is likely to decrease as well. secondly, activity ltering leads to log l0that
+contains less behavior than original log l(i.e., ~l0is smaller than ~l), this makes it
+easier for process discovery methods to discover a process model with less behavior.
+these two factors make precision values between event logs with dierent numbers
+of activities ltered out incomparable. the degree to which the behavior of ltered14 niek tax et al.
+maruster a12 − 32 addedmaruster a12 − 4 added maruster a12 − 8 added maruster a12 − 16 addedmaruster a12 − 0 added maruster a12 − 1 added maruster a12 − 2 added
+0.00 0.25 0.50 0.750.00 0.25 0.50 0.75 0.00 0.25 0.50 0.750.000.250.500.751.00
+0.000.250.500.751.00
+0.000.250.500.751.00
+minim um % of activities e xplainedf−score
+filter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first0.00 0.25 0.50 0.750.00 0.25 0.50 0.75 0.00 0.25 0.50 0.75 0.00 0.25 0.50 0.75
+fig. 6 f-score on the log generated from the maruster a12 model with inserted articial
+chaotic activities.
+maruster a12 − 32 addedmaruster a12 − 4 added maruster a12 − 8 added maruster a12 − 16 addedmaruster a12 − 0 added maruster a12 − 1 added maruster a12 − 2 added
+0.00 0.25 0.50 0.750.00 0.25 0.50 0.75 0.00 0.25 0.50 0.75 0.00 0.25 0.50 0.750.00 0.25 0.50 0.75 0.00 0.25 0.50 0.75 0.00 0.25 0.50 0.7501234
+05101520250.02.55.07.5
+04812160.00.51.0
+0246
+0510152025
+minim um % of activities e xplainednondete rminism
+filter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+fig. 7 nondeterminism on the log generated from the maruster a12 model with inserted
+articial chaotic activities.
+logl0decreases w.r.t. an unltered log ldepends on the activities that are ltered
+out: when very chaotic activities are ltered from lthe behavior decreases much
+more than when very structured activities are ltered from l. one eect of this
+is that too much behavior in a process model aects the precision of that model
+more for the log from which the non-chaotic activities are ltered out than for the
+log from which the chaotic activities are ltered out.
+to measure the behavior allowed by the process model independent of which
+activities are ltered from the event log is to determine the average number of
+enabled activities when replaying the traces of the log on the model. to deal
+with traces of the event log that do not t the behavior of the process model,
+we calculate alignments [3] between log and model. alignments are a function
+ m:m+!b(p)+that map each trace from the event log to a sequence
+of markingshm0;:::;mfithat are reached to replay that trace on the model,title suppressed due to excessive length 15
+withm0the initial marking and mf2mf, such that for each two consecutive
+markingshmi;mi+1ithere exists a transition t2tsuch thatmi+1=mi t+t.
+furthermore, alignments also provide a function  t:m+!t+that provides
+the sequence of transitions ht0;:::tnithat matches the changes in the sequence of
+markings, i.e., m1=m0 t0+t0, etc. for each trace 2+that ts a process
+modeln2m the alignment l( t(n;)) =. for untting traces 2+, the
+alignment is such that l( t(n;)) is as close as possible to laccording to some cost
+function. we refer to adriansyah et al. [ 3] for a more exhaustive introduction of
+alignments. let  tdenote the sequence consisting of only the visible transitions in
+ t, and let mcorrespondingly denote the sequence of markings prior to each ring
+of a visible transition. given a marking m2b(p) we dene the nondeterminism
+of that marking to be the number of reachable visible transitions that can be red
+as rst next visible transition from m, i.e., nondeterminism (m) =jfa2jm !
+mi^t2^l(t) =a^8i2i2dom(l)=)i=tgj. we dene the nondeterminism
+of a model n2m given a trace 2+as the average nondeterminism of the
+markings m(n;)and dene the nondeterminism for a model nand a loglas
+the average nondeterminism over the traces of l.
+figure 6 shows the f-scores measured for dierent percentages of activities
+ltered out from the maruster la12log with dierent numbers of uniform chaotic
+activities added. note that the line stops when further removal of activities does
+not lead to further improvement in f-score. note that on the original event log with
+0 chaotic activities added the f-score on the original log is already 1.0, resulting
+in no lines being drawn. with one chaotic activity added, the least-frequent-rst
+lter needs to remove 75% of the activities before it ends up with f-score 1, which
+can be explained by the fact that 9 out of 12 non-chaotic needed to be removed
+in order with the least-frequent-rst lter to remove all uniform chaotic activities,
+as shown in table 1. all entropy-based activity ltering techniques remove the
+chaotic activity in the rst ltering step, immediately leading to an f-score of 1.0.
+up until 8 added chaotic activities there is no dierence between the entropy-based
+activity ltering techniques in terms of f-score of the resulting process models,
+which is consistent with the fact that all these ltering techniques were found to
+lter without errors for these number of inserted chaotic activities in table 1. for
+16 and 32 activities, the direct ltering methods outperform the indirect ltering
+methods, consistent with the fact that the indirect approach made one ltering error
+according to the ground truth for these numbers of added chaotic activities. note
+that the least-frequent-rst lter is outperformed by the entropy-based ltering
+methods in terms of f-score of the discovered models, as would be expected given
+the ltering results according to the ground truth.
+figure 7 shows the results in terms of nondeterminism measured for dierent
+percentages of activities ltered out from the maruster la12log with various
+numbers of uniform chaotic activities added. the results show very clearly that
+when ltering out a number of activities that is identical to the number of added
+chaotic activities (this corresponds to 92% for one added activity, 86% for two
+added activities, 75% for 4 added activities, 60% for 8 added activities, 43% for 16
+added activities, and 27% for 32 added activities), the nondeterminism reaches a
+value of 1.5, which is the nondeterminism value of the model discovered from the
+original log without added chaotic activities. the least-frequent-rst lter, however,
+leads to process models where many activities are enabled on average, therefore16 niek tax et al.
+table 2 an overview of the event logs used in the experiments
+name category # traces # events # activities
+bpi'12 [41] business 13087 164506 23
+bpi'12 resource 10939 [39] business 49 1682 14
+environmental permit [6] business 1434 8577 27
+sepsis [26] business 1050 15214 16
+trac fine [10] business 150370 561470 11
+bruno [5] human behavior 57 553 14
+chad 1600010 [28] human behavior 26 238 10
+mit a [36] human behavior 16 2772 27
+mit b [36] human behavior 17 1962 20
+ordonez a [31] human behavior 15 409 12
+van kasteren [18] human behavior 23 220 7
+cook hh102 labour [9] human behavior 18 576 18
+cook hh102 weekend [9] human behavior 18 210 18
+cook hh104 labour [9] human behavior 43 2100 19
+cook hh104 weekend [9] human behavior 18 864 19
+cook hh110 labour [9] human behavior 21 695 17
+cook hh110 weekend [9] human behavior 6 184 14
+overgeneralizing the process behavior, as an eect of ltering out nonchaotic
+activities instead of the added chaotic activities.
+5 evaluation using real life data
+for the experiments on real-life event logs we do not articially insert chaotic
+activities to event logs, but instead lter directly on the activities that are present
+in these logs. whether these logs contain chaotic activities that impact process
+discovery results is not known upfront. therefore, we apply dierent activity
+ltering techniques to these logs and use them to lter out a varying number of
+activities, after which we assess the quality of the process model that is discovered
+from these ltered logs. table 2 gives an overview of the real-life event logs that we
+use in the experiment. in total, we include ve event logs from the business domain.
+furthermore, we include twelve event logs that contain events of human behavior,
+recorded in smart home environments or through wearable devices. mining process
+model descriptions of daily life is a novel application of process mining that has
+recently gained popularity [ 12,22,35,40,38]. furthermore, human behavior event
+data are often challenging for process discovery because of the presence of highly
+chaotic activities, like going to the toilet . we perform the experiments with activity
+ltering techniques on real-life data with rapidprom [ 2], which is an extension
+that adds process mining capabilities to the rapidminer platform for repeatable
+scientic workows.
+for each event log, we apply seven dierent activity ltering techniques for com-
+parison: 1) direct entropy lter without laplace smoothing, 2) direct entropy lter
+with laplace smoothing ( =1
+jactivities (l)j), 3) indirect entropy lter without laplace
+smoothing, 4) indirect entropy lter with laplace smoothing ( =1
+jactivities (l)j), 5)
+least-frequent-rst ltering, 6) most-frequent-rst ltering, 7) ltering the activities
+from the log in a random order. recall that the activity ltering procedure stops
+at the point where all but two activities are ltered from the event log because
+process models that contain just one activity do not communicate any informationtitle suppressed due to excessive length 17
+bpi '12 bpi '12 resource 10939 environmental permit sepsis traffic fine managementim imf 20
+0.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.751.00
+0.000.250.500.751.00
+minimum % of activities explainedf−scorefilter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+fig. 8 f-score on business logs dependent on the minimum share of activities remaining.
+regarding the relations between activities. for each event log and for each activity
+ltering approach we discover a process model after each ltering step (i.e., after
+each removal of an activity). the process discovery step is performed with two
+process discovery approaches: the inductive miner [ 19], and the inductive miner
+infrequent (20%) [20].
+5.0.1 results on business process event logs
+figure 8 shows the f-score of the process models discovered with the inductive
+miner [ 19] and the inductive miner with infrequent behavior ltering [ 20] (20%
+ltering) on the ve business event logs for dierent percentages of activities ltered
+out and dierent activity ltering techniques. the gure shows an increasing trend
+in f-score for all event logs when more activities are ltered from the event log.
+furthermore, the line for the least-frequent-rst ltering approach is below the lines
+of the entropy-based ltering techniques for most of the percentages of activities
+removed on most event logs, which shows that entropy-based ltering enables the
+discovery of models with higher f-score compared to simply ltering out infrequent
+activities. there are a few exceptions where ltering out infrequent activities
+outperforms the entropy-based techniques, e.g., the inductive miner on the bpi '12
+resource 10939 event log (around 40% of activities explained) and the trac nes
+event log (around 55% of activities explained). it diers between event logs which
+of the entropy-based techniques performs best: for the environmental permit log the
+indirect lter without laplace smoothing almost dominates the other techniques
+while for the sepsis log the direct lter without laplace smoothing outperforms
+the other techniques. generally, it seems that the use of laplace smoothing harms
+f-score, as most parts of the lines of indirect ltering with laplace smoothing are
+below the lines of the indirect approach without laplace smoothing, and similar for
+the direct approach with and without laplace smoothing. however, the detrimental
+eect of laplace smoothing does not seem to be large, and in some cases, the usage
+of laplace smoothing in ltering increases the f-score of the discovered models.
+figure 9 shows the nondeterminism of the process models as a function of the
+minimum percentage of activities. the green dashed line indicates the nondetermin-
+ism of the ower model, i.e., the process model that allows for all behavior over the18 niek tax et al.
+bpi '12 bpi '12 resource 10939 environmental permit sepsis traffic fine managementim imf 20
+0.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.75051015
+0246
+minimum % of activities explainednondeterminismfilter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+flower model
+fig. 9 nondeterminism on business behavior logs dependent on the minimum share of the
+activities remaining.
+bpi '12 bpi '12 resource 10939 environmental pe rmit sepsis traffic fine managementimf 20
+0.000.250.500.751.00fitnessfilter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+most−frequent−first
+random
+fig. 10 fitness on business logs with least 75% of the activities remaining.
+activities. the lines stop when further removal of activities does not lead to further
+improvement of nondeterminism. it is clear that the ltering mechanism of the
+inductive miner helps to discover process models that are more behaviorally con-
+strained, as the nondeterminism values are lower for the inductive miner infrequent
+20% compared to the inductive miner without ltering. however, the results show
+even when already using the 20% frequency lter of the inductive miner infrequent,
+the chaotic activity lter can lead to an additional reduction of nondeterminism.
+furthermore, the results on the environmental permit log and the sepsis log show
+that ltering several chaotic activities from the event log also enables the discovery
+of a model with low nondeterminism using the inductive miner without ltering.
+which of the activity ltering approaches works best seems to be dependent on
+the event log: the indirect entropy-based lter leads to the models with the lowest
+nondeterminism on the trac ne event log, the environmental permit event log,
+while the direct entropy-based lter works better for some percentages of remaining
+activities for the sepsis log and the bpi '12 resource 10939 log.title suppressed due to excessive length 19
+bpi '12 bpi '12 resource 10939 environmental pe rmit sepsis traffic fine managementim imf 200.00.10.20.30.40.5
+0.00.10.20.30.40.5precision
+fig. 11 precision on business logs with least 75% of the activities remaining.
+figures 10 and 11 show the tness and precision values for the business process
+event logs at the ltering step that leads to the highest f-score while describing at
+least 75% of the activities of the original log. in addition to the ltering techniques
+shown in figure 8 it also shows the frequency-based activity lter where the most
+frequent activities are ltered out rst, and a random baseline is shown which
+iteratively picks a random activity from the event log to lter out. the error bar for
+the random activity lter indicates one standard error of the mean (sem) based on
+eight repetitions of applying the lter. the black dotted horizontal lines indicate
+the tness and precision values of the process models discovered from the original
+event log without ltering any activities. note that the tness values are only shown
+for the inductive miner infrequent 20% [ 20] because the inductive miner without
+infrequent behavior lter [ 19] provides the formal guarantee that the tness of the
+discovered model is 1. figure 10 shows that generally, the dierences in tness
+between the models discovered from the ltered logs are very minor, and very close
+to the tness of the unltered log (i.e., the dotted line). figure 11, however, shows
+that the entropy-based ltering approaches outperform ltering out activities based
+on frequency and ltering out random activities from the event log. the f-scores of
+the discovered process models is determined mostly by the precision of the models
+because the activity ltering impacts precision more than it impacts tness. one
+exception is the bpi'12 resource 10939 log [ 39], where the tness decreases to
+below 0.75 as a result of applying one of the two frequency-based lters, while the
+precision increase as an eect of applying the lter is only minor.
+5.0.2 results on human behavior event logs
+figure 12 shows the maximum f-score for dierent human behavior event logs
+as a function of the minimum percentage of activities that are remaining in the
+log. again, the general pattern is that the f-score of the discovered process model
+decreases when the minimum percentage of events explained increases, as the
+process discovery task gets easier for smaller numbers of activities. the gure
+shows that ltering infrequent activities from the event log is dominated in terms20 niek tax et al.
+bruno chad 1600010 mit a mit b ordonez a van kasterenim imf 20
+0.000.250.500.750.00.20.40.60.80.000.250.500.750.000.250.500.750.000.250.500.750.00.20.40.60.80.000.250.500.751.00
+0.000.250.500.751.00
+minimum % of activities explainedf−scorefilter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+fig. 12 f-score on human behavior logs dependent on the minimum share of activities.
+bruno chad 1600010 mit a mit b ordonez a van kasterenim imf 20
+0.000.250.500.750.00.20.40.60.80.000.250.500.750.000.250.500.750.000.250.500.750.00.20.40.60.8051015
+0510
+minimum % of activities explainednondeterminismfilter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+flower model
+fig. 13 nondeterminism on human behavior logs dependent on the minimum share of the
+activities remaining.
+of f-score by the entropy-based ltering techniques. like on the business process
+event logs, there are mixed results on which of the four congurations of the
+entropy-based ltering technique leads to the highest f-score: on the chad event
+log the indirect activity lter outperforms the direct activity lter when using the
+inductive miner infrequent 20%; however, the direct activity lter leads to higher
+f-score for the inductive miner when ltering more than 50% of the activities.
+figure 13 shows the nondeterminism results for the human behavior event logs.
+it is noticeable that the nondeterminism values of the process models that are
+discovered when ltering very few activities are much closer to the ower model
+compared to what we have seen before for the business process event logs. this is
+caused by human behavior event logs having much more variability in behavior
+compared to execution data from business processes, resulting in a much harder
+process discovery task. after ltering several chaotic activities, the nondeterminism
+drops signicantly to ranges comparable to nondeterminism values seen for logs
+from the business process domain. this shows that the problem of chaotic activities
+is much more prominent in human behavior event logs than in business process event
+logs. the entropy-based activity ltering approaches lead to more deterministictitle suppressed due to excessive length 21
+bruno chad mit a mit b ordonez a van kasterenim imf 200.00.20.40.60.8
+0.00.20.40.60.8precisionfilter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+most−frequent−first
+random
+fig. 14 precision on human behavior logs with at least 50% of the activities.
+process models compared to ltering out infrequent activities. two clear examples
+of this are the mit b log and the ordonez a log, on which ltering out infrequent
+activities after several ltering steps results in a ower model (i.e., nondeterminism
+is identical to that of the ower model), while entropy-based activity lters enable
+the discovery of a model with nondeterminism close to one (i.e., very close to a
+sequential model) while at the same time keeping 75% of the activities in the event
+log.
+figure 14 shows the precision values for the human behavior logs for the
+ltering step that leads to the highest f-score while describing at least 50% of the
+activities of the original log. similarly to what we have seen in the nondeterminism
+graph, removing random activities from the log and removing infrequent activities
+from the log results in smaller precision increases compared to the entropy-based
+activity lters. furthermore, it is noticeable that removing frequent activities from
+the log works quite well to improve the precision of models discovered from the
+human behavior application domain. the reason for this is that some of the chaotic
+activities that are present in many of those event logs, including going to the toilet
+and getting a drink , also happen to be frequent. on the van kasteren event log
+the indirect activity lter with laplace smoothing leads to the largest increase in
+precision when mining a model with at least 50% of the activities (from 0 :324 to
+0:732 with the inductive miner infrequent 20%).
+table 3 shows in which order activities are ltered from the van kasteren event
+log by 1) the indirect entropy-based activity lter with laplace smoothing and
+2) the least-frequent-rst lter. it shows that the entropy-based lter lters use
+toilet as the rst activity, which from domain knowledge we know to be a chaotic
+activity, as people generally just go to the toilet whenever they need to, regardless
+of which other activities they have just performed. for the infrequent activity lter
+use toilet would be the last choice of the activities to lter out, because it is the
+most frequent activity in the van kasteren event log.
+figures 15a and 15b show the corresponding process models discovered with
+the inductive miner infrequent 20% from the logs ltered with the indirect activity
+lter with laplace smoothing and the infrequent activity lter respectively. the22 niek tax et al.
+table 3 left: the order in which activities are ltered using the direct activity lter with
+laplace smoothing ( =1
+jactivities (l)j) on the van kasteren log. right: the order in which the
+activities are ltered using the least-frequent-rst lter.
+orderfiltered activity
+(indirect entropy-based lter
+with laplace smoothing)filtered activity
+(least-frequent-rst lter)
+1 use toilet prepare dinner
+2 get drink get drink
+3 leave house prepare breakfast
+4 take shower take shower
+5 go to bed go to bed
+6 prepare breakfast leave house
+7 prepare dinner use toilet
+(a)
+(b)
+fig. 15 (a)the model discovered with inductive miner infrequent 20% on the van kasteren
+log after ltering all but four activities with the indirect approach with laplace smoothing,
+and(b)the model discovered from the same log with the same miner when ltering all but
+four activities when ltering out the least frequent activities.
+process model discovered after ltering three activities with the indirect entropy-
+based activity lter with laplace smoothing is very specic on the behavior that it
+described: after going to bed , either the logging ends, or prepare breakfast occurs
+next, followed by taking a shower . after taking a shower, there is a possibility to
+either go to bed again or to prepare dinner before going to bed . the process model
+discovered after ltering three activities with the infrequent activity lter allows
+for many more traces: it starts with go to bed followed by use toilet , after which
+any of the activities go to bed ,take shower , and leave house can occur as next event
+or the logging can end. furthermore, the activities leave house and take shower
+can occur in any order, and take shower can also be skipped.
+figure 16 shows the results on f-score for the human behavior event logs by
+cook et al. [ 9]. the results on the cook event logs are in-line with the results on
+the human behavior event logs, however, on these event logs, it is even more cleartitle suppressed due to excessive length 23
+ hh102 labour  hh102 weekend  hh104 labour  hh104 weekend  hh110 labour  hh110 weekendim imf 20
+0.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.751.00
+0.000.250.500.751.00
+minimum % of activities explainedf−scorefilter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+fig. 16 f-score on cook's human behavior logs dependent on the minimum share of the
+activities remaining.
+ hh102 labour  hh102 weekend  hh104 labour  hh104 weekend  hh110 labour  hh110 weekendim imf 20
+0.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.750.000.250.500.750481216
+0.02.55.07.510.012.5
+minimum % of activities explainednondeterminismfilter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+flower model
+fig. 17 nondeterminism on cook's human behavior logs dependent on the minimum share of
+the activities remaining.
+that ltering out infrequent activities leads to suboptimal process models in terms
+of f-score. which of the ltering approaches results in the optimal process model
+in terms of f-score is very dependent on the event log and the minimum number
+of activities to be remained after ltering: each of the four congurations of the
+entropy-based ltering approach is optimal for at least one combination of log and
+minimum percentage of activities explained.
+figure 17 shows the results in terms of nondeterminism for the same event
+logs. filtering infrequent activities at high percentages of activities explained has
+much lower nondeterminism compared to the ower model, while further left on
+the graph, after ltering out more activities, the nondeterminism of ltering out
+infrequent activities gets closer to the ower model. this shows that ltering out
+infrequent activities can even be harmful to the quality of the obtained process
+discovery result. the nondeterminism values obtained with the four congurations
+of the entropy-based ltering approach are generally close to each other, where the
+optimal conguration is dependent on the log and the number of ltered activities.24 niek tax et al.
+01234
+0.00 0.25 0.50 0.75
+minimum % of activities explainedaverage winning numberfilter
+direct
+direct (a=1/|a|)
+indirect
+indirect (a=1/|a|)
+least−frequent−first
+most−frequent−first
+random
+fig. 18 the average winning number for the seven activity ltering techniques dependent
+on the minimum ratio of activities explained, averaged over the 17 event logs used in the
+experiment.
+table 4 kendallbrank correlation between ve activity ltering methods, mean and standard
+deviation over the 17 event logs.
+direct direct ( =1
+jaj) indirect indirect ( =1
+jaj) least-frequent-rst
+direct 1.0 0.2956 0.0829 0.1408 0.0504
+direct (=1
+jaj) 0.2956 1.0 0.0698 0.0536 0.1454
+indirect 0.0829 0.0698 1.0 0.6852 -0.0275
+indirect (=1
+jaj) 0.1408 0.0536 0.6852 1.0 -0.0392
+least-frequent-rst 0.0504 0.1454 -0.0275 -0.0392 1.0
+5.0.3 aggregated analysis over all event logs
+we have observed in figures 9, 13, and 17 that the entropy-based activity ltering
+techniques perform dierently on dierent datasets and for dierent numbers of
+activities ltered. to evaluate the overall performance of activity ltering techniques,
+we use the number of other ltering techniques that it can beat over all the seventeen
+event logs of table 2. this metric, known as winning number , is commonly used
+for evaluation in the information retrieval (ir) eld [ 32,37]. formally, winning
+number is dened as
+wx
+i=p17
+j=1p7
+k=11fnx
+i(j)<nx
+k(j)g
+wherejis the index of an event log, iandkare indices of activity ltering
+techniques, nx
+i(j) is the performance of the i-th algorithm on the j-th event log
+in terms of nondeterminism where each least x% of activities are explained and
+1fnx
+i(j)<nx
+k(j)gis the indicator function
+1fnx
+i(j)<nx
+k(j)g=(
+1;ifnx
+i(j)<nx
+k(j);
+0;otherwise.
+we denewx
+i=wx
+i
+17as the average number of other activity ltering techniques
+that are outperformed by ltering technique iat the point where at least x% of
+activities are explained.
+figure 18 shows the average winning number wx
+ifor dierent values of xand
+for the seven dierent activity ltering techniques. we observe that for higher ratiostitle suppressed due to excessive length 25
+table 5 number of event logs for which we can reject the null hypothesis that the orderings
+of activities returned by activity lters are uncorrelated, according to the tau test.
+direct direct ( =1
+jaj) indirect indirect ( =1
+jaj) least-frequent-rst
+direct 17 5 1 2 0
+direct (=1
+jaj) 5 17 1 1 3
+indirect 1 1 17 17 3
+indirect (=1
+jaj) 2 1 17 17 3
+least-frequent-rst 0 3 3 3 17
+of activities explained the dierences between ltering techniques are smaller than
+for lower numbers of activities explained. intuitively this can be explained by the
+fact that for lower ratios of activities explained more activities have been ltered
+out from the log. therefore the eect of the ltering techniques is more clearly
+visible. the gure shows that, up until +-74% of activities explained, the indirect
+entropy-based activity ltering technique leads to the most deterministic process
+models averaged over all event logs included in the experiment, where it outperforms
+between 4 and 4.5 other ltering techniques. between +-75% and +- 87.5% the
+indirect entropy-based activity ltering technique with laplace smoothing results
+in the highest average winning number, although the dierence with the indirect
+entropy-based ltering technique seems negligible. filtering out random activities
+from the event log outperforms none of the 6 other activities ltering techniques for
+the most of the graph, indicating that frequency-based ltering clearly outperforms
+ltering random activities.
+to investigate to what degree the order in which activities are removed from the
+logs diers between the activity ltering techniques we calculate kendall's tau ( b)
+rank correlation for each log between the activity ltering techniques in a pairwise
+way. table 4 shows the rank correlation values found between the activity lters,
+averaged over the 17 event logs. the indirect activity lter with laplace smoothing
+and the indirect activity lter without laplace smoothing generate orderings over
+the activities of a log that are strongly correlated. between the direct activity lter
+without laplace smoothing and the direct activity lter without laplace smoothing
+there is only a weak correlation. all the other activity ltering techniques are
+uncorrelated or very weakly correlated. using the kendall bstatistic, we apply a
+tau test for each pair of activity ltering techniques on each event log to test the
+null hypothesis that the two orderings in which activities are ltered by the two
+activity ltering techniques are uncorrelated, using a signicance level = 0:05.
+for each pair of activity ltering techniques table 5 shows the number of
+event logs for which the null hypothesis was rejected, i.e., the number of event
+logs for which the order in which activities are ltered is statistically correlated.
+the indirect activity lters with and without laplace smoothing create correlated
+orderings of activities for all seventeen event logs. for all other pairs of activity
+ltering techniques the orderings in which activities are ltered are only correlated
+with for low numbers of event logs.26 niek tax et al.
+fig. 19 a mockup of the proposed way to use the activity lters in an interactive setting.
+6 entropy-based toggles for process discovery
+in the previous section we have shown that all four congurations of the entropy-
+based activity ltering technique lead to more deterministic process models com-
+pared to simply ltering out infrequent activities. however, the dierences in
+determinism of the process models that are discovered after applying any of the
+four congurations are small and dependent on the event log to which they are
+applied. furthermore, all four congurations of the activity ltering technique
+simply impose an ordering over the activities, but do not specify at which step the
+ltering should be stopped. additionally, the proposed ltering technique ignores
+the semantics of activities: activities that are chaotic may still be relevant for the
+process. leaving them out of the process model to discover will harm the usefulness
+of the discovered process model.
+to address the three issues we propose to use the ltering technique as a sorting
+technique over the activities in combination with toggles that interactively allow the
+process analyst to \disable" (lter out) or \enable" activities, and then rediscover
+and visualize the process model according to the new settings. this approach is
+similar to the inductive visual miner [ 21], an interactive implementation of the
+inductive miner [ 20] algorithm which allows the process analyst to lter the event
+log interactively using a slider-based approach. the inductive visual miner contains
+two sliders: with one slider activities can be ltered using the least-frequent-rst
+lter, where the user can control how many activities are ltered out by moving
+the slider up and down. we propose to replace this slider with a sorted list of
+activities and toggles, as this allows the process analyst to override the ordering of
+the activities that is determined by the activity ltering technique with domain
+knowledge. figure 19 shows a mockup of the proposed way to use the activity
+lter. activities are by default sorted using the chaotic activity lter, showing the
+entropy to indicate the assessed degree of chaoticness of each activity. based on
+this information, the process analyst can choose to rely on the ltering technique
+and lter out the top of the list or to override this list with domain knowledge.
+furthermore, other activity ltering techniques, such as the least-frequent-rst
+lter, can be included as an additional column on which the activities of the processtitle suppressed due to excessive length 27
+can be sorted. this allows the process analyst to control how many activities, and
+which activities, are ltered out of the process model, and thereby also empowers
+the user to prevent the removal of semantically important activities that should
+not be removed. furthermore, this approach allows the process analyst to explore
+himself which of the ltering techniques leads to the most useful process model
+from the event log that he is analyzing.
+7 related work
+real life events logs often contain all sorts of data quality issues [ 34], include
+incorrectly logged events, events that are logged in the wrong order, and events
+that took place without being logged. instances of such data quality issues are
+often referred to as noise . many event log ltering techniques have been proposed
+to address the problem of noise. existing ltering techniques in the process mining
+eld can be classied into four categories: 1) event ltering techniques, 2) process
+discovery techniques that have an integrated ltering mechanism build in, 3) trace
+ltering techniques, and 4) activity ltering techniques. we use these categories to
+discuss and structure related work.
+7.1 event ltering
+conforti et al. [ 8] recently proposed a technique to lter out outlier events from an
+event log. the technique starts by building a prex automaton of the event log,
+which is minimal in terms of the number of arcs in the automaton, using an integer
+linear programming (ilp) solver. infrequent arcs are removed from the minimal
+prex automaton, and nally, the events belonging to removed arcs are ltered out
+from the event log.
+lu et al. [ 25] advocate the use of event mappings [24] to distinguish between
+events that are part of the mainstream behavior of a process and outlier events.
+event mappings compute similar behavior and dissimilar behavior between each
+two executions of the process as a mapping: the similar behavior is formed by all
+pairs of events that are mapped to each other, whereas events that are not mapped
+are dissimilar behavior.
+fani sani et al. [ 13] proposes the use of sequential pattern mining techniques
+to distinguish between events that are part of the mainstream behavior and outlier
+events.
+all three of the event ltering techniques listed above aim lter out outlier
+events from the event log, while keeping the mainstream behavior. event ltering
+techniques model the frequently occurring contexts of activities and lter out the
+contexts of activities that occur infrequently in the log. for example, consider an
+activitybsuch that 98% of its occurrences are in context h:::;a;b;c;:::i, with
+the remaining 2% of the events of activity bare in contexth:::;d;b;e;:::i, then
+thebevents that occur between dandewill be ltered out by event ltering
+techniques. note that our ltering technique is orthogonal to event ltering: it would
+consider activity bto be nonchaotic and would not lter out anything. however,
+when a log lcontains a chaotic activity x, then event ltering techniques are not
+able to remove all events of this chaotic activity. one of the contexts of xwill28 niek tax et al.
+by chance be more frequent than other contexts, i.e., for some activity a, it will
+hold that8b2activities (l): #(ha;xi;l)>#(hb;xi;l), even thoughha;xi
+might only be slightly more frequent. this will result in xevents after a bbeing
+removed, while the xevents after an aremain in the log. applying a process
+discovery technique to this ltered log will then result in a process model where
+activityxis misleadingly positioned after activity a, while in fact xcan happen
+anywhere in the process. the activity ltering technique presented in this paper
+will instead detect that activity xis chaotic, and completely remove it from the
+event log, preventing the misleading eect of event ltering.
+7.2 process discovery techniques with integrated filtering
+several process discovery algorithms oer integrated ltering mechanisms as part
+of the approach. the inductive miner (im) [ 19] is a process discovery algorithm
+which rst discovers a directly-follows graph from the event logs, where activities
+are connected that directly follow each other in the log, from which in a second
+step a process model is discovered. the directly-follows relations are aected by
+the presence of a chaotic activity x: sequenceh:::;a;x;c;:::ileads to false
+directly-follows relations between aandxand between xandc, while the
+directly-follows relation between aandcis obfuscated by x. the inductive miner
+infrequent (imf) [ 20] is an extension of the im where infrequent directly-follows
+relations are ltered out from the set of directly-follows relations that are used
+to generate to process models. the ltering mechanism of imf can help to lter
+out the directly-follows relations between aandxand between xandc, but it
+does not help to recover the obfuscated directly-follows relation between aand
+c. instead, the activity ltering technique presented in this paper lters out the
+chaotic activity x, leading to sequence h:::;a;x;c;:::ibeing transformed into
+h:::;a;c;:::i, thereby recovering the directly follows relation between aandc.
+the heuristics miner [ 45] and the fodina algorithm [ 4], in addition to the
+directly-follows relation, denes an eventually-follows relation between activities
+and allows the process analyst to lter out infrequent directly-follows and eventually
+follows relations. two activities aandbare in an eventually-follows relation when
+ais eventually followed by b, before the next appearance of aorb. the eventually-
+follows relation, unlike the directly-follows relation, is not impacted by the presence
+of chaotic activities. the heuristic miner [ 45] and fodina [ 4] both include ltering
+methods for the directly-follows and eventually-follows relations that are similar in
+nature to the ltering mechanism that is used in the inductive miner infrequent
+[20]. however, the use of sequential orderings and parallel constructs in the mining
+approaches of the heuristic miner [ 11] and fodina [ 4] is based on the directly-
+follows relations only, with the eventually follows relations being used for the
+mining of long-term dependencies. furthermore, in contrast to the inductive miner,
+the process models discovered with the heuristic miner [ 45] or fodina [ 4] can be
+unsound, i.e., the can contain deadlocks.
+the ilp-miner [ 46] is a process discovery algorithm where a set of behavioral
+constraints over activities is discovered for each prex (called the prex-closure )
+of the event log, based on which a process model is discovered that satises these
+constraints using integer linear programming (ilp). van zelst et al. [ 47] proposed
+a ltering technique for the ilp-miner where the prex closure of the event logtitle suppressed due to excessive length 29
+is ltered prior to solving the ilp problem by removing infrequently observed
+prexes. it is easy to see that a chaotic activity xaect the prex-closure that
+is discovered from the event log: given log consisting of two traces ha;x;ciand
+hx;a;ci, activityxcauses the prexes closures of the two traces to have no
+overlap in states, while without activity xthe two traces are identical. this makes
+the ltering method of the prex-closure proposed by van zelst et al. [ 47] less
+eective, as frequent prexes randomly get distributed over several infrequent
+prexes when chaotic activities are present. instead, the chaotic activity ltering
+technique presented in this paper would remove chaotic activity x, leading to
+tracesha;x;ciandhx;a;cibecoming identical after ltering, therefore leading
+to a simpler process model while still describing the behavior of the event log
+accurately.
+the fuzzy miner [ 16] is a process discovery algorithm that aims at mining
+models from exible processes, and it discovers a process model without formal
+semantics. the fuzzy miner discovers this graph by extracting the eventually
+follows relation from the event log, which is not aected by chaotic activities.
+similar to the heuristics miner [ 45] and fodina [ 4] the fuzzy miner allows to lter
+out infrequent eventually-follows relations between activities. in practice, the lack
+of formal semantics of the fuzzy miner models hinders the usability of the models,
+as the models are not precise on what behavior is allowed in the process under
+analysis.
+7.3 trace ltering
+ghionna et al. [ 14] proposed a technique to identify outlier traces from the event
+log that consists of two steps: 1) mining frequent patterns from the event log, and
+2) applying mcl clustering [ 43] on the traces, where the similarity measure for
+traces is dened on the number of patterns that jointly characterize the execution
+of the traces. traces that are not assigned to a cluster by the mcl clustering
+algorithm are considered to be outlier traces and are ltered from the event log.
+it is easy to see that trace ltering techniques address a fundamentally dierent
+problem than chaotic activity ltering: in the event log shown in figure 2b there
+are only two traces that do not contain an instance of chaotic activity x, therefore,
+even if a trace ltering technique would be able to perfectly lter out traces that
+contain a chaotic event, the number of remaining traces will become too small to
+mine a tting and precise process model when the chaotic activity is frequent.
+7.4 activity ltering
+the modus operandi for ltering activities is to simply lter out infrequent activities
+from the event log. the plugin 'filter log using simple heuristics' in the prom
+process mining toolkit [ 42] oers tool support for this type of ltering. the inductive
+visual miner [ 21] is an interactive process discovery tool that implements the
+inductive miner [ 20] process discovery algorithm in an interactive way: the process
+analyst can lter the event log using sliders and is then shown the process model
+that is discovered from this ltered log. one of the available sliders in the inductive
+visual miner oers the same frequency-based activity ltering functionality. the30 niek tax et al.
+working assumption behind ltering out infrequent activities is that when there
+are just a few occurrences of an activity, there is probably not enough evidence
+to establish their relation to other activities to model their behavior. however,
+as we have shown in this paper, for frequent but chaotic activities, while they
+are frequent enough to establish their relation to other activities, complicate the
+process discovery task by lowering directly-follows counts between other activities
+in the event log. the activity ltering technique presented in this paper is able to
+lter out chaotic activities, thereby reconstructing the directly-follows relations
+between the non-chaotic activities of the event log, at the expense of losing the
+chaotic activities.
+8 conclusion & future work
+in this paper, we have shown the possible detrimental eect of the presence of
+chaotic activities in event logs on the quality of process models produced by process
+discovery techniques. we have shown through synthetic experiments that frequency-
+based techniques for ltering activities from event logs, which is currently the modus
+operandi for activity ltering in the process mining eld, do not necessarily handle
+chaotic activities well. as shown, chaotic activities can be frequent or infrequent.
+we have proposed four novel techniques for ltering chaotic from event logs, which
+nd their roots in information theory and bayesian statistics. through experiments
+on seventeen real-life datasets, we have shown that all four proposed activity
+ltering techniques outperform frequency-based ltering on real data. the indirect
+entropy-based activity lter has been found to be the best performing activity
+lter overall averaged over all datasets used in the experiments; however, the
+performance of the four proposed activity ltering techniques is highly dependent
+on the characteristics of the event log.
+because the performance of the ltering techniques was found to be log-
+dependent, we propose the use the activity ltering techniques in a slider-based
+approach where the user can lter activities interactively and directly see the
+process model discovered from the ltered event log. ultimately, only the user can
+decide which activities to include. in future work, we aim to construct a hybrid
+activity ltering technique that combines the four techniques proposed in this
+paper by using supervised learning techniques from the data mining eld to predict
+the eect of removing a particular activity.
+references
+1. van der aalst wmp (2016) process mining: data science in action. springer
+2.van der aalst wmp, bolt a, van zelst sj (2017) rapidprom: mine your
+processes and not just your data. in: hofmann m, klinkenberg r (eds) rapid-
+miner: data mining use cases and business analytics applications, chapman
+& hall/crc data mining and knowledge discovery series, p to appear.
+3.adriansyah a, van dongen bf, van der aalst wmp (2011) conformance
+checking using cost-based tness analysis. in: proceedings of the 15 ieee
+international enterprise distributed object computing conference (edoc),
+ieee, pp 55{64title suppressed due to excessive length 31
+4.vanden broucke sklm, de weerdt j (2017) fodina: a robust and exible
+heuristic process discovery technique. decision support systems
+5.bruno b, mastrogiovanni f, sgorbissa a, vernazza t, zaccaria r (2013)
+analysis of human behavior recognition algorithms based on acceleration
+data. in: proceedings of the ieee international conference on robotics and
+automation, ieee, pp 1602{1607
+6.buijs jcam (2014) receipt phase of an environmental permit ap-
+plication process (wabo), coselog project. doi:10.4121/uuid:
+a07386a5-7be3-4367-9535-70bc9e77dbe6
+7.buijs jcam, van dongen bf, van der aalst wmp (2012) a genetic algorithm
+for discovering process trees. in: proceedings of the 2012 ieee congress on
+evolutionary computation, ieee, pp 1{8
+8.conforti r, la rosa m, ter hofstede ahm (2017) filtering out infrequent
+behavior from business process event logs. ieee transactions on knowledge
+and data engineering 29(2):300{314
+9.cook dj, crandall as, thomas bl, krishnan nc (2013) casas: a smart
+home in a box. computer 46(7):62{69
+10.de leoni m, mannhardt f (2015) road trac ne management process.
+doi:10.4121/uuid:270fd440-1057-4fb9-89a9-b699b47990f5
+11.de weerdt j, de backer m, vanthienen j, baesens b (2011) a robust f-
+measure for evaluating discovered process models. in: proceedings of the ieee
+symposium on computational intelligence and data mining (cidm), ieee,
+pp 148{155
+12.dimaggio m, leotta f, mecella m, sora d (2016) process-based habit min-
+ing: experiments and techniques. in: proceedings of the international ieee
+conference on ubiquitous intelligence & computing, ieee, pp 145{152
+13.fani sani m, van zelst sj, van der aalst wmp (2017) improving process
+discovery results by ltering outliers using conditional behavioural probabilities.
+in: proceedings of the international workshop on business process intelligence,
+springer
+14.ghionna l, greco g, guzzo a, pontieri l (2008) outlier detection techniques
+for process mining applications. in: international symposium on methodologies
+for intelligent systems, springer, pp 150{159
+15.goedertier s, martens d, vanthienen j, baesens b (2009) robust process
+discovery with articial negative events. journal of machine learning research
+10(jun):1305{1340
+16.g unther cw, van der aalst wmp (2007) fuzzy mining{adaptive process
+simplication based on multi-perspective metrics. in: international conference
+on business process management, springer, pp 328{343
+17.herbst j (2000) a machine learning approach to workow management. in:
+european conference on machine learning, springer, pp 183{194
+18.van kasteren t, noulas a, englebienne g, kr ose b (2008) accurate activ-
+ity recognition in a home setting. in: proceedings of the 10th international
+conference on ubiquitous computing, acm, pp 1{9
+19.leemans sjj, fahland d, van der aalst wmp (2013) discovering block-
+structured process models from event logs - a constructive approach. in: inter-
+national conference on applications and theory of petri nets and concurrency,
+springer, pp 311{32932 niek tax et al.
+20.leemans sjj, fahland d, van der aalst wmp (2013) discovering block-
+structured process models from event logs containing infrequent behaviour. in:
+international conference on business process management, springer, pp 66{78
+21.leemans sjj, fahland d, van der aalst wmp (2014) process and deviation
+exploration with inductive visual miner. in: proceedings of the bpm demo
+track, ceur-ws.org, vol 1295, p 46
+22.leotta f, mecella m, mendling j (2015) applying process mining to smart
+spaces: perspectives and research challenges. in: international conference on
+advanced information systems engineering, springer, pp 298{304
+23.lohmann n, verbeek e, dijkman r (2009) petri net transformations for
+business processes{a survey. in: transactions on petri nets and other models
+of concurrency ii, springer, pp 46{63
+24.lu x, fahland d, van der aalst wmp (2014) conformance checking based on
+partially ordered event data. in: international conference on business process
+management, springer, pp 75{88
+25.lu x, fahland d, van den biggelaar fjhm, van der aalst wmp (2015) detect-
+ing deviating behaviors without models. in: proceedings of the international
+workshop on business process intelligence, springer, pp 126{139
+26.mannhardt f (2016) sepsis cases - event log. doi:10.4121/uuid:
+915d2bfb-7e84-49ad-a286-dc35f063a460
+27.maruster l, weijters ajmm, aalst wmpvd, bosch avd (2006) a rule-based
+approach for process discovery: dealing with noise and imbalance in process
+logs. data mining & knowledge discovery 13(1):67{87
+28.mccurdy t, glen g, smith l, lakkadi y (2000) the national exposure re-
+search laboratory's consolidated human activity database. journal of exposure
+analysis and environmental epidemiology 10(6):566{578
+29.murata t (1989) petri nets: properties, analysis and applications. proceedings
+of the ieee 77(4):541{580
+30.object management group (2011) notation (bpmn) version 2.0. omg speci-
+cation
+31.ord onez fj, de toledo p, sanchis a (2013) activity recognition using hybrid
+generative/discriminative models on home environments using binary sensors.
+sensors 13(5):5460{5477
+32.qin t, liu ty, xu j, li h (2010) letor: a benchmark collection for
+research on learning to rank for information retrieval. information retrieval
+13(4):346{374
+33.sol e m, carmona j (2013) region-based foldings in process discovery. ieee
+transactions on knowledge and data engineering 25(1):192{205
+34.suriadi s, andrews r, ter hofstede ahm, wynn mt (2017) event log imper-
+fection patterns for process mining: towards a systematic approach to cleaning
+event logs. information systems 64:132{150
+35.sztyler t, v olker j, carmona vargas j, meier o, stuckenschmidt h (2015)
+discovery of personal processes from labeled sensor data: an application of
+process mining to personalized health care. in: proceedings of the international
+workshop on algorithms & theories for the analysis of event data, ceur-
+ws.org, pp 31{46
+36.tapia em, intille ss, larson k (2004) activity recognition in the home
+using simple and ubiquitous sensors. in: international conference on pervasive
+computing, springer, pp 158{175title suppressed due to excessive length 33
+37.tax n, bockting s, hiemstra d (2015) a cross-benchmark comparison of 87
+learning to rank methods. information processing & management 51(6):757{
+772
+38.tax n, sidorova n, haakma r, van der aalst wmp (2016) event abstraction
+for process mining using supervised learning techniques. in: proceedings of the
+sai intelligent systems conference, springer
+39.tax n, sidorova n, haakma r, van der aalst wmp (2016) mining local process
+models. journal of innovation in digital ecosystems 3(2):183{196
+40.tax n, sidorova n, haakma r, van der aalst wmp (2017) mining process
+model descriptions of daily life through event abstraction. in: intelligent systems
+and applications, springer, p to appear.
+41.van dongen b (2012) bpi challenge 2012. doi:10.4121/uuid:
+3926db30-f712-4394-aebc-75976070e91f
+42.van dongen bf, de medeiros aka, verbeek hmw, weijters ajmm, van
+der aalst wmp (2005) the prom framework: a new era in process mining
+tool support. in: international conference on application and theory of petri
+nets, springer, pp 444{454
+43.van dongen s (2008) graph clustering via a discrete uncoupling process. siam
+journal on matrix analysis and applications 30(1):121{141
+44.vanden broucke sklm, de weerdt j, vanthienen j, baesens b (2013) de-
+termining process model precision and generalization with weighted articial
+negative events. ieee transactions on knowledge and data engineering
+45.weijters ajmm, ribeiro jts (2011) flexible heuristics miner (fhm). in:
+proceedings of the ieee symposium on computational intelligence and data
+mining (cidm), ieee, pp 310{317
+46.van der werf jmem, van dongen bf, hurkens caj, serebrenik a (2009)
+process discovery using integer linear programming. fundamenta informaticae
+94(3):387{412
+47.van zelst sj, van dongen bf, van der aalst wmp (2015) avoiding over-
+tting in ilp-based process discovery. in: international conference on business
+process management, springer international publishing, pp 163{171
+48.zhai c, laerty j (2004) a study of smoothing methods for language models
+applied to information retrieval. acm transactions on information systems
+22(2):179{214

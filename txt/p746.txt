@@ -1,0 +1,686 @@
+author’s copyimproving documentation by repairing event logs?
+andreas rogge-solti1, ronny s. mans2, wil m. p. van der aalst2, and mathias weske1
+1hasso plattner institute, university of potsdam
+prof.-dr.-helmert-strasse 2-3, 14482 potsdam
+{andreas.rogge-solti,mathias.weske}@hpi.uni-potsdam.de
+2department of information systems, eindhoven university of technology, p.o. box
+513, nl-5600 mb, eindhoven, the netherlands.
+{r.s.mans,w.m.p.v.d.aalst}@tue.nl
+summary. in enterprises, business process models are used for capturing as-is
+business processes. during process enactment correct documentation is important
+to ensure quality, to support compliance analysis, and to allow for correct account-
+ing. missing documentation of performed activities can be directly translated into
+lost income, if accounting is based on documentation. still, many processes are
+manually documented in enterprises. as a result, activities might be missing from
+the documentation, even though they were performed.
+in this paper, we make use of process knowledge captured in process models, and
+provide a method to repair missing entries in the logs. the repaired logs can be
+used for direct feedback to ensure correct documentation, i.e., participants can
+be asked to check, whether they forgot to document activities that should have
+happened according to the process models. we realize the repair by combining
+stochastic petri nets, alignments, and bayesian networks. we evaluate the results
+using both synthetic data and real event data from a dutch hospital.
+key words: documentation quality, missing data, stochastic petri nets, bayesian
+networks
+1 introduction
+enterprises invest a lot of time and money to create business process models in order
+to use them for various purposes: documentation and understanding, improvement,
+conformance checking, performance analysis, etc. the modeling goal is often to capture
+the as-is processes as accurately as possible. in many cases, process activities are
+performed and documented manually. we call the documentation of activities in a
+business process event logs . when event logs are subject to manual logging, data quality
+problems are common, resulting in incorrect ormissing events in the event logs [ 1]. we
+focus on the latter and more frequent issue, as in our experience it is often the case that
+activities are performed, but their documentation is missing.
+for an enterprise, it is crucial to avoid these data quality issues in the ﬁrst place.
+accounting requires activities to be documented, as otherwise, if documentation is
+missing, potential revenues are lost. in the healthcare domain, for example, we encoun-
+tered the case that sometimes the activity preassessment of a patient is not documented,
+?this is the author’s version. the original version is available at www.springerlink.comauthor’s copyalthough it is done always before treatment. in this paper, we provide a technique to
+automatically repair an event log that contains missing entries. the idea is to use repaired
+event logs to alert process participants of potential documentation errors as soon as
+possible after process termination. we employ probabilistic models to derive the most
+likely timestamps of missing events, i.e., when the events should have occurred based
+on historical observations. this novel step assists process participants in correcting
+missing documentation directly, or to identify the responsible persons, who performed
+the activities in question.
+state-of-the-art conformance checking methods [ 2] do not consider timing aspects.
+in contrast, we provide most likely timestamps of missing events. to achieve this, we
+use stochastically enriched process models, which we discover from event logs [ 3]. as
+a ﬁrst step, using path probabilities, it is determined which are the most likely missing
+events. next, bayesian networks [ 4] capturing both initial beliefs of the as-is process and
+real observations are used to compute the most likely timestamp for each inserted event.
+inserted events are marked as artiﬁcial, as long as they are not corrected by the process
+participants. an extended version of this paper is available as a technical report [5].
+the remainder of this paper is organized as follows. first, we present background on
+missing data methods along other related works in section 2. afterwards, preliminaries
+are given in section 3. our approach for repairing individual traces in an event log is
+described in section 4 followed by a presentation of the algorithmic details in section 5.
+an evaluation of our approach using both synthetic and real-life event data is given in
+section 6. finally, conclusions are presented in section 7.
+2 background and related work
+missing data has been investigated in statistics, but not in the context of conformance
+checking of business processes. there are di erent types of missing data: missing com-
+pletely at random (mcar), missing at random (mar), and not missing at random
+(nmar), cf. the overview by schafer and graham in [ 6]. these types refer to the
+independence assumptions between the fact that data is missing ( missingness ) and the
+data values of missing and observed data. mcar is the strongest assumption, i.e., miss-
+ingness is independent of both observed and missing data. mar allows dependencies
+to observed data, and nmar assumes no independence, i.e., captures cases where
+the missingness is inﬂuenced by the missing values, too. dealing with nmar data is
+problematic, as it requires a dedicated model for the dependency of missingness on
+the missing values, and is out of scope of this paper. we assume that data is mar,
+i.e., whether data is missing does not depend on the value of the missing data, but may
+depend on observed data values.
+over the years, multiple methods have been proposed to deal with missing data,
+cf. [6]. however, these techniques are focusing on missing values in surveys and are not
+directly applicable to event logs, as they do not consider control ﬂow relations in process
+models and usually assume a ﬁxed number of observed variables.
+related work on missing data in process logs is scarce. nevertheless, in a recent
+technical report, bertoli et al. [ 7] propose a technique to reconstruct missing events in
+process logs. the authors tackle the problem by mapping control ﬂow constraints inauthor’s copybpmn models to logical formulae and use a sat-solver to ﬁnd candidates for missing
+events. in contrast, we use an alignment approach based on petri nets, allowing us to
+deal with loops and probabilities of di erent paths. we also consider the time of the
+missing events, which allows performance analysis on a probabilistic basis.
+some techniques developed in the ﬁeld of process mining provide functionality that
+enables analysis of noisy or missing event data. in process mining, the quality of the
+event logs is crucial for the usefulness of the analysis results and low quality poses
+a signiﬁcant challenge to the algorithms [ 1]. therefore, discovery algorithms which
+can deal with noise, e.g., the fuzzy miner [ 8], and the heuristics miner [ 9], have been
+developed. their focus is on capturing the common and frequent behavior and abstract
+from any exceptional behavior. these discovery algorithms take the log as granted and
+do not try to repair missing events.
+another example is the alignment of traces in the context of conformance check-
+ing [ 2]. here, the aim is to replay the event log within a given process model in order
+to quantify conformance by counting skipped and inserted model activities. we build
+upon this technique and extend it to capture path probabilities as gathered from historical
+observations. note that the lion’s share of work focuses on repairing models based on
+logs, rather than logs based on models. examples are the work by fahland and van
+der aalst [ 10] that uses alignments to repair a process model to decrease inconcistency
+between model and log, and the work by buijs et al. [ 11], which uses genetic mining to
+ﬁnd similar models to a given original model.
+3 preliminary deﬁnitions and used methods
+in this section, we give a formal description of the used concepts, to describe the approach
+to the repair of missing values in process logs. we start with event logs and petri nets.
+deﬁnition 1 (event logs). an event log over a set of activities aand time domain tdis
+deﬁned as l a;td=(e;c;;;;), where:
+– e is a ﬁnite set of events.
+– c is a ﬁnite set of cases (process instances).
+–:e!a is a function relating each event to an activity.
+–:e!td is a function relating each event to a timestamp.
+–:e!c is a surjective function relating each event to a case.
+–eeis the succession relation, which imposes a total ordering on the events
+in e. we use e2e1as shorthand notation for (e2;e1)2. we call the ordered set
+of events belonging to one case a “trace”.
+deﬁnition 2 (petri net). a petri net is a tuple pn =(p;t;f;m0)where:
+– p is the set of places.
+– t is the set of transitions.
+– f(pt)[(tp)is the set of connecting arcs representing ﬂow relations.
+– m 02p!i n+
+0is the initial marking.
+there have been many extensions of petri nets to capture time, both deterministic
+and stochastic. in [ 12], ciardo et al. give an overview of di erent classes. in terms of this
+classiﬁcation, we use stochastic petri nets with generally distributed transition durations.author’s copydeﬁnition 3 (gdt_spn). a stochastic petri net with generally distributed transition
+durations is a seven-tuple: gdt_spn =(p;t;p;w;f;m0;d), where (p;t;f;m0)is
+the underlying petri net. additionally:
+–the set of transitions t=ti[ttis partitioned into immediate transitions tiand
+timed transitions t t.
+–p:t!i n+
+0is an assignment of priorities to transitions, where 8t2ti:p(t)1
+and8t2tt:p(t)=0.
+–w:ti!i r+assigns probabilistic weights to the immediate transitions.
+–d:tt!d(x)is an assignment of arbitrary probability distribution functions d(x)
+to timed transitions, capturing the random durations of the corresponding activities.
+although this deﬁnition of gdt_spn models allows us to assign arbitrary duration
+distributions to timed transitions, in this work, we assume normally distributed durations.
+note that normal distributions are deﬁned also in the negative domain, which we need to
+avoid. therefore, we assume that most of their probability mass is in the positive domain,
+such that errors introduced by correction of negative durations are negligible.
+ba
+ec
+f gd
+h0.5
+0.50.750.25
+n(20,5²)
+n(16,3²)n(10,2²)
+n(15,4²)
+n(11,2²)n(10,2²)n(9,3²)
+n(5,1²)1
+11
+fig. 1: example unstructured free-choice gdt_spn model.
+an example gdt_spn model is shown in fig. 1 and has immediate transitions
+(bars), as well as timed transitions (boxes). in the ﬁgure, immediate transitions are
+annotated with their weights, e.g., the process will loop back with a probability of 0.25,
+and leave the loop with 0.75 probability. we omitted priorities and deﬁne priority 1
+for all immediate transitions. the timed transitions are labeled from atohand their
+durations are normally distributed with the parameters annotated underneath. in this
+example, activity a’s duration is normally distributed with a mean of 20, and a standard
+deviation of 5. note that the model is sound and free-choice, and contains parallelism,
+choices, and a loop.
+because we allow generally distributed durations in the model, we require an execu-
+tion policy [ 13]. we use race semantics with enabling memory as described in [ 13]. this
+means that concurrently enabled transitions race for the right to ﬁre, and transitions will
+only be reset, if they get disabled by another transition ﬁring.
+for our purposes, we reuse the existing work in the prom framework that extracts
+performance information of activities from an event log and enriches plain petri nets to
+gdt_spn models [ 3]. in [ 3], we discuss the challenges for discovering gdt_spn mod-
+els with respect to selected execution semantics of the model. the discovery algorithm
+uses replaying techniques, cf. [ 14], to gather historical performance characteristics and
+enriches a given petri net to a gdt_spn model with that performance information.author’s copy3.1 cost-based fitness alignment
+(a)example log:
+t1:ha,c, d, b, e, f, g, h i
+t2:he, g, hi
+(b)alignment for trace t1:
+log acdbefgh
+model acdbefgh
+(c)alignments for trace t2:
+(c.1)log e g h
+model b e f g h
+(c.2)log e g h
+model b f e g h
+fig. 1: example log and possible
+alignments for the traces.consider the example log in fig. 2a consisting of
+two traces t1, and t2. to check, whether the trace
+ﬁts to the model, we need to align them. we reuse
+the technique described by adriansyah et al. in [ 2],
+which results in a sequence of movements that re-
+play the trace in the model. these movements are ei-
+thersynchronous moves ,model moves , orlog moves .
+a formal description of the alignment technique is
+provided in [ 2] and remains out of scope of this
+paper. we only give the intuition. for an alignment,
+the model and the log are replayed side by side to
+ﬁnd the best mapping of events to activities in the
+model. thereby, a synchronous move represents an
+event in the log that is allowed in the respective state
+in the model, such that both the model and the log progress one step together. however,
+if an activity in the model or an event in the log is observed with no counterpart, the
+model and log have to move asynchronously. then, a model move represents an activity
+in the model, for which no event exists in the log at the current position and conversely,
+alog move is an event in the log that has no corresponding activity in the model that is
+enabled in the current state during replay. it is possible to assign costs to the di erent
+types of moves for each activity separately.
+fig. 1 shows some example alignments of the model in fig. 1 and log in fig. 2a.
+in fig. 1b, a perfect alignment is depicted for trace t1, i.e., the trace can be replayed
+completely by a sequence of synchronous moves . a closer look at trace t2and the model
+in fig. 1 reveals that the two events b, and fare missing from the trace, which might
+have been caused by a documentation error. because activity fis parallel to e, there
+exist two candidate alignments for t2, as shown in fig. 1c. the symbol denotes a step
+that is used to show empty moves, i.e., modeled and recorded behavior disagree. in this
+example, there are two model moves necessary to align the trace t2to the model.
+summarizing, the alignment technique described in [ 2,14] can be used to ﬁnd the
+cost-optimal matches between a trace in a log and a model. however, the approach only
+considers the structure of the model and the sequence of events encountered in the log
+without considering timestamps or probabilities. in this paper, we enhance the alignment
+technique to also take path probabilities into account.
+3.2 bayesian networks
+gdt_spn models capture probabilistic information about the durations of each activity
+in the process. we use bayesian networks [ 4,15] to capture the dependencies between
+the random durations given by the gdt_spn model structure. fig. 2 shows an example
+bayesian network that captures the relations for a part of the process model in fig. 1. the
+arcs between activities b,f, and g, and between bande, are sequential dependencies.
+note that there is no direct dependency between fande, since they are executed in
+parallel, and we assume that the durations of these activities are independent. moreauthor’s copygenerally, a bayesian network is a directed acyclic graph and captures dependencies
+between random variables in a probabilistic model [ 15]. an arc from a parent node to
+a child node indicates that the child’s probability distribution depends on the parent’s
+values.
+b
+f e
+g
+fig. 2: bayesian network
+for a fragment of fig. 1.we use bayesian networks to reason about our updated
+probabilistic beliefs, i.e., the posterior probability distribu-
+tions in a model, once we assigned speciﬁc values to some
+of the random variables. suppose that we observe trace t2
+in the log in fig. 1a, with times (e)=30,(g)=35,
+and(h)=40. initially, the random variable of node bin
+the example has a duration distribution of n(16;32), i.e., a
+normally distributed duration with mean 16, and standard
+deviation 3. however, after inserting the observed times of events e, and event ginto
+the network in fig. 2, we can calculate the resulting posterior probability distributions
+by performing inference in the bayesian network. in this case, the posterior probability
+distribution of bisn(14:58;1:832). note that by inserting evidence, i.e., constraining the
+variables in a bayesian network, the posterior probability distributions get more accurate.
+in this example, the standard deviation is reduced from 3to1:83. the intuition is that
+we narrow the possible values of the unobserved variables to be in accordance with the
+observations in the log. there exist algorithms for bayesian networks automating this
+process [ 16]. a complete explanation of bayesian networks, however, is not the aim in
+this paper, and the interested reader is referred to the original work by pearl [ 4] and the
+more recent text book by koller and friedman [15].
+4 repairing events in timed event logs
+in this paper, we propose a method to probabilistically restore events in logs which
+contain missing events. in particular, we are interested in knowing when things happened
+most likely . the problem that we try to solve is to identify the parts in the model that are
+missing from the trace (which) and also to estimate the times of the activities in those
+parts (when).
+in theory, we need to compare the probabilities of all possible paths in the model
+that are conforming to the trace. each path may allow for di erent assignments of
+events in the trace to the activities in the model. for example, for trace t2:he;g;hi
+and the model in fig. 1 two cost-minimal paths through the model are given by the
+alignments in fig. 1.c. but, there might be further possibilities. it is possible that a
+whole iteration of the loop happened in reality, but was not documented. in that case, the
+pathhb;e;f;g;a;c;d;hiwould also be an option to repair trace t2. furthermore, the
+second iteration could have taken another path in the model: hb;e;f;g;b;f;e;g;hi.
+in this case it is not clear to which iteration the events eandgbelong. in general, there
+are inﬁnitely many possible traces for a model that contains loops.
+in order to compare the probabilities of these paths, we need to compute the probabil-
+ity distributions of the activities on the paths and compare which model path and which
+assignment explains the observed events’ timestamps best. to reduce the complexity,
+we propose to decompose the problem into two separate problems, i) repair structureauthor’s copy
+repair logs method
+repair
+structureinsert
+timerepaired loglog with
+missingentries
+gdt_spn
+modelfitting log
+withmissing
+time entriesfig. 3: we divide the problem into two subproblems: repairing the control ﬂow, and
+repairing the timestamps.
+and ii) insert time, as sketched in fig. 3. the method uses as input a log that should be
+repaired and a gdt_spn model specifying the as-is process.
+note that by choosing this approach, we accept the limitation that missing events on
+a path can only be detected, if at least one event in the log indicates that the path was
+chosen.
+5 realization of repairing logs
+in this section, we explain a realization of the method described above. for this realiza-
+tion, we make the following assumptions:
+–the supported models, i.e., the gdt_spn models, are sound , cf. [ 17], and free-
+choice , cf. [ 18], but do not necessarily need to be (block-)structured. this class of
+models captures a large class of process models and does not impose unnecessary
+constraints.
+–the gdt_spn model is normative, i.e., it reﬂects the as-is processes in structural,
+behavioral and time dimension.
+–activity durations are independent and have normal probability distributions, con-
+taining most of their probability mass in the positive domain.
+– the recorded timestamps in the event logs are correct.
+– each trace in the log has at least one event, and all events contain a timestamp.
+–the activity durations of a case do not depend on other cases, i.e., we do not consider
+the resource perspective and there is no queuing.
+–we assume that data is mar, i.e., that the probability that an event is missing from
+the log does not depend on the time values of the missing events.
+the algorithm is depicted in fig. 4, and repairs an event log as follows.
+for each trace, we start by repairing the structure. this becomes trivial, once we
+identiﬁed a path in the model that ﬁts our observations in the trace best. the notion of
+cost-based alignments [ 2] that we introduced in section 3, is used for this part. it tells us
+exactly:
+a) when the model moves synchronously to the trace, i.e., where the events match
+b) when the model moves alone, i.e., an event is missing from the trace
+c)when the log moves alone, i.e., there is an observed event that does not ﬁt into the
+model at the recorded positionauthor’s copy
+model with
+alignment &
+convert it to
+a bayesian
+networkbayesian
+networkperform
+inference
+given evidence
+in traceposterior
+probability
+distributionsadd missing
+times according
+to probability
+distributions
+repaired log1. repair structure
+2. insert timerepair logs algorithm
+log with
+missingentries
+perform
+alignmentset of
+aligned tracespick
+alignmentalignment for
+missing events
+gdt _spn
+modelfor eachtrace
+unfold gdt _spnfig. 4: the repair approach described in more detail.
+we set the costs of synchronous and model moves to 0, and the cost of log moves to
+a high value, e.g., 1000. the alignment algorithm returns all paths through the model,
+where the events in the trace are mapped to a corresponding activity. this works well for
+acyclic models. for cyclic models, where inﬁnite paths through a model exist, we need
+to assign some small costs to model moves, in order to limit the number of resulting
+alignments that we compare in the next step.
+in the next step, cf. box pick alignment in fig. 4, we decide which of the returned
+cost-minimal alignments to pick for repair. the algorithm replays the path taken through
+the model and multiplies the probabilities of the decisions made along the path. this
+allows us to take probabilistic information into account when picking an alignment and
+enhances the alignment approach introduced in [ 2]. we also consider that, for one trace,
+paths with many forgotten activities are less likely than others. that is, we allow to
+specify the parameter of the missing data mechanism, i.e., the rate of missingness. we
+let the domain expert deﬁne the probability to forget an event. the domain expert can
+specify how to weigh these probabilities against each other, i.e., to give preference to
+paths with higher probability, i.e., determined by immediate transition weights, or to
+paths with less missing events that are required to be inserted into the trace. this novel
+post-processing step on the cost-optimal alignments allows to control the probability of
+paths in the model that are not reﬂected in a log by any event.
+for example, consider a loop in a gdt_spn model with nactivities in the loop. by
+setting the chance of missing entries low, e.g., setting the missingness probability to 0:1
+(10% chance that an event is lost), an additional iteration through the loop will become
+more unlikely, as its probability will be multiplied by the factor 0:1n. this factor is the
+probability that all nevents of an iteration are missing. we select the alignment with
+the highest probability. once we decided on the structure of the repaired trace, we can
+continue and insert the times of the missing events in the trace, i.e., the identiﬁed model
+moves .
+to insert the timing information, it is not enough to look at the gdt_spn model
+alone. we need to ﬁnd a way to add the information that we have for each trace, i.e., theauthor’s copytimestamps of the recorded events. fortunately, as mentioned in section 3, there exists a
+solution for this task: inference in bayesian networks. therefore, we convert the gdt
+_spn model into a bayesian network to insert the evidence given by the observations to
+be able to perform the inference.
+in the previous step, we identiﬁed a probable path through the gdt_spn model.
+with the path given, we eliminate choices from the model by removing branches of the
+process model that were not taken. we unfold the net from the initial marking along the
+chosen path. consider trace t3=ha;d;c;c;d;hiand assume, we picked the following
+alignment:
+log ad c cdh
+model ad ca cdh
+then, the unfolded model looks like fig. 5, where the black part marks the path taken
+in the model. the grey part is removed while unfolding. note that the unfolded model
+still contains parallelism, but it is acyclic. thus, we can convert it into a bayesian network
+with a similar structure, where the random variables represent timed transitions. as, due
+to multiple iterations of loops, activities can happen multiple times, we di erentiate
+them by adding an index of their occurrence, e.g., a1anda2correspond to the ﬁrst and
+second occurrence of the transition a. the unfolding is done by traversing the model
+along the path dictated by the alignment and keeping track of the occurrences of the
+transitions.
+a1
+c1
+d1
+ 0.5
+n(20,5)
+n(10,2)
+n(9,3)
+1
+h1
+0.75n(5,1)a2c2
+d2 0.5n(20,5)
+n(10,2)n(9,3)
+1
+1
+1
+fig. 5: unfolded model in fig. 1 for path ha;d;c;a;c;d;hi.
+we transform the unfolded model into a bayesian network with a similar structure.
+most immediate transitions are not needed in the bayesian network, as these do not take
+time and no choices need to be made in the unfolded process. only immediate transitions
+joining parallel branches will be kept.
+fig. 6 shows transformation patterns for sequences, parallel splits, and synchronizing
+joins. these are the only constructs remaining in the unfolded form of the gdt_spn
+model. in the resulting bayesian network, we use the sumandmax relations to deﬁne the
+random variables given their parents. more concretely, if timed transition tiis followed by
+timed transition tjin a sequence, we can convert this fragment into a bayesian network
+with variables xiandxj. from the gdt_spn model, we use the transition duration
+distributionsd(ti)=di(x)andd(tj)=dj(x). then, the parent variable xihas the
+unconditional probability distribution p(xix)=di(x)and the child variable xjhasauthor’s copy
+petri net bayesian network petri net bayesian network
+parallel splitsequence (timed)a bb
+parallel join:a
+bsequence (immediate)  :start a b
+start
+a bjoina bstart b
+a
+bmaxsum sum sum
+sum sumfig. 6: transformation of gdt_spn models to bayesian networks.
+the probability distribution p(xjxjxi)=p(xj+xix). for each value of the parent
+xi2xi, the probability distribution is deﬁned as p(xjxjxi=xi)=dj(x xi), i.e.,
+the distribution of xjis shifted by its parent’s value to the right. a parallel split, cf. lower
+left part in fig. 6, is treated as two sequences sharing the same parent node.
+themax relation that is required for joining branches at synchronization points, cf.
+the lower right pattern in fig. 6, is deﬁned as follows. let xiandxjbe the parents of xk,
+such that xkis the maximum of its parents. then, p(xkxjxi;xj)=p(max(xi;xj)
+x)=p(xix)p(xjx)=di(x)dj(x), i.e., the probability distribution functions
+are multiplied. note that the maximum of two normally distributed random variables
+is not normally distributed. therefore, we use a linear approximation, as described
+in [19]. this means that we express the maximum as a normal distribution, with its
+parameters depending linearly on the normal distributions of the joined branches. the
+approximation is good, when the standard deviations of the joined distributions are
+similar, and degrades when they di er, cf. [ 19]. the resulting bayesian network model is
+a linear gaussian model, which is a class of continuous type bayesian networks, where
+inference is e ciently possible. more precisely, inference can be done in o n3where n
+is the number of nodes [ 15]. otherwise, inference in bayesian networks is an np-hard
+problem [20].
+once we constructed the bayesian network, we set the values for the observed events
+for their corresponding random variables, i.e., we insert the evidence into the network.
+then, we perform inference in the form of querying the posterior probability distributions
+of the unobserved variables. we use the bayesian network toolkit for matlab [ 16], where
+these inference methods are implemented. this corresponds to the second step in the
+insert time part of fig. 4.
+the posterior probabilities of the queried variables reﬂect the probabilities, when the
+conditions are given according to the evidence. our aim is to get the most likely time
+values for the missing events. these most likely times are good estimators for when the
+events occurred in reality, and thus can be used by process participants as clues during
+root cause analysis. for example, in order to ﬁnd the responsible person for the task
+in question, an estimation of when it happened most likely can be helpful. note that
+repaired values with most likely time values need to be treated with caution, as they do
+not capture the uncertainty in the values. therefore, we mark repaired entries in the log
+as artiﬁcial.
+once we determined probable values for the timestamps of all missing events in a
+trace, we can proceed with the next trace starting another iteration of the algorithm.author’s copy6 evaluation
+we have implemented our approach in prom2. to evaluate the quality of the algorithm,
+we follow the experimental setup described in fig. 7. the problem is that in reality we
+do not know whether events did not happen, or only were not recorded. therefore, we
+conduct a controlled experiment. in order to have actual values to compare our repaired
+results with, we ﬁrst acquire traces that ﬁt the model. we do this either by selecting the
+ﬁtting ones from original cases, or by simulation in artiﬁcial scenarios. in a second step,
+we randomly remove a percentage of the events from these ﬁtting traces. we pass the log
+with missing entries to the repair algorithm, along with the model, according to which
+we perform the repair.
+gdt_spn model
+log with 
+missing entriesrepair logs 
+algorithmrepaired log with 
+most likely entries
+log evaluationadd noise
+  measures:
+- control-flow conformance
+- time conformance
+gdt_spn
+(see fig. 1)simulation of 
+1000 casesartificial log
+real-life logperformance 
+analysisgdt_spn 
+modelselect fitting 
+traceslog with 
+fitting traces
+real-life exampleapproach
+datasynthetic examplepetri net
+(see fig. 10)
+fig. 7: approach used to evaluate repair quality.
+the repair algorithm’s output is then evaluated against the original traces to see, how
+well we could restore the missing events. we use two measures for assessing the quality
+of the repaired log. the cost-based ﬁtness measure as deﬁned in [ 2] compares how well a
+model ﬁts a log. here, we compare the traces of the original and repaired log. therefore,
+we convert each original trace into a sequential petri net model and measure its ﬁtness
+with the repaired trace.
+fitness deals with the structural quality, i.e., it is a good measure to check, whether
+we repaired the right events in the right order. for measuring the quality of repaired
+timestamps, we compare the real event’s time with the repaired event’s time. we use the
+mean absolute error (mae) of the events that have been inserted. this is the mean of the
+absolute di erences between repaired event times and original event times.
+6.1 artiﬁcial example
+we ﬁrst evaluate the repair algorithm according to the artiﬁcial model introduced in
+section 3 in fig. 1.
+2see package repairlog in prom http://www.promtools.orgauthor’s copy
+01234567
+0 20 40  60 80 100
+missing events in %(in minutes)0123456
+0 20 40  60 80 100movesmovesfig. 8: evaluation results for repairing 1000 traces of model in fig. 1.
+the experiment was done with a log of 1000 simulated traces. figure 8 displays the
+resulting quality measures of the repaired traces. each dot is based on the repair results
+of this log with a di erent percentage of randomly removed events. on the left-hand side
+of the ﬁgure, you can see the performance values of the alignment. the solid line with
+squares shows the number of synchronous moves . the other two lines are the number of
+model moves (dotted line with circles) and the number of log moves (gray dashed line
+with triangles) necessary to align the two traces.
+because of the structural properties of the model in fig. 1, i.e., there is a choice
+between two branches containing three (upper), and four (lower) activities, we can
+restore the correct activities at low noise levels (around 30%). but we can not guarantee
+for their ordering due to parallelism in the model. a change in the ordering of two events
+in the repaired trace results in a synchronous move for one event, and a log move and a
+model move for the other (to remove it from one position and insert it in another). note
+that at lower noise levels the number of log moves andmodel moves are equal. this
+indicates incorrect ordering of parallel activities. at higher noise levels the number of
+model moves increase further. then, it gets more likely that there remains no single
+event of an iteration of the loop in fig. 1. the size of the gap between model moves and
+log moves shows how much the repair quality su ers from the fact that the presented
+algorithm, which repairs events with the most likely values, does not restore optional
+paths of which no event is recorded in the trace.
+on the right-hand side of fig. 8 we see the mean absolute error in relative time units
+speciﬁed in the model. the graph shows that the o set between original event’s time
+and repaired event’s time increases with the amount of noise non-linearly.
+6.2 repairing a real example log of a hospital
+in this second part of the evaluation, we look at the results obtained from repairing a
+real log of a hospital. in contrast to the experimental setup, where we used the model
+to generate the example log, now the log is given, and we try to estimate the model
+parameters. to avoid using a model that was learned from the events, which we try to
+repair, we use 10-fold cross-validation. that is, we divide the log into ten parts and use
+nine parts to learn the model parameters and one to perform the repair with.
+we use the log of a dutch clinic for the ambulant surgery process, described in [ 21].
+the process is depicted as a gdt_spn model in fig. 9. it is a sequential processauthor’s copythat deals with both ambulant patients and ordered stationary patients. each transition
+corresponds to a treatment step that a nurse records in a spread sheet with timestamps.
+in the process, the patient arrives in the lock to be prepared for the surgery. once the
+operating room (or) is ready, the patient leaves the lock and enters the or. in the
+or, the anesthesia team starts the induction of the anesthesia. afterwards, the patient
+optionally gets an antibiotica prophylaxis treatment. the surgery starts with the incision,
+i.e., the ﬁrst cut with the scalpel, and ﬁnishes with the suture, i.e., the closure of the tissue
+with stitches. next, the anesthesia team performs the emergence from the anesthesia,
+which ends when the patient has regained consciousness. finally, the patient leaves the
+or and is transported to the recovery.
+patient
+ordered
+arrival
+in lockdepar-
+ture of
+lockarrival
+in orstart of
+induc-
+tionend of
+induc-
+tiondo
+antibiotica
+prophylaxis
+inci-
+sionsutu-start of
+emer-
+genceend of
+emer-
+gencedepar-
+ture
+of orarrival
+in
+recoverydeparture
+of
+recoveryre
+fig. 9: real surgery model for a surgical procedure in a dutch hospital.
+out of 1310 patient treatment cases, only 570 ﬁt the model shown in fig. 9 perfectly.
+the other cases contain one or more missing events, which motivated our research.
+we use the 570 ﬁtting cases to evaluate, how well we can repair them after randomly
+removing events.
+051015202530
+0 20 40  60 80 100(in minutes)02468101214
+0 20 40  60 80 100
+missing events in %moves
+model
+moves
+fig. 10: evaluation results for model in fig. 9.
+figure 10 shows the evaluation results of the hospital event log. observe that the
+structure can be repaired better than in the artiﬁcial example in fig. 8. this is due to
+the sequential nature of the model—it comprises twelve sequential, and two optional
+activities. with increasing number of missing events, the number of correctly repaired
+events (synchronous moves) approaches twelve. that is, only twelve activities are
+restored, because the algorithm is unable to repair single undetected optional events.
+the mean absolute error in the restored events is higher than the artiﬁcial example.
+this value depends on the variance in the activity durations. in this evaluated example,
+the variance of certain activity durations in the model is high, due to outliers. latter
+activity durations exhibit many short durations with a few outliers, which can be better
+captured with other distributions than the normal distribution.author’s copyobviously, the ability to repair a log depends on the information content of observed
+events in the trace and the remaining variability in the model. for instance, we can repair
+a sequential model always with ﬁtness 1:0of the repaired log—if we observe only one
+activity. however, the chance to pick the same path through a model composed of n
+parallel activities with equally distributed times is only1
+n!.
+the presented approach is unable to restore optional branches without structural
+hints, i.e., at least one activity on an optional branch needs to be recorded. this a ects
+single optional activities most, as their absence will not be repaired. still, many real-life
+processes comprise only a sequence of activities, and can be repaired correctly.
+7 conclusion
+we introduced a method to repair event logs to assist timely correction of documentation
+errors in enterprises. thereby, we present which , and also when activities should have
+happened most likely according to a given stochastic model. the method decomposes
+the problem into two sub-problems: i) repairing the structure, and ii) repairing the time.
+repairing the structure is done with a novel extension of the alignment approach [ 2]
+based on path probabilities. and repairing the time is achieved by using inference in a
+bayesian network representing the structure of the individual trace in the model. the
+algorithm can deal with a large and representative class of process models (any sound,
+free-choice workﬂow net).
+our preliminary evaluations indicate that we can repair structure and time, if noise is
+limited. models exhibiting a high degree of parallelism are less likely to be repaired in
+correct order than models with more dependencies between activities. however, there
+are some limitations that we would like to address in subsequent research:
+1.separating structure from time during repair is a heuristic to reduce the compu-
+tational complexity of the problem, as timestamps of events also inﬂuence path
+probabilities.
+2.the normal distribution, though having nice computational properties, is of limited
+suitability to model activity durations, since its support also covers the negative
+domain.
+3.the independence assumption between activity durations and between traces might
+be too strong, as resources play an important role in processes.
+4. we assumed that the gdt_spn model contains the truth, and deviations in the log
+are caused by documentation errors, instead of deviations from the process model.
+this assumption only is feasible for standardized processes with few deviations that
+are captured in the model. therefore, we advise to use this approach with care and
+try to correct documentation errors using repaired logs as assistance.
+future work also needs to address the question of how to model causalities of activities
+more directly. thus, missing events that are very likely to be documentation errors, e.g.,
+the missing event for enter or , when exit or is documented, need to be separately treated
+from missing events of rather optional activities, e.g., missing event of do antibiotica
+prophelaxe , where it is not clear, whether the absence of the event is caused by a
+documentation error. an integration with the proposed technique in [ 7], seems promising
+to address this issue.author’s copyreferences
+1.ieee task force on process mining: process mining manifesto. in: bpm workshops.
+v olume 99 of lnbip., springer (2012) 169–194
+2.adriansyah, a., van dongen, b.f., van der aalst, w.m.p.: conformance checking using
+cost-based fitness analysis. in: edoc 2011, ieee (2011) 55–64
+3.rogge-solti, a., van der aalst, w.m.p., weske, m.: discovering stochastic petri nets with
+arbitrary delay distributions from event logs. bpm workshops. springer (to appear)
+4.pearl, j.: probabilistic reasoning in intelligent systems: networks of plausible inference.
+morgan kaufmann (1988)
+5.rogge-solti, a., mans, r., van der aalst, w.m.p., weske, m.: repairing event logs using
+stochastic process models. technical report 78, hasso plattner institute (2013)
+6.schafer, j.l., graham, j.w.: missing data: our view of the state of the art. psychological
+methods 7(2) (2002) 147–177
+7.bertoli, p., dragoni, m., ghidini, c., di francescomarino, c.: reasoning-based techniques
+for dealing with incomplete business process execution traces. technical report, fundazione
+bruno kessler, data & knowledge management (2013)
+8.günther, c.w., van der aalst, w.m.p.: fuzzy mining: adaptive process simpliﬁcation based
+on multi-perspective metrics. in: bpm. v olume 4714 of lncs., springer (2007) 328–343
+9.van der aalst, w.m.p.: process mining: discovery, conformance and enhancement of
+business processes. springer (2011)
+10.fahland, d., van der aalst, w.m.p.: repairing process models to reﬂect reality. in: bpm.
+v olume 7481 of lncs., springer (2012) 229–245
+11.buijs, j.c.a.m., la rosa, m., reijers, h.a., van dongen, b.f., van der aalst, w.m.p.:
+improving business process models using observed behavior. in: simpda 2012. v olume
+162 of lnbip., springer (2013) 44–59
+12.ciardo, g., german, r., lindemann, c.: a characterization of the stochastic process
+underlying a stochastic petri net. ieee transactions on software engineering 20(7) (1994)
+506–515
+13.marsan, m.a., balbo, g., bobbio, a., chiola, g., conte, g., cumani, a.: the e ect of
+execution policies on the semantics and analysis of stochastic petri nets. ieee transactions
+on software engineering 15(1989) 832–846
+14.van der aalst, w.m.p., adriansyah, a., van dongen, b.: replaying history on process
+models for conformance checking and performance analysis. in: wires: data mining and
+knowledge discovery. v olume 2., wiley online library (2012) 182–192
+15.koller, d., friedman, n.: probabilistic graphical models: principles and techniques. mit
+press (2009)
+16.murphy, k.p.: the bayes net toolbox for matlab. in: interface’01. v olume 33 of computing
+science and statistics. (2001) 1024–1034
+17.van der aalst, w.m.p.: veriﬁcation of workﬂow nets. in: icatpn’97. v olume 1248 of
+lncs., springer (1997) 407–426
+18.best, e.: structure theory of petri nets: the free choice hiatus. in: petri nets: central
+models and their properties. v olume 254 of lncs., springer (1987) 168–205
+19.zhang, l., chen, w., hu, y ., chen, c.c.: statistical static timing analysis with conditional
+linear max /min approximation and extended canonical timing model. in: tcad.
+v olume 25., ieee (2006) 1183–1191
+20.cooper, g.f.: the computational complexity of probabilistic inference using bayesian
+belief networks. artiﬁcial intelligence 42(2) (1990) 393–405
+21.kirchner, k., herzberg, n., rogge-solti, a., weske, m.: embedding conformance check-
+ing in a process intelligence system in hospital environments. in: process support and
+knowledge representation in health care, springer (2013) 126–139

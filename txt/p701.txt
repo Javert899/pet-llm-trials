@@ -1,0 +1,1368 @@
+heuristics miners for streaming event data
+andrea burattinalessandro sperdutiy
+wil m. p. van der aalstz
+abstract
+more and more business activities are performed using information systems.
+these systems produce such huge amounts of event data that existing systems are
+unable to store and process them. moreover, few processes are in steady-state
+and due to changing circumstances processes evolve and systems need to adapt
+continuously. since conventional process discovery algorithms have been deﬁned
+for batch processing, it is difﬁcult to apply them in such evolving environments.
+existing algorithms cannot cope with streaming event data and tend to generate
+unreliable and obsolete results.
+in this paper, we discuss the peculiarities of dealing with streaming event data
+in the context of process mining. subsequently, we present a general framework
+for deﬁning process mining algorithms in settings where it is impossible to store all
+events over an extended period or where processes evolve while being analyzed.
+we show how the heuristics miner, one of the most effective process discovery
+algorithms for practical applications, can be modiﬁed using this framework. dif-
+ferent stream-aware versions of the heuristics miner are deﬁned and implemented
+in prom. moreover, experimental results on artiﬁcial and real logs are reported.
+keywords: process mining; control-ﬂow discovery; online process mining
+1 introduction
+one of the main aims of process mining is control-ﬂow discovery, i.e., learning process
+models from example traces recorded in some event log. many different control-ﬂow
+discovery algorithms have been proposed in the past (see [20]). basically, all such
+algorithms have been deﬁned for batch processing, i.e., a complete event log containing
+all executed activities is supposed to be available at the moment of execution of the
+mining algorithm. nowadays, however, the information systems supporting business
+processes are able to produce a huge amount of events thus creating new opportunities
+and challenges from a computational point of view. in fact, in case of streaming data
+it may be impossible to store all events. moreover, even if one is able to store all
+event data, it is often impossible to process them due to the exponential nature of most
+algorithms. in addition to that, a business process may evolve over time. manyika et al.
+[15] report possible ways for exploiting large amount of data to improve the company
+business. in their paper, stream processing is deﬁned as “ technologies designed to
+email: burattin@math.unipd.it . afﬁliation: department of mathematics, university of padua, italy.
+yemail: sperduti@math.unipd.it . afﬁliation: department of mathematics, university of padua, italy.
+zemail: w.m.p.v.d.aalst@tue.nl . afﬁliation: department of mathematics and computer science, eind-
+hoven university of technology, the netherlands.
+1arxiv:1212.6383v1  [cs.db]  27 dec 2012process large real-time streams of event data ” and one of the example applications is
+process monitoring . the challenge to deal with streaming event data is also discussed
+in the process mining manifesto1[10].
+currently, however, there are no process mining algorithms able to mine an event
+stream. this paper is the ﬁrst that presents algorithms for discovering process models
+based on streaming event data. in the remainder of this paper we refer to this problem
+asstreaming process discovery (or spd).
+according to [2, 3], a data stream consists of an unbounded sequence of data items
+with a very high throughput. in addition to that, the following assumptions are typically
+made: i)data is assumed to have a small and ﬁxed number of attributes; ii)mining
+algorithms should be able to process an inﬁnite amount of data, without exceeding
+memory limits or otherwise fail, no matter how many items are processed; iii)for
+classiﬁcation tasks, data has a limited number of possible class labels; iv)the amount
+of memory available to a learning/mining algorithm is considered ﬁnite, and typically
+much smaller than the data observed in a reasonable span of time; v)there is a small
+upper bound on the time allowed to process an item, e.g. algorithms have to scale
+linearly with the number of processed items: typically the algorithms work with one
+pass of the data; and vi)stream “concepts” are assumed to be stationary or evolving
+[25, 27].
+in spd, a typical task is to reconstruct a control-ﬂow model that could have gen-
+erated the observed event log. the general representation of the spd problem that we
+adopt in this paper is shown in fig. 1: one or more sources emit events (represented as
+solid dots) which are observed by the stream miner that keeps the representation of the
+process model up-to-date. obviously, no standard mining algorithm adopting a batch
+approach is able to deal with this scenario.
+an spd algorithm has to give satisfactory answers to the following two categories
+of questions:
+1. is it possible to discover a process model while storing a minimal amount of
+information? what should be stored? what is the performance of such methods
+both in terms of model quality and speed/memory usage?
+2. can spd techniques deal with changing processes? what is the performance
+when the stream exhibits certain types of concept drift?
+in this paper, we discuss the peculiarities of mining a stream of logs in the context
+of process mining. subsequently, we present a general framework for deﬁning process
+mining algorithms for streams of logs. we show how the heuristics miner, one of the
+more effective algorithms for practical applications of process mining, can be adapted
+for stream mining according to our spd framework.
+a data stream is deﬁned as a “real-time, continuous, ordered sequence of items” [7].
+the ordering of the data items is expressed implicitly by the arrival timestamp of each
+item. algorithms that are supposed to interact with data streams must respect some
+requirements, such as: a) it is impossible to store the complete stream; b) backtracking
+over a data stream is not feasible, so algorithms are required to make only one pass
+over data; c) it is important to quickly adapt the model to cope with unusual data
+values; d) the approach must deal with variable system conditions, such as ﬂuctuating
+stream rates. due to these requirements, algorithms for data streams mining are divided
+1the process mining manifesto is authored by the ieee task force on process mining ( www.win.
+tue.nl/ieeetfpm/ ).
+2events emi�ed over �me
+stream miner instance... network communica�ontime...figure 1: general idea of spd: the stream miner continuously receives events and,
+using the latest observations, updates the process model.
+into two categories: data and task based [6]. the idea of the ﬁrst ones is to use only
+a fragment of the entire dataset (by reducing the data into a smaller representation).
+the idea of the latter approach is to modify existing techniques (or invent new ones) to
+achieve time and space efﬁcient solutions.
+the main “data based” techniques are: sampling, load shedding, sketching and ag-
+gregation. all these are based on the idea of randomly select items or stream portions.
+the main drawback is that, since the dataset size is unknown, it is hard to deﬁne the
+number of items to collect; moreover it is possible that some of the items that are ig-
+nored were actually interesting and meaningful. other approaches, like aggregation,
+are slightly different: they are based on summarization techniques and, in this case,
+the idea is to consider measures such as mean and variance; with these approaches,
+problems arise when the data distribution contains many ﬂuctuations.
+the main “task based” techniques are: approximation algorithms, sliding window
+and algorithm output granularity. approximation algorithms aim to extract an approx-
+imate solution. it is possible to deﬁne error bounds on the procedure. this way, one
+obtains an “accuracy measure”. the basic idea of sliding window is that users are more
+interested in most recent data, thus the analysis is performed giving more importance
+to recent data, and considering only summarization of the old ones. the main charac-
+teristic of “algorithm output granularity” is the ability to adapt the analysis to resource
+availability.
+the task of mining data stream is typically focused on speciﬁc types of algorithms
+[6, 27, 2]. in particular, there are techniques for: clustering; classiﬁcation; frequency
+counting; time series analysis and change diagnosis (concept drift detection). all these
+techniques cope with very speciﬁc problems and cannot be adapted to the spd prob-
+lem. however, as this work presents, it is possible to reuse some principles or to reduce
+the spd to sub-problems that can be solved with the available algorithms.
+over the last decade dozens of process discovery techniques have been proposed
+[20], e.g., the heuristics miner [24]. however, these all work on a full event log and not
+streaming data. few works in process mining literature touch issues related to mining
+event data streams.
+in [12, 13], the authors focus on incremental workﬂow mining and task mining (i.e.
+3the identiﬁcation of the activities starting from the documents accessed by users). the
+basic idea is to mine process instances as soon as they are observed; each new model is
+then merged with the previous one so to reﬁne the global process representation. the
+approach described is thought to deal with the incremental process reﬁnement based
+on logs generated from version management systems. however, as authors state, only
+the initial idea is sketched.
+an approach for mining legacy systems is described in [11]. in particular, after
+the introduction of monitoring statements into the legacy code, an incremental process
+mining approach is presented. the idea is to apply the same heuristics of the heuristics
+miner into the process instances and add these data into an a vl tree, which are used
+to ﬁnd the best holding relations. actually, this technique operates on “log fragments”
+and not on single events so it is not really suitable for an online setting. moreover,
+heuristics are based on frequencies, so they must be computed with respect to a set of
+traces and, again, this is not suitable for the settings with streaming event data.
+an interesting contribution to the analysis of evolving processes is given in the
+paper by bose et al. [5]. the proposed approach, based on statistical hypothesis tests,
+aims at detecting concept drift , i.e. the changes in event logs, and identifying the
+regions of change in a process.
+sol´e and carmona, in [18], describe an incremental approach for translating tran-
+sition systems into petri nets. this translation is performed using region theory. the
+approach solves the problem of complexity of the translation, by splitting the log into
+several parts; applying the region theory to each of them and then combine all them.
+these regions are ﬁnally converted into petri net.
+the above review of the literature shows there no process mining technique for
+spd that address the requirements listed in this section.
+the remainder of this paper is organized as follows: section 2 presents the basic
+concepts related to spd; section 3 describes the new algorithms designed to tackle
+stream process mining; section 4 reports some details about the implementation of
+all the approaches in prom and section 5 presents the results of several experiments;
+section 6 concludes the paper. this work contains two appendices: appendix a sum-
+marizes the heuristics miner algorithm, appendix b presents some details on error
+bounds.
+2 basic concepts
+the main difference between classical process mining [20] and spd lies in the assumed
+input format. for spd we assume streaming event data that may even come from
+multiple sources rather that a static event log containing historic data.
+in this paper, we assume that each event , received by the miner, contains the name
+of the activity executed, the case id it belongs to, and a timestamp . a formal deﬁnition
+of these elements is as follows:
+deﬁnition 1 (activity, case, time and event stream) letabe a set of activities
+andcbe a set of case identiﬁers. an event is a triplet (c;a;t )2ca n, i.e.,
+the occurrence of activity afor casec(i.e. the process instance) at time t(timestamp of
+emission of the event). actually, in the miner, rather than using an absolute timestamp,
+we consider a progressive number representing the number of events seen so far, so
+an event at time tis followed by another event at time t+ 1, regardless the time lasts
+between them. s2(ca n)is an event stream, i.e., a sequence of events that
+4are observed item by item. the events in sare sorted according to the order they are
+emitted, i.e. the event timestamp.
+starting from this deﬁnition, it is possible to deﬁne some functions:
+deﬁnition 2 (case time scope) tstart(c) = min (c;a;t)2st, i.e. the time when the ﬁrst
+activity forcis observed. tend(c) = max (c;a;t)2st, i.e. the time when the last activity
+forcis observed.
+deﬁnition 3 (subsequence) given a sequence of events s2(ca n), it is a
+sorted series of events: s=h:::;si;:::;si+j;:::iwheresi= (c;a;t )2ca n. a
+subsequence sj
+iofsis a sequence that identiﬁes the elements of sstarting at position
+iand ﬁnishing at position i+j:sj
+i=hsi;:::;si+ji.
+in order to relate classical control-ﬂow discovery algorithms with new algorithms
+for streams, we can consider an observation period . an observation period ofor an
+event stream s, is a ﬁnite subsequence of sstarting at time iand with size j:o=sj
+i.
+basically, any observation period is a ﬁnite subsequence of a stream, and it can be
+understood as a classical log ﬁle (although the “head” and “tail” of some cases may be
+missing). a well-established control-ﬂow discovery algorithm that can be applied to
+an observation period log is the heuristics miner, whose main features are reported in
+appendix a.
+in analogy with classical data streams, an event stream can be deﬁned as stationary
+orevolving . in our context, a stationary stream can be seen as generated by a business
+process that does not change with time. on the contrary, an evolving stream can be
+understood as generated by a process that changes in time. more precisely, different
+modes of change can be considered: i)drift of the process model; ii)shift of the process
+model; iii)cases (i.e., execution instances of the process) distribution change. drift
+and shift of the process model correspond to the classical two modes of concept drift
+[5] in data streams: a drift of the model refers to a gradual change of the underlying
+process, while a model shift happens when a change between two process models is
+more abrupt. the change in cases distribution represents another way in which an event
+stream can evolve, i.e. the original process may stay the same during time, however,
+the distribution of the cases is not stationary. with this we mean that the distribution
+of the features of the process cases change with time. for example, in a production
+process of a company selling clothing, the items involved in incoming orders (i.e., cases
+features) during winter will follow a completely different distribution with respect to
+items involved in incoming orders during the summer. such distribution change may
+signiﬁcantly affect the relevance of speciﬁc paths in the control-ﬂow of the involved
+process.
+going back to process model drift, there is a peculiarity of business event streams
+that cannot be found in traditional data streams. an event log records that a speciﬁc
+activityaiof a business process phas been executed at time tfor a speciﬁc case
+cj. if the drift from ptop0happens at time twhile the process is running, there
+might be cases for which all the activities have been executed within p(i.e., cases
+that have terminated their execution before t), cases for which all the activities have
+been executed within p0(i.e., cases that have started their execution on or after t),
+and cases that have some activities executed within pand some others within p0(i.e.,
+cases that have started their execution before tand have terminated after t). we will
+refer to these cases as transient cases . so, under this scenario, the stream will ﬁrst
+5{ time frame consideredmining �me
+log used for mining(a) periodic reset
+{ time frame consideredmining �me
+log used for mining (b) sliding window
+figure 2: two basic approaches for the deﬁnition of a ﬁnite log out of a stream of
+events. the horizontal segments represent the time frames considered for the mining.
+emit events of cases executed within p, followed by events of transient cases, followed
+by events of cases executed within p0. on the contrary, if the drift does not occur
+while the process is running, the stream will ﬁrst report events referring to complete
+executions (i.e. cases) of p, followed by events referring to complete executions of p0
+(no transient cases). in any case, the drift is characterized by the fact that p0is very
+similar top, i.e. the change in the process which emits the events is limited.
+due to space limitation, we restrict our treatment to stationary streams and streams
+with concept drift with no generation of transient cases. the treatment of other scenar-
+ios is left for future work.
+3 heuristics miners for streams
+in this section, we present variants of the heuristics miner algorithm (described in
+appendix a) to address the spd problem under different scenarios. first of all, we
+present two basic algorithms where the standard batch version of heuristics miner is
+used on logs as observation periods extracted from the stream. these algorithms will
+be used as a baseline reference for the experimental evaluation. subsequently, a “fully
+online” version of heuristics miner, to cope with stationary streams, drift of the process
+model with no transient cases, and shift of the process model, is introduced.
+3.1 baseline algorithm for stream mining
+the simplest way to adapt the heuristics miner algorithm to deal with streams is to
+collect events during speciﬁc observation periods and then applying the batch version
+of the algorithm to the current log. this idea is described by algorithm 1 in which
+two different policies to maintain events in memory are considered. speciﬁcally, an
+eventefrom the stream sis observed ( e observe (s)) and analyzed ( analyze (e))
+to decide if the event has to be considered for mining. if this is the case, it is checked
+whether there is room in memory to accommodate the event. if the memory is full
+(size(m) =maxm) then the memory policy given as input is adopted. two different
+policies are considered: periodic resets , and sliding windows [2, ch. 8]. in the case of
+periodic resets all the events contained in memory are deleted ( reset ), while in the case
+ofsliding windows , only the oldest event is deleted ( shift ). subsequently, eis inserted
+in memory and it is checked if it is necessary to perform a mining action. if mining has
+to be performed, the heuristics miner algorithm is executed on the events in memory
+(heuristicsminer (m)). graphical representations of the two policies are reported in
+fig. 2.
+6algorithm 1: sliding window hm / periodic resets hm
+input :sevent stream; mmemory of size maxm;pmmemory policy (can be
+‘reset ’ or ‘ shift’)
+1forever do
+2e observe (s) /*observe a new event, where
+e= (ci;ai;ti)*/
+/*check if event ehas to be used */
+3 ifanalyze (e)then
+/*memory update */
+4 ifsize(m) =maxmthen
+5 ifpmisreset then reset (m)
+6 ifpmisshift then shift(m)
+7 end
+8 insert (m;e)
+/*mining update */
+9 ifperform mining then
+10 heuristicsminer (m)
+11 end
+12 end
+13end
+a potential advantage of the two policies described consists in the possibility to
+mine the log not only by using heuristics miner, but any process mining algorithm (not
+only for control-ﬂow discovery, for example it is possible to extract information about
+the social network) already available for traditional batch process discovery techniques.
+however, the notion of “history” is not very accurate: only the more recent events are
+considered, and an equal importance is assigned to all of them. moreover, the model
+is not updated in real-time since each new event received triggers only the update of
+the log, not necessarily an update of the model: performing a model update for each
+new event would result in a signiﬁcant computational burden, well outside the com-
+putational limitations assumed for a true online approach. in addition to that, the time
+required by these approaches is completely unbalanced: when a new event arrives, only
+inexpensive operations are performed; instead, when the model needs to be updated,
+the log retained in memory is mined from scratch. so, every event is handled at least
+twice: the ﬁrst time to store it into a log and subsequently any time the mining phase
+takes place on it. in an online setting, it is more desirable a procedure that does not
+need to process each event more than once (“one pass algorithm” [17]).
+3.2 stream-speciﬁc approaches
+in this section, we suggest how to modify the scheme of the basic approaches, so to
+implement a real online framework, the ﬁnal approach is described in algorithm 2. in
+this framework, the “current” log is described in terms of “latest observed activities”
+and “latest observed dependencies”. speciﬁcally, we deﬁne three queues:
+1.qa, with entries inar, stores the most recent observed activities jointly with
+a weight for each activity (that represents its degree of importance with respect
+7to mining);
+2.qc, with entries inca , stores the most recent observed event for each case;
+3.qrwith entries inaa r, stores the most recent observed direct succession
+relations jointly with a weight for each succession relation (that represents its
+degree of importance with respect to mining).
+these queues are used by the online algorithm to retain the information needed to
+perform mining.
+the detailed description of the new algorithm is presented in algorithm 2. speciﬁcally,
+the algorithm runs forever, considering, at each round, the current observed event
+e= (ci;ai;ti). for each current event, it is checked if aiis already in qa. if this
+is not the case, aiis inserted in qawith weight 0. ifaiis already present in the queue,
+it is removed from its current position and moved at the beginning of the queue. in
+any case, before insertion, it is checked if qais full. if this is the case, the oldest
+stored activity, i.e. the last in the queue, is removed. subsequently, the weights of qa
+are updated by fwa. after that, queue qcis examined to look for the most recent
+event observed for case ci. if a pair (ci;a)is found, it is removed from the queue, an
+instance of the succession relation (a;ai)is created and searched in qr. if it is found,
+it is moved from the current position to the beginning of qr. if it is a new succession
+relation, its weight is set to 0. in any case, before insertion, it is checked if qris
+full. if this is the case, the oldest stored relation, i.e. the last in the queue, is removed.
+subsequently, the weights of qrare updated by fwr. next, after checking if qcis
+full (in which case the oldest stored event is removed), the event eis stored inqc.
+finally, it is checked if a model has to be generated. if this is the case, the procedure
+generatemodel (qa;qr)is executed taking as input the current version of queues qa
+andqrand producing “classical” model representations, such as causal nets [21] or
+petri nets.
+algorithm 2 is parametric with respect to: i)the way weights of queues qaandqr
+are updated by fwa,fwr, respectively; ii)how a model is generated by generatemodel (qa;qr).
+in the following, generatemodel (;)will correspond to the procedure deﬁned by
+heuristics miner (appendix a). in particular it is possible to consider qaas the
+counter of activities (to ﬁlter out only the most frequent ones) and qras the counter
+of direct succession relations, which are used for the computation of the dependency
+values between pairs of activities. the following subsections presents some speciﬁc
+instances for fwaandfwr.
+3.2.1 online heuristics miner (stationary streams)
+in the case of stationary streams, we can reproduce the behavior of heuristics miner
+as follows. qashould contain, for each activity a, the number of occurrences of a
+observed in still the current time. similarly, qrshould contain, for each succession
+(a;b), the number of occurrences of (a;b)observed in still the current time. thus
+bothfwaandfwrmust just increment the weight of the ﬁrst element of the queue:
+fwa((a;w)) =(
+(a;w+ 1) ifrst(qa) = (a;w)
+(a;w) otherwise
+fwr((a;b;w )) =(
+(a;b;w + 1) ifrst(qr) = (a;b;w )
+(a;b;w ) otherwise
+8algorithm 2: online hm
+input :sevent stream; maxqa;maxqc;maxqrmaximum memory sizes for
+queuesqa,qc, andqr, respectively; fwa;fwrmodel policy;
+generatemodel (;).
+1forever do
+2e observe (s) /*observe a new event, where
+e= (ci;ai;ti)*/
+/*check if event ehas to be used */
+3 ifanalyze (e)then
+4 if69(a;w)2qas.t.a=aithen
+5 ifsize(qa) =maxqathen
+6 removelast (qa) /*removes last entry of qa
+*/
+7 end
+8 w 0
+9 else
+10 w get(qa;ai) /*getreturns the old weight w
+ofaiand removes (ai;w)*/
+11 end
+12 insert (qa;(ai;w)) /*inserts in front of qa*/
+13qa fwa(qa) /*updates the weights of qa*/
+14 if9(c;a)2qcs.t.c=cithen
+15 a get(qc;ci)/*getreturns the old activity a
+ofciand removes (ci;a)*/
+16 if69(as;af;u)2qrs.t.(as=a)^(af=ai)then
+17 ifsize(qr) =maxqrthen
+18 removelast (qr)/*removes last entry of qr
+*/
+19 end
+20 u 0
+21 else
+22 u get(qr;a;ai)/*getreturns the old weight
+uof relation a!aiand removes (a;ai;u)*/
+23 end
+24 insert (qr;(a;ai;u))/*inserts in front of qr*/
+25 qr fwr(qr)/*updates the weights of qr*/
+26 else if size(qc) =maxqcthen
+27 removelast (qc) /*removes last entry of qc*/
+28 end
+29 insert (qc;(ci;ai)) /*inserts in front of qc*/
+/*generate model */
+30 ifmodel then
+31 generatemodel (qa;qr)
+32 end
+33 end
+34end
+9where rst()returns the ﬁrst element of the queue.
+in case of stationary streams, it is possible to use the hoeffding bound to derive
+error bounds on the measures computed by the online version of heuristics miner.
+these bounds became tighter and tighter with the increase of the number of processed
+events. appendix b reports some details on that.
+it must be noticed that if the sizes of the queues are large enough, the online heuris-
+tics miner collects all the needed statistics from the beginning of the stream till the
+current time. so it performs very well, provided that the activity distribution of the
+stream is stationary. however, in real world business processes it is natural to observe
+variations both in events distribution and in the workﬂow of the process generating the
+stream (concept drift).
+in order to cope with concept drift, more importance should be given to more recent
+events than to older ones. in the following we present a variant of online heuristics
+miner able to do that.
+3.2.2 online heuristics miner with aging (evolving streams)
+the idea, in this case, is to decrease the weights for the events (and relations) over time
+when they are not observed. so, every time a new event is observed, only the weight
+of its activity (and observed succession) is increased, all the others are reduced. given
+an “aging factor” 2[0;1), the weight functions fwa(for activities) and fwr(for
+succession relations) are modiﬁed so to replace all the occurrences of won the right
+side of the equality with w:
+fwa((a;w)) =(
+(a;(w) + 1) ifrst(qa) = (a;w)
+(a;w ) otherwise
+fwr((a;b;w )) =(
+(a;b;(w) + 1) ifrst(qr) = (a;b;w )
+(a;b;w ) otherwise
+the basic idea of these new functions is to decrease the “history” (i.e., the current
+number of observations) by an aging factor (in the formula: w) before increasing it
+by 1 (the new observation).
+these new functions decrease all the weights associated to either an event or a
+succession relation according to the aging factor which determines the “speed” in
+forgetting an activity or succession relation, however the most recent observation (the
+ﬁrst in the respective queue) is increased by 1. notice that, if an activity or succession
+relation is not observed for ttime steps, its weight becomes t. thus the value of 
+allows controlling the speed of “forgetting”: the closer is to0the faster the weight
+associated to an activity (or succession relation) that has not been observed for some
+time goes to 0, thus to allow the miner to assign larger values to recent events. in this
+way the miner is more sensitive to sharp variations of the event distribution (concept
+shift), however the output (generated models) may be less stable because the algorithm
+becomes more sensitive to random ﬂuctuations of the sampling distribution. when the
+value ofis close to 1, activities that have not been observed recently, but were seen
+more often some time ago, are able to retain their signiﬁcance, thus allowing the miner
+to be able to cope with mild variations of the event distribution (concept drift), but not
+so reactive in case of concept shift.
+one drawback of this approach is that, while it is able to “forget” old events, it
+is not able, at time t, to preserve precise statistics for the last kobservations and to
+10completely drop observations occurred before time t k. this ability could be useful
+in case a sudden drastic change in the event distribution.
+3.2.3 online heuristics miner with self-adapting aging (evolving stream)
+the third approach explored in this section introduces as a parameter to control the
+importance of the “history” for the mining: the closer it is to 1, the more importance is
+given to the history. the value of , should be decided according to the known degree
+of “non-stationarity” of the stream; however, this information might not be available
+or it might not be ﬁxed (for example, the process is stationary for a period, then it
+evolves, and then it becomes stationary again). to handle these cases, it is possible to
+dynamically adapt the value of . in particular, the idea is to lower the value of when
+a drift is observed and to increase it when the stream seems to be stationary .
+a possible approach to detect the drift is to monitor for variations on the ﬁtness
+value. this measure, evaluated at a certain period, can be considered as the amount
+of events (considering only the latest ones) that the current mined process is able to
+explain. when the ﬁtness value changes drastically, it is likely that a drift has occurred.
+using the drift detection, it is possible to adapt according to the following rules:
+if the ﬁtness decreases (i.e. there is a drift) should decreases too (up to 0), in
+order to allow the current model to adapt to the new data;
+if the ﬁtness remains unchanged (i.e. it is within a small interval), it means that
+there is no drift so the value of should be increased (up to 1);
+if the ﬁtness increases ,should be increased too (up to 1).
+the experiments, presented on the next section, consider only variations of by a
+constant factor. alternative update policies (e.g. making the speed of change of 
+proportional to the observed ﬁtness change) can be considered and is in fact a topic of
+future investigations.
+early explorations seem to reveal that the effectiveness of the update policy heav-
+ily depends on the problem type (i.e. characteristics of the event of stream), however
+this topic still requires more investigations.
+3.3 stream process mining with lossy counting (evolving stream)
+the approach presented in this section is an adaptation of an existing technique, used
+for approximate frequency count. in particular, we modiﬁed the “lossy counting” al-
+gorithm described in [14]. we preferred this approach to sticky sampling (described in
+the same paper) since authors stated that, in practice, lossy counting performs better.
+the entire procedure is presented in algorithm 3.
+the basic idea of lossy counting algorithm is to conceptually divide the stream
+into buckets of width w=1
+
+, where2(0;1)is an error parameter. the current
+bucket (i.e., the bucket of the last element seen) is identiﬁed with bcurrent =n
+w
+,
+wherenis the progressive events counter.
+the basic data structure used by lossy counting is a set of entries of the form
+(e;f;)where:eis an element of the stream; fis the estimated frequency of the item
+e; and is the maximum possible error. every time a new element eis observed, the
+algorithm looks whether the data structure contains an entry for the corresponding ele-
+ment. if such entry exists then its frequency value fis incremented by one, otherwise
+11algorithm 3: lossy counting hm
+input :sevent stream; nthe bucket counter (initially value 1); daactivities set;dc
+cases set;drrelations set; generatemodel (;).
+1w 1
+
+/*define the bucket width */
+2forever do
+3 bcurrent =n
+w
+/*define the current bucket id */
+4 e observe (s)/*observe a new event, where e= (ci; ai;i)*/
+/*update thedadata structure */
+5 if9(a; f;)2dasuch that a=aithen
+6 remove the entry (a; f;)fromda
+7da (a; f+ 1;) /*updates the frequency of element ai
+*/
+8 else
+9da da[f(ai;1; bcurrent 1)g /*inserts the new
+observation */
+10 end
+/*update thedcdata structure */
+11 if9(c; a; f; )2dcsuch that c=cithen
+12 remove the entry (c; a; f; )fromdc
+13dc (c; ai; f+ 1;) /*updates the frequency and last
+activity of case ci*/
+/*update thedrdata structure */
+14 build relation riasa!ai
+15 if9(r; f;)2drsuch that r=rithen
+16 remove the entry (r; f;)fromdr
+17dr (r; f+ 1;) /*updates the frequency of element
+ri*/
+18 else
+19dr dr[f(ri;1; bcurrent 1)g/*adds the new observation
+*/
+20 end
+21 else
+22dc dc[f(ci; ai;1; bcurrent 1)g/*adds the new observation
+*/
+23 end
+/*periodic cleanup */
+24 ifn= 0 mod wthen
+25 foreach (a; f;)2dasuch that f+ bcurrent do
+26 remove (a; f;)fromda
+27 end
+28 foreach (c; a; f; )2dcsuch that f+ bcurrent do
+29 remove (c; a; f; )fromdc
+30 end
+31 foreach (r; f;)2drsuch that f+ bcurrent do
+32 remove (r; f;)fromdr
+33 end
+34 end
+35 n n+ 1 /*increments the bucket counter */
+/*generate model */
+36 ifmodel then
+37 generatemodel (da;dr)
+38 end
+39end
+121<log openxes.version="1.0rc7" xes.features="nested-attributes"
+xes.version="1.0" xmlns="http://www.xes-standard.org/">
+2 <trace>
+3 <string key="concept:name" value ="case_id_0" />
+4 <event>
+5 <date key="time:timestamp" value ="2012-04-23t10:33:04.004+02:00"
+/>
+6 <string key="concept:name" value ="a" />
+7 <string key="lifecycle:transition" value ="task_execution" />
+8 </event>
+9 </trace>
+10 </log>
+listing 1: openxes fragment streamed over the network.
+a new tuple is added: (e;1;bcurrent 1). every time n0 modw, the algorithm
+cleans the data structure by removing the entries that satisfy the following inequality:
+f+ bcurrent . such condition ensures that, every time the cleanup procedure is
+executed,bcurrentn.
+this algorithm has been adapted to the spd problem, using three instances of the
+basic data structure. in particular, it counts the frequencies of the activities (with the
+data structureda) and the frequencies of the direct succession relations (with the data
+structuredr). in order to obtain the relations, a third instance of the same data structure
+is used,dc. indc, each item is of the type (c;a;f; )wherec2crepresent the case
+identiﬁer;fand, as in previous cases, respectively correspond to the frequency and
+to the bucket id; and a2ais the latest activity observed on the corresponding case.
+every time a new activity is observed, dais updated. after that, the procedure checks
+if, given the case identiﬁers of the current event, there is an entry in dc. if this is not
+the case a new entry is added to dc(by adding the current case id and the activity
+observed). otherwise, the fandacomponents of the entry in dcare updated.
+the heuristics miner can be used to generate the model, since a set of dependencies
+between activities is available.
+4 implementation
+all the approaches presented into this paper have been implemented in the prom 6.1
+toolkit [26]. moreover, a “stream simulator” and a “logs merger” have also been im-
+plemented to allow for experimentation (to test new algorithms and to compose logs).
+communications between stream sources and stream miner are performed over the
+network: each event emitted consists of a “small log” (i.e., a trace which contains ex-
+actly one event), encoded as a xes string [8]. an example of an event log streamed
+is presented in listing 1. this approach is useful to simulate “many-to-many environ-
+ments” where one source emits events to many miners and one miner can use many
+stream sources. the current implementation supports only the ﬁrst scenario (currently
+it is not possible to mine streams generated by more than one source).
+fig. 3 proposes the the set of prom plugins implemented, and how they interact
+each other. the available plugins can be split into two groups: plugins for the simu-
+lation of the stream and plugins to mine streaming event data. to simulate a stream
+there is the “log streamer” plugin. this plugin, receives a static log ﬁle as input and
+streams each event over the network, according to its timestamp (in this context, times-
+13log streamer
+periodic resets hmsliding windows hm
+stream testergiven a log,
+streams events
+over the networkgiven two logs
+appends one after
+the otheronline hm
+online hm with aging
+online hm w/ self adap�ng
+lossy coun�ng hmlogs mergerfigure 3: architecture of the plugins implemented in prom and how they interact with
+each other. each rounded box represents a prom plugin.
+tamps are used only to determine the order of events). it is possible to deﬁne the time
+between each event, in order to test the miner under different emission rates (i.e. to
+simulate different trafﬁc conditions). a second plugin, called “logs merger” can be
+used to concatenate different log ﬁles generated by different process models, just for
+testing purposes.
+once the stream is active (i.e. events are sent through the network), the clients can
+use these data to mine the model. there is a “stream tester” plugin, which just shows
+the events received. the other 6 plugins support the two basic approaches (section 3.1),
+and the four stream speciﬁc approaches (section 3.3 and 3.2).
+in a typical session of testing a new stream process mining algorithm, we expect to
+have two separate prom instances active at the same time: the ﬁrst is streaming events
+over the network and the second is collecting and mining them.
+fig. 4 contains three screenshots of the prom plugins implemented. the ﬁrst image,
+on top, contains the process streamer: the left bar describes the stream conﬁguration
+options (such as the speed or the network port for new connections), the central part
+contains a representation of the log as a dotted chart [19] (the xaxis represents the
+time, and each point with the same timestamp xvalue is an event occurred at the same
+instant). blue dots are the events that are not yet sent (future events), green ones are
+the events already streamed (past events). it is possible to change the color of the
+future events so that every event referring to the same activity or to the same process
+instance has the same color. the ﬁgure in the middle contains the stream tester: each
+event of a stream is appended to this list, which shows the timestamp of the activity, its
+name and its case id. the left bar contains some basic statistics (i.e. beginning of the
+streaming session, number of events observed and average number of events observed
+per second). the last picture, at the bottom, represents the online hm miner. this
+view can be divided into three parts: the central part, where the process representation
+is shown (in this case, as a causal net); the left bar contains, on top, buttons to start/stop
+the miner plus some basic statistics (i.e., beginning of the streaming session, number
+of events observed and average number of events observed per second); at the bottom,
+there is a graph which shows the evolution of the ﬁtness measure.
+14figure 4: screenshots of four implemented prom plugins. the ﬁrst image ( top left )
+shows the logs merger (it is possible to deﬁne the overlap level of the two logs); the
+second image ( top right ) represents the log streamer, the bottom left image is the stream
+tester and the image at the bottom right shows the online hm.
+moreover, command-line interface (cli) versions of the miners are available too2.
+in these cases, events are read from a static ﬁle (one event per line) and the miners
+update the model (this implementation realizes an incremental approach of the algo-
+rithm). these implementations are can be run in batch and are used for automated
+experimentation.
+5 results
+the algorithms presented in this paper have been tested using four datasets: event logs
+from two artiﬁcial processes (one stationary and one evolving); a synthetic example;
+and a real event log.
+5.1 models description
+the two artiﬁcial processes are shown in fig. 5 and fig. 6, both are described in terms
+of a as petri net. the ﬁrst one describes the complete model (model 1) that is simulated
+to generate the stationary stream. the second one (model 2) presents the three models
+which are used to generate three logs describing an evolving stream. in this case, the
+ﬁnal stream is generated considering the hard shift of the three logs generated from the
+single process executions.
+the synthetic example (model 3) is reported in fig. 7. this example is taken from
+[4, chap. 5] and is expressed as a yawl [23] process. this model describes a possible
+health insurance claim process of a travel agency. this example is modiﬁed 4 times so,
+2seehttp://www.processmining.it for more details.
+15figure 5: model 1. process model used to generate the stationary stream.
+figure 6: model 2. the three process models that generate the evolving stream. red
+rounded rectangles indicate areas subject to modiﬁcation.
+register
+create ques�onnairedecide high/low
+send ques�onnairearchive
+skip response
+receive responsehigh claim splithigh
+insurance check
+high medical
+history check
+contact hospitalhigh claim join
+low claim
+split
+low medical
+history checklow insurance
+check
+low claim
+joinprepare
+no�ﬁca�onby phone
+by email
+by postno�ﬁca�on sent
+figure 7: model 3. the ﬁrst variant of the third model. red rounded rectangles indicate
+areas that will be subject to the modiﬁcations.
+16at the end, the stream contains traces from 5 different processes. also in this case the
+type of drift is shift. due to space limitation, only the ﬁrst process is presented and the
+red rectangles indicate areas that are modiﬁed over time.
+5.2 algorithms evaluation
+the streams generated from the described models are used for the evaluation of the
+presented techniques. there are various metrics to evaluate the process models with
+respect to an event log. typically four quality dimensions are considered for comparing
+model and log: (a)ﬁtness; (b)simplicity; (c)precision; and (d)generalization [20, 22].
+in order to measure how well the model describes the log without allowing the reply
+of traces not generated by the target process, here we measure the performance both in
+terms of ﬁtness (computed according to [1]) and in terms of precision (computed ac-
+cording to [16]). the ﬁrst measure reaches its maximum when all the traces in the log
+are properly replied by the model, while the second one prefers models that describe a
+“minimal behavior” with respect to all the models that can be generated starting from
+the same log. in all experiments, the ﬁtness andprecision measures are computed over
+the lastxobserved events (where xvaries according to log size), qrefers to the maxi-
+mum size of queues, and default parameters of heuristics miner, for model generation,
+are used.
+the main characteristics of the three streams are:
+streams for model 1 : 3448 events, describing 400 cases;
+streams for model 2 : 4875 events, describing 750 cases (250 cases and 2000
+events for the ﬁrst process model, 250 cases and 1750 events for the second, and
+250 cases with 1125 events for the third one);
+stream for model 3 : 58783 events, describing 6000 cases (1199 cases and 11838
+events for the ﬁrst variant; 1243 cases and 11690 events for the second variant;
+1176 cases and 12157 events for the third variant; 1183 cases and 10473 events
+for the fourth variant; and 1199 cases and 12625 events for the ﬁfth variant).
+we compare the basic approaches versus the different online versions of stream miner,
+against the different streams.
+fig. 8 reports the aggregated experimental results for ﬁve streams generated by
+model 1. the two charts on top report the averages of the ﬁtness (left) and the vari-
+ance (right) for the two basic approaches and the online hm. the presented values
+are calculated varying the size of the window used to perform the mining (in the case
+of online hm it’s the size of the queues), and the number of events used to calculate
+the ﬁtness measure (i.e. only the latest xevents are supposed to ﬁt the model). for
+each combination (number of events for the mining and number of events for ﬁtness
+computation) a run of the miner has been executed (for each of the ﬁve streams) and
+the average and variance values of the ﬁtness (which is calculated every 50 events ob-
+served) are reported. it is clear, from the plot, that the online hm is outperforming
+the basic approaches, both in terms of speed in ﬁnding a good model and in terms of
+ﬁtness of the model itself. the bottom of the ﬁgure presents, on the left hand side,
+a comparison of the evolution of the average ﬁtness of the online hm, the hm with
+aging (= 0:9985 and= 0:997), the hm with self adapting approach and lossy
+counting. for these runs a queues size of 100have been used and, for the ﬁtness com-
+putation, the latest 200events are considered. in this case, the lossy counting considers
+1750100 2505007501000
+50100250500750100000.10.20.30.40.50.60.70.80.91fitness
+periodic resets hm
+sliding windows hm
+online hmwindow size for mininglog size for ﬁtness fitness
+online hm50100
+250
+500
+750
+1000501002505007501000log size for ﬁtness
+00.010.020.030.040.050.060.07
+sliding windows hm 50100
+250
+500
+750
+1000
+mining window size501002505007501000log size for ﬁtness
+00.010.020.030.040.050.060.07periodic resets hm 50100
+250
+500
+750
+1000
+mining window size00.010.020.030.040.050.060.07
+00.10.20.30.40.50.60.70.80.91fitness
+online hm
+online hm w/ self adap�ng aging
+lossy coun�ng hm
+online hm w/ aging (α = 0.997)
+online hm w/ aging (α = 0.9985)
+0.991
+  0   500 1000 1500 2000 2500 3000 3500
+events observedα (online hm w/ self adap�ng aging)
+00.10.20.30.40.50.60.70.80.91
+  0   500 1000 1500 2000 2500 3000 3500fitness
+events observed
+online hm
+lossy coun�ng hm
+sliding windows hm (q = 100; x = 200)periodic resets hm (q = 100; x = 200)
+sliding windows hm (q = 750; x = 750)
+periodic resets hm (q = 750; x = 750)figure 8: aggregated experimental results for ﬁve streams generated by model 1. top:
+average ( left) and variance ( right ) values of ﬁtness measures for basic approaches and
+the online hm. bottom: evolution in time of average ﬁtness for online hm with
+queues size 100 and log size for ﬁtness 200; curves for hm with aging ( = 0:9985
+and= 0:997), hm with self adapting (evolution of the value is shown at the bot-
+tom), lossy counting and different conﬁgurations of the basic approaches are reported
+as well.
+an error value = 0:01. the right hand side of fig. 8 compares the basic approaches,
+with different window and ﬁtness sizes against the online hm and the lossy counting
+approach. as expected, since there is no drift, the online hm outperforms the versions
+with aging. in fact, hm with aging beside being less stable, degrades performances
+as the value of decreases, i.e. less importance is given to less recent events. this is
+consistent with the bad performance reported for the basic approaches which can ex-
+ploit only the most recent events contained in the window. the self adapting strategy,
+after an initial variation of the parameter, is able to converge to the online hm by
+eventually choosing a value of equals to 1.
+fig. 9 reports the aggregated experimental results for ﬁve streams generated by
+model 2. in this case we adopted exactly the same experimental setup, procedure
+and results presentation as described before. in addition, the occurrences of drift are
+marked. as expected, the performance of online hm decreases at each drift, while
+hm with aging is able to recover from the drifts. the price paid for this ability is a
+less stable behavior. hm with self adapting aging seems to be the right compromise
+being eventually able to recover from the drifts while showing a stable behavior. the 
+curve shows that the self adapting strategy seems to be able to detect the concept drifts.
+1850100 2505007501000
+50100250500750100000.10.20.30.40.50.60.70.80.91fitness
+periodic resets hm
+sliding windows hm
+online hmwindow size for mininglog size for ﬁtness fitness
+online hm50100
+250
+500
+750
+1000501002505007501000log size for ﬁtness
+00.010.020.030.040.050.060.07
+sliding windows hm 50100
+250
+500
+750
+1000
+mining window size501002505007501000log size for ﬁtness
+00.010.020.030.040.050.060.07periodic resets hm 50100
+250
+500
+750
+1000
+mining window size00.010.020.030.040.050.060.07
+00.10.20.30.40.50.60.70.80.91fitness
+dri�s online hm
+online hm w/ self adap�ng aging
+lossy coun�ng hm
+online hm w/ aging (α = 0.997)
+0.991
+  0   500 1000 1500 2000 2500 3000 3500 4000 4500 5000
+events observedα (online hm w/ self adap�ng aging)
+00.10.20.30.40.50.60.70.80.91
+  0   500 1000 1500 2000 2500 3000 3500 4000 4500 5000fitness
+events observeddri�s
+online hm
+lossy coun�ng hm
+sliding windows hm (q = 100, x = 200)periodic resets hm (q = 100, x = 200)
+sliding windows hm (q = 750, x = 750)
+periodic resets hm (q = 750, x = 750)figure 9: aggregated experimental results for ﬁve streams generated by evolving
+model 2. top: average ( left) and variance ( right ) values of ﬁtness measures for ba-
+sic approaches and online hm. bottom: evolution in time of average ﬁtness for online
+hm with queues size 100 and log size for ﬁtness 200; curves for hm with aging
+(= 0:997), hm with self adapting (evolution of the value is shown at the bottom),
+lossy counting and different conﬁgurations of the basic approaches are reported as
+well. drift occurrences are marked with vertical bars.
+the model 3, with the synthetic example, has been tested with the basic approaches
+(sliding windows and periodic resets), the online hm, the hm with self adapting
+and the lossy counting and the results are presented in fig. 10. in this case, the
+lossy counting and the online hm outperform the other approaches. lossy counting
+reaches higher ﬁtness values, however online hm is more stable and seems to better
+tolerate the drifts. the basic approaches and the hm with self adapting, on the other
+hand, are very unstable; moreover it is interesting to note that the value of , of the
+hm with self adapting, is always close to 1. this indicates that the short stabilities of
+the ﬁtness values are sufﬁcient to increase , so the updating policy (i.e. the incremen-
+t/decrement speed of ) presented, for this particular case, seems to be too fast. the
+second graph, on the bottom, presents three runs of the lossy counting, with differ-
+ent values for . as expected, the lower the value of the accepted error, the better the
+performances.
+due to the size of this dataset, it is interesting to evaluate the performance of the
+approaches also in terms of space and time requirements.
+fig. 11 presents the average memory required by the miner during the processing
+of the entire log. different conﬁgurations are tested, both for the basic approaches with
+1900.10.20.30.40.50.60.70.80.91fitness
+sliding windows hm (q = 1000; x = 1000)
+periodic resets hm (q = 1000; x = 1000)
+online hm (win. 1000; ﬁt. 1000)online hm w/ self adap�ng aging (q = 1000; x = 1000)
+lossy coun�ng hm (ε = 0.01; x = 1000)0.980.991
+  0   5000 10000 15000 20000 25000 30000 35000 40000 45000 50000 55000 60000
+events observedα (online hm w/ self adap�ng aging)
+00.10.20.30.40.50.60.70.80.91
+0 5000 10000 15000 20000 25000 30000 35000 40000 45000 50000 55000 60000fitness
+events observed
+lossy coun�ng hm (ε = 0.01; x = 1000)
+lossy coun�ng hm (ε = 0.025; x = 1000)lossy coun�ng hm (ε = 0.05; x = 1000)figure 10: detailed results of the basic approaches, online hm, hm with self adapt-
+ing and lossy counting (with different conﬁgurations) on data of model 3. vertical
+gray lines indicate points where concept drift occur.
+the online hm and the hm with self adapting, and the lossy counting algorithm.
+clearly, as the windows grow, the space requirement grows too. for what concerns
+the lossy counting, again, as the value (accepted error) becomes lower, more space
+is required. if we pick the online hm with window 1000 and the lossy counting
+with0.01 (from fig. 10, both seem to behave similarly) the online hm consumes
+less memory: it requires 128.3 mb whereas the lossy counting needs 143.8. fig. 12
+shows the time performance of different algorithms and different conﬁgurations. it is
+interesting to note, from the chart at the bottom, that the time required by the online
+and the self adapting is almost independent of the conﬁgurations. instead, the basic
+approaches need to perform more complex operations: the periodic reset has to add
+the new event and, sometimes, it resets the log; the sliding window has to update the
+log every time a new event is observed.
+in order to study the dependence of the storage requirements of lossy counting
+with respect to the error parameter , we have run experiments on the same log for
+different values of , recording the maximum size of the lossy counting sets during
+execution. results for x= 1000 are reported in fig. 13. speciﬁcally, the ﬁgure com-
+pares the maximum size of the generated sets, the average ﬁtness value and the average
+precision value. as expected, as the value of becomes larger, both the ﬁtness value
+205075100125150
+q, x = 10 q, x = 100 q, x = 500 q, x = 1000space requirement (mb)
+conﬁgura�onsonline hm
+online hm w/ self adap�ng aging
+sliding windows hm
+periodic resets hm
+ε = 0.1 ε = 0.05 ε = 0.015075100125150
+conﬁgura�ons (ﬁtness size set to 1000)lossy coun�ng hmfigure 11: average memory requirements, in mb, for a complete run over the entire
+log of model 3, of the approaches (with different conﬁgurations).
+110100
+0 5000 10000 15000 20000 25000 30000 35000 40000 45000 50000 55000 60000processing �me per event (ms)
+events observed
+sliding windows hm (q = 1000; x = 1000)
+periodic resets hm (q = 1000; x = 1000)
+online hm (q = 1000; x = 1000)online hm w/ self adap�ng aging (q = 1000; x = 1000)
+lossy coun�ng hm (ε = 0.01; x = 1000)
+02468101214
+q, x = ﬁt. 10 q, x = 100 q, x = 500 q, x = 1000average processing �me (ms)
+conﬁgura�onsonline hm
+online hm w/ self adap�ng aging
+sliding windows hm
+periodic resets hm
+figure 12: time performances over the entire log of model 3. top: time required to
+process a single event by different algorithms (logarithmic scale). vertical gray lines
+indicate points where concept drift occur. bottom: average time required to process an
+event over the entire log, with different conﬁgurations of the algorithms.
+2100.10.20.30.40.50.60.70.80.91
+ε = 0.01ε = 0.025 ε = 0.05 ε = 0.075 ε = 0.1 ε = 0.15 ε = 0.2 ε = 0.25 ε = 0.3 020406080100120140160180200fitness / precision
+maximum sets sizequeues size
+average ﬁtness
+average precisionfigure 13: comparison of the average ﬁtness ,precision and space required, with re-
+spect to different values of for the lossy counting hm executed on the log generated
+by the model 3.
+sliding
+window
+hm
+lossy
+counting
+hm
+online hm
+with aging
+online hm
+q= 10avg. time (ms) 4.66 2.61 2.11 1.97
+avg. fitness 0.32 0.28 0.32 0.32
+avg. precision 0.44 0.87 0.38 0.38
+q= 100avg. time (ms) 5.79 2.85 1.99 1.91
+avg. fitness 0.32 0.51 0.42 0.74
+avg. precision 0.42 0.65 0.68 0.71
+table 1: performance of different approaches with queues/sets size of q= 10 and
+q= 100 elements and x= 1000 . online hm with aging uses 1=q= 0:9. time
+values refer to the average number of milliseconds required to process a single event
+with respect to model 3.
+and the sets size quickly decrease. the precision value, on the contrary, initially de-
+creases and then goes up to very high values. this indicates an over-specialization of
+the model to speciﬁc behaviors.
+as an additional test, we decide to compare the proposed algorithms under extreme
+storage conditions which do allow only to retain limited information about the observed
+events. speciﬁcally, table 1 reports the average time required to process a single event,
+average ﬁtness andprecision values when queues with size 10and100, respectively,
+are used. for lossy counting we have used an value which approximately requires
+sets of similar sizes. please note that, for this log, a single process trace is longer
+than10events so, with a queue of 10elements it is not possible to keep in queue all the
+events of a case (because events of different cases are interleaved). from the results it is
+clear that, under these conditions, the order of occurrence of the algorithms in the table
+(column order) is inversely proportional to all the evaluation criteria (i.e. execution
+time, ﬁtness ,precision ).
+the online approaches presented in this work have been tested also against a real
+2200.10.20.30.40.50.60.70.80.91fitness
+online hm (q = 100; x = 200)
+online hm w/ self adap�ng aging (q = 100; x = 200)
+lossy coun�ng hm (ε = 0.01; x = 200)online hm w/ aging (α = 0.998)
+sliding windows hm (q = 750; x = 750)
+periodic resets hm (q = 750; x = 750)
+0.991
+  0   1000 2000 3000 4000 5000 6000 7000 8000 9000
+events observedα (online hm w/ self adap�ng aging)figure 14: fitness performance on the real stream dataset by different algorithms.
+dataset and results are presented in fig. 14. the reported results refer to 9000 events
+generated from the document management system, by siav s.p.a., and run on an ital-
+ian bank institute. the observed process contains 8 activities and is assumed to be
+stationary. the mining is performed using a queues size of 100and, for the ﬁtness
+computation, the latest 200events are considered. the behavior of the ﬁtness curves
+seems to indicate that some minor drifts occur.
+as stated before, the main difference between online hm and lossy counting is
+that, whereas the main parameter of online hm is the size of the queues (i.e. the
+maximum space the application is allowed to use), the parameter of lossy counting
+cannot control the memory occupancy of the approach. fig. 15 proposes two com-
+parisons of the approaches with two different conﬁgurations, against the real stream
+dataset. in particular we deﬁned the two conﬁgurations so that the average memory
+required by lossy counting and online hm are very close. the results presented are
+actually the average values over four runs of the approaches. please note that the two
+conﬁgurations validates the ﬁtness against different window sizes (in the ﬁrst case it
+contains 200 events, in the second one 1000) and this causes the second conﬁguration
+to validate results against a larger history.
+the top part of the ﬁgure presents a conﬁguration that uses, on average, about
+100mb. to obtain this performance, several tests have been made and, at the end, for
+lossy counting these parameters have been used: : 0:2, ﬁtness queue size: 200. for
+online hm, the same ﬁtness is used, but the queue size is set to 500. as the plot shows,
+it is interesting to note that, in terms of ﬁtness, this conﬁguration is absolutely enough
+for the online hm approach instead, for lossy counting, it is not. the second plot, at
+the bottom, presents a different conﬁguration that uses about 170mb. in this case, the
+error (i.e.) for lossy counting is set to 0:01, the queue size of online hm is set to
+1500 and, for both, the ﬁtness queue size is set to 1000. in this case the two approaches
+generate really close results, in terms of ﬁtness.
+as ﬁnal consideration, this empirical evaluation clearly shows that –at least in our
+real dataset– both online hm and lossy counting are able to reach very high per-
+formances, however the online is able to better exploit the information available with
+respect to the lossy counting. in particular, online hm considers only a ﬁnite number
+of possible observations (depending on the queue size) that, in this particular case, are
+sufﬁcient to mine the correct model. the lossy counting, on the contrary, keeps all
+the information for a certain time-frame (obtained starting from the error parameter)
+without considering how many different behaviors are already seen.
+note on ﬁtness measure the usage of ﬁtness for the evaluation of stream process
+2300.10.20.30.40.50.60.70.80.91fitness
+050100150200
+  0   1000 2000 3000 4000 5000 6000 7000 8000 9000space requirement (mb)
+events observedavgs
+lossy coun�ng hm online hm(a) conﬁguration that requires about 100mb. lossy counting: : 0:2, ﬁtness queue size: 200; online hm:
+queue size: 500, ﬁtness queue size: 200.
+00.10.20.30.40.50.60.70.80.91fitness
+050100150200250300350
+  0   1000 2000 3000 4000 5000 6000 7000 8000 9000space requirement (mb)
+events observedavgs
+lossy coun�ng hm online hm
+(b) conﬁguration that requires about 170mb. lossy counting: : 0:01, ﬁtness queue size: 1000; online
+hm: queue size: 1500, ﬁtness queue size: 1000.
+figure 15: performances comparison between online hm and lossy counting, in
+terms of ﬁtness and memory consumption.
+mining algorithms seems to be an effective choice. however, this might not always be
+the case: let’s consider two very different processes p0andp00and a stream composed
+of events generated by alternate executions of p0andp00. under speciﬁc conditions,
+the stream miner will generate a model that contains both p0andp00, connected by
+an initial xor-split and merged with a xor-join. this model will have a very high
+ﬁtness value (it can replay traces from both p0andp00), however the mined model is
+not the one expected, i.e. the alteration in time of p0andp00is not reﬂected well.
+in order to deal with the problem just presented, we propose the performances
+of some approaches also in terms of “precision”. this measure is thought to prefer
+models that describe a “minimal behavior” with respect to all the model that can be
+generated starting from the same log. in particular we used the approach by mu ˜noz-
+2400.10.20.30.40.50.60.70.80.91
+  0   1000 2000 3000 4000 5000 6000 7000 8000 9000precision
+events observedonline hm (q = 1000; x = 2000)
+online hm w/ self adap�ng aging (q = 1000; x = 2000)
+lossy coun�ng hm (ε = 0.01; x = 2000)sliding windows hm (q = 1000; x = 2000)
+periodic resets hm (q = 1000; x = 2000)figure 16: precision performance on the real stream dataset by different algorithms.
+gama and carmona described in [16]. fig. 16 presents the precision calculated for four
+approaches during the analysis of the dataset of real events. it should not surprise to no-
+tice that the stream speciﬁc approaches reach very good precision values, whereas the
+basic approach with periodic reset needs to recompute, every 1000 events, the model
+from scratch. it is interesting to note that both online hm and lossy counting are not
+able to reach the top values, whereas the self adapting one, after some time, reaches
+the best precision, even if its value ﬂuctuates a bit. the basic approach with sliding
+window, instead, seems to behave quite nicely, even if the stream speciﬁc approaches
+outperform it.
+6 conclusions and future work
+in this paper, we addressed the problem of discovering processes for streaming event
+data having different characteristics, i.e. stationary streams and streams with drift.
+first, we considered basic window-based approaches, where the standard heuris-
+tics miner algorithm is applied to statics logs obtained by using a moving window on
+the stream (we considered two different policies). then we introduced a framework for
+stream process mining which allows the deﬁnition of different approaches, all based
+on the dependencies between activities. these can be seen as online versions of the
+heuristics miner algorithm and differentiate from each other in the way they assign
+importance to the observed events. the online hm, an incremental version of the
+heuristics miner, gives the same importance to all the observed events, and thus it is
+speciﬁcally apt to mine stationary streams. hm with aging gives less importance to
+older events. this is obtained by weighting the statistics of an event by a factor, the
+value, which exponentially decreases with the age of the event. because of that,
+this algorithm is able to cope with streams exhibiting concept drift. the choice of the
+“right” value for , however, is difﬁcult and different values for could also be needed
+at different times. to address this issue, we ﬁnally introduce heuristics miner able to
+automatically adapt the aging factor on the basis of the detection of concept drift (hm
+with self adapting). finally, we adapted a standard approach (lossy counting) to our
+problem.
+experimental results on artiﬁcial, synthetic and real data show the efﬁcacy of the
+proposed algorithms with respect to the basic approaches. speciﬁcally, the online hm
+turns out to be a quite stable and performs well for streams, especially when station-
+ary streams are considered, while hm with self adapting aging factor and the lossy
+25counting seem to be the right choice in case of concept drift. the largest log has been
+used also for measuring performance in terms of time and space requirements.
+as future work, we plan to conduct a deeper analysis of the inﬂuence of the differ-
+ent parameters on the presented approaches. moreover, we plan to extend the current
+approach also to mine the organizational perspective of the process. finally, from a
+process analyst point of view, it may be interesting to not only show the current up-
+dated process model, but also report the “evolution points” of the process.
+references
+[1] arya adriansyah, boudewijn van dongen, and wil m. p. van der aalst. confor-
+mance checking using cost-based fitness analysis. in 2011 ieee 15th interna-
+tional enterprise distributed object computing conference , pages 55–64. ieee,
+august 2011.
+[2] charu aggarwal. data streams: models and algorithms , volume 31 of advances
+in database systems . springer us, boston, ma, 2007.
+[3] albert bifet, geoff holmes, richard kirkby, and bernard pfahringer. moa:
+massive online analysis learning examples. journal of machine learning re-
+search , 11:1601–1604, 2010.
+[4] r. p. jagadeesh chandra bose. process mining in the large: preprocessing, dis-
+covery, and diagnostics . phd thesis, technische universiteit eindhoven, 2012.
+[5] r. p. jagadeesh chandra bose, wil m. p. van der aalst, indr ˇzliobait, and mykola
+pechenizkiy. handling concept drift in process mining. in conference on
+advanced information systems engineering (caise) , pages 391–405. springer
+berlin / heidelberg, 2011.
+[6] mohamed medhat gaber, arkady zaslavsky, and shonali krishnaswamy. mining
+data streams: a review. acm sigmod record , 34(2):18–26, june 2005.
+[7] lukasz golab and m. tamer ¨ozsu. issues in data stream management. acm
+sigmod record , 32(2):5–14, june 2003.
+[8] christian w. g ¨unther. xes standard deﬁnition. www.xes-standard.org, 2009.
+[9] wassily hoeffding. probability inequalities for sums of bounded random vari-
+ables. journal of the american statistical association , 58(301):13–30, 1963.
+[10] ieee task force on process mining. process mining manifesto. in florian
+daniel, kamel barkaoui, and schahram dustdar, editors, business process man-
+agement workshops , pages 169–194. springer-verlag, 2011.
+[11] andre cristiano kalsing, gleison samuel do nascimento, cirano iochpe, and
+lucineia heloisa thom. an incremental process mining approach to extract
+knowledge from legacy systems. in 2010 14th ieee international enterprise
+distributed object computing conference , pages 79–88. ieee, october 2010.
+[12] ekkart kindler, vladimir rubin, and wilhelm sch ¨afer. incremental workﬂow
+mining based on document versioning information. in international software
+process workshop , pages 287–301. springer verlag, 2005.
+26[13] ekkart kindler, vladimir rubin, and wilhelm sch ¨afer. incremental workﬂow
+mining for process flexibility. in proceedings of bpmds2006 , pages 178–187,
+2006.
+[14] gurmeet singh manku and rajeev motwani. approximate frequency counts
+over data streams. in proceedings of international conference on very large
+data bases , pages 346–357, hong kong, china, 2002. morgan kaufmann.
+[15] james manyika, michael chui, brad brown, jacques bughin, richard dobbs,
+charles roxburgh, and angela hung byers. big data: the next frontier for
+innovation, competition, and productivity. technical report june, mckinsey
+global institute, 2011.
+[16] jorge mu ˜noz gama and josep carmona. a fresh look at precision in process
+conformance. in business process management , pages 211–226. springer berlin
+/ heidelberg, 2010.
+[17] nicole schweikardt. short-entry on one-pass algorithms. in ling liu and
+m. tamer ¨oszu, editors, encyclopedia of database systems , pages 1948–1949.
+springer-verlag, 2009.
+[18] marc sol ´e and josep carmona. incremental process mining. in proceedings of
+acsd/petri nets workshops , pages 175–190, 2010.
+[19] minseok song and wil m. p. van der aalst. supporting process mining by show-
+ing events at a glance. in workshop on information technologies and systems
+(wits) , pages 139–145, 2007.
+[20] wil m. p. van der aalst. process mining: discovery, conformance and en-
+hancement of business processes . springer berlin heidelberg, berlin, heidel-
+berg, 2011.
+[21] wil m. p. van der aalst, arya adriansyah, and boudewijn van dongen. causal
+nets: a modeling language tailored towards process discovery. in concur -
+concurrency theory , pages 28–42. springer verlag, 2011.
+[22] wil m. p. van der aalst, arya adriansyah, and boudewijn van dongen. replaying
+history on process models for conformance checking and performance analy-
+sis. wiley interdisciplinary reviews: data mining and knowledge discovery ,
+2(2):182–192, march 2012.
+[23] wil m. p. van der aalst and arthur h.m. ter hofstede. yawl: yet another
+workﬂow language. information systems , 30(4):245–275, june 2005.
+[24] wil m. p. van der aalst and ton a. j. m. m. weijters. rediscovering workﬂow
+models from event-based data using little thumb. integrated computer-aided
+engineering , 10(2):151–162, 2003.
+[25] matthijs van leeuwen and arno siebes. streamkrimp: detecting change in
+data streams. in walter daelemans, bart goethals, and katharina morik, editors,
+machine learning and knowledge discovery in databases , volume lncs 5211
+oflnai , pages 672–687. springer, 2008.
+27[26] eric h. m. w. verbeek, joos buijs, boudewijn van dongen, and wil m. p. van der
+aalst. prom 6: the process mining toolkit. in bpm 2010 demo , pages 34–39,
+2010.
+[27] gerhard widmer and miroslav kubat. learning in the presence of concept drift
+and hidden contexts. machine learning , 23(1):69–101, 1996.
+a heuristics miner
+a.1 heuristics miner metrics
+heuristics miner (hm) [24] is a process mining algorithm that counts various types of
+frequencies to mine dependency relations among activities represented by logs.
+the relation a >wbholds iff there is a trace =ht1;t2;:::;tniandi2
+f1;:::;n 1gsuch thatti=aandti+1=b. the notationja >wbjindicates to
+the number of times that, in w,a>wbholds (no. of times activity bdirectly follows
+activitya).
+the following subsections present a detailed list of all the formulae required by
+heuristics miner to build a process model.
+a.1.1 dependency relations ( ))
+an edge (that usually represents a dependency relation) between two activities is added
+if its dependency measure is above the value of the dependency threshold . this relation
+is calculated, between activities aandb, as:
+a)wb=ja>wbj jb>waj
+ja>wbj+jb>waj+ 1(1)
+the rationale of this rule is that two activities are in a dependency relation if most of
+times they are in the speciﬁcally required order.
+a.1.2 and/xor relations ( ^,
+)
+when an activity has more than one outgoing edge, the algorithm has to decide whether
+the outgoing edges are in and or xor relation (i.e. the “type of split”). speciﬁcally,
+it has to calculate the following quantity:
+a)w(b^c) =jb>wcj+jc>wbj
+ja>wbj+ja>wcj+ 1(2)
+if this quantity is above a given and threshold , the split is an and-split, otherwise it
+is considered to be in xor relation. the rationale, in this case, is that two activities
+are in an and relation if most of times they are observed in no speciﬁc order (so one
+before the other and vice versa).
+a.1.3 long distance relations ( )l)
+two activities aandbare in a “long distance relation” if there is a dependency between
+them, but they are not in direct succession. this relation is expressed by the formula:
+a)l
+wb=jaowbj
+jbj+ 1(3)
+28figure 17: example of a possible process model that generates the log w.
+wherejaowbjindicates the number of times that ais directly or indirectly (i.e.
+if there are other different activities between aandb) followed by bin the logw. if
+this formula’s value is above a long distance threshold , then a long distance relation is
+added into the model.
+a.1.4 loops of length one and two
+a loop of length one (i.e. a self loop on the same activity) is introduced if the quantity:
+a)wa=ja>waj
+ja>waj+ 1(4)
+is above a length-one loop threshold . a loop of length two is considered differently: it
+is introduced if the quantity:
+a)2
+wb=ja>2
+wbj+jb>2
+waj
+ja>2
+wbj+jb>2
+waj+ 1(5)
+is above a length-two loop threshold . in this case, the a>2
+wbrelation is observed when
+ais directly followed by band then there is aagain (i.e. for trace =ht1;t2;:::;tni
+there is ani2f1;:::;n 2gsuch that2wandti=aandti+1=bandti+2=a).
+a.2 running example
+let’s consider the process model shown in fig. 17. given the set of activities fa;b 1;b2;c;dg,
+a possible log w, with 10 process instances, is:
+w=
+ha;b 1;b2;c;di5;ha;b 2;b1;c;di5	
+please note that the notation hinindicatesncase following of the same sequence.
+such log can be generated starting from executions of the process model of fig. 17.
+in the case reported in ﬁgure, the main measure (dependency relation) builds the
+following relation:
+0
+bbbb@a b 1b2c d
+a 0 0:83 0:83 0 0
+b1 0:83 0 0 0 :83 0
+b2 0:83 0 0 0 :83 0
+c 0 0:83 0:83 0 0 :909
+d 0 0 0  0:909 01
+cccca
+starting from this relation and considering – for example – a value 0:9for the depen-
+dency threshold , it is possible to identify the complete set of dependencies, including
+29the split from activity atob1andb2. in order to identify the type of the split it is
+necessary to use the and measure (eq. (2)):
+a)w(b1^b2) =5 + 5
+5 + 5 + 1= 0:909
+so, considering — for example — an and-threshold of0:1, the type of the split is
+set to and. in the prom implementation, the default value for dependency threshold
+is0:9, and for the and-threshold it is0:1.
+b error bounds on online heuristics miner
+if we assume a stationary stream, i.e. a stream where the distribution of events does
+not change with time (no concept drift), then it is possible to give error bounds on the
+measures computed by the online version of heuristics miner.
+in fact, let consider an execution of the online heuristics miner on the stream s.
+letqa(t),qc(t), andqr(t)be the content of the queues used by algorithm 2 at
+timet. let case overlap (t) =fc2c jtstart(c)t^tend(c)tgbe the set of
+cases that are active at timet;c= maxtjcase overlap (t)j;nc(t)be the cumulative
+number of cases which have been removed from qc(t)during the time interval [0;t];
+andnc(t) =jqc(t)j+nc(t). given two activities aandb, letab2[0;ab]be the
+random variable reporting the number of successions (a;b)contained in a randomly
+selected trace in s. withasandrswe denote the set of activities and successions,
+respectively, observed for the entire stream s. then it is possible to state the following
+theorem:
+theorem 1 (error bounds) let(a)sb),a)s(b^c), be the measures computed
+by the heuristics miner algorithm on a time-stationary stream s, and (a)st
+0b),
+a)st
+0(b^c), be the measures computed at time tby the online version of the heuris-
+tics miner algorithm on the stream s. ifmaxajasj,maxrjrsj,maxcc,
+then with probability 1 the following bounds hold:
+(a)sb) 
+e[ab+ba]
+e[ab+ba] +ab(t) +1
+nc(t)!
+ 
+ab(t)
+e[ab+ba] +ab(t) +1
+nc(t)(a)st
+0b)
+(a)st
+0b)(a)sb) 
+e[ab+ba]
+e[ab+ba] ab(t) +1
+nc(t)!
++
+ab(t)
+e[ab+ba] ab(t) +1
+nc(t)
+and, similarly, for a)(b^c):
+(a)s(b^c)) 
+e[bc+cb]
+e[ab+ac] +abc(t) +1
+nc(t)!
+ 
+bc(t)
+e[ab+ac] +abc(t) +1
+nc(t)(a)st
+0(b^c))
+30(a)st
+0(b^c))(a)s(b^c)) 
+e[bc+cb]
+e[bc+cb] abc(t) +1
+nc(t)!
++
+bc(t)
+e[ab+ac] abc(t) +1
+nc(t)
+where8d;e;f2as; de(t) =q
+(de+ed)2ln(2=)
+2nc(t); def(t) =q
+(de+df)2ln(2=)
+2nc(t),
+ande[x]is the expected value of x.
+proof 1 let consider the heuristics miner deﬁnition (a)sb) =ja>sbj jb>saj
+ja>sbj+jb>saj+1(as
+presented in eq. (1)). letncbe the number of cases contained in st
+0, then
+(a)st
+0b) =ja>st
+0bj jb>st
+0aj
+ja>st
+0bj+jb>st
+0aj+ 1=ja>st
+0bj jb>st
+0aj
+nc
+ja>st
+0bj+jb>st
+0aj
+nc+1
+nc
+and
+(a)sb) = lim
+nc!+1ja>st
+0bj jb>st
+0aj
+nc
+ja>st
+0bj+jb>st
+0aj
+nc+1
+nc=e[ab ba]
+e[ab+ba]:
+we recall that x=ja>st
+0bj jb>st
+0aj
+ncis the mean of the random variable x= (ab 
+ba)computed over ncindependent observations, i.e. traces, and that x2[ ba;ab].
+we can then use the hoeffding bound [9] that states that, with probability 1 
+x e[x]<x=s
+r2
+xln 2
+
+2nc;
+whererxis the range of x, which in our case is rx= (ab+ba).
+by using the hoeffding bound also for the variable y= (ab+ba), we can state
+that with probability 1 
+e[x] x
+e[y] +y+1
+ncx
+y+1
+nc= (a)st
+0b);
+which after some algebra can be rewritten as
+e[x]
+e[y] 
+e[y]
+e[y] +y+1
+nc!
+ x
+e[y] +y+1
+nc(a)st
+0b)
+by observing that (a)sb) =e[x]
+e[y],rx=ry= (ab+ba), and that at time t, under
+the theorem hypotheses, no information is removed from the queues and nc=nc(t),
+the ﬁrst bound is proved. the second bound can be proved starting from
+(a)st
+0b)e[x] +x
+e[y] y+1
+nc:
+the last two bounds can be proved in a similar way by considering x= (bc+
+cb)2[0;bc+cb]andy= (ab+ac)2[0;ab+ac], which leads to x=q
+(bc+cb)2ln(2=)
+2ncandy=q
+(ab+ac)2ln(2=)
+2nc.
+31similar bounds can be obtained also for the other measures computed by heuristics
+miner. from the bounds it is possible to see that, with the increase of the number
+of observed cases nc(t), both1
+nc(t)and the errors ab(t)andabc(t)go to 0and the
+measures computed by the online version of heuristics miner consistently converge to
+the “right” values.
+32

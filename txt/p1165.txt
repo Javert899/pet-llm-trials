@@ -1,0 +1,452 @@
+a general f ramework for action-oriented
+process mining
+gyunam park  and wil m.p . van der aalst 
+process and data science group (p ads), department of computer science,
+r wth aachen university , aachen, germany
+{gnpark,wvdaalst}@pads.rwth-aachen.de
+abstract. process mining provides techniques to extract process-centric
+knowledge from event data available in information systems. these tech-
+niques have been successfully adopted to solve process-related problems
+in diverse industries. in recent years, the attention of the process mining
+discipline has shifted to supporting continuous process management and
+actual process improvement. t o this end, techniques for operational sup-
+port, including predictive process monitoring, have been actively studied
+to monitor and influence running cases. however, the conversion from
+insightful diagnostics to actual actions is still left to the user (i.e., the
+“action part” is missing and outside the scope of today’s process mining
+tools). in this paper, we propose a general framework for action-oriented
+process mining that supports the continuous management of operational
+processes and the automated execution of actions to improve the process.
+as proof of concept, the framework is implemented in prom .
+key words: action-oriented process mining, continuous operational
+management, insights turned into actions, process improvement
+1 introduction
+process mining aims to discover, monitor, and improve business processes by ex-
+tracting knowledge from event logs available in information systems [ 1]. process
+mining techniques enable business managers to better understand their processes
+and gather insights to improve these processes. they are successfully deployed
+by a range of industries, including logistics, healthcare, and production [ 2].
+nowadays, attention in the process mining discipline is shifting to supporting
+continuous process management [ 2]. in order to manage operational processes
+properly , it is imperative to apply process mining techniques in a repetitive
+manner, rather than focusing on making a one-time report of process mining
+diagnostics. this repetitive application enables not only the identification of
+more relevant problems at stake, but also the continuous improvement of opera-
+tional processes in a dynamically changing environment. the one-time report is
+likely to present less relevant problems in the current situation, failing to handle
+newly-introduced problems.
+online operational support techniques in process mining aim at enabling the
+continuous management of operational processes [ 1]. t o that end, they continu-2 gyunam park and wil m.p . van der aalst
+ously monitor and analyze cases that are still running, intended for controlling
+the problematic process instances [ 3,4]. these techniques have been effective in
+extracting practical diagnostics into performance and compliance problems [ 1].
+however, they do not suggest how the diagnostics are exploited to achieve actual
+improvements in the operational processes.
+f or the actual process improvement, it is necessary to convert the insights
+from process mining diagnostics to management actions. f or example, when a
+bottleneck emerges or is expected to occur, one should take actions, such as
+assigning more resources, alerting managers, and finding bypassing routes, to
+mitigate the risk caused by the problem. t o fill the gap between the diagnostics
+and the improvement actions, in this paper, we propose a general framework for
+action-oriented process mining. this framework supports the continuous mon-
+itoring of operational processes and the automated execution of actions to im-
+prove the processes based on the monitoring results (i.e., diagnostics).
+fig. 1: overview of the general framework for action-oriented process mining
+figure 1shows an overview of the proposed framework. by analyzing the con-
+tinuously updated event data (i.e., event stream), the constraint monitor evalu-
+ates a set of constraints that are defined with various diagnostics. as a result, it
+generates a constraint instance stream that is the description of monitoring re-
+sults. by analyzing this constraint instance stream, the action engine assesses the
+necessity of actions and generates the actions ranging from process-level valves,
+instance-level adaptors, and alerts, as described in fig. 1with representative
+examples.
+in order to advocate the effectiveness of the proposed framework on the
+continuous process management and the actual process improvement, it has been
+instantiated as a prom plug-in. in addition, we have tested the implementation
+on an information system that supports a simulated order handling process. thea general framework for action-oriented process mining 3
+details of implementation and the information system are publicly available via
+https://github.com/gyunamister/actionorientedprocessmining .
+the remainder is organized as follows. w e first present a motivating example
+in sect. 2. next, we explain the preliminaries and the general framework for
+action-oriented process mining in sect. 3 and sect. 4. afterward, sect. 5 and
+sect. 6 present the implementation of the framework and experiments as a proof
+of concept. sect. 6 discusses the related work, and sect. 7 concludes the paper.
+2 motivating example
+suppose we are operation managers in an e-commerce company like amazon,
+responsible for an order handling process, where four main object types (i.e.,
+order, item, package, and route ) exist in the process as shown in fig. 2a. note
+that we do not assume a single case notion as in traditional process mining in
+the proposed framework. instead, using the principles of object-centric process
+mining [ 5], we consider multiple object types and interacting processes. it is
+indispensable for acquiring precise diagnostics and deploying the framework at
+the enterprise level where multiple processes with different object types interact
+with each other.
+fig. 2: data model and the discovered process model of the order handling
+process. the discovered process model shows that check availability happens
+redundantly .
+as operation managers, we analyze the event data using different process
+mining techniques. as an example, we discovered the process model shown in
+fig. 2b where the arcs correspond to the specific object types. interpreting the
+discovered process model, we observe that the activity , check availability , is re-
+dundantly repeated for some items, which should not happen according to a
+business rule and its negative effects on the overall operational performance.
+f or the continuous management of this problem, we define a constraint c1 as
+follows:
+–c1 : there must be no more than one “check availability” for each item.4 gyunam park and wil m.p . van der aalst
+afterward, we put it into the repository of constraints and let the constraint
+monitor evaluate if any item violates or is predicted to violate the constraint
+every morning (e.g., at 9 am).
+w e consider that it is highly risky to have more than 10 items violating or
+predicted to violate c1 at any point in time, and in case this situation happens,
+it is most efficient to notify a case manager. thus, we analyze the monitoring
+results every morning and take the following action to mitigate the risk:
+–a1 : if there exist more than 10 (possibly) violated items, send an e-mail to
+the case manager to warn for bad consequences.
+this example shows how the insights from process discovery transform into
+mitigating actions (i.e., alerting a case manager). the proposed framework sup-
+ports this process of insights turned into actions by continuously monitoring
+the violations and automatically generating proactive actions. in the following
+sections, we explain the major components of the framework, i.e., constraint
+monitor and action engine , using the above example as a running example.
+3 event data
+in this section, we introduce the basic concepts, including event streams, time
+windows, and time moments.
+real-life processes often have multiple candidate identifiers, as shown in sect.
+2. t o enable precise analysis and enterprise-wide adoption of the proposed frame-
+work, we use a more realistic event data notion where multiple case notions (e.g.,
+order, item, etc) may coexist. each event may refer to different objects from dif-
+ferent object classes. note that a conventional event log is a special case of this
+event data notion; hence one can use the proposed framework with the conven-
+tional event logs.
+definition 1 (universes). w e define the fol lowing universes to be used in this
+paper:
+–uei is the universe of event identifiers
+–uproc is the universe of process identifiers,
+–uact is the universe of activities,
+–ures is the universe of resources,
+–utime is the universe of timestamps,
+–uoc is the universe of object classes,
+–uoi is the universe of object identifiers,
+–uomap =uoc↛p(uoi)is the universe of object mappings where, for omap ∈
+uomap , we define omap (oc) =∅ifoc /∈dom(omap ),
+–uattr be the universe of attribute names,
+–uval the universe of attribute values,
+–uvmap =uattr↛uval is the universe of value mappings where, for vmap ∈
+uvmap , we define vmap (attr) =⊥ ifattr /∈dom(vmap ).a general framework for action-oriented process mining 5
+–uevent =uei× uproc× uact× ures× utime× uomap× uvmap is the universe of
+events.
+w e assume these universes are pairwise disjoint, e.g., uei∩ uproc=∅.
+each row in t able 1shows an event of the order handling process introduced
+in sect.2.
+event
+identifierprocess
+identifieractivity
+nameresource
+nametimestampobjects involved attribute
+order item package route type
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+746 oh place order jane 01-01-2020 09:55 {o7}{i8, i9} ∅ ∅ gold
+747 oh check availability jansen 01-01-2020 10:15 {o7}{i8} ∅ ∅
+748 oh pick item kevin 01-01-2020 11:55 {o7}{i8} ∅ ∅
+749 oh check availability matthias 01-01-2020 17:55 {o7}{i9} ∅ ∅
+750 oh check availability jansen 01-01-2020 19:05 {o7}{i9} ∅ ∅
+751 oh pick item kevin 01-01-2020 19:55 {o7}{i9} ∅ ∅
+752 oh place order system 02-01-2020 09:15 {o8}{i10} ∅ ∅ silver
+753 oh pack items robin 02-01-2020 15:05 {o7}{i8, i9}{p8} ∅
+. . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+t able 1: a fragment of event data where each line corresponds to an event
+definition 2 (event projection). given an event e= (ei, proc, act, res, time,
+omap, vmap )∈ u event ,πei(e) =ei, π proc(e) =proc, π act(e) =act, π res(e) =
+res, π time(e) =time, π omap (e) =omap, and π vmap (e) =vmap .
+lete746 be the first event depicted in t able 1.πei(e746) = 746 ,πproc(e746) =
+oh ,πact(e746) = place order ,πres(e746) = jane ,πtime(e746) = 01-01-2020 09:55 ,
+πomap (e746)(order ) ={o7},πomap (e746)(item ) ={i8, i9}, and πvmap (e746)(type ) =
+gold.
+w e adopt the notion of online event stream-based process mining, in which
+the data are assumed to be an infinite collection of unique events. an event
+stream is a collection of unique events that are ordered by time.
+definition 3 (event stream). an event stream s is a (possibly infinite) set
+of events, i.e., s⊆ u event such that ∀e1,e2∈sπei(e1) =πei(e2) =⇒e1=e2. w e
+letustream denote the set of al l possible event streams.
+a time window indicates the range of time to be analyzed.
+definition 4 (time window). a time window tw= (ts, te)∈ utime× utime
+is a pair of timestamps such that ts≤te. given a time window tw= (ts, te),
+πstart(tw) =tsandπend(tw) =te.utw is the set of al l possible time windows.
+a time moment represents the time when we start analyzing processes and
+the time window that the analysis addresses.
+definition 5 (time moment). a time moment tm= (t, tw)∈ utime× utw is
+a pair of a timestamp tand a time window tw such that t≥πend(tw). given
+tm= (t, tw), we indicate πt(tm) =tandπtw(tm) =tw .utm is the set of al l
+possible time moments.6 gyunam park and wil m.p . van der aalst
+4 a general f ramework for action-oriented process
+mining
+the proposed framework is mainly composed of two components. firstly , the
+constraint monitor converts an event stream into a constraint instance stream
+where each constraint instance describes the (non) violation of a constraint. sec-
+ond, the action engine transforms the constraint instance stream into an action
+instance stream where each action instance depicts a transaction to be executed
+by the information system to mitigate the risks caused by the violations.
+4.1 constraint monitor
+each (non) violation of a constraint has a context where it occurs. f or instance,
+c1 in sect. 2 could be violated by item i9, which is a part of an order by a
+gold customer in the process oh , when processed by joe for the activity check
+availability .
+definition 6 (context). a context ctx∈ p (uproc)× p(uact)× p(ures)×
+uomap× u vmap is a tuple of a set of process identifiers proc , a set of activ-
+itiesact , a set of resources res , an object mapping omap , and a value mapping
+vmap .uctx is the set of al l possible contexts.
+the above context is denoted as ctx1= ({oh},{check availability },{joe},
+omap 1, vmap 1), where omap 1(item ) ={i9}andvmap 1(type ) = gold.
+given an event stream and a time window, the constraint formula evaluates
+if violations happen in a specific context by analyzing the events in the event
+stream, which are relevant to the time window.
+definition 7 (constraint f ormula). w e define uoutc ={ok, nok }to be
+the universe of outcomes. cf∈(ustream ×utw)→ p (uctx×uoutc)is a constraint
+formula. ucf is the set of al l possible constraint formulas.
+suppose cf1is instantiated to evaluate the constraint described in c1 of the
+motivating example. given the event stream s that contains events listed in
+t able 1 and time window tw1= ( 01-01-2020 09:00 ,02-01-2020 09:00 ), it evaluates if
+any item in the time window experience more than one check availability . since
+there are two check availability for item i9,(ctx1, nok )∈cf1(s, tw 1).
+in this paper, we do not assume specific approaches to instantiate the con-
+straint formula. several approaches are proposed in the field of process mining,
+including conformance checking techniques [ 6] and rule-driven approaches based
+on petri-net patterns [ 7] and linear t emporal logic [ 8] (see also sect.7)
+a constraint consists of a constraint formula and a set of time moments,
+where the former explains what to monitor, and the latter specifies when to
+monitor.
+definition 8 (constraint). a constraint c= (cf, tm )∈ u cf× p(utm)is a
+pair of a constraint formula cf and a set of time moments tm .ucis the set of
+al l possible constraints.a general framework for action-oriented process mining 7
+suppose c1= (cf1, tm 1)where (02-01-2020 09:00 ,(01-01-2020 09:00 ,02-01-2020 09:00 ))∈
+tm 1. f or instance, we evaluate cf1at 02-01-2020 09:00 with the events related to
+time window ( 01-01-2020 09:00,02-01-2020 09:00 ).
+a constraint instance specifies when and whether a violation happens in a
+certain context by a constraint formula.
+definition 9 (constraint instance). a constraint instance ci∈ ucf× uctx×
+utime× uoutc is a tuple of a constraint formula cf, a context ctx , a timestamp
+time , and an outcome outc .uciis the set of al l possible constraint instances.
+f or instance, a constraint instance ci1= (cf1, ctx 1,02-01-2020 09:00 , nok )de-
+notes that cf1is violated at 02-01-2020 09:00 . in context ctx1.
+a constraint instance stream is a collection of unique constraint instances.
+definition 10 (constraint instance stream). a constraint instance stream
+cis is a (possibly infinite) set of constraint instances, i.e., cis⊆ u ci.ucis is
+the set of al l possible constraint instance streams.
+given an event stream, a constraint monitor evaluates a set of constraints
+and generates a constraint instance stream.
+definition 11 (constraint monitor). letc⊆ u cbe a set of constraints to be
+used for monitoring. cmc∈ ustream → u cis is the constraint monitor such that,
+for any s∈ ustream ,cmc(s) ={(cf, ctx, time, outc )∈ uci|∃tm,tm (cf, tm )∈
+c∧tm∈tm∧time =πt(tm)∧(ctx, outc )∈cf(s, πtw(tm))}.
+note that the definition of a constraint monitor is abstracted in a way that
+we are able to analyze future events. in reality , it analyzes only the historical
+events from an event stream and outputs the constraint instance stream relevant
+to them.
+4.2 action engine
+the action engine aims at producing an action instance stream describing trans-
+actions that source information systems need to execute to mitigate the risk
+incurred by the constraint violations.
+definition 12 (t ransaction). letuop be the universe of operations that
+are executed by information systems (e.g., send emails). a transaction tr=
+(op, vmap )∈ uop× uvmap is a pair of an operation op and a parameter mapping
+vmap .utr⊆ u op× uvmap denotes the set of al l possible transactions.
+f or instance, the action description a1 in sect. 2 represents a transac-
+tion, tr1=(send-an-email, vmap′)where vmap′(recipient)=“case manager” and
+vmap′(message) = “f requent violations of c1” .
+given a constraint instance stream and a time window, the action formula
+produces required transactions by analyzing the constraint instances in the con-
+straint instance stream, which are relevant to the time window.8 gyunam park and wil m.p . van der aalst
+definition 13 (action f ormula). an action formula af∈(ucis× u tw)→
+p(utr)is a function that maps a constraint instance stream and time window to
+a set of transactions. uaf is the set of al l possible action formulas.
+assume af1to assess the condition that is specified by the action description
+a1 in sect. 2, and to produce the corresponding transaction. given constraint
+instance stream cis and time window tw1= ( 01-01-2020 09:00 ,02-01-2020 09:00 ), it
+assesses if there exist more than 10 constraint instances whose outcomes are
+“nok” in the time window. if so, tr1= ( send-an-email , vmap′)∈af(cis, tw 1).
+an action consists of an action formula and a set of time moments. the
+action formula specifies which transactions to generate in which conditions, and
+the set of time moments indicates when to assess the conditions and to generate
+transactions.
+definition 14 (action). an action a= (af, tm )∈ uaf× p(utm)is a pair of
+an action formula af and a set of time moments tm .uadenotes the set of al l
+possible actions.
+suppose a1= (af1, tm 1)where (02-01-2020 09:00 ,(01-01-2020 09:00 ,02-01-2020 09:00 ))∈
+tm 1. w e implement af1at 02-01-2020 09:00 with the constraint instances related
+to time window ( 01-01-2020 09:00,02-01-2020 09:00 ).
+an action instance indicates when and which transaction is required.
+definition 15 (action instance). an action instance ai= (af, tr, time )∈
+uaf× u tr× u time is a tuple of an action formula af , a transaction tr, and a
+timestamp time .uai is the set of al l possible action instances.
+f or instance, an action instance ai1= (af1, tr1,02-01-2020 09:00 )denotes that
+the transaction tr1needs to be executed at 02-01-2020 09:00 according to af1.
+an action instance stream is a collection of unique action instances.
+definition 16 (action instance stream). an action instance stream ais is
+a (possibly infinite) set of action instances, i.e., ais⊆ u ai.uais is the set of
+al l possible action instance streams.
+given a constraint instance stream, an action engine continuously assesses the
+necessity of transactions by analyzing the action formulas in predefined actions
+at their appointed times.
+definition 17 (action engine). leta⊆ u abe a set of actions used by the
+action engine. aea∈ u cis→ u ais is the action engine such that, for any
+cis∈ u cis ,aea(cis ) ={(af, tr, time )∈ u ai|∃tm,tm (af, tm )∈a∧tm∈
+tm∧time =πt(tm)∧tr∈af(cis, π tw(tm))}.
+w e abstract that the action engine is able to assess future constraint in-
+stances. in fact, it analyzes the historical constraint instance stream and pro-
+duces transactions which mitigate risks caused by the past constraint violations.a general framework for action-oriented process mining 9
+5 implementation
+the general framework discussed above is implemented as a plug-in of prom1,
+an open-source framework for the implementation of process mining tools in
+a standardized environment. our new plug-in is available in a new package
+named actionorientedprocessmining . the main input objects of our plug-in are
+an event stream, a constraint formula definition, and an action formula definition,
+whereas the output is an action instance stream.
+the input event stream is in an xml-based object-centric log (ocl) format
+storing events along with their related objects, while the constraint formula and
+action formula are defined by constraint f ormula language (cfl) and action
+f ormula language (afl) , respectively . the schema of ocl and the syntax of
+cfl and afl are explained in the tool manual2with examples.
+the output action instance stream is in an xml-based action instance
+stream (ais) format2storing action instances describing the transactions that
+need to be applied by source information systems. a dedicated gateway imple-
+mented in the source system parses the resulting ais file and translates it into
+the system-readable transactions.
+6 proof-of-concept
+based on the implementation, we conducted experiments with the artificial in-
+formation system supporting a simulated process to evaluate the feasibility of
+the framework. specifically , we are interested in answering the following research
+questions.
+–rq1: does the constraint monitor effectively detect violations?
+–rq2: does the action engine effectively generate corresponding transactions?
+–rq3: does the application of the transactions improve operational processes?
+experimental design the information system used for the evaluation sup-
+ports the order handling process described in sect. 2. there are 16 available
+resources in total at any point in time, and each of them is responsible for mul-
+tiple activities in the process. orders are randomly placed and queued for the
+resource allocation after each activity . the resource is allocated according to the
+first-in first-out rule.
+t o answer rq1-rq3, we carried out the following steps repeatedly:
+1. the information system generates events and updates an event stream.
+2. the constraint monitor evaluates the constraint formula, which formulates
+“an order must be delivered in 72 hours”, every 24 hours.
+3. the action engine assesses the following action formulas every 24 hours:
+–“if there is a violated order in the last 24 hours, set a higher priority for
+it” ( af1 ), and
+1http://www.promtools.org
+2https://github.com/gyunamister/actionorientedprocessmining10 gyunam park and wil m.p . van der aalst
+–“if there is a violation that lasted longer than 24 hours, send a notification
+to a case manager” . ( af2 )
+4. the dedicated gateway for the information system translates the action in-
+stance stream into transactions that are executed by the information system.
+fig. 3: experimental results: (a) the results of constraint monitor and action
+engine on 40 selected orders. (b) number of violated instances for 30 days.
+experimental results fig. 3a reports the results related to rq1 and rq2.
+the figure shows the history of 40 orders by time, where the gray box indicates
+the delivery time (i.e. from order placement to delivery) and the green arrow
+denotes allowable delivery time (i.e., 72 hours). the red box represents the time
+when the violation happens. as shown in fig. 3a, every order whose delivery
+time is outside the green arrow is detected by the constraint monitor every 24
+hours. moreover, af1 is generated for every violation and af2 is generated if
+the violation lasts longer.
+fig. 3b reports an experimental result related to rq3. the figure shows the
+number of violated instances for 30 days. the yellow line indicates the total
+number of instances, while the red/green lines represent the number of violated
+instances with/without applying mitigating transactions. the number of violated
+instances decreases when the transactions are applied.
+7 related w ork
+a constraint formula is a core component of the proposed framework, enabling
+the constraint monitor. the process mining discipline provides many techniques
+to be deployed to instantiate it. conformance checking [ 6] can be deployed to
+find discrepancies between the modeled and the observed behavior of running
+instances. more tailor-made rules can be formalized into petri-net patterns [ 7] or
+linear t emporal logic (l tl) [ 8] to evaluate whether process executions comply
+with them.a general framework for action-oriented process mining 11
+in addition, deviation detection techniques detect deviations in process ex-
+ecutions with the user-defined compliance rules not being given. instead, the
+model-based [ 9] and clustering-based [ 10] approaches learn the rules by analyz-
+ing event data and evaluate the violation of them in the execution of processes.
+f urthermore, a constraint formula can be extended by more forward-looking
+techniques that are able to predict what will happen to individual cases and
+where bottlenecks are likely to develop [ 3,4]. the resulting predictions can be
+incorporated into the compliance rules [ 7,8] to evaluate future violations.
+a commercial process mining tool, celonis action engine [11], is a represen-
+tative effort to turn analysis results into actions. it generates signals by analyzing
+the event data, and executes the actions corresponding to these signals to the
+source system. however, it does not support processing streaming data, which
+limits the continuous process management, analyzing signals (i.e., monitoring
+results), which inhibits the generation of relevant actions, and executing actions
+at process levels.
+several methods have been developed to generate proactive actions from
+the process mining diagnostics. in [ 12], the resource allocation is proactively
+optimized with the risk predictions of running instances. a prescriptive alarm
+system [ 13] generates alarms for the process instances that are predicted to be
+problematic with the aid of a cost model to capture the trade-off between differ-
+ent interventions. these approaches focus on improving the process by dealing
+with specific problems, mostly at the instance level. instead, our proposed frame-
+work supports the management of comprehensive process-related problems and
+the execution of actions at both instance and process levels.
+robotic process automation (rp a) also aims at improving operational pro-
+cesses by automating repetitive tasks performed by humans by mimicking the
+execution on the user interface (ui) level [ 14]. while having the shared goal, the
+proposed framework has more emphasis on effectively managing the process in
+a continuous manner by identifying the problems based on diagnostics and exe-
+cuting proactive actions. automating the problematic part of process executions
+with rp a techniques is one of those effective management actions.
+8 conclusion
+in this paper, we proposed the general framework for action-oriented process
+mining, which continuously transforms process diagnostics into proactive actions
+for the process improvement. it is mainly composed of two parts: the constraint
+monitor and the action engine. the constraint monitor supports continuous mon-
+itoring of constraints, and the action engine generates the necessary transactions
+to mitigate the risks caused by the constraint violations.
+the framework is instantiated in a prom plug-in and tested on an informa-
+tion system. in fact, this paper is the starting point for a new branch of research
+in process mining. as future works, we plan to develop a concrete technique
+to support the efficient analysis of constraint instance streams by incorporat-
+ing the concept of data cube. w e also plan to validate the effectiveness of the12 gyunam park and wil m.p . van der aalst
+proposed framework in real-life processes supported by information systems like
+sap , salesforce, microsoft dynamics, etc. another important direction of fu-
+ture work is to provide a comprehensive taxonomy of constraints and actions to
+support the elicitation of relevant constraints and actions.
+acknowledgements w e thank the alexander von humboldt (a vh) stiftung
+for supporting our research.
+references
+1. van der aalst, w.m.p .: data science in action. in: process mining. springer,
+heidelberg (2016)
+2. reinkemeyer, l., ed.: process mining in action: principles, use cases and outlook.
+springer international publishing, cham (2020)
+3. de leoni, m., van der aalst, w.m.p ., dees, m.: a general process mining framework
+for correlating, predicting and clustering dynamic behavior based on event logs.
+information systems 56 (2016) 235–257
+4. marquez-chamorro, a.e., resinas, m., ruiz-cortes, a.: predictive monitoring of
+business processes: a survey . ieee t ransactions on services computing 11 (6)
+(2018) 962–977
+5. van der aalst, w.m.p .: object-centric process mining: dealing with divergence
+and convergence in event data. in ölveczky , p .c., salaün, g., eds.: software en-
+gineering and f ormal methods. v olume 11724. springer international publishing,
+cham (2019) 3–25
+6. carmona, j., van dongen, b.f., solti, a., w eidlich, m.: conformance checking -
+relating processes and models. springer (2018)
+7. ramezani, e., f ahland, d., van der aalst, w.m.p .: where did i misbehave?
+diagnostic information in compliance checking. in hutchison, d., et al., eds.:
+business process management. v olume 7481. springer, heidelberg (2012) 262–278
+8. van der aalst, w.m.p ., de beer, h.t., van dongen, b.f.: process mining and
+v erification of properties: an approach based on t emporal logic. in hutchison,
+d., kanade, t., et al., eds.: otm 2005: coopis, doa, and odbase. v olume
+3760. springer, heidelberg (2005) 130–147
+9. bezerra, f., w ainer, j.: algorithms for anomaly detection of traces in logs of
+process aware information systems. information systems 38 (1) (2013) 33–44
+10. ghionna, l., greco, g., guzzo, a., pontieri, l.: outlier detection t echniques for
+process mining applications. in an, a., matwin, s., et al., eds.: f oundations of
+intelligent systems. v olume 4994. springer, heidelberg (2008) 150–159
+11. badakhshan, p ., bernhart, g., geyer-klingeberg, j., nakladal, j., schenk, s., v o-
+gelgesang, t.: the action engine – t urning process insights into action. in: 2019
+icpm demo t rack, aachen, germany , ceur-ws (2019) 28–31
+12. conforti, r., de leoni, m., la rosa, m., van der aalst, w.m.p ., ter hofstede, a.h.:
+a recommendation system for predicting risks across multiple business process
+instances. decision support systems 69 (2015) 1–19
+13. f ahrenkrog-petersen, s.a., t ax, n., t einemaa, i., dumas, m., de leoni, m., maggi,
+f.m., w eidlich, m.: fire now, fire later: alarm-based systems for prescriptive
+process monitoring. arxiv:1905.09568 [cs, stat] (2019) arxiv: 1905.09568.
+14. agostinelli, s., marrella, a., mecella, m.: t owards intelligent robotic process
+automation for bpmers. arxiv:2001.00804 [cs] (2020) arxiv: 2001.00804.

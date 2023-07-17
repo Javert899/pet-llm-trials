@@ -1,0 +1,565 @@
+mining hybrid business process models:
+a quest for better precision
+dennis m. m. schunselaar1, tijs slaats2?,
+fabrizio m. maggi3, hajo a. reijers1, and wil m.p. van der aalst4
+1vrije universiteit amsterdam, the netherlands
+2university of copenhagen, denmark
+3university of tartu, estonia
+4rwth aachen university, germany
+d.m.m.schunselaar@vu.nl, slaats@di.ku.dk, f.m.maggi@ut.ee,
+h.a.reijers@vu.nl, wvdaalst@pads.rwth-aachen.de
+abstract. in this paper, we present a technique for the discovery of hy-
+brid process models that combine imperative and declarative constructs.
+in particular, we rst employ the popular inductive miner to generate
+a fully imperative model from a log. like most imperative miners, the
+inductive miner tends to return so-called ower models for the less struc-
+tured parts of the process. these parts are often imprecise. to counter
+these imprecise parts, we replace them with declarative models to in-
+crease the precision since declarative models are good at specifying which
+behavior is disallowed. the approach has been implemented in prom and
+tested on several synthetic and real-life event logs. our experiments show
+that hybrid models can be found to be more precise without overtting
+the data.
+keywords: hybrid process model, process mining, process discovery,
+process tree, declare
+1 introduction
+in recent years, dierent comparative investigations have been conducted to bet-
+ter understand the distinctive characteristics of imperative and declarative pro-
+cess modeling languages and to support the choice of the most suitable paradigm
+to be used in dierent scenarios [25,26]. while advantages and limitations of the
+two paradigms are still a matter of investigation, both in academic research and
+in industry [12,21], a trend has emerged to consider hybrid approaches combining
+a mixture of imperative and declarative specications. the motivations behind
+this trend rely on the surmise that many real-life processes are characterized by
+a mixture of (i)less structured processes with a high level of variability, which
+can usually be described in a compact way using declarative languages such as
+declare [24], sciff [23], or dcr graphs [10], and (ii)more stable processes
+?this work is supported in part by the hybrid business process management tech-
+nologies project funded by the danish council for independent research.with well-structured control ows, which are more appropriate for traditional
+imperative languages such as petri nets and bpmn.
+as a result, there have been several recent eorts to fully develop and for-
+malize such hybrid modeling notations and methodologies. these hybrid ap-
+proaches can be categorized based on how tightly the imperative and declara-
+tive paradigms are integrated, with each approach falling in one of three mayor
+categories: (i)acomplementary approach, where imperative and declarative no-
+tations are used in separate models, without any semantic interaction, but with
+the aim of representing dierent aspects of the same process (see, e.g., [11]).
+(ii)ahierarchical approach, where both imperative and declarative notations
+are used in the same overall model, but the model is separated into several sub-
+processes and each sub-process uses a single uniform notation. to our knowledge
+most existing proposals for hybrid approaches fall within this category (see,
+e.g., [1,27,30]). (iii) a fully mixed approach, where imperative and declarative
+constructs fully overlap in the same model. while this approach can be con-
+sidered the most exible, it is also the most complex since the modeler needs
+to consider and understand in minute detail how the elements of the dierent
+notations interact. an example of such an approach is the one proposed in [36].
+one eld where the hybrid approach may lead to signicant advances is that
+of automatic process discovery [5], which aims at generating useful process mod-
+els from real-life event logs. many imperative and declarative process discovery
+algorithms (usually referred to as miners) exist, and it remains an open chal-
+lenge to determine a suitable discovery approach given the characteristics of the
+event logs [7]. when faced with very variable logs, imperative miners have a
+tendency to create \spaghetti models", or \ower models". the former are gen-
+erally unreadable, the latter allow any behavior and therefore contain very little
+useful information about the process. declarative miners, on the other hand, are
+not well-suited to dealing with very structured logs: when faced with such a log
+they will often generate an abundance of constraints, which makes the model
+unreadable for human users. hybrid process discovery approaches aim at provid-
+ing a middle way between these two extremes, generating an imperative model
+for the structured parts of the log and declarative constraints for the unstruc-
+tured ones. two primary approaches to hybrid discovery have been considered:
+(i)amodel-driven approach, where rst an imperative or a declarative model is
+created, from which \bad" parts are identied (e.g., ower sub-models in imper-
+ative models, or over-constrained activities in declarative models) and secondly
+these \bad" parts are re-mined with a more suitable mining algorithm. (ii)a
+log-driven approach where an up-front analysis of the log is used to identify
+structured and unstructured parts, which are then separated into sub-logs. each
+sub-log is mined with the most suitable discovery algorithm.
+we can categorize the full spectrum of hybrid miners by orthogonally con-
+sidering their overall mining technique and the type of models that they output.
+the current paper falls within the hierarchical/model-driven section of this cate-
+gorization. in particular, we propose a hybrid miner that builds on the inductive
+miner [16] by leemans et al., which, for a given input log, generates an impera-tive process model in the form of a process tree. the inductive miner guarantees
+a tness of 1. this guarantee sometimes comes at the cost of precision, e.g., when
+no structure can be found in the log, the inductive miner defaults to a ower
+loop, which is able to capture all behavior and much more. being hierarchical in
+nature, process trees can be easily adopted into a hierarchical hybrid approach.
+to do so, we take the process tree returned from the inductive miner and iden-
+tify nodes from the process tree to be replaced with declare models. we have
+used declare since there are several well accepted mining algorithms for this
+notation, whereas support to process discovery for other declarative notations is
+either non-existent or in a very early stage.
+in this paper, we primarily focus on the precision of the model. there are
+two main reasons for this: (1) precision, contrary to other quality dimensions like
+simplicity, has widely accepted metrics for measuring it, and (2) ower loops tend
+to be very imprecise since they allow for any possible behavior, thus giving an
+opportunity to have a more accurate understanding of the process captured in
+the event log by replacing them with declarative models.
+the approach has been implemented as a plug-in of the process mining tool
+prom and tested on both synthetic and real-life logs. the evaluation shows posi-
+tive results for both synthetic and real-life logs, with up to 52 :18% improvement
+in the precision of the mined models for synthetic logs and up to 3471% increase
+in precision for the real-life logs.
+the rest of the paper is structured as follows: in section 2, we discuss the
+related work. in section 3, we introduce the hybrid models we use. in section 4,
+we describe the proposed approach. in section 5, we report on our evaluation.
+section 6 concludes the paper and spells out directions for future work.
+2 related work
+in the literature, there are dierent families of approaches that have been pro-
+posed for the discovery of imperative process models. the rst family of ap-
+proaches extracts some footprint from the event log and uses this footprint to
+directly construct a process model (see, e.g., [5,34]). the second family of process
+discovery approaches rst constructs an intermediate model and then converts
+it into a more rened model that can express concurrency and other advanced
+control-ow patterns (e.g., [4]). the third family of approaches tries to break
+the discovery problem into smaller problems. for example, the inductive miner
+[16] aims at splitting the event log recursively into sub-logs, which are eventually
+mined. techniques originating from the eld of computational intelligence form
+the basis for the fourth family of process discovery approaches. an example of
+this type of approaches is the genetic mining approach described in [22].
+in the area of declarative process discovery, maggi et al. [18,19] rst proposed
+an unsupervised algorithm for mining declare models. they base the discovery
+of constraints on the replay of the log on specic automata, each accepting only
+those traces that are compliant with one constraint. in [8,14,15], the authors
+use inductive logic programming techniques for the supervised learning of con-straints expressed using sciff [6]. the approach for the discovery of declare
+constraints presented in [13] is divided in two steps. the rst step computes
+statistic data describing the occurrences of activities and their interplay in the
+log. the second step checks the validity of declare constraints by querying the
+statistic data structure built in the previous step. in [28], the authors present
+a mining approach that works with relationalxes, a relational database ar-
+chitecture for storing event log data. the relational event data is queried with
+conventional sql.
+recent research has put into evidence synergies between imperative and
+declarative approaches [25,26]. accordingly, hybrid process modeling notations
+have been proposed. in particular, in [9], the authors provide a conservative
+extension of bpmn for declarative process modeling, namely bpmn-d, and
+show that declare models can be transformed into readable bpmn-d models.
+in [36], the authors propose to extend colored petri nets with the possibility
+of linking transitions to declare constraints directly. the notion of transition
+enablement is extended to handle declarative links between transitions. a recent
+implementation of this technique has been made available in cpn tools 4.0 [35].
+in [31], the authors extend the work in [36] by dening a semantics based on
+mapping declare constraints to r/i-nets and by proposing modeling guidelines
+for the mixed paradigm. in [32], a discovery approach based on this paradigm
+is proposed. dierently from these approaches devoted to obtain a fully mixed
+language, in [30], a hybrid process model is hierarchical, where each of its sub-
+processes may be specied in either a procedural or declarative fashion. in [20],
+an approach for the discovery of hybrid process models based on this semantics
+is presented. in contrast to the approach of the current paper, which is model-
+driven, the approach in [20] is log-driven. in addition, our approach guarantees
+that the resulting hybrid model has 100% tness.
+3 hybrid models
+as discussed in the introduction, we use the hierarchical approach to hybrid
+models. in our previous work [30], we have formalized the execution semantics
+of any combination of dierent formalisms used in a hierarchical hybrid model,
+e.g., petri nets, bpmn, declare, dcr graphs, and process trees. in the mining
+approach presented here, we limit ourselves to hybrid models consisting of pro-
+cess trees and declare models, and, in particular, to hybrid models where the
+top-level model is a process tree and some sub-processes can be declare models.
+in fig. 1, we show an example of a hybrid model. the top-level model is a
+process tree, and there are two declarative sub-processes. the top-level process
+tree has the regular activities a,b,c,d,eand oand two abstract activities x1
+andx2, each mapping to a declarative sub-process. the declarative sub-process
+x1 contains activity sand the sub-process x2 contains activities p q,rand t.a b c e d
+os2..2init
+q0..1
+r0..1
+t0..1p0..1x1
+x2fig. 1: example of a hybrid model
+3.1 process trees
+process trees are a tree-structured modeling formalism. the branches of the
+trees represent control-ow constructs and the leaves of the tree represent atomic
+activities (e.g., a), including silent activities ( ). various dialects exist for process
+trees (see, e.g., the ones used in [16,29]). we adopt the one from [16], which has
+four types of control-ow nodes: (i)the sequential composition ( !) denotes that
+the child nodes should occur in sequence, (ii)the exclusive choice ( ) denotes
+that (exactly) one of the child nodes should occur, (iii)the parallel composition
+(+) denotes that the child nodes should occur in parallel, and (iv)the redo loop
+(	), which contains a dopart (the rst child) and a redo part (all subsequent
+children), and denotes a kind of looping behavior where the dois the main body
+of the loop and one can repeat the loop after doing one of the redo children.
+we can dene the semantics of process trees in terms of the formal lan-
+guages (sets of sequences) that they represent. we reuse the denition from [2],
+but extend it to handle sub-process nodes. in the denition, we use two spe-
+cial operators on languages: (i)the concatenation operator ( ) concatenates
+the languages, e.g., fhaigfh bigfh ci;hdig=fha;b;ci;ha;b;dig, and (ii)the
+shue operator ( ) returns all possible interleavings of the languages, e.g.,
+fhaigfh b;ci;hd;eig=fha;b;ci;hb;a;ci;hb;c;ai;ha;d;ei;hd;a;ei;hd;e;aig.
+denition 1 (process tree semantics). for a process tree q with alphabet
+a, the languagel(q)of the process tree is dened recursively over its nodes as:
+1.l() =fhig;
+2.l(a) =fhaig, if a2a;
+3.l(x) =l(mx), wheremxis the model of the sub-process x ;
+4.l(!(q1;q2;:::; qn)) =l(q1)l(q2):::l(qn);
+5.l((q1;q2;:::; qn)) =l(q1)[l(q2)[:::[l(qn);
+6.l(+(q1;q2;:::; qn)) =l(q1)l(q2):::l(qn);
+7.l(	(q1;q2;:::; qn)) =f10
+120
+2::: m2ajm1^81jmj2
+l(q1)^81j<m0
+j2[2inl(qi)g.table 1: semantics of declare templates
+template semantics notation
+existence(a) a must occur at least once
+absence2(a) a can occur at most once
+init(a) a must occur in the rst position
+responded existence(a, b) if a occurs, b must occur as well
+response(a, b) if a occurs, b must eventually follow
+alternate response(a, b)if a occurs, b must eventually follow,
+without any other a in between
+chain response(a, b) if a occurs, b must occur next
+precedence(a, b) b can occur only if a has occurred before
+alternate precedence(a, b)b can occur only if a has occurred before,
+without any other b in between
+chain precedence(a, b) b can occur only immediately after a
+not chain succession(a, b) if a occurs, b cannot occur next
+not succession(a, b) if a occurs, b cannot eventually follow
+not co-existence(a, b) if a occurs, b cannot occur
+given this semantics, the language of the process tree in fig. 1 is: fha;b;x1;
+x2;o;c;d;ei;ha;b;x2;x1;o;c;d;ei;ha;b;x2;o;x1;c;d;ei;ha;b;x1;x2;c;d;
+ei;ha;b;x2;x1;c;d;eig.
+3.2 declare
+declare [24] is a declarative process modeling language that encodes a set of
+declarative templates into a formal logic. encodings into several dierent logics
+have been proposed, such as a linear temporal logic ( ltl) and regular expres-
+sions. when using declare in the context of process mining, it is most sensible to
+use one of their nite variants, as event logs contain only nite traces. therefore,
+we employ the encoding into the nite variant of ltl (ltl f) for the current
+paper. table 1 shows an overview of the core relations used in declare models.
+for the existence and absence templates, the language supports all countable
+variations, e.g., 0 ::2, 0::3, 4::, etc.
+denition 2 (declare model). a declare model is a pair m = (a;c), where
+a is a set of activities and c is a set of constraints over the activities in a.
+the language of a declare model m= (a;c) is the set of all traces that
+satisfy every constraint in c. formally:
+denition 3 (declare semantics). the languagel(m)of a declare model
+m= (a;c)is dened as:l(m) =f2aj8c2cj=cg.fig. 2: overview of the approach
+sub-processes x1 and x2 in fig. 1 are examples of declare models. x1
+is very simple and contains three constraints: absence 3(s),existence 2(s) and
+init(s), indicated by the two boxes on activity s, one containing the text 2 ::2,
+and the other the text init. these constraints together indicate that sis ex-
+pected to occur exactly 2 times, and is always the rst activity in that sub-
+process to be executed. therefore, the language of the declare model x1 is
+l(x1) =fhs;sig. model x2 is a bit more complex. it contains an absence 2(x)
+constraint for each activity x2fp;q;r;tg, but no existence constraints, mean-
+ing that all activities can occur either once or not at all. in addition, there is
+achain precedence (q;r) constraint indicating that rcan only occur immedi-
+ately after qand a chain response (r;t) constraint indicating that after r,tmust
+happen immediately. note that \immediately" is interpreted in the context of
+the declare model, so while neither porqmay happen between them, other
+activities in the hybrid model that can happen in parallel with x2 may still
+occur between them. this means that the language of the declare model x2 is:
+l(x2) =fhi;hti;hqi;hq;ti;ht;qi;hq;r;ti;hpi;hp;ti;ht;pi;hq;pi;hp;qi;hp;q;ti;
+hp;t;qi;hq;p;ti;hq;t;pi;ht;p;qi;ht;q;pi;hp;q;r;ti;hq;r;t;pig.
+now that we have introduced its component notations, we can give the lan-
+guage of the entire hybrid model in fig. 1. because of the many possible inter-
+leavings, giving the full set of all possible traces would be fairly cumbersome,
+so instead we provide it by using the operators used in denition 1: fha;big
+(l(x1)(l(x2)fhi;hoig))fhc;d;eig.
+4 hybrid model discovery
+our approach is inspired by two observations: (1) imperative miners in general,
+and the inductive miner in particular, have diculties in dealing with unstruc-
+tured behavior without sacricing precision (while maintaining a high tness
+value), and (2) declarative models are aimed at describing unstructured behav-
+ior in a concise way. this led us to an approach where we rst mine an imperative
+model (a process tree). afterwards, we try to substitute various sub-processes
+with declarative models to improve precision without sacricing tness. fig. 2
+gives a broad overview of the approach, consisting of 4 steps. to exemplify our
+approach, we use the example log l1.a b c e d
+o
+p
+t r qs(a) process tree for log l1
+s2..2init q0..1
+r0..1
+t0..1
+p0..1(b) declare models discovered from the
+sub-logs corresponding to the loop sub-
+processes
+fig. 3: intermediate outcomes of the proposed approach
+denition 4 ( l1: running example). recall that the multiset [a4;b6]is
+a set containing four times element a and six times element b. l 1= [ha;
+b;s;s;c;d;ei5;ha;b;o;s;s;c;d;ei5;ha;b;s;o;s;c;d;ei5;ha;b;q;s;r;s;t;c;d;ei5;
+ha;b;s;s;q;p;c;d;ei5;ha;b;s;q;s;r;t;c;d;ei5;ha;b;s;t;p;s;c;d;ei5;ha;b;s;s;
+t;q;c;d;ei5;ha;b;p;t;s;q;s;c;d;ei5;ha;b;s;s;p;t;c;d;ei5;ha;b;p;s;q;s;r;t;c;
+d;ei5;ha;b;s;s;q;t;o;c;d;ei5].
+4.1 step 1: mine process tree
+for the rst step of our approach, we use the inductive miner [16] to generate
+a process tree from the input log. the inductive miner builds a directly-follows-
+graph for the unique activities of the log and uses it to nd structures and
+construct a process tree. if the inductive miner cannot nd any structure, it will
+return a ower model where any behavior is allowed. this makes the inductive
+miner ideal for our approach: not only is it one of the most popular mining
+algorithms, but also it avoids nding structures when none exists and instead
+simply returns a pocket-of-exibility, which can then be mined declaratively. we
+use the standard inductive miner with a noise threshold of 0. in this way, the
+generated model is guaranteed to have 100% tness and we can make a fair
+comparison between a pure imperative and a hybrid approach, where we only
+consider improvements on the precision of the model. for our example log, the
+inductive miner creates the process tree shown in fig. 3a.
+4.2 step 2: select unstructured nodes
+once we have mined the process tree, we determine which parts should be re-
+placed with a declarative sub-process. for every permutation of nodes, we replace
+those nodes with declare sub-processes, determine the precision of the model,
+and return the most precise permutation. if a node is selected to be replaced
+with a declarative sub-process and also a higher node in the tree is selected,then we only substitute the higher node in the tree, i.e., the node and all its
+descendants are replaced.
+note that, when we apply our approach to the example log and process tree
+from fig. 3a by replacing the loop sub-processes with declarative sub-processes,
+this results in an increase of precision. this is because the loops allow for any
+number of occurrences of sandp;q;r;t, while, in reality, the allowed number of
+occurrences is bound. this bound can be found by the declare miner.
+4.3 step 3: mine declarative models
+for each permutation of nodes to be replaced, we extract the sub-logs corre-
+sponding to these nodes. afterwards, we run a declarative miner on each sub-log
+to generate a declarative model corresponding to the selected node and its de-
+scendants. in our particular case, we use the declare miner [17] for this task,
+but we have also made a wrapper for minerful [13]. the sub-log corresponding
+to the rst loop sub-process is [ hs;si60]. passing this log to the declare miner
+generates the declare model in fig. 3b on the left. the sub-log corresponding to
+the second loop sub-process is [ hi5;hoi10;hq;r;ti10;hq;pi5;ht;p;i5;ht;qi5;hp;t;
+qi5;hp;ti5;hp;q;r;ti5;hq;t;oi5]. passing this log to the declare miner generates
+the declare model in fig. 3b on the right.
+4.4 step 4: construct hybrid model
+once we have a declare model corresponding to each selected node, we replace
+these nodes and their descendants with an abstract activity representing a sub-
+process. the sub-process is then dened by the declarative model mined from the
+sub-log for that node. applying this technique to the process tree from fig. 3a
+and the declare models from fig. 3b, we can derive the hybrid model in fig. 1.
+5 evaluation
+our approach has been implemented in the hybrid package in prom. the main
+plug-in for mining is called \mine hybrid model". fig. 4 shows the visualization
+of a hybrid model in the plug-in.
+we evaluated our approach on both synthetic and real-life logs. we use the
+synthetic examples to show that the algorithm is able to detect and construct
+hybrid models when these are clearly present in the log. we use the real-life logs
+to demonstrate how well the approach works on actual logs coming from indus-
+trial settings, and to discover if any of these have a clear hybrid structure. we
+have evaluated the output of the hybrid miner (hm) in terms of precision. this
+in order to show that a hybrid model indeed can help in making the unstructured
+parts of the process tree resulting from the inductive miner (im) more precise.
+to show this increase in precision, we introduce the relative increase in precision
+(riip) as the percentage of increase in precision.fig. 4: hybrid model for log l3
+5.1 precision
+we use a metric based on escaping edges [3] for the computation of precision.
+our main consideration for choosing this metric is that the precision is dened
+based on a transition system, a formalism that both a process tree and a declare
+model can be transformed into. for every visited state in the transition system,
+the outgoing transitions used by the log are compared to the total number of
+possible outgoing transitions. transitions that are never visited by the log, the
+escaping edges , are counted against the precision of the model. the metric takes
+into account the frequencies of states, i.e., a frequently visited state has a higher
+impact on the precision than an infrequently visited state, and states that are
+never visited by the log are not taken into consideration.
+5.2 synthetic logs
+in order to show the possible gains of using a hybrid approach over solely using
+the inductive miner, we have created four dierent synthetic logs, each serving
+as a representative for an interesting class of hybrid behavior.
+l1: running example. the rst log we examined was that of the running exam-
+ple, which is an example of a log where part of the behavior is very structured
+(events a,b,c,dand e), and part is unstructured (events o,p,q,r,sand t)
+that always occurs in a specic location (between events band c). the most
+precise model for l1is more complex than the simplied hybrid model used
+for illustrative purposes in fig. 1. by mining the log with the hybrid miner, we
+achieve a precision improvement of +0 :194 with respect to the inductive miner.
+the relative improvement (how much the precision of the hybrid model improved
+when compared to the precision of the imperative model) riip is of 29 :59%. the
+resulting model is clearly hybrid, consisting of a process tree with 7 nodes and
+a declarative sub-process of 30 constraints.
+l2: running example unbalanced. in the running example, the traces of the
+log are balanced (they occur equally frequently). in the second example, weexperimented with making the traces exhibiting unstructured behavior more
+frequently, with the aim of discovering if this increased the relative precision of
+the hybrid model. denition 5 shows the log used.
+denition 5 ( l2: running example unbalanced). l2= [ha;b;s;s;c;d;
+ei1;ha;b;o;s;s;c;d;ei1;ha;b;s;o;s;c;d;ei1;ha;b;q;s;r;s;t;c;d;ei100;ha;b;s;
+s;q;p;c;d;ei1;ha;b;s;q;s;r;t;c;d;ei1;ha;b;s;t;p;s;c;d;ei1;ha;b;s;s;t;q;c;d;
+ei1;ha;b;p;t;s;q;s;c;d;ei100;ha;b;s;s;p;t;c;d;ei5;ha;b;p;s;q;s;r;t;c;d;ei100;
+ha;b;s;s;q;t;o;c;d;ei5].
+for this log, the hybrid miner provides an improvement from 0 :543 to 0:827
+with respect to the inductive miner. compared to l1, the hybrid model accounts
+for the unstructured parts of the log being more pronounced by adding 2 ad-
+ditional constraints to the declarative sub-process. note that, while there is an
+absolute improvement that is slightly better (+0 :284) than the one obtained for
+l1, the relative improvement riip is much higher (52 :18%).
+l3: abstract structure. for the third experiment, we used log l3.
+denition 6 ( l3: abstract structure). l3= [ha;c;c;d;g;h;e;g;gi5;hc;b;
+c;d;g;g;f;g;hi5;hc;a;c;d;d;g;h;g;h;g;h;ei5;hd;c;c;a;g;h;g;f;gi5;hc;a;c;g;
+g;f;g;hi5;hc;c;d;g;h;g;e;g;hi5;hc;b;c;d;g;g;g;fi5;hd;c;b;c;d;g;g;g;ei5;hb;
+c;c;b;d;g;f;g;gi5;hc;c;g;g;g;ei5].
+the log exhibits an abstract structure, i.e., while all the activities of the log
+occur in an unstructured manner, they can be separated in two sets fa;b;c;dg
+andfe;f;g;hg, where events of the second set always occur after the events of
+the rst set. as expected the hybrid miner nds a hybrid model consisting of a
+sequence ow and two declarative sub-processes, one containing 14 constraints,
+the other 15. the hybrid model results in a precision improvement from 0 :459
+to 0:616.
+l4: unstructured sequences. for the fourth experiment, we used log l4.
+denition 7 ( l4: unstructured sequences). l4= [ha;b;c;f;gi5;hf;g;a;b;
+c;d;ei5;ha;b;c;h;i;d;ei5;ha;b;c;f;g;d;ei5;hh;i;a;b;c;h;i;h;ii5;hh;i;a;b;c;
+d;e;a;b;ci5;ha;b;c;a;b;c;f;g;d;ei5;hf;g;a;b;c;a;b;c;d;ei5;hh;i;a;b;ci5;hh;
+i;h;i;a;b;c;d;ei5].
+this log contains four strict sequences, ha;b;ci,hd;ei,hf;giandhh;ii, which
+themselves occur in an unstructured manner. this example can be seen as being
+in the inverse class as l3, i.e., while all activities occur in a structured manner,
+there is a very clear unstructured abstract behavior in the log. since the best
+way of representing this process would be by using a declarative model with
+imperative sub-processes, mining the log with the hybrid miner (which is de-
+veloped to build imperative models with declarative sub-processes) results in a
+fully declarative model. the declarative model provides a precision improvement
+from 0:743 to 0:897 with respect to the inductive miner.table 2: evaluation results of the hybrid miner
+precision hybrid miner
+im hm riip #nodes #sub-processes #constraints
+l1 0.6552 0.8491 29.59% 7 1 30
+l2 0.5432 0.8266 52.18% 7 1 30
+l3 0.4595 0.6165 34.17% 3 2 14,15
+l4 0.7428 0.8966 20.70% 1 1 101
+bpic 2012 0.2401 0.6068 152.74% 1 1 1286
+bpic 2013 0.4044 0.4044 0.00% 44 0 0
+bpic 2017 0.0601 0.0601 0.00% 72 1 1
+wabo2 0.0049 0.1673 3347% 1 1 78 100
+wabo3 0.0059 0.2101 3471% 1 1 75 893
+sepsis cases 0.1905 0.3762 97.47% 1 1 211
+rtfm 0.8181 0.9625 17.65% 1 1 73
+5.3 real-life logs
+we also experimented on a number of real-life logs, in particular the bpi chal-
+lenge (bpic) 2012, 2013 (incidents) and 2017, wabo 2 and 3, sepsis cases and
+road trac fine management (rtfm). each of these logs was retrieved from
+the 4tu repository.1as mentioned, in order to nd the most precise model, the
+hybrid miner tries all permutations of nodes resulting in models ranging from
+fully imperative via hybridity to fully declarative. in most cases, a fully declar-
+ative model was returned as being the most precise. the only exception are the
+bpic 2013 and 2017 logs. the latter returns a hybrid model that contains only
+one declare constraint that gives no noticeable precision improvement. for the
+wabo logs, the models found by the hybrid miner show a precision improve-
+ment of over 30 times even if these models are extremely large, consisting of over
+75 000 constraints. the bpic 2012 and sepsis cases logs also show a signicant
+increase in precision and return more reasonably sized declarative models.
+5.4 discussion
+table 2 shows the detailed results of all the experiments we ran. overall the
+hybrid miner performed quite well on both synthetic and real-life examples.
+however, in the case of the real-life logs this was mostly due to the fact that
+the hybrid miner was able to determine that a fully declarative model would
+have the highest precision and provided such a model. granted, this increase
+in precision came at the cost of simplicity since more than 75 000 constraints
+cannot be comprehended by an end-user. this is also one of the limitations of
+our current approach: getting the right settings on the used miners to give a
+precise andcomprehensible result.
+in future work, we would like to investigate why the hybrid miner did not
+generate any particularly interesting hybrid models from real-life logs. one par-
+ticularly promising hypothesis is that these logs t into the category represented
+1https://data.4tu.nl/repository/byl4, which would be better represented by a hybrid model where the top-level
+is declarative, and sub-processes are imperative. another explanation could be
+that the structure of the process tree returned by the inductive miner hinders
+further improvements. after all, we take the structure of the process tree as-is
+without considering other structures that are language equivalent to the returned
+process tree.
+in addition, it should be noted that, while we are using one of the most widely
+accepted precision metric, there is still an ongoing search for better metrics [33].
+for example, for a log containing at most 2 occurrences of an activity, the current
+metric gives only a small benet to an absence 3 constraint over a process tree
+loop, even though, from a language inclusion perspective, the absence 3 constraint
+is innitely more precise. improvements to the way precision is calculated for
+hybrid models may also lead to dierent results.
+6 conclusion
+we presented a novel technique for mining hybrid models, which combine the
+strengths of the imperative and declarative process modeling paradigms. we
+implemented our technique as a prom plug-in and evaluated the approach on
+several synthetic and real-life logs. compared to the inductive miner, the miner
+showed signicant improvements in precision for both synthetic and real-life logs.
+in the case of real-life logs, it mostly found that purely declarative models were
+the most precise, whereas in the case of synthetic logs, proper hybrid models
+were found. precision improvements ranged up to 52.18% for synthetic logs and
+up to 3471% for real-life logs.
+the presented approach is easily extendible and customizable. for example,
+we can already plug any other miner that provides a process tree as output
+into our implementation and it is also possible to extend the general approach
+to other types of imperative models and miners. it is also possible to apply
+dierent metrics for precision and to use various declarative miners.
+as future work, we would like to implement and experiment with dierent
+variants of the approach (e.g., dierent miners and ways to partition behavior
+in logs into declarative and imperative parts). moreover, we also plan to use an
+approach opposite to the one proposed here: we could rst attempt to mine a
+log declaratively, analyze the resulting model to detect parts which are overly
+constrained, and replace these with imperative sub-processes.
+references
+1. van der aalst, w.m.p., adams, m., ter hofstede, a.h.m., pesic, m., schonenberg,
+h.: flexibility as a service. in: database systems for advanced appl. (2009)
+2. van der aalst, w.m.p.: process mining - data science in action, second edition.
+springer (2016)
+3. van der aalst, w.m.p., adriansyah, a., van dongen, b.f.: replaying history on
+process models for conformance checking and performance analysis. wiley inter-
+disc. rew.: data mining and knowledge discovery 2(2), 182{192 (2012)4. van der aalst, w.m.p., rubin, v.a., verbeek, h.m.w., van dongen, b.f., kindler,
+e., g unther, c.w.: process mining: a two-step approach to balance between un-
+dertting and overtting. software and system modeling 9(1), 87{111 (2010)
+5. van der aalst, w.m.p., weijters, a.j.m.m., maruster, l.: workow mining: dis-
+covering process models from event logs. ieee transactions on knowledge and
+data engineering 16(9), 1128{1142 (2004)
+6. alberti, m., chesani, f., gavanelli, m., lamma, e., mello, p., torroni, p.: veri-
+able agent interaction in abductive logic programming: the sciff framework.
+acm trans. comput. log. 9(4), 29:1{29:43 (2008)
+7. back, c.o., debois, s., slaats, t.: towards an entropy-based analysis of log vari-
+ability. in: bpm workshops. pp. 53{70 (2018)
+8. chesani, f., lamma, e., mello, p., montali, m., riguzzi, f., storari, s.: exploiting
+inductive logic programming techniques for declarative process mining. t. petri
+nets and other models of concurrency 2, 278{295 (2009)
+9. de giacomo, g., dumas, m., maggi, f.m., montali, m.: declarative process mod-
+eling in bpmn. in: caise. pp. 84{100 (2015)
+10. debois, s., hildebrandt, t.t., slaats, t.: hierarchical declarative modelling with
+renement and sub-processes. in: bpm. pp. 18{33 (2014)
+11. debois, s., hildebrandt, t.t., marquard, m., slaats, t.: hybrid process technolo-
+gies in the nancial sector. in: bpm (industry track). pp. 107{119 (2015)
+12. debois, s., hildebrandt, t.t., slaats, t., marquard, m.: a case for declarative
+process modelling: agile development of a grant application system. in: edoc
+workshops. vol. 14, pp. 126{133 (2014)
+13. di ciccio, c., mecella, m.: a two-step fast algorithm for the automated discovery
+of declarative workows. in: cidm. pp. 135{142. ieee (2013)
+14. lamma, e., mello, p., montali, m., riguzzi, f., storari, s.: inducing declarative
+logic-based models from labeled traces. in: bpm. pp. 344{359 (2007)
+15. lamma, e., mello, p., riguzzi, f., storari, s.: applying inductive logic program-
+ming to process mining. in: inductive logic programming. vol. 4894, pp. 132{146
+(2007)
+16. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured
+process models from event logs - a constructive approach. in: petri nets. pp.
+311{329 (2013)
+17. maggi, f.m.: declarative process mining with the declare component of prom. in:
+bpm (demos). ceur workshop proceedings, vol. 1021. ceur-ws.org (2013)
+18. maggi, f.m., bose, r.p.j.c., van der aalst, w.m.p.: ecient discovery of un-
+derstandable declarative process models from event logs. in: caise. pp. 270{285
+(2012)
+19. maggi, f.m., mooij, a.j., van der aalst, w.m.p.: user-guided discovery of declar-
+ative process models. in: cidm. pp. 192{199. ieee (2011)
+20. maggi, f.m., slaats, t., reijers, h.a.: the automated discovery of hybrid pro-
+cesses. in: bpm. pp. 392{399 (2014)
+21. marquard, m., shahzad, m., slaats, t.: web-based modelling and collaborative
+simulation of declarative processes. in: bpm. pp. 209{225 (2015)
+22. de medeiros, a.k.a., weijters, a.j.m.m., van der aalst, w.m.p.: genetic process
+mining: an experimental evaluation. data min. knowl. disc. 14(2), 245{304 (2007)
+23. montali, m.: specication and verication of declarative open interaction models
+- a logic-based approach, vol. 56. springer (2010)
+24. pesic, m., schonenberg, h., van der aalst, w.m.p.: declare: full support for
+loosely-structured processes. in: edoc. pp. 287{300 (2007)25. pichler, p., weber, b., zugal, s., pinggera, j., mendling, j., reijers, h.a.: impera-
+tive versus declarative process modeling languages: an empirical investigation. in:
+bpm workshops. pp. 383{394 (2011)
+26. reijers, h.a., slaats, t., stahl, c.: declarative modeling { an academic dream or
+the future for bpm? in: bpm. pp. 307{322 (2013)
+27. sadiq, s., sadiq, w., orlowska, m.: pockets of exibility in workow specication.
+in: er, pp. 513{526 (2001)
+28. sch onig, s., rogge-solti, a., cabanillas, c., jablonski, s., mendling, j.: ecient
+and customisable declarative process mining with sql. in: caise 2016. pp. 290{
+305 (2016)
+29. schunselaar, d.m.m.: congurable process trees: elicitation, analysis, and en-
+actment. ph.d. thesis, eindhoven university of technology (2016)
+30. slaats, t., schunselaar, d.m.m., maggi, f.m., reijers, h.a.: the semantics of
+hybrid process models. in: otm coopis. pp. 531{551 (2016)
+31. smedt, j.d., weerdt, j.d., vanthienen, j., poels, g.: mixed-paradigm process
+modeling with intertwined state spaces. business & is eng. 58(1), 19{29 (2016)
+32. smedt, j.d., weerdt, j.d., vanthienen, j.: fusion miner: process discovery for
+mixed-paradigm models. decision support systems 77, 123{136 (2015)
+33. tax, n., lu, x., sidorova, n., fahland, d., van der aalst, w.m.p.: the imprecisions
+of precision measures in process mining (2017), https://arxiv.org/abs/1705.
+03303
+34. weijters, a.j.m.m., van der aalst, w.m.p.: rediscovering workow models from
+event-based data using little thumb. integrated computer-aided engineering
+10(2), 151{162 (2003)
+35. westergaard, m., slaats, t.: cpn tools 4: a process modeling tool combining
+declarative and imperative paradigms. in: bpm (demos) (2013)
+36. westergaard, m., slaats, t.: mixing paradigms for more comprehensible models.
+in: bpm, pp. 283{290 (2013)

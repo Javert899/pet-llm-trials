@@ -1,0 +1,758 @@
+maximizing synchronization for aligning
+observed and modelled behaviour
+vincent bloemen1?, sebastiaan van zelst2, wil van der aalst3, boudewijn van
+dongen2, and jaco van de pol1
+1university of twente, enschede, the netherlands
+2eindhoven university of technology, eindhoven, the netherlands
+3rwth aachen university, aachen, germany
+abstract. conformance checking is a branch of process mining that
+aims to assess to what degree event data originating from the execution
+of a (business) process and a corresponding reference model conform to
+each other. alignments have been recently introduced as a solution for
+conformance checking and have since rapidly developed into becoming
+the de facto standard.
+the state-of-the-art method to compute alignments is based on solving
+a shortest path problem derived from the reference model and the event
+data. within such a shortest path problem, a cost function is used to
+guide the search to an optimal solution. the standard cost-function treats
+mismatches in the model and log as equal. in this paper, we consider a
+variant of this standard cost function which maximizes the number of
+correct matches instead. we study the eects of using this cost-function
+compared to the standard cost function on both small and large models
+using over a thousand generated and industrial case studies.
+we further show that the alignment computation process can be sped
+up signicantly in specic instances. finally, we present a new algorithm
+for the computation of alignments on models with many log traces that
+is an order of magnitude faster (in maximizing synchronous moves) com-
+pared to the state-of-the-art a* based solution method, as a result of a
+preprocessing step on the model.
+1 introduction
+process mining [1] is a eld of study involved with the discovery ,conformance
+checking , and enhancement of processes, using event data recorded during pro-
+cess execution. in process discovery, we aim to discover process models based
+on traces of executed event data. in conformance checking, we assess to what
+degree a process model (potentially discovered) is in line with recorded event
+data. finally, in process enhancement, we aim at improving or extending the
+process based on facts derived from event data.
+modern information systems allow us to track, often in great detail, the
+behaviour of the process it supports. moreover, instrumentation and/or pro-
+gram tracing tools allow us to track the behavioural prole of the execution of
+?this work is supported by the 3tu.bsr project.enterprise-level software systems [2,3]. such behavioural data is often referred
+to as an event log, which can be seen as a multiset of log traces, i.e. sequences
+of observed events in the system. however, it is often the case, due to noise
+or under/over-specication, that the observed behaviour does not conform to a
+valid process instance, i.e., it deviates from its intended behaviour as specied
+by its reference model.
+conformance checking assesses to what degree the event log and model con-
+form to each other. early conformance checking techniques [4] are based on
+simple heuristics and therefore, may yield ambiguous/unpredictable results.
+alignments [5,6] were introduced to overcome the limitations of early confor-
+mance checking techniques. alignments map observed behaviour onto behaviour
+described by the process model. as such, we identify four types of relations
+between the model and event log in an alignment:
+1. a log move , in which we are unable to map an observed event, recorded in
+the event log, onto the reference model.
+2. a model move , in which an action is described by the reference model, yet
+this is not reected in the event log.
+3. a synchronous move , in which we are able to map an event, observed in the
+event log, to a corresponding action described by the reference model.
+4. a silent move , in which the model performs a silent or invisible action (de-
+noted with ).
+consider the example model of a simple le reading system given in fig. 1
+and the trace =ha;d;b;di. an alignment for the model and is given by
+0(top right in fig. 1). here, the upper-part depicts the trace and the bottom-
+part depicts an execution path described by the model, starting at state p0and
+ending at state p5. the rst pair,ja
+aj, represents a synchronous move, in which
+both the log and the path in the model describe the execution of an aactivity.
+the next pair,jd
+j, is a log move where the log trace describes the execution of a
+dactivity that is not mapped to a model move. the skip() symbol is used to
+represent such a mismatch. observe that the model remains in the same state.
+this is continued by a model move in which the model executes a cactivity,
+which is not recorded in the trace, i.e., j
+cj. finally, the alignment ends with
+two synchronous moves.
+an optimal alignment is an alignment that minimizes a given cost function.
+typically, each type of move gets a value assigned r0. the cost of an alignment
+is simply the sum of the costs of its individual moves. the most common way to
+do this is to assign a cost of 1 to both model and log moves and 0 to synchronous
+and silent moves. in practice, the a* shortest path algorithm [7] is often used
+for computing optimal alignments.
+we argue that the standard cost function is not always the best-suited func-
+tion for optimal alignments. consider the model from fig.1 again, with the trace
+0=hbi. an optimal alignment using the standard cost function would result
+in1. considering that event bis observed behaviour, i.e., the system logged
+\parse le", it seems illogical to map this behaviour with a path in the model
+indicating that the le was not found. in case we set up the cost function such
+2p0p1
+p2p3
+p4p5
+a: open let0b: parse let1
+c: incr. countert2 d: close let3
+e: le not foundt40=adbd
+acbd
+t0 t2t1t3
+1=b
+e
+t4
+2=b
+abcd
+t0t1t2t3
+fig. 1: example process model (in petri net formalism) for a simple le reading
+system and an alignment for the trace =ha;d;b;di(0). for the trace =
+hbi, two optimal alignments are given using the standard- ( 1) and variant ( 2)
+cost functions.
+that the number of synchronous moves are maximized, an optimal alignment
+would result in 2. arguably, a more likely scenario is that not all parts of the
+program produced log output and 2would be preferred.
+motivated by the example shown in fig. 1, we consider the applicability of
+a cost function that maximizes the number of synchronous moves in a more
+general setting and study its eects. our contributions are as follows.
+{we formalise the relation between the event log and the reference model
+to distinguish dierent cases of alignment problems. we show how the cost
+functions aect the resulting alignments for these cases. we further show that
+when the reference model is an abstraction of the event log, the alignment
+computation process can be signicantly improved.
+{we study the dierences in alignments and their computation times on over
+a thousand large instances that exhibit various characteristics. we also com-
+pare the results from the a* algorithm with a recent symbolic algorithm [8].
+{we present a new algorithm for computing alignments that exploits our new
+cost function in a preprocessing step. using a set of industrial models, we
+show that it performs an order of magnitude faster than the a* algorithm.
+the remainder of this paper is structured as follows. section 2 introduces
+preliminaries. then, in section 3 and section 4 we introduce the synchronous
+cost function and formalise the relation between the event log and the reference
+model. we discuss existing algorithms for computing alignments in section 5. in
+section 6 we present the new algorithm that preprocesses the model to improve
+the alignment computation process. experiments are presented in section 7.
+section 8 discusses related work. section 9 concludes the paper.
+2 preliminaries
+we assume that the reader is familiar with the basics of automata theory and
+petri nets. we denote a trace or sequence by =h0;1;:::;jj 1i, two se-
+quences are concatenated using the operation. given a sequence and a set
+of elements s, we refer to nsas the sequence without any elements from s,
+e.g.,ha;b;b;c;a;finfb;fg=ha;c;ai. for two sequences 1and2, we call1
+3asubsequence of2(denoted with 1v2) if1is formed from 2by delet-
+ing elements from 2without changing its order, e.g., hc;a;tivha;c;r;a;t;ei.
+similarly,1@2implies that 1is a strict subsequence of 2, thus16=2.
+traces are sequences 2, for which each element is called an event and is
+contained in the alphabet , also called the set of events. we globally dene the
+alphabet, which does not contain the skip event ( ) nor the invisible action
+or silent event ( ). given a set s, we denote the set of all possible multisets
+asb(s), and its power-set by 2s. an event log e is a multiset of traces, i.e.,
+eb().
+2.1 preliminaries on petri nets
+petri nets are a mathematical formalism that allow us to describe processes, typ-
+ically containing parallel behaviour, in a compact manner. consider fig.1 which
+is a simple example of a petri net. the petri net consists of places , visualized as
+circles, that allow us to express the state (or marking ) of the petri net. further-
+more, it consists of transitions , visualized as boxes, that allow us to manipulate
+the state of the petri net. we are never able to connect a place with another
+place nor a transition with another transition. thus, from a graph-theoretical
+perspective, a petri net is a bipartite graph.
+denition 1 (petri net, marking). apetri net is dened as a tuple n =
+(p;t;f;;;m0;mf)such that:
+{p is a nite set of places ,
+{t is a nite set of transitions such that p\t=;,
+{f(pt)[(tp)is a set of directed arcs, called the ow relation ,
+{is a set of activity events, with =[fg,
+{:t!is alabelling function for each transition,
+{m02b(p)is the initial marking of the petri net,
+{mf2b(p)is the nal marking of the petri net.
+amarking is dened as a multiset of places, denoting where tokens reside in
+the petri net. a transition t2tcan be red if, according to the ow relation,
+all places directing to tcontain a token. after ring a transition, the tokens are
+removed from these places and all places having an incoming arc from treceive
+a token. it may be possible for a place to contain more than one token.
+denition 2 (marking graph). for a petri net n = (p;t;f;;;m0;mf),
+the corresponding marking graph orstate-space mg = (q;;;q 0;qf)is a
+non-deterministic automaton such that:
+{qb(p)is the (possibly innite) set of vertices in mg, which corresponds
+to the set of reachable markings from m 0(obtained from ring transitions),
+{(qtq)is the set of edges in mg, i.e., (m;t;m0)2i there is a
+t2t such that m0is obtained from ring transition tfrom marking m.
+{q0=m0is the initial state of the graph,
+{qf=mfis the nal state of the graph.
+for an edge e= (m;t;m0)2, we write(e)to denote(t)and use the notation
+ma  !m0to represent the edge efor which(e) =a(we assume that for two edges
+4(m;t 1;m0)2and(m;t 2;m0)2, if(t1) =(t2)thent1=t2). the source
+and target markings of edge eare respectively denoted by src(e)andtar(e).
+denition 3 (path, language). given a petri net n and corresponding mark-
+ing graph mg = (q;;;q 0;qf), a sequence of edges p=hp0;p1;:::;pni2
+is called a path in n if it forms a path on the marking graph of n: src(p0) =
+m0^tar(pn) =mf^80i<n:tar(pi) =src(pi+1). the set of all paths in n
+is denoted by paths (n). with(p)we refer to the sequence of labels visited in
+p, i.e.,(p) =h(p0);(p1);:::; (pn)i(there may be dierent paths pand
+p0such that(p) =(p0)). we dene the languagelof a petri net n by
+l(n) =f(p)jp2paths (n)g.
+denition 4 (trace to petri net). given a trace =h1;2;:::;ni2,
+its corresponding petri net is dened as n = (p;t;f;;;m0;mf)with p =
+fp0;p1;:::;pn;pn+1g, t=ft0;t1;:::;tng, f=f(p0;t0);(p1;t1);:::; (pn;tn)g[
+f(t0;p1);(t1;p2);:::; (tn;pn+1)g,=s
+0i<nfig,80i<n:(ti) =i, m0=
+p0, and m f=pn+1.
+2.2 preliminaries on alignments
+denition 5 (alignment). let2be a log trace and let n be a petri
+net model, for which we obtain the marking graph mg = (q;;;q 0;qf). we
+refer toas the alphabet containing skips: =[fg andas
+the alphabet that also contains the silent event: =[f;g. let2
+()be a sequence of log-model pairs (note that steps are only possible
+in the model). for =h(0
+0;1
+0);(0
+1;1
+1);:::; (0
+jj 1;1
+jj 1)i, we dene `as
+`=h0
+0;0
+1;:::;0
+jj 1infg andmbym=h1
+0;1
+1;:::;1
+jj 1infg . we
+callanalignment if the following conditions hold:
+1.`=(the activities of the log-part, equals to ),
+2.m2l(n)(mforms a path in n),
+3.8a;b2:a6=b)(a;b)=2(illegal moves),
+4.(;)=2, (the `empty' move may not exist in ).
+denition 6 (alignment cost). let2()be an alignment for
+2and the petri net n. the cost function cfor pairs of is given as follows;
+c: ()!r0, and we overload cfor alignments; c: ()!
+r0, for which we have c() =pjj 1
+i=0c(i).
+we call an alignment under cost function coptimal i@0:c(0)<c(),
+i.e., there does not exist an alignment 0with a smaller cost.
+denition 7 (standard cost function). the standard cost function cstis
+dened for an alignment pair (`;m)2()as follows:
+cst(`;m) =8
+>>><
+>>>:0`=andm=(silent move, e.g., (;))
+0`2andm2and`=m(e.g., synchronous move (a;a))
+1`2andm=(e.g., log move (a;))
+1`=andm2(e.g., model move (;a))
+53 maximizing synchronous moves
+we gather that the standard cost function from denition 7 is the most com-
+monly used cost function in literature [1,9,10,7], though note that any cost func-
+tion could be used. the standard cost function may, however, lead to undesired
+results, as illustrated by the example from fig. 1. we consider a new cost func-
+tion that maximizes the number of synchronous moves, since it explains as many
+log moves as possible. we propose the alternative cost function as follows.
+denition 8 (max-sync cost function). we dene the max-sync cost func-
+tioncsync for an alignment pair as follows (for small ">0):
+csync(`;m) =8
+>>><
+>>>:0`=andm=(silent move, e.g., (;))
+0`2andm2and`=m(e.g., synchronous move (a;a))
+1`2andm=(e.g., log move (a;))
+" ` =andm2(e.g., model move (;a))
+this cost function only penalizes log moves, which as a consequence causes an
+optimal alignment to minimize the number of log moves and thus maximize the
+number of synchronous moves. the "cost for model moves further lters optimal
+alignments to only include shortest paths through the model that maximize
+synchronous moves.
+an advantage of the max-sync cost function over the standard one is that
+synchronized behaviour is not sacriced for shorter paths through the model (as
+fig. 1 illustrates). a disadvantage is that in order to maximize the number of
+synchronous moves, it may be possible that many model moves are required.
+4 relating the model and event log
+given a petri net model n and an event log e b(), we can distinguish four
+cases based on the languages that they describe. by distinguishing the relative
+granularities of n and e we dene cases of alignment problems as follows.
+c1:812e: (922l(n) :1=2); all log traces correspond to paths in
+the model. then, every log trace can be mapped onto the model by only
+using synchronous and silent moves, which is optimal for cstandcsync.
+c2:812e: (922l(n) :1v2); all log traces correspond to sub-
+sequences of paths in the model. then, every log trace can be mapped
+onto the model without using any log moves. the example from fig.1 for
+=hbiis such an instance. we hypothesize that csyncprovides better
+alignments in such instances as cstmay avoid synchronization in favour
+of shorter paths through the model.
+c3:812e: (922l(n) :2v1); for every log trace there is a path
+that forms a subsequence of the log trace. then, every log trace can be
+mapped onto the model without using any model moves. here, csyncand
+to some extent cstcan arguably lead to bad results as model moves may
+be taken to synchronize with `undesired' behaviour.
+6c4: none of the properties hold. all move types may be necessary for align-
+ments. we regard this as a standard scenario. depending on the use case,
+eithercstorcsynccould be preferred.
+aside from c4, we consider cases c2 and c3 as common instances in practice,
+as logging software often causes either too many or too little events to be logged
+or in case the model is over/underspecied. discrepancies then show whether
+the model is of the right granularity. we note that it is also possible to hide
+certain activities in the model or log before alignment. this is however not
+trivial, especially if there are (slight) deviations in the log such that the alignment
+problem does not t c2 or c3 exactly anymore.
+when considering instances that exactly t case c2 or c3, we can construct
+alignments by respectively removing all log or model moves from the product of
+the model and log. we dene the cost functions caddandcremto be variants of cst
+such that model and log moves respectively have a cost of 1. we argue that this
+results in a better `alignment quality' and reduces the time for its construction.
+5 algorithms for computing alignments
+we consider two algorithms for computing alignments, which we discuss as fol-
+lows. both algorithms take the product petri net as input.
+a*.the a* algorithm [7] computes the shortest path from the initial marking
+to the nal marking on the marking graph for a given cost function. the heuristic
+function for a* exploits the petri net marking equation, which can be achieved
+using integer linear programming (ilp), to prune the search space.
+symbolic algorithm. the symbolic algorithm [8] was recently developed as
+an improvement over a* for large state spaces. it exploits symbolic reachability
+to search for an alignment, i.e., considering sets of markings instead of single
+ones. by restricting the cost function to only allow 0 or 1-cost moves, optimal
+alignments can be computed by only taking a 1-cost move after exploring all
+markings reachable via 0-cost steps. we refer to this algorithm by sym.
+6 preprocessing reference models for large event logs
+when constructing an alignment under the csynccost function, we can disregard
+the cost for model moves to a certain extent. the goal is to nd a path through
+the model that maximizes the number of synchronous moves. we can achieve
+this by searching for a subsequence in the log trace that is also included in
+the language of the reference model. by computing the transitive closure of the
+model's marking graph, we nd all paths and subsequences of paths through
+the model. for every log trace we can use dynamic programming to search for
+the maximum-length subsequence in the log trace that can be replayed in the
+transitive closure graph (tcg), from which we can construct a path through
+the marking graph and obtain an optimal alignment.
+we construct a tcg as described in denition 9. here, -edges are added to
+the marking graph such that every marking is reachable via -steps. after de-
+terminization, for every path pin the original marking graph the tcg contains
+all pathsp0such that(p0)v(p).
+7p0
+p1 p2 p3
+p4 p5 p6
+p7at0 bt1
+ct2 dt3 et4
+ft5 gt6p0
+p1p2 p2p3
+p2p4p1p5p3p5p2p6
+p4p5 p5p6
+p7a b
+c d d e
+d c e d
+f gp0p1p2
+p2p3p2p4
+p1p5p3p5
+p2p6p4p5
+p5p6p7q0
+p1p2
+p2p4
+p1p5
+p4p5
+p7q1p2p3
+p3p5
+p2p6
+p5p6
+p7q2
+p2p4
+p4p5
+p7q3p1p5
+p4p5
+p7q4
+p3p5
+p5p6
+p7q5
+p2p6
+p5p6
+p7q6
+p4p5
+p7
+q7p5p6
+p7
+q9
+p7
+q10p1p5
+p3p5
+p4p5
+p5p6
+p7q8a b
+c d d e
+d c e d
+f gd
+g,f
+gfe ce
+gggc
+fff
+fig. 2: example petri net model (left), its corresponding marking graph (middle)
+and transitive closure graph (right) with the sequence hd;eihighlighted.
+we can use this property to search for a subsequence of the log trace that
+can fully synchronize with the model. for instance in the example of fig. 2,
+consider a log trace =hf;d;e;bi. thefevent can be red from q0, after
+which the tcg is in state q10. from this state, it is not possible to perform any
+other event from log trace. a better choice would be to skip the fevent (which
+would then be a log move) and form the subsequence hd;ei, as highlighted4. we
+call the maximum-length subsequence ^ from the log trace a maximum tting
+subsequence if ^also forms a path through the tcg, as dened in denition 10.
+denition 9 (transitive closure graph). given a marking graph mg =
+(q;;;q 0;qf), we rst construct an extended marking graph mg0=
+(q;;0;q0;qf)with0=[f(src(e);;tar(e))je2g. atransitive clo-
+sure graph (tcg) , tcg = (q;;; q0;qf)is dened as the result of deter-
+minizing mg0(by using a standard determinization algorithm [11]) and by then
+removing all non-nal states from the tcg such that q2q,=nfg,
+(qq),q0=q, and qf=q.
+for an edge e2we also use the notation src(e)andtar(e)to respectively
+refer to the source and target marking sets in the tcg. paths over the tcg
+are dened analogously to paths over marking graphs (denition 3) and we use
+paths (tcg )andl(tcg )to respectively denote the set of all paths in the tcg
+and the language of the tcg.
+denition 10 (maximum tting subsequence). given a sequence (log
+trace)2and tcg = (q;;; q0;qf), then ^vis amaximum tting
+subsequence if and only if ^2l(tcg )^8^0v: ^02l(tcg ))j^jj^0j.
+we construct ^by using dynamic programming to search for a subsequence of 
+that is a maximum-length path in the tcg.
+4it might be interesting to note that after performing the daction in the tcg, in
+the petri net we have not yet made the choice to re either an aor abtransition;
+we implicitly make the decision to re the btransition after choosing the eevent.
+8algorithm 1: path construction from a maximum tting subsequence ^ 
+1func pc(tcg = (q;;; q0;qf);mg= (q;;;q 0;qf);^=h^0;^1;:::; ^ni)
+2 // construct path mfp on tcg such that (mfp) = ^
+3 mfp:=h(q0;^0;s);(s;^1;s0);:::; (s00;^n;s000)is.t.80in:mfpi2
+4p:=bwd(mg;qf;^n;tar(mfpn))// path ^ntoqfonmg
+5 fori:=n 1;i0;i:=i 1do// add paths from ^ito^i+1
+6p:=bwd(mg;src(p0);^i;tar(mfpi))p
+7 return bwd(mg;src(p0);?;q0)p// add path from q0to^0
+8func bwd(mg= (q;;;q 0;qf);m2q;a2([?);sq)
+9w:=hmi// sequence of unvisited markings in the backward search
+108m2s:f[m] :=null // mapping from markings to edges ( f:q!)
+11 fori:= 0;i<jwj;i:=i+ 1do// continue for all markings in w
+12 if9m02q;a02: (m0;a0;wi)2^(a0=a_(a=?^m0=q0))then
+13 p:=h(m0;a0;wi)i// found path from a(or initial marking)
+14 while tar(pjpj 1)6=mdop:=pf[tar(pjpj 1)]
+15 returnp// shortest path from a(orq0) tom
+16 foralle2:src(e)2(snw)^tar(e) =wido
+17 w:=w hsrc(e)i// add predecessor markings of mtow
+18 f[src(e)] :=e// direct the source markings towards m
+19 returnhi// no path from a(orq0) is found (should never occur)
+once we have found the maximum tting subsequence ^ for a given model
+and log trace, we still have to determine which model moves should be applied
+to form a path through the original model. this can be achieved by using the
+tcg and traversing ^ in a backwards fashion as we show in algorithm 1.
+we rst construct a path mfpfrom the subsequence ^ (line 3), in the example
+from fig. 2 with ^ =hd;ei(see also fig. 3 for an illustration of the path
+construction process) this would be mfp=h(q0;d;q8);(q8;e;q9)i. then in
+line 4, a backward search procedure ( bwd) is called to search for a path pin the
+marking graph from an e-edge to the nal marking (p7).
+the bwdprocedure takes a target marking m, labelaand search space sas
+arguments. a sequence wis maintained to process unvisited markings from s
+and a mapping f:q!is used for reconstructing the path. starting from the
+target marking m(which isw0), the procedure searches for edges edirecting
+towardsmin line 16-18 such that src(e) is insand not already visited. for
+every such edge e, its source is appended to w(to be considered in a future
+iteration) and src(e) is mapped to efor later path reconstruction.
+following iterations of the for loop in line 11-18 consider a predecessor wiof
+mand search for edges directing to wi. this way, the search space is traversed
+backwards in a breadth-rst manner, resulting in shortest paths to m.
+in line 12-15 the bwdprocedure checks whether there is an edge m0a  !wi
+for somem0(or an edge q0a0
+ !wifor arbitrary a0in casea=?) and if so,
+constructs a path towards min line 14 which is then returned. in the example,
+the pathh(p3p5;e;p5p6);(p5p6;g;p7)iwill be returned for the rst bwdcall.
+9p1p2p1p5
+p2p4p2p6
+p3p5p4p5
+p5p6p7p1p5p4p5
+p5p6p7p0
+p2p3 p3p5 p5p6
+p7b
+^0=d ^1=e
+gq0
+q8 q9
+=fdeb
+bdeg
+t1t3t4 t6
+fig. 3: path construction using algorithm 1 on the example from fig. 2 for a
+maximum tting subsequence ^ =hd;eivhf;d;e;bi. markings in the grey
+region are not part of the path. the resulting alignment is shown on the right.
+after the rst bwdcall, the main function iterates backwards over all remain-
+ing edges from mfp(line 5-6) to create paths between ^ iand ^i+1, which are
+inserted in the path before p. finally, in line 7 a path from the initial marking
+q0towards the rst label ^ 0is inserted before pto complete the path (here the
+label is set to?to search for q0in the bwdprocedure).
+in the example we rst compute the path h(p3p5;e;p5p6);(p5p6;g;p7)iin
+line 4, then after line 5-6 we insert the path h(p2p3;d;p3p5)i, and in line 7
+we insert the path from the initial state q0= p0,h(p0;b;p2p3)ito create the
+complete minimal-length path pin the marking graph such that ^ v(p).
+the alignment can be reconstructed by marking all events in the maximum
+tting subsequence as synchronous moves, by marking the remaining labels in
+the log trace as log moves, and inserting the model and silent moves (as computed
+by algorithm 1) at the appropriate places.
+note that the tcg algorithm does not exactly compute an alignment for
+the cost function csync. the backwards bfs does ensure a shortest path through
+the model from the initial to the nal marking while synchronizing with the
+maximum tting subsequence. however, there might exist a dierent maximum
+tting subsequence that leads to a dierent path through the model with a
+lower total cost (fewer model moves). this can be repaired by computing the
+alignments for all maximum tting subsequences. if the marking graph contains
+cycles, the corresponding markings get contracted to a single state in the tcg
+with a self-loop for each activity in the cycle. also, the tcg may in theory
+contain exponentially more states than there are markings in the marking graph.
+however, in industrial models (section 7.3), we found that in many cases the
+number of states in the tcg is at most two times more than the number of
+markings in the marking graph.
+7 experiments
+for the experiments, we considered two types of alignment problems. on the one
+hand, a large reference model accompanied by an event log consisting of a single
+log trace, and on the other hand a smaller reference model accompanied by an
+10event log of many traces. all experiments were performed on an intelrcoretm
+i7-4710mq processor with 2.50ghz and 7.4gib memory. for all experiments,
+we have set a timeout of 60 seconds. when computing averages, a timeout also
+counts as 60 seconds.
+we investigate dierences between the alignments resulting from using the
+standard- and max-sync cost functions, and compare alignment computation
+times for a* (with ilp, using the implementation from rapidprom [12]) and
+the symbolic algorithm (implemented in the ltsmin model checker [13]). we
+further investigate specic alignment problems, cases c2 and c3 as discussed
+in section 4. finally, we also look at models accompanied by many log traces
+to compare the performance of the tcg algorithm (implemented in prom [14])
+with the other algorithms. for all large models with singleton log traces we
+used 8 threads for computing alignments, and for smaller models with many log
+traces we only used a single thread per alignment computation5. all results are
+available online at https://github.com/utwente-fmt/maxsync-bpm2018.
+7.1 experiments using large models and singleton event logs
+model generation. using the ptandloggenerator [15] we generated petri net
+models with process operators and additional features set to their defaults; where
+the respective probabilities for sequence, xor, parallel, loop, or are set to 45%,
+20%, 20%, 10%, and 5%. the additional features for the occurrence of silent and
+duplicate activities, and long-term dependencies were all set to 20%.
+to examine scalability we ranged the average number of activities from 25,
+50, and 75, resulting in respectively 110, 271, and 370 transitions on average. for
+these settings, we generated 30 models (thus 90 in total) and generated a single
+log trace per model. for this log trace we added 10%, 30%, 50%, and 70% noise
+in three dierent ways (thus 12 noisy singleton logs are created); by (1) adding,
+removing and swapping events (resembling case c4), (2), by only adding events
+(resembling case c3), and (3) by only removing events (resembling case c2). in
+total there are 1,080 noisy singleton logs. we rst consider noise of type 1.
+alignment dierences. in table 1 we compare the resulting alignments,
+produced by sym, for the dierent cost functions. when comparing the overall
+results ofcstandcsync(rightmost column), we observe that csyncuses about 43%
+fewer log moves, which are added as synchronous moves. however in doing so,
+more than six times as many model moves are required.
+when looking at an increase in the amount of noise, the relative dierence
+between the number of log moves remains the same, while this dierence in
+model moves slightly drops. when increasing the number of activities from 25
+to 75, we observe an increase in the number of model moves for csyncfrom 3.2
+times to 9.3 times as many compared to cst. as a corresponding result from this
+5we consider multi-threaded experiments not as useful in this scenario, as the problem
+can be parallelized by dividing the log traces over the dierent threads and computing
+the alignments independently.
+11table 1: comparison between alignments generated using the cstandcsynccost
+functions. the numbers show averages, e.g., the value of 2.3 in the top-left corner
+denotes the average number of log moves for all computed alignments for which
+10% noise is added, using the cstcost function.
+noise added (add, remove, swap) number of activities average
+10% 30% 50% 70% 25 50 75
+cstcsynccstcsynccstcsynccstcsynccstcsynccstcsynccstcsynccstcsync
+log 2.31.3 6.53.6 9.45.410.9 6.3 4.73.2 8.94.6 8.44.5 7.04.0
+model 2.015.7 4.630.9 5.835.3 6.238.1 3.310.7 5.639.1 5.450.2 4.529.4
+sync 28.5 29.6 20.9 23.7 16.8 20.8 14.5 19.1 13.8 15.4 23.2 27.5 29.4 33.3 20.6 23.6
+silent 17.3 24.4 14.7 30.4 13.6 35.3 12.8 35.1 10.0 13.3 16.2 39.6 21.6 51.6 14.7 31.0
+eect, the dierence between log moves from csyncandcststays relatively the
+same for increasing activities.
+we conclude that for csyncthe relative reduction in log moves stays mostly
+the same, when uctuating the amount of noise or size of the model. the size of
+the model seems to greatly aect the number of model moves for csync, making
+alignments from cstandcsyncmore diverse for larger models.
+performance results. we observed that while sym is faster in computing
+alignments than the a* algorithm on cst(it takes on average 15.8s for computing
+an alignment using a* and 10.5s for sym), for the csynccost function a* is
+outperforming the symbolic algorithm (13.7s for a* and 16.5s for sym). this
+has to do with the eect that the symbolic algorithm will explore the entire
+model before attempting a single log move whereas a* does not.
+7.2 alignment problems that only add or remove events
+alignment dierences. in table 2 we compare the resulting alignments for
+adding or removing events. when inspecting the addcase, we nd that the cstal-
+ready avoids model moves for the most part as we would expect. moreover, there
+are only small dierences between alignments from cstandcadd. forcsync, many
+model moves may be chosen to increase the number of synchronous moves. these
+additional synchronous moves are arguably not part of the `desired' alignment
+since they require a large detour through the model.
+when removing events from the log trace, the cstcost function is only partly
+able to describe the removal of events as it still chooses log moves. the csync
+cost function does not take any log moves as this maximizes the number of
+synchronous moves, making it equal to crem. when comparing cstandcsync,
+we could argue that for the addcase, thecstcost function better represents a
+`correct' alignment and for the remcasecsyncis better suited.
+performance results. we observed that for cst, a* performs relatively
+bad for the remcase (14.1s on average), but signicantly better for csync(2.3s
+on average). we argue that a* for csttries to perform many log moves, that
+results in a lot of backtracking, while for csyncthe algorithm avoids log moves
+entirely. the symbolic algorithm uses 6.6s and 7.3s on average for cstandcsync
+respectively. for the remcase, we do not observe a signicant dierence in the
+12table 2: comparison between alignments generated using the cstandcsynccost
+functions for alignment problems, where noise only consist of adding ( add) or
+removing ( rem) events. the cost functions caddandcremare variations on cst
+such that model and log moves respectively have a cost of 1.
+log events added ( add) log events removed ( rem)
+10% 30% 50% 10% 30% 50%
+cstcsynccaddcstcsynccaddcstcsynccaddcstcsynccremcstcsynccremcstcsynccrem
+log 3.12.0 3.1 7.55.1 7.610.6 7.410.8 0.30.0 0.0 1.00.0 0.0 2.50.0 0.0
+model 0.013.1 0.0 0.121.6 0.0 0.223.1 0.0 3.03.3 3.3 6.37.7 7.7 8.011.9 11.9
+sync 29.4 30.5 29.4 26.5 28.9 26.4 24.1 27.4 23.9 30.3 30.7 30.7 21.0 22.0 22.0 13.9 16.4 16.4
+silent 16.3 23.6 16.2 15.5 31.0 15.4 14.0 30.0 13.8 18.4 18.5 18.5 16.0 16.7 16.7 13.2 16.0 16.0
+performance times when considering crem, i.e., removing the log moves. this is
+because both algorithms already avoid log moves for the csynccost function.
+for the addcase, both a* and sym require more time for computing align-
+ments forcsyncthan forcst. when removing model moves ( cadd), a* and sym
+perform in respectively 36% and 77% of the time required for cst(thus 3.4s and
+9.3s). by removing the model moves, both algorithms no longer have to explore
+a large part of the state-space and only have to decide on which log moves,
+synchronous and silent actions to chose, which is especially benecial for a*.
+7.3 experiments using event logs with more traces
+we now consider smaller models that have to align many log traces. for our
+experiments, we selected 9 instances from the 735 industrial business process
+petri net models from nancial services, telecommunications and other domains,
+obtained from the data sets presented in fahland et al. [16].
+for our selection, we computed the transitive closure graph (tcg) and con-
+sidered the instances for which we were able to compute tcg within 60 seconds.
+from this set, we selected the 9 most interesting cases, e.g., the models with the
+largest petri net models, largest marking graphs, largest tcg graph, and largest
+tcg construction time. on average the marking graph contains 108 markings
+and the tcg 134 states. in the worst case, the number of states in the tcg
+was 200, which doubled the number of markings in the marking graph. we did
+not nd a large dierence between the performance results of the individual
+experiments.
+for each model, we generated a set of 10, 100, 1,000, and 10,000 log traces for
+10%, 30%, 50%, and 70% noise added by adding, removing, and swapping events.
+thus in total, we have 16 event logs per model. we compared the performance of
+the tcg algorithm with that of a* using a single thread. we also experimented
+with the symbolic algorithm, but its setup time per alignment computation is
+too large to provide meaningful results. note that in our experiments, we only
+consider the csynccost function. the tcg algorithm is not applicable to the cst
+cost function.
+results. the results are summarized in table 3. on average, the tcg al-
+gorithm used 270 milliseconds for computing the transitive closure graph. when
+13table 3: alignment computation time (in milliseconds) for models with many
+log traces. tcg-comp, tcg-align, and tcg respectively denote the time for
+computing the tcg, the time for aligning all log traces, and the sum of the two.
+log size tcg-comp tcg-align tcg a*
+10 272 9 281 426
+100 269 20 289 3,539
+1,000 265 161 426 13,247
+10,000 274 1,542 1,936 33,906noise tcg a*
+10% 727 9,320
+30% 72913,919
+50% 75014,199
+70% 72713,679
+increasing the number of log traces (left table), we see that the preprocessing
+step of the tcg algorithm remains a signicant part of its total time for up to
+1,000 log traces. the a* algorithm has to create a synchronous product of the
+model and log trace for each instance, and expectedly takes more time in total.
+for 10,000 log traces, a* is 17 times slower than the tcg algorithm. but even
+for 10 log traces, the tcg algorithm outperforms a* by almost a factor of two.
+when comparing the results for dierent amounts of noise (right table), we
+see practically no dierence in the computation times for the tcg algorithm.
+the a* algorithm does require signicantly more time for 30%, 50%, and 70%
+noise compared to the 10% case. we argue that from 30% noise onwards, a* has
+to visit most of the state-space to construct an optimal alignment. in the tcg
+algorithm, noise does not seem to aect its performance.
+8 related work
+one of the earliest works in conformance checking was from cook and wolf [17].
+they compared log traces with paths generated from the model.
+one technique to check for conformance is token-based replay [4]. the idea
+is to `replay' the event logs by trying to re the corresponding transitions, while
+keeping track of possible missing and remaining tokens in the model. however,
+this technique does not provide a path through the model. when traces in the
+event log deviate a lot, the petri net may get ooded with tokens and the tokens
+do not provide good insights anymore.
+alignments were introduced [5,7] to overcome the limitations of the token-
+based replay technique. alignments formulate conformance checking as an opti-
+mization problem, i.e., minimizing the alignment cost-function. since its intro-
+duction, alignments have quickly become the standard technique for conformance
+checking along with the a* algorithm for computing alignments [9]. in previous
+work [8] we presented the symbolic algorithm for alignments and we analysed
+how dierent model characteristics inuence the computation times for cst.
+for larger models, techniques have been developed to decompose the petri
+net in smaller subprocesses [18]. for instance, fragments that have a single-entry
+and single-exit node (sese) represent an isolated part of the model. this way,
+localizing conformance problems becomes easier in large models. it would be
+interesting to combine the tcg algorithm with such decomposed models.
+14a sub-eld of alignments is to compute a prex-alignment for an incom-
+plete log trace. this is useful for analysing processes in real-time instead of a-
+posteriori. several techniques exist for computing prex-alignments [7,19]. the
+tcg approach that we introduced in this paper could also be suitable for com-
+puting prex-alignments. recently, burattin and carmona [20] introduced a
+technique similar to the tcg approach, in which the marking graph is extended
+with additional edges to allow for deviations. however, it cannot guarantee op-
+timality as a single successor marking is chosen per event, while instead we
+consider all possible successors and can, therefore, better adapt for future events.
+in a more general setting, conformance checking is related to nding a longest
+common subsequence , computing a di, or computing minimal edit distances .
+here, the problem is translated to searching for a string bfrom a regular lan-
+guagelsuch that the edit distance of band an input word is minimal [21].
+9 conclusion
+in this paper, we considered a max-sync cost function that instead of minimizing
+discrepancies between the log trace and the model, maximizes the number of
+synchronous moves. we empirically evaluated the dierences with the standard
+cost function, compared the alignment computation times. the max-sync cost
+function also lead to a new algorithm for computing alignments.
+we observed that in general, a considerable amount of model moves may
+be required to add a few additional synchronous moves, when comparing max-
+sync with the standard cost function. however, when alignment problems are
+structured such that log moves are on a lower granularity than the model, a
+max-sync cost function may be better suited. we also observed a signicant
+performance improvement in alignment construction if alignments can be formed
+without taking any model moves or without any log moves.
+on industrial models with many log traces, we showed that our new algo-
+rithm, which uses a preprocessing step on the model, is an order of magnitude
+faster in computing alignments on many log traces for the max-sync cost func-
+tion.
+we conclude that the max-sync cost function is complementary to the stan-
+dard one as it provides an alternative view that may be preferable in some
+contexts, and it may also signicantly reduce the alignment construction time.
+references
+1. van der aalst, w.m.p.: process mining: data science in action. springer (2016)
+2. liu, c., van dongen, b.f., assy, n., van der aalst, w.m.p.: component behav-
+ior discovery from software execution data. in: 2016 ieee symposium series on
+computational intelligence, ssci 2016, december 6-9, 2016. (2016) 1{8
+3. leemans, m., van der aalst, w.m.p.: process mining in software systems: discov-
+ering real-life business transactions and process models from distributed systems.
+in: 18th acm/ieee international conference on model driven engineering lan-
+guages and systems, models 2015, september 30 - october 2, 2015. (2015) 44{53
+154. rozinat, a., van der aalst, w.m.p.: conformance checking of processes based on
+monitoring real behavior. information systems 33(1) (2008) 64 { 95
+5. van der aalst, w.m.p., adriansyah, a., van dongen, b.f.: replaying history
+on process models for conformance checking and performance analysis. wiley
+interdiscip. reviews: data mining and knowledge discovery 2(2) (2012) 182{192
+6. adriansyah, a., sidorova, n., van dongen, b.f.: cost-based fitness in confor-
+mance checking. in: 11th international conference on application of concurrency
+to system design, acsd 2011, 20-24 june, 2011. (2011) 57{66
+7. adriansyah, a.: aligning observed and modeled behavior. phd thesis, eindhoven
+university of technology, the netherlands (2014)
+8. bloemen, v., van de pol, j., van der aalst, w.m.p.: symbolically aligning ob-
+served and modelled behaviour. in: 18th international conference on application
+of concurrency to system design, acsd 2018, 24-29 june, 2018. (2018)
+9. van zelst, s.j., bolt, a., van dongen, b.f.: tuning alignment computation: an
+experimental evaluation. in: proc. of the int. workshop on algorithms & theories
+for the analysis of event data, ataed 2017, june 25-30, 2017. (2017) 1{15
+10. adriansyah, a., van dongen, b.f., van der aalst, w.m.p.: memory-ecient align-
+ment of observed and modeled behavior. technical report (2013)
+11. sudkamp, t.a.: languages and machines : an introduction to the theory of
+computer science. addison-wesley longman publishing co., inc. (1988)
+12. van der aalst, w.m.p., bolt, a., van zelst, s.j.: rapidprom: mine your processes
+and not just your data. corr abs/1703.03740 (2017)
+13. kant, g., laarman, a., meijer, j., van de pol, j., blom, s., van dijk, t.: ltsmin:
+high-performance language-independent model checking. in baier, c., tinelli,
+c., eds.: tools and algorithms for the construction and analysis of systems.
+volume 9035 of lncs. springer berlin heidelberg (2015) 692{707
+14. verbeek, h.m.w., buijs, j.c.a.m., van dongen, b.f., van der aalst, w.m.p. in:
+xes, xesame, and prom 6. springer berlin heidelberg (2011) 60{75
+15. jouck, t., depaire, b.: ptandloggenerator: a generator for articial event
+data. in: proceedings of the bpm demo track 2016 co-located with the 14th in-
+ternational conference on business process management (bpm 2016), september
+21, 2016. (2016) 23{27
+16. fahland, d., favre, c., koehler, j., lohmann, n., v olzer, h., wolf, k.: analysis on
+demand: instantaneous soundness checking of industrial business process models.
+data knowl. eng. 70(5) (2011) 448{466
+17. cook, j.e., wolf, a.l.: software process validation: quantitatively measuring the
+correspondence of a process to a model. acm trans. softw. eng. methodol. 8(2)
+(1999) 147{176
+18. polyvyanyy, a., vanhatalo, j., v olzer, h. in: simplied computation and gener-
+alization of the rened process structure tree. springer berlin heidelberg (2011)
+25{41
+19. van zelst, s.j., bolt, a., hassani, m., van dongen, b.f., van der aalst, w.m.p.: on-
+line conformance checking: relating event streams to process models using prex-
+alignments. international journal of data science and analytics (2017)
+20. burattin, a., carmona, j.: a framework for online conformance checking. in:
+proc. of the 13th int. workshop on business process intelligence (bpi 2017). (2017)
+21. wagner, r.a.: order-n correction for regular languages. commun. acm 17(5)
+(1974) 265{268
+16

@@ -1,0 +1,470 @@
+improving merging conditions for recomposing
+conformance checking
+wai lam jonathan lee1, jorge munoz-gama1, h.m.w. verbeek2,
+wil m.p. van der aalst3, and marcos sep ´ulveda1
+1pontiﬁcia universidad cat ´olica de chile (chile)
+{walee,jmun}@uc.cl ,marcos@ing.puc.cl ,
+2eindhoven university of technology, (the netherlands)
+h.m.w.verbeek@tue.nl
+3rwth aachen university, (germany)
+wvdaalst@pads.rwth-aachen.de
+abstract. efﬁcient conformance checking is a hot topic in the ﬁeld of pro-
+cess mining. much of the recent work focused on improving the scalability of
+alignment-based approaches to support the larger and more complex processes.
+this is needed because process mining is increasingly applied in areas where
+models and logs are “big”. decomposition techniques are able to achieve signif-
+icant performance gains by breaking down a conformance problem into smaller
+ones. moreover, recent work showed that the alignment problem can be resolved
+in an iterative manner by alternating between aligning a set of decomposed sub-
+components before merging the computed sub-alignments and recomposing sub-
+components to ﬁx merging issues. despite experimental results showing the gain
+of applying recomposition in large scenarios, there is still a need for improving
+the merging step, where log traces can take numerous recomposition steps be-
+fore reaching the required merging condition. this paper contributes by deﬁning
+and structuring the recomposition step, and proposes strategies with signiﬁcant
+performance improvement on synthetic and real-life datasets over both the state-
+of-the-art decomposed and monolithic approaches.
+keywords: recomposition, conformance checking, process mining
+1 introduction
+in today’s organizations, it is important to ensure that process executions follow the
+protocols prescribed by process stakeholders so that compliance is maintained. confor-
+mance checking in process mining compares event data with the corresponding process
+model to identify commonalities and discrepancies [2]. detailed diagnostics provide
+novel insights into the magnitude and effect of deviations. the state-of-the-art in con-
+formance checking are alignment-based techniques that provide detailed explanations
+of the observed behavior in terms of modeled behavior [4].
+however, one of the limitations of alignment-based approaches is the explosion
+of state-space during the alignment computation. for example, the classic cost-based
+alignment approach [4] in the worst case is exponential with respect to the model size
+[5].2 lee, munoz-gama, verbeek, van der aalst, and sep ´ulveda
+one research line focuses on decomposition techniques which break down a con-
+formance problem into smaller sub-problems [1]. experimental results have shown that
+decomposed approaches can be several times faster than their monolithic counterparts
+and can compute alignments for datasets that were previously infeasible. but until re-
+cently, decomposition techniques have been limited to resolving the decision problem
+of deciding if a log trace is perfectly ﬁtting with the model. as a result, reliable diagnos-
+tics are missing. however, recent work has shown that overall alignment results can be
+computed under decomposed conformance checking by using the so-called recomposi-
+tionapproach. a framework that computes overall alignment results in a decomposed
+manner was presented in [10, 11].
+a key result of the work is in deﬁning and proving the border agreement condition
+which permits the merging of sub-alignment results as an overall result. if the condition
+is not met, the decomposed sub-components are “recomposed” to encourage the merg-
+ing condition in the next alignment iteration. experimental results have shown signiﬁ-
+cant performance gains using recomposition, but they have also shown that the merging
+aspect of the framework can become a performance bottleneck where log traces may
+require numerous recompositions to reach the merging condition. under this context,
+this paper is a step towards that direction by deﬁning and structuring the recomposi-
+tion step, proposing different recomposition strategies, and evaluating their impact to
+the overall computation time. the experimental results show that by applying the pre-
+sented recomposition strategies, exact alignment results can be computed on synthetic
+and real-life datasets much faster.
+the remainder of the paper is structured as follows: section 2 introduces the re-
+quired notations and concepts. in particular, section 2.2 presents the recomposition
+approach as the focus of the paper. section 3 deﬁnes and structures the recomposition
+step and sheds light on the limitations of the existing recomposition strategies. sec-
+tion 4 presents four recomposition strategies that can be used in the recomposition step.
+section 5 details the experimental setup for the evaluation of the proposed strategies,
+and section 6 analyzes the experimental results. section 7 presents the related work.
+finally, section 8 presents some conclusions and future work.
+2 preliminaries
+this section introduces basic concepts related to process models, event logs, and align-
+ment-based conformance checking techniques.
+letxbe a set.b(x)denotes the set of all possible multisets over set x, andx
+denotes the set of all possible sequences over set x.hidenotes the empty sequence.
+concatenation of sequences 12xand22xis denoted as 12. given a tuple
+x= (x1;x2;:::;xn)2x1x2:::xn,i(x) =xidenotes the projection
+operator for all i2f1;:::;ng. this operator is extended to sequences so that given
+a sequence2(x1x2:::xn)of lengthmwith=h(x11;x21;:::;
+xn1);(x12;x22;:::;xn2);:::; (x1m;x2m;:::;xnm)i,i() =hxi1;xi2;:::;ximifor
+alli21;:::;n . projection is also deﬁned over sets and functions recursively. given
+yxand a sequence 2x,hiy=hi, and (hxi)y=hxiyifx2y, andimproving merging conditions for recomposing conformance checking 3
+fig. 1. system net sthat models a loan application process (adapted from [6])
+(hxi)y=yifx =2y. similarly, given a function f:x!yand a sequence
+=hx1;x2;:::;xni2x,f() =hf(x1);f(x2);:::;f (xn)i.
+2.1 preliminaries on petri net, event log, and net decomposition
+in this paper, petri nets are used to represent process models.
+deﬁnition 1 (labeled petri net). letpdenote a set of places, tdenote a set of tran-
+sitions, and f(pt)[(tp)denote the ﬂow relation. a labeled petri net
+n= (p;t;f;l )is a petri net (p;t;f )with labeling function l2t9uawhereua
+is some universe of activity labels.
+in a process setting, there is typically a well-deﬁned start and end to an instance of
+the process. this can be denoted with the initial and ﬁnal marking of a system net.
+deﬁnition 2 (system net). a system net is a triplet s= (n;i;o )wheren= (p;t;
+f;l)is a labeled petri net, i2b(p)is the initial state and o2b(p)is the ﬁnal state.
+f(s)is the set of transition sequences that reach the ﬁnal state when started in the
+initial state. if is a transition sequence, then l(dom(l))is an activity sequence.
+tv(s) = dom(l)is the set of visible transitions ins.tu
+v(s) =ft2tv(s)j
+8t02tv(s)l(t) =l(t0))t=t0gis the set of unique visible transitions in s.
+figure 1 presents a system net sthat models a loan application process (ignore the
+grey boxes in the background for now). [i]is the initial marking and [o]is the ﬁnal
+marking. an example activity sequence is ha;b;c;d;f;g;h;i;kiwhich corresponds to
+the occurred events of a successful loan application. the process executions in real-life
+are recorded as event data and can be expressed as an event log.
+deﬁnition 3 (trace, event log). letauabe a set of activities. a trace 2ais
+a sequence of activities. an event log l2b(a)is a multiset of traces.
+figure 2 presents an event log lcorresponding to the system net in figure 1. log l
+has 20 cases in total with 5 cases following trace 1, 10 cases following trace 2, and
+5 cases following trace 3. in cost-based alignment conformance checking, a trace is
+aligned with the corresponding system net to produce an alignment.4 lee, munoz-gama, verbeek, van der aalst, and sep ´ulveda
+l= [1z }| {
+ha;b;c;d;f;g;h;i;ki5;2z }| {
+ha;c;b;d;f;g;i;h;ki10;3z }| {
+ha;c;b;d;f;g;j;ki5]
+fig. 2. running example: event log l
+deﬁnition 4 (alignment [4]). letl2 b(a)be an event log with a ua, let
+l2lbe a log trace and m2f(s)a complete transition sequence of system net
+s. an alignment of landmis a sequence of pairs 2((a[fg )(t[fg ))
+where1()a=l,2()t=m,8(a;t)2a6=_t6=, and8(a;t)2a6=
+^(t=_a=l(t)).
+each pair in an alignment is a legal move . there are four types of legal moves: a
+synchronous move (a;t)means that the activity matches the activity of the transition,
+i.e.,a=l(t), alog move (a;)means that there is a step in the log that is not matched
+by a corresponding step in the model, a model move (;t)wheret2dom(l)means
+that there is a step in the model that is not matched by a corresponding step in the log,
+and an invisible move (;t)wheret2tndom(l)means that the step in the model
+corresponds to an invisible transition that is not observable in the log.
+deﬁnition 5 (valid decomposition [1] and border activities [11]). lets= (n;i;o )
+withn= (p;t;f;l )be a system net. d=fs1;s2;:::;sngis a valid decomposition
+if and only if the following properties are fulﬁlled:
+–si= (ni;ii;oi)is a system net with ni= (pi;ti;fi;li)for all 1in.
+–li=ltifor all 1in.
+–pi\pj=;andti\tjtu
+v(s)for all 1i<jn.
+–p=s
+1inpi,t=s
+1inti, andf=s
+1infi.
+d(s)is the set of all valid decompositions of s.
+ab(d) =fl(t)j91i<jnt2ti\tjgis the set of border activities of the valid
+decomposition d. to retrieve the sub-nets that share the same border activity, for an
+activitya2rng(l),sb(a;d) =fsi2dja2rng(li)gis the set of sub-nets that
+containaas an observable activity.
+figure 1 presents a valid decomposition dof net swhere sub-nets are marked by
+the grey boxes. for example, sub-net s1consists of the transitions t1,t2,t3,t4,t5, and
+t6. border activities can be identiﬁed as the activities of the transitions that are shared
+between two sub-nets. they are t4,t5,t6,t8,t11, and t12. under the recomposition
+approach framework, overall alignments can be computed in a decomposed manner.
+2.2 recomposing conformance checking
+figure 3 presents an overview of the recomposing conformance checking framework
+[11, 10] which consists of the following ﬁve steps: (1) the net and log are decomposed
+using a decomposition strategy, e.g., maximal decomposition [1]. (2) alignment-basedimproving merging conditions for recomposing conformance checking 5
+fig. 3. recomposing conformance checking framework with the recomposition step highlighted
+in dark blue
+conformance checking is performed per sub-net and sub-log to produce a set of sub-
+alignments for each log trace. (3) since sub-components overlap on border activities,
+the set of sub-alignments for each log trace also overlap on moves involving border
+activities. in [11], it was shown that if the sub-alignments synchronize on these moves,
+then they can be merged as an overall optimal alignment using the merging algorithm
+presented in [18]. this condition was formalized as the total border agreement condi-
+tion. log traces that do not meet the requirement are either rejected or left for the next
+iteration. as such, only border activities can cause merge conﬂicts. (4) user-conﬁgured
+termination conditions are checked at the end of each iteration. if the framework is ter-
+minated before computing the overall optimal alignments for all log traces, then an ap-
+proximate overall result is given. the results of the framework consist of a ﬁtness value
+and a set of alignments corresponding to the log traces. in the case of an approximate
+result, the ﬁtness value would be an interval bounding the exact ﬁtness value and the
+set of alignments would have pseudo alignments. (5) if there are remaining log traces
+to be aligned and the termination conditions are not reached, then a recomposition step
+is taken to produce a new net decomposition and a corresponding set of sub-logs. the
+next iteration of the framework then starts from step (2).
+while experimental results have shown signiﬁcant performance gains from the re-
+composition approach over its monolithic counterpart, large scale experimentation has
+shown that recomposition is a potential bottleneck. in particular, the strategies used
+at the recomposition step can have a signiﬁcant impact. the following section takes a
+more detailed look at the recomposition step and discusses the limitations of the current
+recomposition strategies.
+3 recomposition step
+the recomposition step refers to step (5) of the framework overview presented in fig-
+ure 3 and is highlighted in dark blue. we formalize the step in two parts: the production
+of a new net decomposition and a corresponding set of sub-logs.
+deﬁnition 6 (recomposition step). letd2d(s)be a valid decomposition of system
+netsand letl=b(a)be an event log. for 1in, wheren=jdj, let6 lee, munoz-gama, verbeek, van der aalst, and sep ´ulveda
+mi= (ai[fg )(ti[fg )be the possible alignment moves for a sub-component
+so that  d= [(i1;:::;in)2m
+1:::m
+nj9i2l8j2f1;:::;ng1(ij)aj=iaj]
+contains the latest sub-alignments for all log traces. given the valid decomposition,
+and the latest sub-alignments, rs:d(s)b(m
+1:::m
+n)!d (s)creates a
+new valid decomposition d02d(s)wherem=jd0j<jdj. then, given the new
+and current net decompositions, the event log, and the latest sub-alignments, rl:
+d(s)d(s)b(a)b(m
+1:::m
+n)9b(a0
+1):::b(a0
+m)creates a set
+of sub-logs to align in the following iteration of the recomposition approach. overall,
+the recomposition step rcreates a new net decomposition and a corresponding set of
+sub-logs,r:d(s)b(a)b(m
+1:::m
+n)9d(s)b(a0
+1):::b(a0
+m).
+the current recomposition strategy involves recomposing on the most frequent con-
+ﬂicting activities (mfc) and constructing sub-logs that contains to-be-aligned traces
+which carry conﬂicting activities that have been recomposed upon (ic).
+most frequent conﬂict (mfc) recomposes the current net decomposition on the ac-
+tivity setar=fa2ab(d)ja2argmaxa02ab(d)p
+i2supp( d)c(i)(a0)gwhere
+ d2b(m
+1:::m
+n)are the latest sub-alignments and c:m
+1:::m
+n!b(a)
+is a function that gives the multiset of conﬂicting activities of sub-alignments. hence,
+arcontains the border activities with the most conﬂicts.
+inclusion by conﬂict (ic) then creates a log lr= [i2lj9a2ab(d)c(i)(a)>
+0^a2ar]wherei2 dare the sub-alignments of trace i2land net decomposi-
+tiond2d(s). as such, log lrincludes to-be-aligned log traces which have conﬂicts
+on at least one of the border activities that have been recomposed upon. later, log lris
+then projected onto the new net decomposition to create the corresponding sub-logs.
+3.1 limitations to the current recomposition strategies
+to explain the limitations, we refer to the set of optimal sub-alignments in figure 4
+from aligning net decomposition din figure 1 and log lin figure 2. we ﬁrst note
+that for the conﬂicting activities which are highlighted in grey:p
+2 dc()(c) = 2 ,p
+2 dc()(i) = 1 , andp
+2 dc()(j) = 1 , where  d=f1;2;3g. with ac-
+tivity cbeing the most frequent conﬂicting activity, mfc recomposes the current net
+decomposition on ar=fcgand ic creates the corresponding sub-logs containing
+lr=f2;3gsince both traces have activity cas a conﬂicting activity. the new net
+decomposition will contain three sub-nets rather than four where sub-net s1and sub-net
+s2are recomposed upon activity cas a single sub-net. the corresponding sub-log set is
+created by projecting log lronto the new net decomposition.
+while one merge conﬂict is resolved by recomposing on activity c, the merge con-
+ﬂicts at activity iandjwill remain in the following iteration. in fact, under the current
+recomposition strategy, trace 2and3have to be aligned three times each to reach
+the required merging condition to yield overall alignments. this shows the limitation of
+mfc in only partially resolving merge conﬂicts on the trace level and ic in leniently in-
+cluding to-be-aligned log traces whose subsequent sub-alignments are unlikely to reach
+the necessary merging condition.improving merging conditions for recomposing conformance checking 7
+fig. 4. sub-alignments 1= (11;12;13;14),2= (21;22;23;24), and 3= (31;
+32;33;34)of logl1and net decomposition d1with merge conﬂicts highlighted in grey
+as such, the key to improving the existing recomposition strategies is in lifting
+conﬂict resolution from the individual activity level to the trace level so that the net re-
+composition strategy resolves merge conﬂicts of traces rather than activities and the log
+recomposition strategy selects log traces whose merge conﬂicts are likely to be fully
+resolved with the latest net recomposition. in the following section, three net recom-
+position strategies and one log recomposition strategy are presented. these strategies
+improve on the existing ones by looking at merge conﬂict sets, identifying co-occurring
+conﬂicting activities, and minimizing the average size of the resulting recomposed sub-
+nets. the later experimental results show that the strategies lead to signiﬁcant perfor-
+mance improvements in both synthetic and real-life datasets.
+4 recomposition strategies
+in this section, three net recomposition strategies and one log recomposition strategy
+are presented.
+4.1 net recomposition strategies
+as previously shown, resolving individual conﬂicting activities may only partially re-
+solve the merge conﬂicts of traces. this key observation motivates the following net
+recomposition strategies which target conﬂicts at the trace level.
+topkmost frequent conﬂict set (mfcs- k)constructs a multiset of conﬂict sets acs=
+[supp (c())ab(d)j2 d^jc()j>0]. then the top kmost frequent conﬂict
+setacs;kfacsab(d)jacs(acs)>0gis selected. ifjacsj< k, then all conﬂict
+sets are taken. afterwards, the recomposing activity set ar=[(acs;k)ab(d)is
+created. we note that in the case where two conﬂict sets have the same occurrence
+frequency, a random one is chosen. this secondary criterion avoids bias, and gives
+better performances empirically than any other straightforward criteria.
+merge conﬂict graph (mcg) recomposes on conﬂicting activities that co-occur on the
+trace level by constructing a weighted undirected graph g= (v;e)wheree=ffa1;
+a2gj92 da12c()^a22c()^a16=a2gwith a weight function w:e!n+
+such thatw((a1;a2)) =jf2 djc()(a1)>0^c()(a2)>0gjandv=
+fa2ab(d)j9(a1;a2)2ea=a1_a=a2g. then, with a threshold t2[0;1], edges8 lee, munoz-gama, verbeek, van der aalst, and sep ´ulveda
+are ﬁltered so that ef=fe2ejw(e)twmaxgwherewmaxis the maximum
+edge weight in e. the corresponding vertex set and ﬁltered graph can be created as
+vf=fa2ab(d)j9(a1;a2)2efa=a1_a=a2gandgf= (vf;ef). finally, the
+current net decomposition is recomposed on activity set ar=vf.
+balanced. this recomposition strategy extends the mfcs- kstrategy but also tries to
+minimize the average size of the sub-nets resulting from the recomposition. for a border
+activitya2ab(d),j(a;d)j=j[si2sb(a;d)av(si)japproximates the size of the
+recomposed sub-net on activity a. the average size of the recomposed sub-nets for a
+particular conﬂict set can then be approximated by j(ac;d)j=p
+a2acj(a;d)j
+jacj. the
+score of the conﬂict set can be computed as a weighted combination (ac;d) =w0
+m(ac)
+maxa0c2acsm(a0
+c)+w1(1 j(ac;d)j
+maxa0c2acsj(a0
+c;d)j)where higher scores are assigned to
+frequent conﬂict sets that do not recompose to create large sub-nets. the activities of the
+conﬂict sets with the highest score, ar=fa2acjac2argmaxa0c2acs(a0
+c;d)g,
+are then recomposed upon to create a net decomposition.
+4.2 log recomposition strategy
+similar to the net recomposition strategies, the existing ic strategy can be too lenient
+in including log traces which have conﬂicting activities that are unlikely to be resolved
+in the following decomposed replay iteration.
+strict include by conﬂict (sic) increases the requirement for a to-be-aligned log trace
+to be selected for the next iteration. this addresses the limitation of ic which can in-
+clude log traces whose merge conﬂicts are only partially covered by the net recomposi-
+tion. given the recomposed activity set ar, sic includes log traces as lr= [i2lj
+8a2c(i)a2ar]with merge conﬂict if the corresponding conﬂict set is a subset of set
+ar. however, this log strategy only works in conjunction with the net strategies that are
+based on conﬂict sets, i.e., mfcs- kand balanced, so that at least one to-be-aligned log
+trace is included.
+5 experiment setup
+both synthetic and real-life datasets are used to evaluate the proposed recomposition
+strategies. dataset generation is performed using the ptandloggenerator [8] and infor-
+mation from the empirical study [9]; it is reproducible as a rapidprom workﬂow [3].
+the bpic 2018 dataset is used [16] as the real-life dataset. moreover, two baseline net
+recomposition strategies are used: allrecomposes on all conﬂicting activities, and ran-
+dom recomposes on a random number of conﬂicting activities. similarly, a baseline log
+recomposition allwhich includes all to-be-aligned log traces is used. for the sake of
+space, the full experimental setup and datasets are available at the github repository4
+so that the experimental results can be reproduced.
+4seehttps://github.com/wailamjonathanlee/characterizing-recomposing-replayimproving merging conditions for recomposing conformance checking 9
+fig. 5. bar chart showing ﬁtness and overall time per net recomposition strategy (including the
+monolithic approach). the time limit is shown as a dashed red line and indicates infeasible re-
+plays. best performing approaches and their time gains from the second fastest times are speciﬁed
+by black arrows.
+6 results
+the results shed light on two key insights: first, the selection of the recomposition
+approach may lead to very different performances. second, good performance requires
+both selecting appropriate conﬂicting activities and well-grouped to-be-aligned log traces.
+figure 5 presents the experimental results for both synthetic and real-life datasets.
+for each of the synthetic models, there are three event logs of different noise proﬁles
+described as net x-noise probability -dispersion over trace wherex2 f1;2;3g. for
+the sake of readability, we only show the results of three out of ﬁve synthetic datasets,
+but the results are consistent across all ﬁve synthetic datasets). readers interested in
+more details are referred to the github link for a detailed explanation on noise genera-
+tion and the rest of the experimental results. for the mfcs- kand balanced strategies,
+only conﬁgurations using the sic log strategy are shown; results showed that the sic
+log strategy provides a better performance. for the others where sic is not applica-
+ble, only conﬁgurations using the ic log strategy are shown as results indicated better
+performances. overall, the results show that for both the monolithic and recomposition
+approach, it is more difﬁcult to compute alignment results for less ﬁtting datasets.
+different approaches give different performances. comparing the monolithic and
+recomposition approach, it is clear that the recomposition approach provides a better
+performance than the monolithic counterpart under at least one recomposition strategy
+conﬁguration. furthermore, performance can vary signiﬁcantly across different recom-
+position approaches. for example, the existing mfc strategy is the worst performing
+strategy where it is not able to give exact results for the real-life dataset and both the
+netx-10-60 and net x-60-10 noise scenarios of the synthetic datasets. the mfcs- kand
+balanced strategies are shown to be the best performing strategies. while for high ﬁt-
+ness scenarios, i.e., net x-10-10, mfcs- kgive better performances with a high k= 10 .
+this is because when there is little noise, it becomes simply a “race” to aligning traces
+with similar merge conﬂicts. conversely, for low ﬁtness scenarios, because merge con-10 lee, munoz-gama, verbeek, van der aalst, and sep ´ulveda
+fig. 6. comparing log strategies by showcasing the number of aligned traces (left) and percentage
+of valid alignments (right) per iteration on the real-life dataset bpic18.
+ﬂicts are potentially much more difﬁcult to resolve, the balanced strategy avoids quickly
+creating large sub-components that take longer to replay. in these cases, the time dif-
+ferences between the different feasible strategies can go up to three minutes. for all
+the experiments, the proposed recomposition strategies outperform the baseline strate-
+gies. lastly, for the real-life dataset bpic18, only the mfcs-1, balanced, and mcg
+recomposition strategies are able to compute exact alignment results and the balanced
+strategy outperforms mfcs-1 by more than three minutes.
+both net and log recomposition strategies matter. figure 6 presents the number of
+aligned traces and percentage of valid alignments per iterations under all, ic, and sic
+log strategies with net strategy ﬁxed as balanced on bpic18. we ﬁrst note that only
+the sic log strategy resulted with exact alignment results. while all strategies start with
+aligning all traces in the ﬁrst iteration, there are signiﬁcant differences in the number
+of aligned traces across iterations. similar to the all strategy, the existing ic strategy
+includes a high number of traces to align throughout all iterations; the number of aligned
+traces only tapered off in the later iterations as half of the traces have resulted as valid
+alignments. this conﬁrms the hypothesis that the existing ic strategy can be too lenient
+with the inclusion of traces to align. furthermore, up until iteration 13, none of the
+aligned traces reaches the necessary merging condition to result as a valid alignment;
+this means that both the all and ic strategies are “wasting” resources aligning many
+traces. conversely, the sic strategy keeps the numberof traces to align per iteration
+comparatively lower. moreover, at the peak of the number of traces to align at iteration
+21, almost 80% of the 300aligned traces resulted as valid alignments. these are likely
+to explain why only the sic log strategy is able to compute an exact result.
+7 related work
+performance problems related to alignment-based conformance checking form a well-
+known problem. a large number of conformance checking techniques have been pro-
+posed to tackle this issue. approximate alignments have been proposed to reduce the
+problem complexity by abstracting sequential information from segments of log traces
+[14]. the notion of indication relations has been used to reduce the model and logimproving merging conditions for recomposing conformance checking 11
+prior to conformance checking [15]. several approaches have been proposed along the
+research line of decomposition techniques. this include different decomposition strate-
+gies, e.g., maximal [1], and sese-based [12]. moreover, different decomposed replay
+approaches such as the hide-and-reduce replay [17] and the recomposition approach
+[11] have also been investigated. compared to the existing work, this paper investi-
+gates different strategies for the recomposition approach in order to improve the overall
+performance in computation time.
+other than the alignment-based approach, there are also other conformance check-
+ing approaches. this includes the classical token replay [13], behavioral proﬁle ap-
+proaches [19] and more recently approaches based on event structures [7].
+8 conclusions and future work
+this paper investigated the recomposition aspect of the recomposing conformance check-
+ing approach which can become a bottleneck to the overall performance. by deﬁning
+the recomposition problem, the paper identiﬁes limitations of the current recomposi-
+tion strategy in not fully resolving merge conﬂicts on the trace level and also being too
+lenient in the inclusion of log traces for the subsequent decomposed replay iteration.
+based on the observations, three net recomposition strategies and one log recomposi-
+tion strategy have been presented. the strategies were then evaluated on both synthetic
+and real-life datasets with two baseline approaches. the results show that different re-
+composition strategies can signiﬁcantly impact the overall performance in computing
+alignments. moreover, they show that the presented approaches provide a better perfor-
+mance than baseline approaches, and both the existing recomposition and monolithic
+approaches. while simpler strategies tend to provide a better performance for synthetic
+datasets, a more sophisticated strategy can perform better for a real-life dataset. how-
+ever, the results show that both the selection of activities to recompose on and log traces
+to include are important to achieve superior performances.
+future work. the results have shown that the recomposition strategy has a signiﬁcant
+impact on performance. we plan to extend the evaluation of the presented approaches
+to a larger variety of models, noise scenarios, initial decomposition strategies, and other
+real-life datasets. for the current and presented approaches, new net decompositions are
+created by recomposing the initial decomposition on selected activities. entirely differ-
+ent net decompositions can be created using the merge conﬂict information from the
+previous iteration; however, our preliminary results showed that this may be difﬁcult.
+lastly, in the current framework, the same strategies (both decomposition and recom-
+position) are used in all iterations; higher level meta-strategies might be useful. for
+example, it might be good to switch to the monolithic approach for a small number of
+log traces that cannot be aligned following many iterations.
+acknowledgments. this work is partially supported by conicyt-pcha / doctorado
+nacional / 2017-21170612 , fondecyt iniciaci ´on 11170092, conicyt apoyo a la
+formaci ´on de redes internacionales para investigadores en etapa inicial redi170136 ,
+thevicerrector ´ıa de investigaci ´on de la pontiﬁcia universidad cat ´olica de chile / con-
+curso estad ´ıas y pasant ´ıas breves 2016 , and the departamento de ciencias de la com-12 lee, munoz-gama, verbeek, van der aalst, and sep ´ulveda
+putaci ´on uc / fond-dcc-2017-0001 . the authors would like to thank alfredo bolt for
+his comments on the data generation details.
+references
+1. van der aalst, w.m.p.: decomposing petri nets for process mining: a generic approach.
+distributed and parallel databases 31(4), 471–507 (2013)
+2. van der aalst, w.m.p.: process mining - data science in action. springer (2016)
+3. van der aalst, w.m.p., bolt, a., van zelst, s.j.: rapidprom: mine your processes and not
+just your data. corr abs/1703.03740 (2017)
+4. adriansyah, a.: aligning observed and modeled behavior. ph.d. thesis, technische uni-
+versiteit eindhoven (2014)
+5. van dongen, b.f., carmona, j., chatain, t., taymouri, f.: aligning modeled and observed
+behavior: a compromise between computation complexity and quality. in: caise 2017,
+essen, germany, june 12-16, 2017, proceedings. pp. 94–109 (2017)
+6. dumas, m., rosa, m.l., mendling, j., reijers, h.a.: fundamentals of business process
+management. springer (2013)
+7. garc ´ıa-ba ˜nuelos, l., van beest, n., dumas, m., rosa, m.l., mertens, w.: complete and
+interpretable conformance checking of business processes. ieee trans. software eng. 44(3),
+262–290 (2018), https://doi.org/10.1109/tse.2017.2668418
+8. jouck, t., depaire, b.: ptandloggenerator: a generator for artiﬁcial event data. in: bpm
+(demos). ceur workshop proceedings, vol. 1789, pp. 23–27. ceur-ws.org (2016)
+9. kunze, m., luebbe, a., weidlich, m., weske, m.: towards understanding process modeling
+— the case of the bpm academic initiative. in: international workshop on business process
+modeling notation. pp. 44–58. springer (2011)
+10. lee, w.l.j., verbeek, h.m.w., munoz-gama, j., van der aalst, w.m.p., sep ´ulveda, m.: re-
+play using recomposition: alignment-based conformance checking in the large. in: proceed-
+ings of the bpm demo track and bpm dissertation award, barcelona, spain, september
+13, 2017. ceur workshop proceedings, vol. 1920. ceur-ws.org (2017)
+11. lee, w.l.j., verbeek, h., munoz-gama, j., van der aalst, w.m.p., sep ´ulveda, m.: re-
+composing conformance: closing the circle on decomposed alignment-based confor-
+mance checking in process mining. (under review) (2017), processmininguc.com/
+publications
+12. munoz-gama, j., carmona, j., van der aalst, w.m.p.: single-entry single-exit decomposed
+conformance checking. inf. syst. 46, 102–122 (2014)
+13. rozinat, a., van der aalst, w.m.p.: conformance checking of processes based on monitoring
+real behavior. inf. syst. 33(1), 64–95 (2008)
+14. taymouri, f., carmona, j.: a recursive paradigm for aligning observed behavior of large
+structured process models. in: bpm 2016, rio de janeiro, brazil, september 18-22, 2016.
+proceedings. pp. 197–214 (2016)
+15. taymouri, f., carmona, j.: model and event log reductions to boost the computation of
+alignments. in: simpda 2016, graz, austria, december 15-16, 2016. pp. 50–62 (2016)
+16. van dongen, b.f., borchert, f.: bpi challenge 2018 (2018)
+17. verbeek, h.m.w.: decomposed replay using hiding and reduction as abstraction. lncs
+transactions on petri nets and other models of concurrency (topnoc) xii, 166–186 (2017)
+18. verbeek, h.m.w., van der aalst, w.m.p.: merging alignments for decomposed replay. in:
+kordon, f., moldt, d. (eds.) petri nets 2016, toru ´n, poland, june 19-24, 2016. proceed-
+ings. lecture notes in computer science, vol. 9698, pp. 219–239. springer (2016)
+19. weidlich, m., polyvyanyy, a., desai, n., mendling, j., weske, m.: process compliance anal-
+ysis based on behavioural proﬁles. inf. syst. 36(7), 1009–1025 (2011)

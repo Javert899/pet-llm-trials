@@ -1,0 +1,639 @@
+semi-automated time-granularity detection
+for data-driven simulation using process
+mining and system dynamics
+mahsa pourbafrani1, sebastiaan j. van zelst1;2, and wil m. p. van der aalst1;2
+1chair of process and data science, rwth aachen university, germany
+fmahsa.bafrani,s.j.v.zelst,wvdaalst g@pads.rwth-aachen.de
+2fraunhofer institute for applied information technology (fit), germany
+fsebastiaan.van.zelst,wil.van.der.aalst g@fit.fraunhofer.de
+abstract. most information systems supporting operational processes
+also record event logs. these can be used to diagnose performance and
+compliance problems. the majority of process mining techniques extract
+models that are descriptive and describe what happened in the past. few
+process mining techniques discover models that allow us to \look into
+the future" and perform predictive analyses. recently, novel approaches
+have been developed for scenario-based prediction, i.e., predicting the
+eects of process changes on process performance, e.g., investing in an
+additional resource. to work accurately, the techniques need an appro-
+priate time step-size, the selection of which, thus far, has been an ad-hoc
+and manual endeavor. therefore, in this paper, building upon time-series
+analysis and forecasting techniques, we propose a novel semi-automated
+time-granularity detection framework. our framework detects the best
+possible time-granularity to be used, whilst taking user preferences into
+account. our evaluation, using both real and synthetic data, conrms
+the feasibility of our approach and highlights the importance of using
+accurate granularity in time step selection.
+keywords: process mining ·scenario-based predictions ·system dy-
+namics ·what-if analysis ·simulation ·time-series analysis
+1 introduction
+process mining [1] techniques derive knowledge of the execution of processes, by
+means of analyzing the data generated during their execution, which are stored in
+event logs . several techniques exist, e.g., discovering a process model describing
+the process ( process discovery techniques [7]), examining to what degree reality,
+captured in the data, conforms to a given process model ( conformance checking
+techniques [10]), etc. most techniques, extract models and insights that are de-
+scriptive. few approaches focus on prescriptive/predictive models, i.e., models
+that allow us to \look into the future". yet, at the same time, such techniques
+allow us to eectively improve the process, rather than just understanding its
+past performance.2 m. pourbafrani et al.
+event log preprocessing model creation sd log simulationvalidatio
+n model refinement yesno
+prediction
+time window selection sd log generationvalidation 
+fig. 1: the proposed framework for scenario-based process prediction, using sys-
+tem dynamics [16]. this paper focuses on preprocessing (highlighted), in partic-
+ular, discovering the best time window for generating system dynamics logs.
+in [16], we proposed a new process mining approach, i.e., scenario-based pre-
+diction of future process performance, using system dynamics (sd) [21] as a
+prediction technique. the approach transforms an event log into a sequence of
+continuous variable values (e.g., process instance arrival rate), referred to as a
+system dynamics log (sd-log) . the sd-log forms the basis for simulation and
+prediction. consider fig. 1, in which we depict the general framework of the
+presented approach in [16]. first, we construct an sd-log (preprocessing step),
+and use it, together with a constructed model, to run a sample simulation (\as-
+is situation"). the quality of the simulations, i.e., both terms of validation and
+prediction, depends on the stability of the simulation model. in particular, the
+window-size of the time steps being used to generate the sd-log highly aects
+the stability. thus far, selecting such a window-size has been an ad-hoc/manual
+endeavor having negative eects on the prediction results.
+therefore, in this paper, we propose an approach that semi-automatically
+identies the best window-size to be used in order to generate an sd-log. ini-
+tially, the user provides a set of logical units (hours/days) based on domain
+knowledge that she/he wants to use in prediction. subsequently, using the input
+event log, the proposed approach generates sd-logs, based on several deriva-
+tives of the provided units. subsequently, trend and pattern detection is applied
+to the dierent time-series, and correspondingly, the best step-size is selected.
+within the trend and pattern detection, our approach is able to remove regu-
+lar inactive time in the process. using dierent real event logs, we assess the
+proposed approach including nding periodic behavior of the process including
+inactive steps. then, we train dierent models and show the eect of the ap-
+proach on reducing the prediction error. furthermore, we use synthetic event
+logs with known patterns, including articial noise/infrequent behavior, to test
+the feasibility of our approach. our obtained results discover hidden patterns in
+the process variables and highlight the importance of selecting a suitable time
+step granularity.
+the remainder of this paper is organized as follows. in section 2, we present a
+running example. in section 3, we introduce background concepts and notation.
+in section 4, we present our main approach, which we evaluate in section 5. in
+section 6, we present related work. section 7 concludes this work.semi-automated time-granularity detection for data-driven simulation 3
+2 running example
+in order to clearly demonstrate each step of our approach, we use a running
+example. we consider a simple, ctional process of a car rental company , i.e.,
+called carz. working days at carz are from monday to friday. the working
+hours are from 8:00 am to 5:00 pm (including 1 hour lunchtime). requests for
+a rental car are received by phone. a dierent process is executed to handle the
+dierent types of requests, e.g., rent a car orrent a car with a driver . in the
+model, the time of the next call is derived from a normal distribution with 5
+minutes average. the hours of the days aect the probability of generating new
+calls, e.g., the intensity of receiving calls at 10:00 am is 3 times higher than 8:00
+am. if the number of callers in the queue is more than 20, new calls get rejected.
+for each type of request, we use a (dierent) normal distribution to generate
+service times. the service time also gets aected by the number of requests in
+the queue. on average, the duration of handling a car with a driver request is
+10 minutes higher than handling rent a car requests. we designed the model,
+such that operators perform the process of the calls faster if the number of calls
+in the line is higher. this eect, the queue length on time of processing calls, is
+modeled as an exponential nonlinear relation. we modeled the request handling
+process of carz, using cpn tools [13].
+3 preliminaries
+here, we introduce background concepts and basic notation. we briey cover
+common notions from the eld of process mining, as well as system dynamics.
+process mining process mining techniques analyze the historical execution of
+processes, i.e., captured in the form of event logs, [1]. an event log captures what
+activity has been performed, at what time, for which instance of the process.
+denition 1 (event log). letdenote the universe of events. furthermore,
+letc,a,randtdenote the universe of case identiers, activities, resources,
+and the time universe, respectively. we dene projections c:!c,a:!a ,
+r:!r andt:!t t , s.t., given e2, we havec(e)=c,a(e)=a,
+r(e) =r, andt(e)=(ts;tc), indicating that event e2captures the execution
+of an activity a2a, in the context of case c2cby resource r2r, started at time
+ts2t, and completed at time tc2t. an event log lis a set of events, i.e., l.
+table 1 depicts a snippet of a generated event log for the running example.
+the rst row describes an event for which the activity process next car req is
+executed by monika for a request with case id 10. an event log may include
+more data attributes, e.g., here type of requests is also logged ( carrequest or
+driverrequest ), but, for simplicity, we abstract from such additional attributes.4 m. pourbafrani et al.
+table 1: sample event log, generated for the carz running example. each row
+is an event in which for each unique customer (case) in the process, a specic
+activity at a specic time is performed by a specic resource.
+case id activity request type timestamp complete timestamp resource
+10 next call carrequest 1/1/2018 10:29 1/1/2018 10:47 monika
+11 next call driverrequest 1/1/2018 10:29 1/1/2018 10:29 system
+8 process next driver req driverrequest 1/1/2018 10:30 1/1/2018 10:50 pheobi
+10 process next carreq carrequest 1/1/2018 10:31 1/1/2018 10:49 chandler
+13 next call driverrequest 1/1/2018 10:31 1/1/2018 10:31 system
+10 processed carreq carrequest 1/1/2018 10:32 1/1/2018 10:32 system
+..................
+fig. 2: simple stock-ow diagram.
+the value of the stock number
+of cases in process is calculated
+based on the arrival rate and n-
+ish rate ows (per time step). the
+value of nish rate is aected by
+theaverage service time .system dynamics system dynamics
+techniques are used to model dynamic sys-
+tems and their relations with their environ-
+ment [21]. one of the main modeling nota-
+tions in system dynamics is the stock-ow
+diagram, which models the system w.r.t.
+three dierent elements, i.e., stocks, ows
+and variables [19]. stocks are accumulative
+variables over time, ows manipulate the
+stock values and variables inuence the val-
+ues of ows and other variables over time.
+figure 2 shows a simple stock-ow diagram
+for the example in which arrival rate andnish rate as ows add/remove to/from
+the values of number of cases in the process as stock, also, average service time
+as a variable aects the nish rate based on the number of cases in the process.
+system dynamics logs event logs do not suce to populate a given sys-
+tem dynamics model with values for stocks, ows, and variables, therefore, they
+should be transformed into an actionable form, i.e., numerical values. hence, we
+dene the notion of a system dynamics log (sd-log) , i.e., a sequence of con-
+tinuous variable values, capturing the numerical values for a set of variables of
+interest over time, as described by the event log. assume that, the rst event in
+an event log starts at time ts, and, the last event is completed at time tc. given
+time window 2n0, there arek=d(tc ts)=esubsequent time steps in the event
+log for time window . an sd-log captures all the values for the variables of
+interest, in each time-window.
+denition 2 (sd-log). letlbe an event log, let vbe a set of process
+variables, and let 2n0be the selected time window. let tsdenote the minimal
+start timestamp in l, lettcdenote the maximal end timestamp in land let
+k=d(tc ts)=e. an sd-log of l, given,sdl;, is a multivariate time-series, i.e.,
+sdl;2f1;:::;kgv! r, s.t.,sdl;(i;v)represents the value of process variable
+v2vin theith-time window ( 1ik).
+given an event log l, a set of variables v, and window , the event log is trans-
+formed log into an sd-log. if lis clear from the context, we omit it and writesemi-automated time-granularity detection for data-driven simulation 5
+table 2: example derived sd-log for the running example with a time window
+of 1 day and 6 dierent process variables. each row shows a time step, here 1
+day, cell-values represented aggregated variable values.
+time window daily arrival rate finish rate num of unique resources avg service time avg time in process avg waiting time in process
+1 180 180 6 0.3590 0.9689 0.6099
+2 147 147 6 0.4156 0.9565 0.5409
+3 160 160 6 0.4011 0.9972 0.5961
+4 116 116 6 0.4455 0.9363 0.4908
+5 94 94 6 0.5024 0.8258 0.3234
+6 0 0 0 0 0 0
+7 0 0 0 0 0 0
+8 147 147 6 0.4421 0.9898 0.5477
+.....................
+sd. givensdandv2v, we write  v(sd)2r, returning the sequence of values
+hx1;:::;xkifor variable v. furthermore, ireturns the ithvalue in a sequence, for
+instance,i(v(sd))=xi. in the running example, consider the set of variables
+v=farrival rate;average service time;number of people in the process g,
+for a duration of 14 days with = 1day, i.e., the corresponding sd-log in-
+cludes 14 time steps. consider table 2, in the rst time window (day) 180 cases
+were arrived at the process and 6 unique resources were performing the tasks.
+v(sd)=hx1;:::;xkiis a series of values over steps of time with length k, which
+is in the form of time-series data.
+time-series the analysis of sequences of real values and/or sequences of tuples
+of real values is often referred to as time-series analysis [12]. several models
+exist that, given a sequence of values and/or tuples of values, predict the next
+(sequence of) number(s). examples include moving average models (ma), auto-
+regressive models (ar), and auto regressive integrated moving average models
+(arima). the exact type of model used to predict the next likely values is
+not relevant for our approach, i.e., any method that allows us to do so suces.
+hence, in denition 3, we propose a generic denition of a time-series model .
+denition 3 (time-series model). let=hx1;:::;xki2rbe a sequence of
+real values (a time-series). a time-series model is a function :r!r. given
+=hx1;:::;xki,()=h^x1;:::;^xki, s.t., for 1ik:^xiis the expected value for xi.
+observe that denition 3 covers univariate time-series . for predicting the
+rst value ( x1), we use random initial values. to measure the accuracy of the
+time-series model ( ), we use mean absolute percentage error (mape =
+100%
+kpk
+i=1jxi ^xi
+xij).
+4 proposed approach
+consider fig. 3, in which we depict an overview of the approach. the approach
+starts with an event log and logical units of time, as shown in the top left side
+of fig. 3. the logical units can be minutes, hours, days, etc. furthermore, units6 m. pourbafrani et al.
+year : 52wweek : 7dday: 24h...logical time 
+unitsimulation
+sd-log 
+generation
+event logsd-logδ1
+sd-logδ2
+sd-logδn
+best
+time windowsd_log 
+generatortime step 
+sizes...process behavior verification 
+(pattern observation )
+identifying 
+removing trend 
+sd-logs post -processing 
+discover inactive steps 
+remove in -active 
+time stepsdetect and recommend the best time 
+window
+train models
+forecast the values 
+calculate forecast 's error
+refined
+sd-logs
+fig. 3: proposed approach for discovering the best time window, generat-
+ing/analyzing time-series data from event logs, investigating the eect of business
+processes inactivity and detecting strong patterns in the processes over time.
+are related to one-an-other, e.g., days consist of 24 hours, weeks are 7 days, etc.
+our approach starts with a set of initial sizes of time steps, , provided by
+the user. given a set of process variables vand the set of dierent sizes , for
+each2 by the user, a corresponding sd-log sdis calculated. the derived
+values in the sd-logs are tested for repetitive patterns over time, i.e., regular
+behavior ( process behavior verication step). inactive steps are removed using
+the discovered regular inactive patterns ( sd-logs post processing ). if the sd-
+log shows patterns of inactivity, then all the corresponding inactive steps are
+removed. the last step is to nd the best time window for extracting the values
+for simulation models by training time-series models as explained in section 4.3.
+4.1 process behavior observation
+observing the process behavior over time makes it possible to see and discover
+periodic patterns. we dene function test time step (tts) to discover strong
+patterns for process variables that show repetitive behavior in the context of
+the process environment over time, e.g., arrival rate . we use the partial auto-
+correlation function [20] to nd the possible existing patterns in  v(sd) for
+variablev2v, for each derived sd,2, where  is provided by the user.
+in real event logs, process variables over time, e.g., arrival rate, can be highly
+correlated to the previous values of themselves, hence, computing the partial
+auto-correlation allows us to remove such internal dependencies. by doing so,
+we only consider the correlation between two lagged-values, aim in nding clear
+patterns inside the data. the lag-value shows that the correlation between which
+pair of values should be calculated.
+denition 4 (test time step). let2randtnbe the set of possible lag-
+values.pac:r![ 1;1]denes the partial auto-correlation of given lag-value
+2t. functiontesttimestep is dened as tts:r!2t, where2r0. for
+2rand threshold ,tts()=f2tjabs(pac())g.
+by denition, the value of the partial auto-correlation function is always 1
+for lag 0. figure 4 shows the partial auto-correlation values as a sample for the
+process arrival rate in an hourly and daily manner. for the running example,semi-automated time-granularity detection for data-driven simulation 7
+0 2 4 6 8 100.4
+0.2
+0.00.20.40.60.81.0
+partial auto-correlation (daily)
+0 5 10 15 20 250.2
+0.00.20.40.60.81.0
+partial auto-correlation (hourly)
+fig. 4: the partial auto-correlations for the process arrival rate. daily (left) and
+hourly (right) time windows (left).
+considersdhour as the derived sd-log and arrival rate as a process variable
+v2v, arrival rate (sdhour) returns a sequence of values for arrival rate per hour.
+for=0:5, the function ttsover the derived sequence, returns f24g, i.e., the
+process shows similar/stable behavior every 24 hours.
+4.2 sd-log post-processing
+in addition to the patterns inside the process variables for dierent sizes of
+time steps, the inactivity of the process in each step is also important. there
+are time steps in which the process is inactive. such inactivity can either be
+planned/intentional or, unexpected. dierentiating dierent types of inactivity
+is required in order to capture the most stable behavior of the process. this
+behavior is directly aecting the simulation results. in this step, rst, we need
+to discover the inactive steps in the process and then, using the previous step,
+tts function result, remove periodic and regular inactive steps. function detect
+inactivity (denition 5) discovers the inactive steps of time for the process. the
+function maps each step of time in the sd-log into a boolean value, indicating
+whether or not there are reasons to believe that the process was inactive, in
+that time step. inactivity is measured on the basis of all the process variables
+vcombined, i.e., there has to be a signicant amount of variables that show
+inactivity to classify the step as an inactive step.
+denition 5 (detect inactivity). letvbe the set of process variables and
+jvj=n, let2r>0, and let2rndenote a vector of thresholds for consider-
+ing a variable as active. dia:rn!f0;1gis a function describing the relative
+inactivity of a given x2rn, subject to activity threshold , i.e.,:
+dia;(x) =(
+0ifjfi2f1;:::;ngjx(i)(i)gj
+n
+1ifjfi2f1;:::;ngjx(i)(i)gj
+n<
+for instance, given sd-log sdand the set of variables v, functiondia;
+returns 0 if the relative number of values in each time step is above , otherwise
+it returns 1. the function indicates whether a time step in the process is active
+or inactive. the output of the dia function, is used as input of tts function.
+by applying tts function on the result of the dia which is a sequence over
+time, we discover whether there are any strong patterns inside the inactive steps.8 m. pourbafrani et al.
+0 100 200 300 400 500
+time steps (1 hour)010203040506070
+arrival rate (hourly)- all the steps
+0 20 40 60 80 100 120
+time steps (1 hour)010203040506070
+arrival rate (hourly)- active steps
+fig. 5: the arrival rate of the running example in 1 hour steps for 3 weeks
+before (left) and after (right) removing regular inactivity. in the active steps,
+the minimum values are 1. the weekends and night hours have been removed.
+the strong patterns reveal the periodic inactivity, then we remove the inactive
+steps from the sd-log. we call the new rened sd-log sd0
+. the option for users
+with domain knowledge is available here to either remove or keep the detected
+inactive time steps. in the running example, the result of detect inactivity func-
+tion dia for all the steps is h1;1;1;1;1;0;0;1;1;1;1;1;0;0:::i, where 0-values are
+weekends. applying the tts function, again returns 7 days as a strong pattern
+in the data, hence, the inactive time steps, i.e., weekends, are removed. figure. 5
+shows the hourly arrival rate of the process for 3 weeks before and after remov-
+ing regular inactivity. the removed hours are nights and weekends. note that in
+fig. 5, the minimum value in the active steps is 1. furthermore, applying tts
+after removing the regular inactive steps, make it possible to discover whether
+there are interesting patterns inside the active steps of the process.
+4.3 detect the best time window
+after pattern detection and removing inactive time steps, we aim to nd the
+best window of time, in order to generate the sd-logs and perform simulations.
+1h 8h 1d 7d
+time windows01234567mape (%)
+prediction error of different time windows
+all steps
+active steps
+fig. 6: the prediction errors of the mod-
+els (arima [9]) for dierent time win-
+dows. the models are trained based on
+the values of arrival rate, before (blue)
+and after (red) applying the proposed
+approach on the sd-logs.using tts and dia functions, we
+transform the values of process vari-
+ables in the sd-logs into the steady
+time series values, which the frequent
+patterns and inactivity have been re-
+moved. we are looking for the time
+step size that displays the most sta-
+ble behavior of the process. we use
+a time-series prediction model , to
+predict the expected values of a pro-
+cess variable (denition 3). by dif-
+ferencing the values of the generated
+time-series data for the process vari-
+ables, i.e., computing the dierences
+between consecutive observations, the
+data becomes stationary and can besemi-automated time-granularity detection for data-driven simulation 9
+used in time-series models, e.g., arima . the accuracy of the models, for each
+of the selected time windows, shows the best time window to be used in pre-
+diction. for each time window 2 provided by the user and corresponding
+sd-log after removing inactivity sd0
+, the values for vis v(sd0
+)=hx1;:::xki.
+after training the models, we calculate the mean absolute percentage error
+(mape). among all the tested sizes of the time step, the one with the minimal
+mape value indicates the best time window to be used for extracting sd-log
+and performing the simulation. variable arrival rate often is the only variable
+that shows the inuence of the environment directly on the process. however, in
+the case of more variables, the average mape value is considered.
+in the example, if  = fhour; 8hours;day; 7daysg, the sd-logs are sdhour,
+sd8hours ,sdday, andsd7days. for the process variable v=arrival rate ,tts
+anddia are performed on the results of the projection function  v. in this
+step, arima models are trained with dierent parameters and the prediction
+error for each is shown in fig. 6 (red). the errors indicate that for the time
+window of 1 day or 7 days the values of arrival rate are more stable. figure
+6 also demonstrates the errors of the trained models before applying the steps
+of our approach (blue). since there is no inactive week, the error for 7 days is
+the same, however, for other steps, after removing the inactivity, the error has
+reduced, e.g., removing weekends from daily time step, resulted in more stable
+and predictable behavior in the process.
+5 evaluation
+to evaluate the approach, we use both synthetic and real event logs. using
+the synthetic event log, we assess the eect of choosing time windows on the
+simulation accuracy. we discover the strong patterns in the real event logs.
+implementation the experiments are conducted with an implementation of
+the framework in the pmsd tool [15]. for time-series prediction, used in best
+time window detection (section 4.3), we use arima [9]. to compute arima
+models, we need to set three parameters, i.e., dierencing-parameter d,ar-term
+p1 and ma-termq1. in the remainder, we write arima (p;d;q ).
+5.1 synthetic event log: simulation case study
+in order to assess the eect of the selected time window on the simulation re-
+sults, we use the results of the performed steps on the running example through
+the sections to generate a system dynamic simulation model. consider that busi-
+nesses might be interested in a smaller window of time for prediction, e.g., a daily
+manner is more useful for decreasing the average daily waiting time rather than
+a weekly manner in the process. therefore, the time window with the minimum
+error is not always the best option for the businesses. we generate the system
+dynamic models using the technique presented in [17]. the designed model in
+fig. 7 is populated with two dierent sd-logs, sddayandsdhour, after applying10 m. pourbafrani et al.
+num in
+process cases
+arrival rate
+finish rateservice time per
+caseprocess active
+time
+waiting time in
+process per casetime in process
+per case
+rejected cases per
+time windownumber of
+rejected cases
+number of unique
+resources
+added
+resources
+removed
+resourcesextera assigned
+resourcesmaximum queue
+lenght
+reject rate
+fig. 7: system dynamics model for the running example. what-if analysis for the
+number of rejected cases per time window and the number of resources.
+05101520253035
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24rejected cases
+time steps  (hourly)rejected cases per hour simulated rejected cases per hour
+0102030405060
+0 1 2 3 4 5 6 7 8 9 10 11 12 13rejected cases
+time steps (daily)rejected cases per day simulated rejected cases per day
+05101520253035
+0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24rejected cases
+time steps  (hourly)rejected cases per hour simulated rejected cases per hour
+0102030405060
+0 1 2 3 4 5 6 7 8 9 10 11 12 13rejected cases
+time steps (daily)rejected cases per day simulated rejected cases per day
+fig. 8: the actual (blue) and simulated (red) number of rejected cases using
+daily (left) and hourly (right) time windows using the model in fig. 7.
+the approach. the target scenario is to simulate the number of rejected people
+in the process per time window and the eect of the number of resources to
+decrease the rejected cases.
+figure. 8 shows the results of the simulation for two selected time windows
+and the actual values from the event logs. the simulation results using the 1 day
+time window is close to reality behavior over 1 hour time window. as expected
+from the results of the approach, the time windows with lower errors provide
+more accurate simulation results. note that, we designed the process in section 2
+such that the number of requests is higher for the specic time of the days, e.g.,
+at 10:00 am the number of requests is more than 8:00 am. therefore, even after
+removing regular inactive hours from sdhour, the variation between the values in
+high. the results illustrate that selecting a proper time window to extract the
+values of variables highly aects the accuracy of the predictions and our approach
+is able to provide the information needed to pick the best time window.
+5.2 feasibility test on real event data
+we use two real event logs, bpi challenge 2012 [24] and bpi challenge 2017
+[25], to evaluate our work. the errors of the models for predicting the values of
+variables in dierent time windows, before and after performing the steps of the
+approach show the eect of the approach on selecting the best time window.
+bpi challenge 2012 we start with four time window sizes, 2 hours, 8 hours,
+1 day and 7 days and extract the sd-logs for each time window. using the
+function tts in the process behavior observation step, the strong patterns in
+the values of arrival rate are discovered, e.g., with threshold 0 :5, there are strongsemi-automated time-granularity detection for data-driven simulation 11
+2h 8h 1d 7d
+time windows123456789mape (%)
+prediction error of different time windows: bpi2012 challenge
+all steps
+active steps
+0 2 4 6 8 10
+lags0.2
+0.00.20.40.60.81.0
+bpi challenge 2012: partial auto-correlation (2 hours)- active steps
+fig. 9: the prediction errors of the trained models for time windows before and
+after removing inactive steps, bpi 2012 (left). the partial auto-correlation after
+removing inactive periods for 2 hour time window (right).
+patterns in every 2 hours (lag 1 for 2 hours time window in fig. 9 (right)) and 7
+days for the daily time window. post processing step anddia function result in
+the rened sd-logs for the selected time windows by removing possible periodic
+inactive steps. in fig. 9 (left), we present the error of the training arima model
+with dierent parameters before (blue) and after (red) removing inactive steps.
+for instance, the best one for the hourly window after removing the inactive
+steps isarima (2;0;1) and for 1 day window is arima (1;0;1). since in the
+process, there is no inactive week, day and 8 hours, therefore the prediction errors
+are the same for including all the steps and active steps. however, the error of
+the 2 hours time window has decreased. the reduction shows that in the process
+there were periodically inactive steps between each 2 hours. as expected, the
+strongest pattern inside the process w.r.t. its environment, i.e., the arrival rate
+of cases, is 7 days . furthermore, the time window sizes based on the domain
+knowledge can be changed, e.g., 8 hours is tested to see whether the process
+follows the common working hours.
+bpi challenge 2017 in the process, there are dierent types of activities. we
+focus on activities which are triggered by the employees, (activities with a w
+prex). we also use 8 hours ,1 day and 7 days as time windows with respect to
+the employees' working hours. figure 10 represents the partial auto-correlation
+of the arrival rate (daily and 8 hours) in behavior observation step. as expected,
+the strongest pattern is every 7 days (weekly). also, in 8 hours time window, lag
+3 shows a strong pattern.
+dia function is applied on the sd-logs to indicate the inactive steps and
+using results of tts to remove the regular inactive steps, the process shows
+more stable behavior. for instance, fig. 11 (right) is the tts result on the
+daily arrival rate after removing weekends, hence there is no more strong pattern.
+this information helps in analyzing the process behavior and have more accurate
+simulation models. the prediction errors of the trained models for predicting the
+values of the arrival rate for three selected time windows are presented in fig. 11
+for the derived sd-logs and the rened sd-logs using our approach. same as the
+bpi challenge 2012, there are no regular inactive weeks in the process, therefore
+the error has not changed before and after applying the approach. however, in
+both 8 hours and 1 day time windows, there are considerable reductions in12 m. pourbafrani et al.
+0 2 4 6 8 10 12 14
+lags0.00.20.40.60.81.0
+bpi challenge 2017: partial auto-correlation (daily)
+0 2 4 6 8 10 12 14
+lags0.2
+0.00.20.40.60.81.0
+bpi challenge 2017: partial auto-correlation (8 hours)
+fig. 10: the partial auto-correlation before removing inactivity in 1 day window
+(left) and 8 hours time window (right) for the bpi challenge 2017.
+8h 1d 7d
+time windows010203040mape (%)
+prediction error of different time windows- bpi challenge 2017
+all steps
+active steps
+0 2 4 6 8 10
+lags0.00.20.40.60.81.0
+bpi challenge 2017: partial auto-correlation (daily)- active steps
+fig. 11: the prediction errors of the arrival rate in the bpi 2017 event log before
+and after removing the inactive time steps (left). the partial auto-correlation
+after removing inactive time steps (right).
+the prediction errors. the evaluation using real event logs indicates that the
+approach is able to nd a better time window among the possible time step sizes
+to have the most stable behavior of the processes.
+6 related work
+process mining techniques implicitly use time-series data for dierent purposes
+such as performance analysis [3], bottleneck analysis, prediction [2] and the en-
+hancement of the processes, e.g., providing recommendations [5]. process mining
+techniques mostly focus on the current state of processes. at the same time, in
+simulation, the current state is employed to generate similar behavior of the
+processes. therefore, the combination of these two elds is a promising direction
+for the enhancement of processes [2].
+prediction and simulation techniques in process mining focus mostly on in-
+stances of the process, e.g., the execution/ waiting time for a specic case in the
+process [22]. moreover, in [6] a congurable approach is proposed to construct a
+process model enhanced with time information from previous instances, and use
+the model for prediction, for example, the completion time. however, most of
+the mentioned techniques are at a detailed level and missing the eect of exter-
+nal factors [4]. furthermore, in [23] a survey of prediction techniques in process
+mining is presented in which most of the techniques use a predened unit of
+time such as days or hour. in the context of simulation and prediction in process
+mining, there is not enough focus on the eect of the size of time windows on
+the result of simulation and prediction techniques. work such as [11] explainssemi-automated time-granularity detection for data-driven simulation 13
+the possibility of using time-series analysis in data analysis. two main types of
+time-series analysis exist including univariate and multi-variate. box et al. in-
+troduced the arima method [8]. this method now represents one of the most
+frequently used univariate time-series modeling tools. in [14], techniques such as
+the arima technique are shown to be more eective than lstm techniques in
+univariate time-series data [22].
+in most of the techniques in process mining, the selection of the time window
+for generating data either has not been mentioned explicitly or they used the
+predened logical unit of time. the techniques at the aggregated level use the
+current state of the processes over time. techniques such as [16] are proposed
+which employ dierent time windows. this approach can be used with domain
+knowledge about the working hours of the processes, e.g., a production line
+process is running 8 hours per day [18].
+7 conclusion
+in this paper, we proposed an approach to discover the best window of time
+for capturing the most stable behavior of processes over time. the discovered
+time window is used for extracting values of process variables from event logs.
+since these values are an aggregated value for each time window, they behave
+like time-series data. we used the derived time-series data to discover strong
+patterns inside the process variables related to the process environment, e.g.,
+arrival rate. moreover, in the approach, inactive time windows are distinguished
+and removed. a time-series prediction approach (arima) is used to nd the
+best models that predict the next values accurately and their parameters.the
+proposed approach is eective in picking the size of the time window to generate
+the performance variables in business processes. the generated values for pro-
+cess variables over time that represent the process behavior, i.e., sd-log, are
+exploited for simulation and prediction purpose. the evaluation section shows
+that our approach provides business owners with actionable insights into the
+current situation of the processes to be used in simulation as system dynamics.
+acknowledgments funded by the deutsche forschungsgemeinschaft (dfg,
+german research foundation) under germany's excellence strategy{exc-2023
+internet of production { 390621612. we also thank the alexander von humboldt
+(avh) stiftung for supporting our research.
+references
+1. van der aalst, w.m.p.: process mining - data science in action, second edition.
+springer (2016). https://doi.org/10.1007/978-3-662-49851-4
+2. van der aalst, w.m.p.: process mining and simulation: a match made in heaven!
+in: d'ambrogio, a., zacharewicz, g. (eds.) computer simulation conference
+(summersim 2018). pp. 1{12. acm press (2018)14 m. pourbafrani et al.
+3. van der aalst, w.m.p., adriansyah, a., van dongen, b.f.: replaying history on
+process models for conformance checking and performance analysis. wiley inter-
+discip. rev. data min. knowl. discov. 2(2), 182{192 (2012)
+4. van der aalst, w.m.p., dustdar, s.: process mining put into context. ieee internet
+computing 16, 82{86 (2012)
+5. van der aalst, w.m.p., pesic, m., song, m.: beyond process mining: from the past
+to present and future. in: caise 2010. pp. 38{52 (2010)
+6. van der aalst, w.m.p., schonenberg, m.h., song, m.: time prediction based on
+process mining. inf. syst. 36(2), 450{475 (2011)
+7. augusto, a., conforti, r., dumas, m., rosa, m.l., maggi, f.m., marrella, a.,
+mecella, m., soo, a.: automated discovery of process models from event logs:
+review and benchmark. ieee trans. knowl. data eng. 31(4), 686{705 (2019)
+8. box, g.e.p., jenkins, g.: time series analysis, forecasting and control. holden-
+day, inc., usa (1990)
+9. box, g.e., jenkins, g.m., reinsel, g.c., ljung, g.m.: time series analysis: fore-
+casting and control. john wiley & sons (2015)
+10. carmona, j., van dongen, b.f., solti, a., weidlich, m.: conformance checking -
+relating processes and models. springer (2018)
+11. esling, p., ag on, c.: time-series data mining. acm comput. surv. 45(1), 12:1{
+12:34 (2012). https://doi.org/10.1145/2379776.2379788
+12. hamilton, j.d.: time series analysis, vol. 2. princeton new jersey (1994)
+13. jensen, k., kristensen, l.m.: coloured petri nets - modelling and validation of
+concurrent systems. springer (2009). https://doi.org/10.1007/b95112
+14. makridakis, s., spiliotis, e., assimakopoulos, v.: statistical and machine learning
+forecasting methods: concerns and ways forward. plos one 13(3) (2018)
+15. pourbafrani, m., van der aalst, w.m.p.: pmsd: data-driven simulation in process
+mining. in: bpm 2020 (2020)
+16. pourbafrani, m., van zelst, s.j., van der aalst, w.m.p.: scenario-based prediction
+of business processes using system dynamics. in: otm 2019 conferences, 2019. pp.
+422{439 (2019). https://doi.org/10.1007/978-3-030-33246-4 27
+17. pourbafrani, m., van zelst, s.j., van der aalst, w.m.p.: supporting automatic
+system dynamics model generation for simulation in the context of process mining.
+in: bis 2020, colorado springs, co, usa, june 8-10, 2020, proceedings. pp. 249{
+263 (2020). https://doi.org/10.1007/978-3-030-53337-3 19
+18. pourbafrani, m., van zelst, s.j., van der aalst, w.m.p.: supporting decisions in
+production line processes by combining process mining and system dynamics. in:
+intelligent human systems integration 2020 - proceedings of the 3rd interna-
+tional conference on intelligent human systems integration. pp. 461{467 (2020).
+https://doi.org/10.1007/978-3-030-39512-4 72
+19. pruyt, e.: small system dynamics models for big issues: triple jump towards
+real-world dynamic complexity. tu delft library (01 2013)
+20. ramsey, f.l., et al.: characterization of the partial autocorrelation function. the
+annals of statistics 2(6), 1296{1301 (1974)
+21. sterman, j.: system dynamics: systems thinking and modeling for a complex
+world (2002)
+22. tax, n., verenich, i., rosa, m.l., dumas, m.: predictive business process moni-
+toring with lstm neural networks. corr abs/1612.02130 (2016)
+23. teinemaa, i., dumas, m., rosa, m.l., maggi, f.m.: outcome-oriented predictive
+process monitoring: review and benchmark. tkdd 13(2), 17:1{17:57 (2019)
+24. van dongen, b.f.: bpic 2012. eindhoven university of technology (2012)
+25. van dongen, b.f.: bpic 2017. eindhoven university of technology (2017)

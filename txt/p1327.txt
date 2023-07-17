@@ -1,0 +1,318 @@
+pm4py-gpu: a high-performance
+general-purpose library for process mining
+alessandro berti1;2, minh phan nghia, and wil m.p. van der aalst1;2
+1process and data science group @ rwth aachen, aachen, germany fa.berti,
+wvdaalst g@pads.rwth-aachen.de, minh.nghia.phan@rwth-aachen.de
+2fraunhofer institute of technology (fit), sankt augustin, germany
+abstract. open-source process mining provides many algorithms for
+the analysis of event data which could be used to analyze mainstream
+processes (e.g., o2c, p2p, crm). however, compared to commercial
+tools, they lack the performance and struggle to analyze large amounts of
+data. this paper presents pm4py-gpu, a python process mining library
+based on the nvidia rapids framework. thanks to the dataframe
+columnar storage and the high level of parallelism, a signicant speed-
+up is achieved on classic process mining computations and processing
+activities.
+keywords: process mining, gpu analytics, columnar storage
+1 introduction
+process mining is a branch of data science that aims to analyze the execution
+of business processes starting from the event data contained in the information
+systems supporting the processes. several types of process mining are avail-
+able, including process discovery (the automatic discovery of a process model
+from the event data), conformance checking (the comparison between the be-
+havior contained in the event data against the process model, with the purpose
+to nd deviations), model enhancement (the annotation of the process model
+with frequency/performance information) and predictive analytics (predicting
+the next path or the time until the completion of the instance). process min-
+ing is applied worldwide to a huge amount of data using dierent tools (aca-
+demic/commercial). some important tool features to allow process mining in
+organizational settings are: the pre-processing and transformation possibilities,
+thepossibility to drill-down (creating smaller views on the dataset, to focus
+on some aspect of the process), the availability of visual analytics (which are
+understandable to non-business users), the responsiveness and performance of
+the tool, and the possibilities of machine learning (producing useful predictive
+analytics and what-if analyses). commercial tools tackle these challenges with
+more focus than academic/open-source tools, which, on the other hand, provide
+more complex analyses (e.g., process discovery with inductive miner, declarative
+conformance checking). the pm4py library http://www.pm4py.org , based on2 a. berti et al.
+the python 3 programming language, permits to integrate with the data pro-
+cessing and machine learning packages which are available in the python world
+(pandas, scikit-learn). however, most of its algorithms work in single-thread,
+which is a drawback for performance. in this demo paper, we will present a
+gpu-based open-source library for process mining, pm4py-gpu, based on the
+nvidia rapids framework, allowing us to analyze a large amount of event
+data with high performance oering access to gpu-based machine learning. the
+speedup over other open-source libraries for general process mining purposes is
+more than 10x. the rest of the demonstration paper is organized as follows.
+section 2 introduces the nvidia rapids framework, which is at the base of
+pm4py-gpu, and of some data formats/structures for the storage of event logs;
+section 3 presents the implementation, the dierent components of the library
+and some code examples; section 4 assess pm4py-gpu against other products;
+section 5 introduces the related work on process mining on big data and process
+mining on gpu; finally, section 6 concludes the demo paper.
+2 preliminaries
+this section will rst present the nvidia rapids framework for gpu-enabled
+data processing and mining. then, an overview of the most widely used le
+formats and data structures for the storage of event logs is provided.
+2.1 nvidia rapids
+the nvidia rapids framework https://developer.nvidia.com/rapids was
+launched by nvidia in 2018 with the purpose to enable general-purpose data
+science pipelines directly on the gpu. it is composed of dierent components:
+cudf (gpu-based dataframe library for python, analogous to pandas), cuml
+(gpu-based general-purpose machine learning library for python, similar to
+scikit-learn), and cugraph (gpu-based graph processing library for python,
+similar to networkx). the framework is based on cuda (developed by nvidia
+to allow low-level programming on the gpu) and uses rmm for memory man-
+agement. nvidia rapids exploit all the cores of the gpu in order to maximize
+the throughput. when a computation such as retrieving the maximum numeric
+value of a column is operated against a column of the dataframe, the dierent
+cores of the gpu act on dierent parts of the column, a maximum is found on
+every core. then the global maximum is a reduction of these maximums. there-
+fore, the operation is parallelized on all the cores of the gpu. when a group-by
+operation is performed, the dierent groups are identied (also here using all
+the cores of the gpu) as the set of rows indices. any operation on the group-by
+operation (such as taking the last value of a column per group; performing the
+sum of the values of a column per group; or calculating the dierence between
+consecutive values in a group) is also performed exploiting the parallelism on
+the cores of the gpu.pm4py-gpu 3
+2.2 dataframes and file formats for the storage of event logs
+in this subsection, we want to analyze the dierent le formats and data struc-
+tures that could be used to store event logs, and the advantages/disadvantages
+of a columnar implementation. as a standard to interchange event logs, the
+xes standard is proposed https://xes-standard.org/ , which is text/xml
+based. therefore, the event log can be ingested in memory after parsing the
+xml, and this operation is quite expensive. every attribute in a xes log is
+typed, and the attributes for a given case do not need to be replicated among
+all the events. event logs can also be stored as csv(s) or parquet(s), both re-
+sembling the structure of a table. a csv is a textual le hosting an header
+row (containing the names of the dierent columns separated by a separator
+character) and many data rows (containing the values of the attributes for the
+given row separated by a separator character). a problem with the csv format
+is the typing of the attributes. a parquet le is a binary le containing the
+values for each column/attribute, and applying a column-based compression.
+each column/attribute is therefore strictly typed. cudf permits the ingestion
+of csv(s)/parquet(s) into a dataframe structure. a dataframe is a table-like
+data structure organized as columnar storage. as many data processing opera-
+tions work on a few attributes/columns of the data, adopting a columnar storage
+permits to retrieve specic columns with higher performance and to reduce per-
+formance problems such as cache misses. generally, the ingestion of a parquet
+le in a cudf dataframe is faster because the data is already organized in
+columns. in contrast, the parsing of the text of a csv and its transformation to
+a dataframe is more time expensive. however, nvidia cudf is also impressive
+in the ingestion of csv(s) because the dierent cores of the gpu are used on
+dierent parts of the csv le.
+3 implementation and tool
+in pm4py-gpu, we assume an event log to be ingested from a parquet/csv le
+into a cudf dataframe using the methods available in cudf. on top of such
+dataframe, dierent operations are possible, including:
+{aggregations/filtering at the event level : we would like to lter in/out a
+row/event or perform any aggregation based solely on the properties of the
+row/event. examples: ltering the events/rows for which the cost is >1000;
+associate its number of occurrences to each activity.
+{aggregations/filtering at the directly-follows level : we would like to lter
+in/out rows/events or perform any sort of aggregation based on the proper-
+ties of the event and of the previous (or next) event. examples: ltering the
+events with activity insert fine notication having a previous event with
+activity send fine ; calculating the frequency/performance directly-follows
+graph.
+{aggregations/filtering at the case level : this can be based on global prop-
+erties of the case (e.g., the number of events in the case or the throughput4 a. berti et al.
+time of the case) or on properties of the single event. in this setting, we
+need an initial exploration of the dataframe to group the indexes of the rows
+based on their case and then perform the ltering/aggregation on top of
+it. examples: ltering out the cases with more than 10 events; ltering the
+cases with at least one event with activity insert fine notication ; nding
+the throughput time for all the cases of the log.
+{aggregations/filtering at the variant level : the aggregation associates each
+case to its variant. the ltering operation accepts a collection of variants
+and keeps/remove all the cases whose variant fall inside the collection. this
+requires a double aggregation: rst, the events need to be grouped in cases.
+then this grouping is used to aggregate the cases into the variants.
+to facilitate these operations, in pm4py-gpu we operate three steps starting
+from the original cudf dataframe:
+{the dataframe is ordered based on three criteria (in order, case identier, the
+timestamp, and the absolute index of the event in the dataframe), to have
+the events of the same cases near each other in the dataframe, increasing the
+eciency of group-by operations.
+{additional columns are added to the dataframe (including the position of
+the event inside a case; the timestamp and the activity of the previous event)
+to allow for aggregations/ltering at the directly-follows graph level.
+{acases dataframe is found starting from the original dataframe and having a
+row for each dierent case in the log. the columns of this dataframe include
+the number of events for the case, the throughput time of the case, and
+some numerical features that uniquely identify the case's variant. case-based
+ltering is based on both the original dataframe and the cases dataframe.
+variant-based ltering is applied to the cases dataframe and then reported
+on the original dataframe (keeping the events of the ltered cases).
+the pm4py-gpu library is available at the address https://github.com/
+javert899/pm4pygpu . it does not require any further dependency than the
+nvidia rapids library, which by itself depends on the availability of a gpu,
+the installation of the correct set of drivers, and of nvidia cuda. the dierent
+modules of the library are:
+{formatting module (format.py) : performs the operations mentioned above
+on the dataframe ingested by cudf. this enables the rest of the operations
+described below.
+{dfg retrieval / paths ltering (dfg.py) : discovers the frequency/perfor-
+mance directly-follows graph on the dataframe. this enables paths ltering
+on the dataframe.
+{efg retrieval / temporal prole (efg.py) : discovers the eventually-follows
+graphs or the temporal prole from the dataframe.
+{sampling (sampling.py) : samples the dataframe based on the specied amount
+of cases/events.
+{cases dataframe (cases df.py) : retrieves the cases dataframe. this permits
+the ltering on the number of events and on the throughput time.pm4py-gpu 5
+table 1: event logs used in the assessment, along with their number of events, cases, variants and
+activities.
+log events cases variants activities
+roadtrac 21,122,940 300,740 231 11
+roadtrac 52,807,350 751,850 231 11
+roadtrac 105,614,700 1,503,700 231 11
+roadtrac 2011,229,400 3,007,400 231 11
+bpic2019 23,191,846 503,468 11,973 42
+bpic2019 57,979,617 1,258,670 11,973 42
+bpic2019 1015,959,230 2,517,340 11,973 42
+bpic2018 25,028,532 87,618 28,457 41
+bpic2018 512,571,330 219,045 28,457 41
+bpic2018 1025,142,660 438,090 28,457 51
+{variants (variants.py) : enables the retrieval of variants from the dataframe.
+this permits variant ltering.
+{timestamp (timestamp.py) : retrieves the timestamp values from a column
+of the dataframe. this permits three dierent types of timestamp ltering
+(events, cases contained, cases intersecting).
+{endpoints (start endactivities.py) : retrieves the start/end activities from
+the dataframe. this permits ltering on the start and end activities.
+{attributes (attributes.py) : retrieves the values of a string/numeric attribute.
+this permits ltering on the values of a string/numeric attribute.
+{feature selection (feature selection.py) : basilar feature extraction, keeping
+for every provided numerical attribute the last value per case, and for each
+provided string attribute its one-hot-encoding.
+an example of usage of the pm4py-gpu library, in which a parquet log is
+ingested, and the directly-follows graph is computed, is reported in the following
+listing.
+import cudf
+from pm4pygpu import format , dfg
+df = cudf . read parquet ( ' r e c e i p t . parquet ' )
+df = format . apply ( df )
+frequency dfg = dfg . g e t f r e q u e n c y d f g ( df )
+listing 1.1: example code of pm4py-gpu.
+4 assessment
+in this section, we want to compare pm4py-gpu against other libraries/so-
+lutions for process mining to evaluate mainstream operations' execution time6 a. berti et al.
+against signicant amounts of data. the compared solutions include pm4py-
+gpu (described in this paper), pm4py (cpu single-thread library for pro-
+cess mining in python; https://pm4py.fit.fraunhofer.de/ ), the pm4py dis-
+tributed engine (described in the assessment). all the solutions have been run
+on the same machine (threadripper 1920x, 128 gb of ddr4 ram, nvidia
+rtx 2080). the event logs of the assessment include the road trac fine
+management https://data.4tu.nl/articles/dataset/road_traffic_fine_
+management_process/12683249 , the bpi challenge 2019 https://data.4tu.
+nl/articles/dataset/bpi_challenge_2019/12715853 and the bpi chal-
+lenge 2018 https://data.4tu.nl/articles/dataset/bpi_challenge_2018/
+12688355 event logs. the cases of every one of these logs have been replicated 2,
+5, and 10 times for the assessment (the variants and activities are unchanged).
+moreover, the smallest of these logs (road trac fine management log) has
+also been replicated 20 times. the information about the considered event logs
+is reported in table 1. in particular, the sux ( 2,5,10) indicates the number
+of replications of the cases of the log. the results of the dierent experiments
+is reported in table 2. the rst experiment is on the importing time (pm4py
+vs. pm4py-gpu; the other two software cannot be directly compared because
+of more aggressive pre-processing). we can see that pm4py-gpu is slower than
+pm4py in this setting (data in the gpu is stored in a way that facilitates par-
+allelism). the second experiment is on the computation of the directly-follows
+graph in the four dierent platforms. here, pm4py-gpu is incredibly respon-
+sive the third experiment is on the computation of the variants in the dierent
+platforms. here, pm4py-gpu and the pm4py distributed engine perform both
+well (pm4py-gpu is faster to retrieve the variants in logs with a smaller amount
+of variants).
+table 2: comparison between the execution times of dierent tasks. the congurations analyzed
+are: p4 (single-core pm4py), p4g (pm4py-gpu), p4d (pm4py distributed engine). the tasks
+analyzed are: importing the event log from a parquet le, the computation of the dfg and the
+computation of the variants. for the pm4py-gpu (computing the dfg and variants), the speedup
+in comparison to pm4py is also reported.
+importing dfg variants
+log p4 p4g p4 p4g p4d p4 p4g p4d
+roadtrac 20.166s 1.488s 0.335s 0.094s (3.6x) 0.252s 1.506s 0.029s (51.9x) 0.385s
+roadtrac 50.375s 1.691s 0.842s 0.098s (8.6x) 0.329s 3.463s 0.040s (86.6x) 0.903s
+roadtrac 100.788s 1.962s 1.564s 0.105s (14.9x) 0.583s 7.908s 0.055s (144x) 1.819s
+roadtrac 201.478s 2.495s 3.200s 0.113s (28.3x) 1.048s 17.896s 0.092s (195x) 3.380s
+bpic2019 20.375s 1.759s 0.980s 0.115s (8.5x) 0.330s 3.444s 0.958s (3.6x) 0.794s
+bpic2019 50.976s 2.312s 2.423s 0.156s (15.5x) 0.613s 8.821s 0.998s (8.9x) 1.407s
+bpic2019 101.761s 3.156s 4.570s 0.213s (21.5x) 1.679s 19.958s 1.071s (18.6x) 4.314s
+bpic2018 20.353s 1.846s 1.562s 0.162s (9.6x) 0.420s 6.066s 5.136s (1.2x) 0.488s
+bpic2018 50.848s 2.463s 3.681s 0.214s (17.2x) 0.874s 14.286s 5.167s (2.8x) 0.973s
+bpic2018 101.737s 3.470s 7.536s 0.306s (24.6x) 1.363s 29.728s 5.199s (5.7x) 1.457spm4py-gpu 7
+5 related work
+process mining on big data architectures : an integration between process
+mining techniques and apache hadoop has been proposed in [3]. apache hadoop
+does not work in-memory and requires the serialization of every step. therefore,
+technologies such as apache spark could be used for in-memory process mining3.
+the drawback of spark is the additional overhead due to the log distribution step,
+which limits the performance benets of the platform. other platform such as
+apache kafka have been used for processing of streams [5]. application-tailored
+engines have also been proposed. the \pm4py distributed engine"4has been
+proposed as a multi-core and multi-node engine tailored for general-purpose pro-
+cess mining with resource awareness. however, in contrast to other distributed
+engines, it misses any failure-recovery option and therefore is not good for very
+long lasting computations. the process query language (pql) is integrated
+in the celonis commercial process mining software https://www.celonis.com/
+and provides high throughput for mainstream process mining computations in
+the cloud.
+data/process mining on gpu : many popular data science algorithms have
+been implemented on top of a gpu [1]. in particular, the training of machine
+learning models, which involve tensor operations, can have huge speed-ups using
+the gpu rather than the cpu. in [7] (lstm neural networks) and [6] (con-
+volutional neural networks), deep learning approaches are used for predictive
+purposes. some of the process mining algorithms have been implemented on top
+of a gpu. in [4], the popular alpha miner algorithm is implemented on top of
+gpu and compared against the cpu counterpart, showing signicant gains. in
+[2], the discovery of the paths in the log is performed on top of a gpu with a
+big speedup in the experimental setting.
+6 conclusion
+in this paper, we presented pm4py-gpu, a high-performance library for process
+mining in python, which is based on the nvidia rapids framework for gpu
+computations. the experimental results against distributed open-source soft-
+ware (pm4py distributed engine) are very good, and the library seems suited
+for process mining on a signicant amount of data. however, an expensive gpu
+is needed to make the library work, which could be a drawback for widespread
+usage. we should also say that the number of process mining functionalities sup-
+ported by the gpu-based library is limited, hence comparisons against open-
+source/commercial software supporting a more comprehensive number of fea-
+tures might be unfair.
+3https://www.pads.rwth-aachen.de/go/id/ezupn/lidx/1
+4https://www.pads.rwth-aachen.de/go/id/khbht8 a. berti et al.
+acknowledgements
+we thank the alexander von humboldt (avh) stiftung for supporting our re-
+search.
+references
+1. cano, a.: a survey on graphic processing unit computing for large-scale data mining.
+wiley interdiscip. rev. data min. knowl. discov. 8(1) (2018), https://doi.org/
+10.1002/widm.1232
+2. ferreira, d.r., santos, r.m.: parallelization of transition counting for process min-
+ing on multi-core cpus and gpus. in: dumas, m., fantinato, m. (eds.) business
+process management workshops - bpm 2016 international workshops, rio de
+janeiro, brazil, september 19, 2016, revised papers. lecture notes in business
+information processing, vol. 281, pp. 36{48 (2016), https://doi.org/10.1007/
+978-3-319-58457-7_3
+3. hern andez, s., van zelst, s.j., ezpeleta, j., van der aalst, w.m.p.: handling
+big(ger) logs: connecting prom 6 to apache hadoop. in: daniel, f., zugal, s. (eds.)
+proceedings of the bpm demo session 2015 co-located with the 13th interna-
+tional conference on business process management (bpm 2015), innsbruck, aus-
+tria, september 2, 2015. ceur workshop proceedings, vol. 1418, pp. 80{84. ceur-
+ws.org (2015), http://ceur-ws.org/vol-1418/paper17.pdf
+4. kundra, d., juneja, p., sureka, a.: vidushi: parallel implementation of alpha miner
+algorithm and performance analysis on cpu and gpu architecture. in: reichert,
+m., reijers, h.a. (eds.) business process management workshops - bpm 2015,
+13th international workshops, innsbruck, austria, august 31 - september 3, 2015,
+revised papers. lecture notes in business information processing, vol. 256, pp.
+230{241. springer (2015), https://doi.org/10.1007/978-3-319-42887-1_19
+5. nogueira, a.f., rela, m.z.: monitoring a ci/cd workow using process mining. sn
+comput. sci. 2(6), 448 (2021), https://doi.org/10.1007/s42979-021-00830-2
+6. pasquadibisceglie, v., appice, a., castellano, g., malerba, d.: using convolutional
+neural networks for predictive process analytics. in: international conference on
+process mining, icpm 2019, aachen, germany, june 24-26, 2019. pp. 129{136.
+ieee (2019), https://doi.org/10.1109/icpm.2019.00028
+7. tax, n., verenich, i., rosa, m.l., dumas, m.: predictive business process monitoring
+with lstm neural networks. in: dubois, e., pohl, k. (eds.) advanced information
+systems engineering - 29th international conference, caise 2017, essen, germany,
+june 12-16, 2017, proceedings. lecture notes in computer science, vol. 10253, pp.
+477{492. springer (2017), https://doi.org/10.1007/978-3-319-59536-8_30

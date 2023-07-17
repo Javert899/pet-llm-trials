@@ -1,0 +1,844 @@
+discovering the \glue" connecting activities
+exploiting monotonicity to learn places faster
+wil m.p. van der aalst
+process and data science (pads), rwth aachen university, aachen, germany
+e:wvdaalst@pads.rwth-aachen.de w:www.vdaalst.com
+abstract. process discovery, one of the key areas within process min-
+ing, aims to derive behavioral models from event data. since event logs
+are inherently incomplete (containing merely example behaviors) and un-
+balanced, this is often challenging. dierent target languages can be used
+to capture sequential, conditional, concurrent, and iterative behaviors.
+in this paper, we assume that a process model is merely a set of places
+(like in petri nets). given a particular behavior, a place can be \tting",
+\underfed" (tokens are missing), or \overfed" (tokens are remaining).
+we dene a partial order on places based on their connections. then
+we will show various monotonicity properties that can be exploited dur-
+ing process discovery. if a candidate place is underfed, then all \lighter"
+places are also underfed. if a candidate place is overfed, then all \heavier"
+places are also overfed. this allows us to prune the search space dramat-
+ically. moreover, we can further reduce the search space by not allowing
+conicting or redundant places. these more foundational insights can be
+used to develop fast process mining algorithms producing places with a
+guaranteed quality level.
+keywords: process mining, process discovery, petri nets, bpm
+1 introduction
+it is a pleasure to contribute to this festschrift honoring farhad arbab's contri-
+butions to computer science. farhad worked on dierent topics in the broader
+eld of formal methods and software engineering. however, he is best known for
+his work in coordination models and languages. often concurrency and composi-
+tion played an important role in his work. the reo coordination language is the
+piece de resistance of farhad's work. reo is a channel-based coordination model
+wherein complex coordinators, called connectors, are composed from simpler
+ones [10]. the language has been mapped to many other languages [16], in-
+cluding zero-safe nets (a variant for petri nets) and constraint automata. there
+is also work on the synthesis of reo circuits from scenario specications [21].
+unfortunately, mining techniques to learn reo models from event data are still
+missing.
+in process mining, typically representations such as petri nets, workow nets,
+causal nets, process trees, transition systems, statecharts, and bpmn models areused [3]. rather than coordinating complex components, these models merely
+coordinate activities derived from event data.
+the goal of reo is to provide the \glue" between dierent software com-
+ponents. in the same way, one could view places in a petri net as the \glue"
+between transitions representing activities. in this sense, places in a petri net
+can be viewed as a simple coordination layer. the goal of this paper is to dis-
+cover sets of places modeling the underlying process such that (1) this can be
+done quickly (handling event logs with millions of events) and (2) that places
+have a well-dened minimal quality level.
+event data are collected in logistics, manufacturing, nance, healthcare, cus-
+tomer relationship management, e-learning, e-government, and many other do-
+mains. the events found in these domains typically refer to activities executed
+by resources at particular times and for a particular case (i.e., process instances).
+process mining techniques are able to exploit such data. here, we focus on process
+discovery , but process mining also includes conformance checking, performance
+analysis, decision mining, organizational mining, predictions, recommendations,
+etc.
+over the last two decades, hundreds of process discovery techniques have
+been proposed [3]. many of the initial techniques could not cope with infrequent
+behavior and made very strong assumptions about the completeness of the event
+log. for example, traditional region-based techniques assume that all possible be-
+havior has been observed (i.e., the log is complete) and that all observed traces
+are equally important. state-based regions were introduced by ehrenfeucht and
+rozenberg in 1989 and generalized by cortadella et al. [14, 12]. various authors
+used state-based regions for process discovery [7, 22]. also, language-based re-
+gions have been used for this purpose [11, 25]. over time attention shifted to
+approaches able to deal with noise and infrequent behavior. early approaches
+include heuristic mining, fuzzy mining, and various genetic process mining ap-
+proaches [24, 15]. since 2010 the speed at which new process discovery techniques
+are proposed is accelerating. as an example consider the family of inductive min-
+ing techniques [17{19].
+p1
+a c
+b d
+p2p3
+p4p5
+fig. 1. process model p1=f(fig;fag);(fig;fbg);(fag;fc;dg);(fbg;fc;dg);
+(fc;dg;fg)gcomposed of ve places discovered from event log l1= [hi;a;b;c; i31;
+hi;b;a;c; i27;hi;a;b;d; i23;hi;b;a;d; i19] .this paper provides a fresh look at places in a petri net seen from the view-
+point of process discovery. each place can be viewed as a constraint , limiting
+the behavior of the petri net. we use a so-called open-world assumption : any
+behavior is possible unless explicitly forbidden by one of the places in the model.
+consider the process model shown in figure 1 which is composed of ve places.
+transitionimodels the start of the process and transition marks the end.
+placep1species that activity acan only happen after i. moreover, at the end,
+the number of occurrences of ashould match the number of occurrences of i.
+sinceihappens once, also ashould also happen precisely once. place p3speci-
+es that activity cand activity dcan only happen after aoccurred. at the end,
+the number of occurrences of canddshould match the number of occurrences
+ofa. the goal is to discover models merely composed of places from event data.
+each event refers to a case (process instance), activity, and a timestamp. we
+can group events based on cases and sort events within a case based on the
+timestamps. this way each case can be presented by a trace hi;a;b;c; i, i.e., a
+sequence of activities. an event log is a multiset of such traces. the caption of
+figure 1 shows event log l1consisting of 100 cases and 500 events referring to
+six unique activities.
++ 0 -
++ + ?? - -
+p22 p12 p32
+p21 p11 p31p23 p13 p33
+fig. 2. during replay each of the places p32,p21, andp31will always have at least the
+number of tokens in p22. similarly, places p13,p23, andp12will always have at most
+the number of tokens in p22. placesp11andp33may have more or fewer tokens.
+it is far from trivial to discover places from larger event logs referring to many
+activities. the number of possible places grows exponentially in the number of
+activities and to evaluate a place one needs to traverse the whole event log. anaive algorithm would need to replay the event log for every possible candidate
+place. this can be very time-consuming. moreover, places may be redundant
+or conicting. therefore, we explore relationships among (sets of) places and
+present several monotonicity results. to do this, we dene new notions such as
+\underfed" and \overfed" places and partial orders on (sets of) places based on
+their input and output transitions.
+figure 2 shows the basic idea. if we replay a trace on a particular place, there
+could be two problems:
+{at some stage, a transition needs to remove a token from the place, but the
+place is already empty (the place is \underfed").
+{at the end of the trace, tokens remain in the place (the place is \overfed").
+note that a place can be \overfed" and \underfed" at the same time. assume now
+that we have a place p22with two input transitions and two output transitions
+(figure 2 only shows the corresponding arcs). if this place is perfectly tting
+some trace (the place is not \underfed" and not \overfed"), then we know
+that adding an input arc and/or removing an output arc can only make the place
+\heavier" (indicated by the + sign in figure 2). moreover, removing an input
+arc and/or adding an output arc can only make the place \lighter" (indicated
+by the sign in figure 2). we can exploit this simple observation. if place p22
+is already overfed, then we know that the places p32,p21, andp31also need to
+be overfed. if place p22is already underfed, then we know that the places p13,
+p23, andp12also need to be underfed. these monotonicity properties allow us to
+prune the search space of candidate places. in fact, the monotonicity results can
+be exploited by discovery algorithms to speed-up discovery while still producing
+all places that meet predened quality criteria. this paper focuses on the formal
+foundation of such approaches without providing a specic process discovery
+technique. nevertheless, it is quite straightforward to see how the results can be
+used to speed-up process discovery.
+the remainder is organized as follows. section 2 provides the formal set-
+ting by dening behaviors, event logs, process models, and their semantics. in
+section 3 we relate places using partial orders and prove the rst monotonicity
+results. this is then lifted to quality scores for places (section 4 and section 5).
+we briey discuss how these monotonicity results can be used for process dis-
+covery (section 6). to further prune the set of candidate places we dene redun-
+dancy and conict (section 7). section 8 discusses implications for conformance
+checking. section 9 concludes the paper.
+2 behaviors, event logs, and models
+to be able to discuss the monotonicity results that can be exploited by process
+discovery approaches we dene key notions such as behaviors, event logs, and
+places. we also dene the semantics of process models based on places using an
+open-world assumption.2.1 behaviors
+first, we introduce some basic mathematical notations.
+p(x) =fyjyxgis the powerset of set x.b(x) =x!i n is the set of
+all multisets over some set x. for anyb2b(x):b(x) denotes the number of
+times element x2xappears in b.b1= [ ],b2= [a;a;b ], andb3= [a3;b2;c]
+are multisets over x=fa;b;cg.b1is the empty multiset, b2has three elements,
+andb3has six elements. note that the ordering of elements is irrelevant. union
+(b1[b2), intersection ( b1\b2), and dierence ( b1nb2) are dened as usual. all
+operators for sets are generalized to multisets, e.g.,p
+x2[a;b;b;a;c ]x= 2a+ 2b+c.
+=hx1;x2;:::;xni2xdenotes a sequence over x.(i) =aidenotes the
+i-th element of the sequence. jj=nis the length of anddom() =f1;:::;jjg
+is the domain of .hiis the empty sequence, i.e., jhij= 0 and dom(hi) =;.
+12is the concatenation of two sequences.
+based on the preliminaries we can dene the notion of behavior .hi;a;b;c; i
+is an example behavior, i.e., a sequence of activities starting with iand ending
+with.
+denition 1 (activities and behaviors). ais the universe of activities (ac-
+tions, tasks, operations, transaction types, etc.). there are two special activities:
+fi;ga.iis the unique start activity and is the unique end activity. a
+behavior=ha1;a2;:::;ani2ais a sequence of activity names such that
+n2,a1=i,an=, and for all 1< i < n :ai2anfi;g.bis the set of
+all possible behaviors.
+in this paper, a=fi;;a;b;c;d;:::gandb=fhi;i;hi;a;i;hi;b;i;:::
+hi;a;b;c;c;a;d; i;:::g.
+2.2 event logs
+anevent log can be dened as a multiset of behaviors. elements of such a
+multiset are called traces and refer to cases (i.e., process instance).
+denition 2 (event log). an event log lis a multiset of behaviors, i.e.,
+l2b(b).2lis called a trace.
+l1= [hi;a;b;c; i31;hi;b;a;c; i27;hi;a;b;d; i23;hi;b;a;d; i19] is an ex-
+ample of an event log with 100 traces. for example, 31 cases exhibit the behavior
+hi;a;b;c; i. typically, an event log has more information. for example, events
+may have a timestamp, refer to resources, locations, customers, costs, etc. since
+we focus on the discovery of the \control-ow backbone" of a process, we can
+abstract from these optional attributes.
+2.3 using places to constrain behavior
+in the context of process mining, a wide variety of modeling languages are used
+ranging from petri nets, workow nets, causal nets, process trees and transitionsystems to statecharts and bpmn models. in this paper, we use a very \lean"
+modeling language based on places and an open-world assumption. first, we
+dene pandp!as the set of all possible (through) places.
+denition 3 (places). p=p(a)p(a)is the set of all possible places. for
+anyp= (i;o)2p,p=iis the set of input activities and p=ois the set of
+output activities. p!= (p(a)nf;g )(p(a)nf;g )is the set of through places,
+i.e., places having non-empty sets of input and output activities.
+note that places do not have names, they are fully identied by the input
+and output activities. therefore, for any p1andp2, ifp1=p2andp1=p2,
+thenp1=p2. a process model is simply a set of places.
+denition 4 (process model). a set of places ppdenes a process model.
+figure 1 shows the process model p1=f(fig;fag);(fig;fbg);(fag;fc;dg);
+(fbg;fc;dg);(fc;dg;fg)g.
+unlike conventional petri nets, there is (1) no initial marking and (2) not an
+explicit set of transitions. we do not need an initial marking because behaviors
+start with the unique start activity i.t=s
+p2pp[pis the implicit set of
+transitions (corresponding to the inputs and output of places). however, because
+we use an open-world assumption, we allow for activities not mentioned in the
+process model. places only constrain the behavior of the activities explicitly
+mentioned. for example, hi;a;d;d;d;b;e;e;c; iis a behavior allowed by process
+modelp1(simply ignore activities dande). in the remainder, we will use the
+terms transition and activity interchangeably. whereas the term transition is
+common in the context of petri nets, event logs refer to occurrences of activities
+rather than model elements.
+2.4 behavior dened by places
+to formalize the semantics of a process model ppwe dene \underfed",
+\overfed", and \tting" places. given a behavior 2b, placepis underfed if
+during the replay of the trace place p\goes negative", i.e., a token needs to be
+consumed while it has not been produced (yet). place pis overfed if at the end
+of replaying a trace, tokens remain in p. placepis tting if it is not underfed
+and not overfed, i.e., place pdoes not \go negative" and at the end no tokens
+remain.
+denition 5 (underfed, overfed, and fitting places). letp2pbe a
+place and=ha1;a2;:::;ani2ba behavior.
+{5(p)if and only ifjf1i<kjai2pgj<jf1ikjai2pgj for
+somek2f1;2;:::;ng(placepis \underfed"),
+{4(p)if and only ifjf1injai2pgj>jf1injai2pgj(place
+pis \overfed"), and
+{(p)if and only if65(p)and64(p)(placepis \tting", i.e., not \under-
+fed" and not \overfed").consider trace =hi;a;b;c;d; iand the ve places in figure 1. places p1
+andp2are tting, p3andp4are underfed (because doccurs when these places
+empty), and p5is overfed (because two tokens are produced and only one is
+consumed).
+as mentioned before, activities not in p[phave no eect on the evaluation.
+if=hi;a;e;e;b;f;c;f;d;e; i, thenp1andp2are still tting, p3andp4are
+still underfed, and p5is still overfed.
+a place can be both underfed and overfed. consider trace =hi;c;a;a;b;b;
+iand the ve places in figure 1. places p1andp2are underfed, p3andp4are
+both underfed and overfed (tokens are missing when coccurs and at the end
+tokens remain), and p5is tting.
+the above notions can be generalized to sets of places. therefore, it is possible
+to say that a model ppis tting ( (p)), underfed (5(p)), or overfed
+(4(p)).
+denition 6. letppbe a set of places and 2ba behavior.
+{5(p)if and only if there exists a place p2psuch that5(p),
+{4(p)if and only if there exists a place p2psuch that4(p), and
+{(p)if and only if (p)for allp2p.
+using5(p),4(p), and (p) we can compute all tting, underfed, and
+overfed behaviors. the set of tting behaviors t(p) precisely denes the se-
+mantics of a process model pp.
+denition 7 (model behavior). letppbe a set of places.
+{t(p) =f2bj(p)gis the set of tting behaviors,
+{neg(p) =f2bj5(p)gis the set of underfed behaviors, and
+{pos(p) =f2bj4(p)gis the set of overfed behaviors.
+we use the following shorthands: t(p) =t(fpg),neg(p) =neg(fpg),pos(p) =
+pos(fpg) for any place p. note that t(p) =bn(neg(p)[pos(p)).
+p1
+a c
+b
+p2
+p3
+fig. 3. process model p2 = f(fi;ag;fa;bg);(fag;fcg);(fb;cg;fc;g)g
+composed of three places discovered from event log l1= [hi;b;i49;
+hi;a;b;c; i31;hi;a;a;b;c;c; i12;hi;a;a;a;b;c;c;c; i5;hi;a;a;a;a;b;c;c;c;c; i1;
+hi;a;a;a;a;a;b;c;c;c;c;c; i2] .figure 3 shows another example illustrating the declarative nature of places.
+p2=f(fi;ag;fa;bg);(fag;fcg);(fb;cg;fc;g)ghas three places allowing for
+any behavior satisfying the following constraints: (1) boccurs precisely once, (2)
+aoccurs any number of times, but only before b, (3)coccurs any number of
+times, but only after b, and (4)aandcoccur the same number of times. note
+that the model in figure 3 only constrains activities a,b, andcand therefore
+also allows for behaviors like hi;d;b;e;f; iandhi;a;d;a;d;b;e;c;c;e; i.
+2.5 mapping to petri nets
+traditional petri nets are described by tuple n= (s;t;f ) wheresis the
+set of places, tis the set of transitions, and f(st)[(ts) the set
+of arcs [13]. a system net sn = (s;t;f;m init;mnal) has an initial and a
+nal marking [1]. the behavior of a system net corresponds to the set of traces
+starting in the initial marking minitand ending in the nal marking mnal
+[1]. the models used in this paper can be converted to a system net using the
+following conversion. given a set of places pp(in the sense of denition 4),
+we construct the system net sn= (s;t;f;m init;mnal) with:s=p[fi;q;fg,
+t=a,f=f(i;i);(;f)g[f (t;p)2tpjt2 pg[f (p;t)2ptjt2
+pg[f (t;q)jt2tnfgg[f (q;t)jt2tnfigg,minit= [i], andmnal= [f].
+the set of traces starting in minitand ending in mnalis precisely the set t(p)
+(see denition 7). moreover, note that snis a so-called workow net [5]. the
+workow net does not need to be sound, but we only consider ring sequences
+starting in marking [ i] and ending in marking [ f].
+it is also possible to translate any system net (including workow nets) with
+initial and nal markings into an equivalent model pp.
+we use the simple representation using merely places and no initial and nal
+markings to be able to succinctly express a range of properties and monotonicity
+results without considering markings.
+3 relating places and monotonicity
+the ultimate goal is to discover places from event logs. however, the goal of this
+paper is not to propose a concrete discovery approach. instead, we reason about
+properties of (sets of) places that can be exploited by discovery techniques.
+denition 8 (place notations). letp1= (i1;o1)2pandp2= (i2;o2)2p
+be two places. these places can be combined to form new places:
+{p1up2= (i1\i2;o1\o2)2p,
+{p1tp2= (i1[i2;o1[o2)2p,
+{p1
+p2= ((i1[i2)n(i1\i2);(o1[o2)n(o1\o2))2p.
+placesp1andp2can be related in dierent ways:
+{p1=p2if and only if i1=i2ando1=o2(equality),{p1kp2if and only if p1up2= (;;;) (non-overlapping),
+{p1@p2if and only if i1i2,o1o2, andp16=p2(proper subset), and
+{p1p2if and only if p16=p2,p16kp2,p16@p2andp16ap2(incomparable).
+we would like to avoid discovering places that are a combination of places
+already in the model. consider for example adding place pr= (fi;c;dg;fa;g)
+to the ve places in figure 1. this place would be redundant , becausepr=
+p1tp5. indeed, adding prwould not change the set of tting behaviors and only
+complicate the model. a set of places is non-redundant if none of its places can
+be derived from the rest.
+denition 9 (redundant). placep2pis redundant with respect to a set of
+placespp(notationp)p) if there is a non-empty subset p0=fp1;p2;:::;
+pngpsuch thatpikpjfor any 1i<jnandp= (p1tp2t:::tpn).
+for two sets of places p1pandp2p:p1)p2if and only if8p22p2p1)
+p2(i.e.,p2is \implied" by p1).
+a set of places ppis non-redundant if and only if it is impossible to split
+pin two disjoint non-empty subsets p1andp2such thatp1)p2.
+adding input transitions to a place can only lead to more tokens in the
+place. therefore, a place that is overfed by many traces in the event log will also
+be overfed by these traces after adding the input transitions. adding output
+transitions to a place can only lead to fewer tokens in the place. therefore, a
+place that is underfed by many traces in the event log will also be underfed by
+these traces after adding the output transitions. this information can be used
+to prune the search space of discovery algorithms. therefore, we dene a partial
+order on places and use this to prove monotonicity results that can be exploited
+during process discovery.
+denition 10 (weighing places). letp1= (i1;o1)2pandp2= (i2;o2)2
+pbe two places.
+{p1p2if and only if i1i2ando2o1(i.e.,p1is at least as \light" as
+p2) and
+{p1p2if and only if i2i1ando1o2(i.e.,p1is at least as \heavy"
+asp2).
+note thatp1p2if and only if p2p1. it is easy to see that denes
+a partial order. the relation is reexive ( pp), antisymmetric ( p1p2and
+p2p1impliesp1=p2), and transitive ( p1p2andp2p3impliesp1p3).
+denition 11 (weighing sets of places). letp1pandp2pbe two
+sets of places.
+{p1p2if and only if8p12p19p22p2p1p2(i.e.,p1is at least as \light"
+asp2) and
+{p1p2if and only if8p12p19p22p2p1p2(i.e.,p1is at least as \heavy"
+asp2).note thatp1p2isnotequivalent to p2p1. letp1=f(fag;fb;cg)g
+andp2=f(fag;fbg);(fag;fdg)g.p1p2because (fag;fb;cg)(fag;fbg).
+however,p26p1, because (fag;fdg)6(fag;fb;cg). bothand(for sets
+of places) are reexive and transitive, but not antisymmetric. consider p3=
+f(fa;cg;fbg);(fag;fbg);(fag;fb;dg)gandp4=f(fa;cg;fbg);(fag;fb;dg)g.p3
+p4andp4p3, butp36=p4. also,p3p4andp4p3, butp36=p4. hence,
+andare not antisymmetric.
+the above notations and insights allow us to provide very general monotonic-
+ity results.
+theorem 1 (monotonicity results). letp1pandp2pbe two sets of
+places.
+{p1p2implies pos (p1)pos(p2),
+{p1p2implies neg (p1)neg(p2),
+{p1)p2implies t (p1)t(p2).
+proof. ifp1p2, then while replaying a trace ,p1cannot have more tokens
+thanp2, butp2can have more tokens than p1if the right transitions are activated.
+therefore, if4(p1), then4(p2), and if5(p2), then5(p1).
+using this insight we prove that p1p2implies pos(p1)pos(p2). assume
+p1p2, i.e.,8p12p19p22p2p1p2. we need to prove that for any 2b:
+9p12p14(p1) implies9p22p24(p2). take ap1such that4(p1). there exists
+ap22p2such thatp1p2. placep2can only have more tokens than p1(and
+not fewer). hence, 4(p2).
+similarly, we can prove that p1p2implies neg(p1)neg(p2).
+p1)p2means that all places in p2correspond to combinations of places in
+p1. therefore, adding these places does not change the behavior, i.e., t(p1) =
+t(p1[p2). removing places from p1[p2can only result in more tting traces.
+hence, t(p1) =t(p1[p2)t(p2). u t
+4 scoring places
+theorem 1 can be exploited by process discovery algorithms. if a place is un-
+derfed (overfed), it does not make sense to consider lighter (heavier) places.
+therefore, monotonicity results allow for quickly pruning the search space. to
+illustrate this, we dene concrete quality characteristics for individual places.
+one could simply count the fraction of cases having problems. however, some
+activities may occur infrequently. places that are only connected to these low-
+frequency activities have many tting traces by denition (the place is rarely
+involved in the execution of a case). in other words, \random places" only con-
+nected to low-frequency activities will always have a good score. therefore, we
+also consider the \relative" scores of places by only considering traces that ac-
+tually consume/produce tokens from/for the place under investigation. a trace
+\activates" place pif it contains an activity in p[p.
+denition 12 (activation). letp2pbe a place.{act(p) =9a2a2(p[p)denotes whether the place has been activated
+in a trace2b, i.e., a token was consumed or produced for pin.
+{actl(p) =92lact(p)denotes whether place phas been activated in an
+event logl2b(b).
+denition 13 (place scores). letl2b(b)be an event log and 2[0;1]a
+threshold. for any place p2psuch that act l(p), we dene the following scores:
+{#5
+freq;l(p) =j[2lj5(p)]j
+jljis the fraction of traces for which pis underfed,
+{#4
+freq;l(p) =j[2lj4(p)]j
+jljis the fraction of traces for which pis overfed,
+{#
+freq;l(p) =j[2lj(p)]j
+jljis the fraction of tting traces,
+{#5
+rel;l(p) =j[2lj5(p)^act(p)]j
+j[2ljact(p)]j=j[2lj5(p)]j
+j[2ljact(p)]jis the fraction of activat-
+ing traces for which pis underfed,
+{#4
+rel;l(p) =j[2lj4(p)^act(p)]j
+j[2ljact(p)]j=j[2lj4(p)]j
+j[2ljact(p)]jis the fraction of activat-
+ing traces for which pis overfed,
+{#
+rel;l(p) =j[2lj(p)^act(p)]j
+j[2ljact(p)]jis the fraction of activated traces that are
+also tting,
+{5
+freq;l(p)if and only if #5
+freq;l(p)>,
+{4
+freq;l(p)if and only if #4
+freq;l(p)>,
+{
+freq;l(p)if and only if #
+freq;l(p),
+{5
+rel;l(p)if and only if #5
+rel;l(p)>,
+{4
+rel;l(p)if and only if #4
+rel;l(p)>,
+{
+rel;l(p)if and only if #
+rel;l(p).
+for a discovered place we would like #
+freq;l(p) and #
+rel;l(p) to be as high
+as possible. a place pis perfectly tting log lif #
+freq;l(p) = #
+rel;l(p) = 1. if
+0:95
+rel;l(p), then at least 95% of all traces that activate place pare tting. if a
+discovery algorithm only adds places for which 0:95
+rel;l(p), then all places have a
+minimal quality level interpretable by end users (unlike existing approaches that
+do not provide such a guarantee or \only in the limit").
+5 monotonicity of place scores
+since we are interested in places of a certain quality level, e.g., places for which
+0:95
+rel;l(p) holds, we would like to avoid spending time on the evaluation of places
+that do not meet the desired quality level. we would like to use theorem 1 to
+quickly prune the set of candidate places. we start by listing several observations
+that directly follow from earlier denitions.
+lemma 1. letl2 b(b)be an event log, 2ba trace, and 2[0;1]a
+threshold. for any place p2psuch that act l(p):
+{5(p)implies act (p),x x
+y y d ef g afig. 4. visualization of the sets used in lemma 2. in theorem 2: x= [2lj 4(p1)],
+y= [2ljact(p1)],x0= [2lj 4(p2)], andy0= [2ljact(p2)].
+{4(p)implies act (p),
+{#
+freq;l(p)1 #5
+freq;l(p),
+{#
+freq;l(p)1 #4
+freq;l(p),
+{#
+freq;l(p)1 (#5
+freq;l(p) + #4
+freq;l(p)),
+{#
+rel;l(p)1 #5
+rel;l(p),
+{#
+rel;l(p)1 #4
+rel;l(p),
+{#
+rel;l(p)1 (#5
+rel;l(p) + #4
+rel;l(p)),
+{
+freq;l(p)implies641 
+freq;l(p),
+{
+freq;l(p)implies651 
+freq;l(p),
+{
+rel;l(p)implies641 
+rel;l(p),
+{
+rel;l(p)implies651 
+rel;l(p),
+{65
+freq;l(p)and64
+freq;l(p)implies1 2
+freq;l(p), and
+{65
+rel;l(p)and64
+rel;l(p)implies1 2
+rel;l(p).
+proof. note that5(p) implies6(p),4(p) implies6(p), and (p) implies
+65(p) and64(p). these insights can be used to verify the properties listed.
+consider for example the last property. assume 65
+rel;l(p) and64
+rel;l(p).
+since #5
+rel;l(p)and #4
+rel;l(p), we know #
+rel;l(p)1 (#5
+rel;l(p) +
+#4
+rel;l(p))1 (+). hence,1 2
+rel;l(p). u t
+before we show monotonicity with respect to the place scores, we rst prove
+the following lemma.
+lemma 2. letx,y,x0, andy0be sets such that y6=;,y06=;,xy,
+x0y0,xx0, andy0nyx0.
+jxj
+jyjjx0j
+jy0j
+proof. leta=y[y0,a=jx\x0j,b=jx\(y0nx0)j,c=jx\(any0)j,
+d=j(ynx)\x0j,e=j(ynx)\(y0nx0)j,f=j(ynx)\(any0)j,g=j(any)\x0j,h=j(any)\(y0nx0)j, andi=j(any)\(any0)j(see fig-
+ure 4). because xx0,b=c= 0. because y0nyx0,h= 0. alsoi= 0.
+hence,jxj=a,jyj=a+d+e+f,jx0j=a+d+g,jy0j=a+d+e+g.
+jxj
+jyj=a
+a+d+e+fa
+a+d+ea+g
+a+d+e+ga+d+g
+a+d+e+g=jx0j
+jy0j
+note thata
+a+d+ea+g
+a+d+e+gbecausea(a+d+e+g) =a2+ad+ae+ag
+a2+ad+ae+ag+dg+eg= (a+g)(a+d+e). u t
+recall that our goal is to dismiss candidate places that are overfed or underfed
+as soon as possible. given a threshold we would like to avoid checking the
+quality of places for which 4
+freq;l(p),5
+freq;l(p),4
+rel;l(p), or5
+rel;l(p). using
+the partial order on places, we can exploit the following monotonicity result.
+theorem 2 (monotonicity). letl2b(b)be a non-empty event log and let
+2[0;1]be some threshold. for any two places p1;p22psuch thatp1p2:
+{if4
+freq;l(p1), then4
+freq;l(p2).
+{if5
+freq;l(p2), then5
+freq;l(p1).
+moreover, if act l(p1)and actl(p2), then these ndings also apply to the relative
+notion.
+{if4
+rel;l(p1), then4
+rel;l(p2).
+{if5
+rel;l(p2), then5
+rel;l(p1).
+proof. assume4
+freq;l(p1). hence, #4
+freq;l(p1) =j[2lj4(p1)]j
+jlj. since4(p1)
+implies4(p2) for any2l,j[2lj4(p2)]j
+jljj[2lj4(p1)]j
+jlj. hence,4
+freq;l(p2).
+similarly, we can show that 5
+freq;l(p2) implies5
+freq;l(p1).
+assume4
+rel;l(p1). hence, #4
+rel;l(p1) =j[2lj4(p1)]j
+j[2ljact(p1)]j. using lemma 2
+we show that #4
+rel;l(p2) =j[2lj4(p2)]j
+j[2ljact(p2)]j. letx= [2lj4(p1)],
+y= [2ljact(p1)],x0= [2lj4(p2)], andy0= [2ljact(p2)].
+x,x0,y, andy0are multisets. however, for simplicity assume that each case
+is uniquely identiable so that we can treat these as sets. one can use case
+identiers to identify traces even when they are identical. to apply lemma 2,
+we rst check the conditions: y6=;because actl(p1),y06=;because actl(p2),
+xybecause4(p1) implies act(p1),x0y0because4(p2) implies
+act(p2),xx0because4(p1) implies4(p2), andy0nyx0, because
+ifact(p2) and not act(p1), then4(p2). the last observation holds because
+p1p2,act(p2) and not act(p1) implies that a token was put in p2and it was
+not removed. note that all output arcs of p2are also output arcs of p1. hence,
+the token put in p2cannot be removed. therefore, 4(p2). applying lemma 2
+shows that #4
+rel;l(p1)#4
+rel;l(p2), proving that4
+rel;l(p2). similarly, we can
+show that5
+rel;l(p2) implies5
+rel;l(p1). u t6 exploiting monotonicity during discovery
+the goal of this paper is not to provide a particular discovery algorithm. how-
+ever, theorem 2 provides the basis for apriori-style algorithms [8, 9, 20]. such
+algorithms are used in frequent item-set mining, association rule learning, se-
+quence mining, and episode mining. the basic idea of such algorithms is to
+avoid spending time on \hopeless candidate patterns" by dramatically prun-
+ing the search space. for example, in a supermarket, the number of customers
+buying products a,b, and cis smaller than (1) the number of the customers
+buying products aand b, (2) the number of the customers buying products a
+and c, and (3) the number of the customers buying products band c. hence,
+if one of the latter three groups ( fa;bg,fa;cg, orfb;cg) is infrequent, then
+by denition also the former group ( fa;b;cg) is infrequent. obviously, we can
+use the monotonicity results presented in this paper in a similar fashion.
++ +
++ +p22 p12 p32
+p21 p11 p31p23 p13 p33
+overfed overfed
+overfed overfed
+fig. 5. if placep22is already overfed, then we know that the places p32,p21, andp31
+also need to be overfed.
+figure 5 sketches the situation where we have evaluated a place p22and the
+place turned out to be overfed, i.e., at the end of a trace tokens remain. obviously,
+the place remains overfed when we remove an output arc or add an input arc.
+therefore, by denition, p32,p21, andp31also need to be overfed. figure 6
+describes to opposite situation. if place p22\goes negative" when replaying a
+trace (i.e., the place is underfed), then the place remains underfed when we
+remove an input arc or add an output arc. hence, p13,p23, andp12also need to
+be underfed.
+we can use these insights to prune the search space of candidate places.
+assume we have 80 candidate places as shown in figure 7(a). we can pick- -- -
+p22 p12 p32
+p21 p11 p31p23 p13 p33underfed underfed
+underfed underfedfig. 6. if placep22is already underfed, then we know that the places p13,p23, andp12
+also need to be underfed.
+a random candidate place, say place 1. if this place is underfed according to
+some criterion (e.g., in more than 10% of the traces the place does not have
+enough tokens at some stage), then we can identify lighter places that must
+have the same problem. assume that place 1 is indeed underfed and has the
+lighter neighboring places highlighted in figure 7(b). as a result, we can remove
+16 candidate places by just evaluating place 1. then we pick the next random
+candidate place, say place 2. if this place is overfed (e.g., in more than 10% of
+the traces place 2 was not empty at the end), then we can identify all heavier
+places that must have the same problem. these are removed. figure 7(c) shows
+that we can remove 15 candidate places by just evaluating place 2. the next
+randomly selected candidate place turns out to be tting (e.g., in 90% of the
+traces place 3 was empty at the end and in 90% of the traces there were sucient
+tokens), i.e., place 3 is not underfed and not overfed. in the next step, we remove
+another 16 candidate places because place 4 is overfed (figure 7(d)). then we
+remove another set of places because place 5 is underfed (figure 7(e)). we can
+repeat the process until there no candidate places left. figure 7(f) shows the
+remaining three places. note that an evaluated place can be both undertting
+and overtting. when encountering such places, the search space can be pruned
+in two directions (remove all lighter and heavier places). as sketched in figure 7,
+it will often be the case that only a fraction of the candidate places needs to be
+evaluated using replay techniques.
+figure 7 only sketches the idea and places are selected randomly. one can
+also think of smarter strategies. for example, one can start with places having
+just a few connections. let pcbe a candidate place having ninput and output
+activities, i.e., n=jpcj+jpcjis the number of arcs. let a4=fp2pj
+jpj+jpj<n^ppcganda5=fp2pjjpj+jpj<n^ppcgbe the1 1
+2
+(a) all 80 candidate places . select a randomly chosen 
+place (place 1) and evaluate it using replay .(b) since place 1 is underfed , we can remove its  lighter   
+neighbors . next, select a randomly chosen place 2.
+3
+24
+3
+(c) test place 2. since it is overfed , we can remove its 
+ heavier   neighbors . next, select place 3.(d) place 3 is fitting and is kept . place 4 is overfed and 
+we can remove its  heavier   neighbors .
+3
+57
+9
+3
+(e) place 5 is underfed and we can remove its  lighter   
+neighbors .(f) the process is repeated until there are no unexplored 
+candidate places left . at the end three fitting places remain .fig. 7. a process discovery algorithm could simply evaluate all places and only keep
+those that are tting (i.e., meet certain quality criteria). however, the monotonicity
+results in theorem 2 show that there are many candidate places that we do not need
+to check. this is the key to discovering places eciently.heavier and lighter ancestors of pc. if for any p2a4,5
+freq;l(p) or5
+rel;l(p),
+then we know that 5
+freq;l(pc) or5
+rel;l(pc). if for any p2a5,4
+freq;l(p) or
+4
+rel;l(p), then we know that 4
+freq;l(pc) or4
+rel;l(pc). these properties can be
+used to avoid certain checks.
+there are many more ways to speedup the search process further:
+{suppose that we consider a place to be overfed when at least 10% of the traces
+have remaining tokens. this means that we can abort the place evaluation
+when we have found 10% of traces having problems (for poorly tting places
+this may be reached quickly).
+{a similar strategy can be used for underfed places. moreover, the replay of
+a trace can be aborted when the rst problem is encountered.
+{if we know the frequencies of all activities in the log, we can do an initial
+check to see whether the sum of the frequencies of the input activities ap-
+proximately matches the sum of the frequencies of the input activities (this
+is also used in [6]). such aggregate information can be used to guide the
+pruning process. there can even be guarantees, provided that we can make
+assumptions about the distribution of activities over traces or bound the
+trace length.
+in short, there are many ways to exploit the monotonicity results provided in
+this paper.
+7 further pruning of the search space
+next to avoiding checks for places that are obviously \too light" or \too heavy",
+we would also like to avoid adding redundant and conicting places.
+in theorem 1, we showed that p1)p2implies t(p1)t(p2). hence,
+adding redundant places does not limit the set of tting traces and therefore
+only complicates the process model. this can be exploited while constructing a
+process model. if two non-overlapping places p1andp2have been added, one
+should not consider adding place p=p1tp2.
+moreover, we would also like to avoid adding conicting places. if two places
+are in conict (notation p1#p2), then there are traces that could never t both
+places.
+denition 14 (conict). letp1;p22pbe two places. p1p2if and only if
+p1p2andp16=p2.p1p2if and only if p1p2andp16=p2.p1#p2if and
+only ifp1p2andp1p2.
+theorem 3. letp1;p22pbe two places and 2ba trace. if (p1),p1#p2,
+and act(p1
+p2), then6(p2).
+proof. assume (p1),p1#p2, and act(p1
+p2). hence,p1p2orp1p2. if
+p1p2, then the number of tokens in p2is always at least the number of tokens
+inp1for any sequence, including . in fact, in there is at least one additional
+token produced or a token was not consumed (because act(p1
+p2)). becausep1ends empty, p2must have a remaining token at the end. hence, cannot
+be tting (6(p2)). ifp1p2, then the number of tokens in p2is always at
+most the number of tokens in p1. in fact, there is at least one additional token
+consumed or a token was not produced (because act(p1
+p2)). because p1ends
+empty,p2must have a missing token at the end. hence, cannot be tting. u t
+consider places p1= (fag;fb;cg) andp2= (fa;dg;fbg). obviously, p1p2.
+for a trace involving cand/ordactivities, it can never be the case that both
+places are tting. since p1andp2disagree on the allowed behavior, one would not
+like to add both to the same process model. also this property can be exploited
+during discovery.
+8 how about conformance checking?
+process mining is not limited to process discovery and includes conformance
+checking, model repair, performance analysis, decision mining, and organiza-
+tional mining. moreover, also predictive and prescriptive analytics are supported
+by process mining tools and techniques [3]. viewing a process model as merely
+a collection of independent places may also help to expedite these other analysis
+tasks. consider for example conformance checking which involves detecting and
+diagnosing both dierences and commonalities between an event log and a pro-
+cess model [4]. typically, four dimensions are distinguished: tness, precision,
+generalization, and simplicity. state-of-the-art techniques use so-called align-
+ments or token-based replay [3]. however, these techniques often do not have
+the monotonicity properties one expects [23]. for example, removing a place
+should never result in a better precision or lower tness. in [2] a probabilistic
+angle is added to these questions, also revealing obvious problems related to ex-
+isting conformance measures. the monotonicity results presented in this paper
+may provide a fresh look on conformance problems. first of all, it could be good
+to check places individually. second, there are ways to quickly analyze whether
+a place is overfed and/or underfed.
+9 conclusion
+for this festschrift celebrating farhad arbab's achievements in coordination
+models and languages, i decided to focus on the discovery of a very simple
+coordination model: \places". we like to learn such coordination structures from
+observed behaviors.
+the process models in this paper are fully described by places. for the seman-
+tics, we employ an open-world assumption and special start and end activities.
+this yields a representation very suitable for process mining. given a particular
+behavior, a place can be \tting", \underfed" (tokens are missing), or \overfed"
+(tokens are remaining). we would like to discover tting places from event data
+satisfying predened quality criteria. this is not a trivial task and for large eventlogs this easily becomes intractable. therefore, we studied monotonicity proper-
+ties in the context of event logs. for example, if place p1is \lighter" than place
+p2(i.e.,p1p2) and 5% of the activated traces produce too few tokens for
+p2(50:05
+rel;l(p2)), then the same traces also produce too few tokens for p1(i.e.,
+50:05
+rel;l(p1)). this helps to prune the set of candidate places. moreover, also no-
+tions like redundancy and conict can be used to reduce the search space further.
+these properties allow for new apriori-style algorithms. the insights could also
+be used to speed-up the discovery of hybrid process models [6].
+this contribution did not show how to synthesize reo circuits from event
+data. however, this remains an interesting question and i encourage the reo
+community to look into this. finally, i would like to wish farhad all the best
+and hope that he will remain working on the \science of coordination" after his
+\coordination of science" activities at cwi have ended.
+references
+1. w.m.p. van der aalst. decomposing petri nets for process mining: a generic
+approach. distributed and parallel databases , 31(4):471{507, 2013.
+2. w.m.p. van der aalst. mediating between modeled and observed behavior: the
+quest for the \right" process. in ieee international conference on research
+challenges in information science (rcis 2013) , pages 31{43. ieee computing
+society, 2013.
+3. w.m.p. van der aalst. process mining: data science in action . springer-verlag,
+berlin, 2016.
+4. w.m.p. van der aalst, a. adriansyah, and b. van dongen. replaying history
+on process models for conformance checking and performance analysis. wires
+data mining and knowledge discovery , 2(2):182{192, 2012.
+5. w.m.p. van der aalst, k.m. van hee, a.h.m. ter hofstede, n. sidorova, h.m.w.
+verbeek, m. voorhoeve, and m.t. wynn. soundness of workow nets: classi-
+cation, decidability, and analysis. formal aspects of computing , 23(3):333{363,
+2011.
+6. w.m.p. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini.
+learning hybrid process models from events: process discovery without faking
+condence. in j. carmona, g. engels, and a. kumar, editors, international con-
+ference on business process management (bpm 2017) , volume 10445 of lecture
+notes in computer science , pages 59{76. springer-verlag, berlin, 2017.
+7. w.m.p. van der aalst, v. rubin, h.m.w. verbeek, b.f. van dongen, e. kindler,
+and c.w. g unther. process mining: a two-step approach to balance between
+undertting and overtting. software and systems modeling , 9(1):87{111, 2010.
+8. r. agrawal and r. srikant. fast algorithms for mining association rules in large
+databases. in proceedings of the 20th international conference on very large data
+bases (vldb) , pages 487{499, santiago de chile, chile, 1994. morgan kaufmann
+publishers inc.
+9. r. agrawal and r. srikant. mining sequential patterns. in proceedings of the
+11th international conference on data engineering (icde'95) , pages 3{14. ieee
+computer society, 1995.
+10. f. arbab. reo: a channel-based coordination model for component composi-
+tion. mathematical structures in computer science , 14(3):329{366, 2004.11. r. bergenthum, j. desel, r. lorenz, and s. mauser. process mining based on
+regions of languages. in g. alonso, p. dadam, and m. rosemann, editors, inter-
+national conference on business process management (bpm 2007) , volume 4714
+oflecture notes in computer science , pages 375{383. springer-verlag, berlin,
+2007.
+12. j. cortadella, m. kishinevsky, l. lavagno, and a. yakovlev. deriving petri nets
+from finite transition systems. ieee transactions on computers , 47(8):859{882,
+august 1998.
+13. j. desel and j. esparza. free choice petri nets , volume 40 of cambridge tracts
+in theoretical computer science . cambridge university press, cambridge, uk,
+1995.
+14. a. ehrenfeucht and g. rozenberg. partial (set) 2-structures - part 1 and part 2.
+acta informatica , 27(4):315{368, 1989.
+15. c.w. g unther and w.m.p. van der aalst. fuzzy mining: adaptive process sim-
+plication based on multi-perspective metrics. in g. alonso, p. dadam, and
+m. rosemann, editors, international conference on business process management
+(bpm 2007) , volume 4714 of lecture notes in computer science , pages 328{343.
+springer-verlag, berlin, 2007.
+16. s.s.t.q. jongmans and f. arbab. overview of thirty semantic formalisms for
+reo. scientic annals of computer science , 22(1):201{251, 2012.
+17. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-
+structured process models from event logs containing infrequent behaviour.
+in n. lohmann, m. song, and p. wohed, editors, business process management
+workshops, international workshop on business process intelligence (bpi 2013) ,
+volume 171 of lecture notes in business information processing , pages 66{78.
+springer-verlag, berlin, 2014.
+18. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-
+structured process models from incomplete event logs. in g. ciardo and
+e. kindler, editors, applications and theory of petri nets 2014 , volume 8489 of
+lecture notes in computer science , pages 91{110. springer-verlag, berlin, 2014.
+19. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. scalable process discovery
+with guarantees. in k. gaaloul, r. schmidt, s. nurcan, s. guerreiro, and q. ma,
+editors, enterprise, business-process and information systems modeling (bpmds
+2015) , volume 214 of lecture notes in business information processing , pages 85{
+101. springer-verlag, berlin, 2015.
+20. h. mannila, h. toivonen, and a.i. verkamo. discovery of frequent episodes in
+event sequences. data mining and knowledge discovery , 1(3):259{289, 1997.
+21. s. meng, f. arbab, and c. baier. synthesis of reo circuits from scenario-based
+interaction specications. science of computer programming , 76(8):651{680, 2011.
+22. m. sole and j. carmona. process mining from a basis of regions. in j. lilius and
+w. penczek, editors, applications and theory of petri nets 2010 , volume 6128 of
+lecture notes in computer science , pages 226{245. springer-verlag, berlin, 2010.
+23. n. tax, x. lu, n. sidorova, d. fahland, and w.m.p. van der aalst. the impre-
+cisions of precision measures in process mining. information processing letters ,
+135:1{8, 2018.
+24. a.j.m.m. weijters and w.m.p. van der aalst. rediscovering workow models
+from event-based data using little thumb. integrated computer-aided engi-
+neering , 10(2):151{162, 2003.
+25. j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, and a. serebrenik.
+process discovery using integer linear programming. fundamenta informaticae ,
+94:387{412, 2010.

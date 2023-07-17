@@ -1,0 +1,587 @@
+using life cycle information in process discovery
+sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+eindhoven university of technology, the netherlands
+fs.j.j.leemans, d.fahland, w.m.p.v.d.aalst g@tue.nl
+abstract understanding the performance of business processes is an important
+part of any business process intelligence project. from historical information
+recorded in event logs, performance can be measured and visualized on a dis-
+covered process model. thereby the accuracy of the measured performance, e.g.,
+waiting time, greatly depends on (1) the availability of start and completion events
+for activities in the event log, i.e. transactional information, and (2) the ability to
+differentiate between subtle control ﬂow aspects, e.g. concurrent and interleaved
+execution. current process discovery algorithms either do not use activity life
+cycle information in a systematic way or cannot distinguish subtle control-ﬂow
+aspects, leading to less accurate performance measurements. in this paper, we
+investigate the automatic discovery of process models from event logs, such that
+performance can be measured more accurately. we discuss ways of systemati-
+cally treating life cycle information in process discovery and their implications.
+we introduce a process discovery technique that is able to handle life cycle data
+and that distinguishes concurrency and interleaving. finally, we show that it can
+discover models and reliable performance information from event logs only.
+keywords: process mining, process discovery, performance measurement, rediscover-
+ability, concurrency
+1 introduction
+one of the central tasks in business process intelligence is to understand the actual per-
+formance of a process and the impact of resource behaviour and process elements on
+overall performance. event data logged by business process management (bpm) sys-
+tems or enterprise resource planning (erp) systems typically contains time stamped
+transactional events (start, completion, etc.) for each activity execution. process mining
+allows to analyse this transactional data for performance. typically, ﬁrst a model of the
+process is discovered, which is then annotated with performance information.
+performance information might consist of several measures, for example service
+time (the time a resource is busy with a task), waiting time (the time between an activity
+becoming enabled and a resource starting to execute it), sojourn time (the sum of both)
+and synchronisation time (for concurrent activities, the time between completion of the
+ﬁrst and completion of the last).
+figure 1a shows an example process in some imaginary hospital: after an initial ex-
+amination (i), tissue samples are investigated in a laboratory (l). meanwhile, the patient
+undergoes two tests: an x-ray (x) and an mri(m) test. when all tests are completed, the2 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+i
+mx
+/uni2113fp
+(a) a petri net modeling a process.
+f m x i
+0 5 10 15 20 timel(b) a trace. the dashed lines denote waiting
+time. the solid lines denote service time.
+figure 1: a process with concurrency and interleaving and a trace.
+patient meets the doctor for a ﬁnal time (f). figure 1b shows a patient (a trace ) of this
+process where each activity is logged as an interval of a start (s) event and a complete
+(c) event; the dashed lines denote waiting time. the patient cannot perform the xand
+mtests at the same time, i.e. they are interleaved (due to place p), thus the waiting time
+beforemstarts after the completion of x. in contrast, the lab test lcan be executed
+independently of the xandmtests, i.e. they are concurrent , so the waiting time before
+lstarts at the completion of i(waiting time starts at the last time ibecame enabled).
+without knowledge of the model, the waiting time of lcannot be positioned properly
+and thus waiting, sojourn and synchronisation times will be measured incorrectly: the
+waiting time is 9 2 7time units rather than 9 8 1unit. therefore, in or-
+der to reliably compute performance measures, a process model is required to provide
+information on concurrency and interleaving.
+the difﬁculty in discovering concurrency lies in the event logs: most process dis-
+covery algorithms [14,19,16,2,15] assume that the event log contains events represent-
+ing atomic executions of activities. on atomic task executions, concurrency and inter-
+leaving cannot be distinguished, and more information is required. in this paper, we
+assume that the event log contains examples of non-atomic executions of activities, i.e.
+for each activity instance the start and the completion time is known. the xes stan-
+dard [8] is often used as an input format for event logs and supports this with the life-
+cycle:transition extension. several process discovery techniques exist that take transac-
+tional data into account, such as tsinghua- (t) [20], process miner (pm) [17]. and
+several other approaches [4,9]. unfortunately, none of these distinguishes concurrency
+and interleaving, and most [20,4,9] do not guarantee to return sound models, i.e. without
+deadlocks or other anomalies; both of which are prerequisites for reliable computation
+of performance measures.
+in the remainder of this paper, we ﬁrst study the impact of transactional data on
+event logs and models. second, we elaborate on the problem of incomplete/inconsistent
+transactional data in event logs and give a way to repair such event logs (section 3). and
+we introduce an abstraction (collapsed process models) that enables reasoning about
+such data (section 4). third, we introduce a new process discovery algorithm based
+on the inductive miner (im) framework [12] that uses this information to discover col-
+lapsed process models (section 5). the new algorithm faces two challenges: ﬁrst, the
+transactional data must be handled correctly; and second, it should distinguish concur-
+rency from interleaving. in section 6, we illustrate its functioning, study of the impli-
+cations of this abstraction on any process discovery algorithm and on existing model
+quality measures, and discuss related work; section 7 concludes the paper.using life cycle information in process discovery 3
+2 transactional information in event logs
+atrace is a sequence of events , denoting for a case, e.g. a customer, what process steps
+(activities ) were executed for that case. events may carry additional attributes, such
+as timestamps and a transaction type . the latter indicates whether the activity started,
+completed, etc. an activity instance is the execution of an activity in a trace, and may
+consist of a start event and a completion event, as well as events of other transaction
+types. for instance, t  xa11:50
+s;a11:53
+c;b12:03
+s;b12:50
+c ydenotes a trace of 4 events: ﬁrst,
+an instance of activity awas started, second, an instance of acompleted, after which an
+instance of activity bstarted and an instance of activity bcompleted. the timestamps in
+superscript denote the times at which the events occurred; we will omit timestamps if
+they are not relevant. an event log is a multiset of traces.
+in tracet, it makes sense to assume that asandacare events of the same activity
+instance. however, this information is usually not recorded in the event log, and the
+techniques introduced in this paper neither need nor try to infer this information. in
+the following sections, we assume presence of at least start and completion events; the
+techniques describe in this paper will ignore other transaction types.
+consider the trace t  xas y. as an activity instance of awas started but never
+completed, there is either an acevent missing, or the asevent should not have been
+recorded. similar problems could have occurred when unmatched completion events
+appear. this raises the notion of a consistent trace , similar to [4]:
+deﬁnition 1. a trace is consistent if and only if each start event has a corresponding
+completion event and vice versa.
+3 preparing the input
+in real-life data sets, it is possible that some traces in an event log do not adhere to
+deﬁnition 1. a trace can be checked for consistency easily with a single pass over the
+trace and some bookkeeping. nevertheless, our approach requires consistent traces, so
+any inconsistency need to be dealt with.
+we illustrate the decisions that have to be made using an example trace t  xa11:30
+s,
+a12:40
+s,a13:50
+c y. clearly, this trace is not consistent, as there are two start events of ac-
+tivityaand only one complete event. there are several ways to make tconsistent:
+– xy
+– xa11:30
+sa13:50
+c y
+– xa12:40
+s;a13:50
+c y
+– xa11:30
+s;ac;a12:40
+s;a13:50
+c y
+– xa11:30
+s;a12:40
+s;ac;a13:50
+c y
+– xa11:30
+s;a12:40
+s;a13:50
+c;ac y
+without further information, we cannot decide on the trace that matches reality in
+the best way possible. additional information in the event log could be used, such as
+theconcept:instance extension of the xes standard [8], which links start and complete
+events of activity instances. if this extension would indicate that events a12:40
+s anda12:40
+c4 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+a
+(a) collapsed.
+acompleteastart (b) expanded.
+figure 2: excerpt of a collapsed and its expanded workﬂow net.
+form an activity instance, it makes sense to opt for xa12:40
+s,a13:50
+c yor xa11:30
+s;ac;a12:40
+s,
+a13:50
+c y. for our experiments, we choose option xa11:30
+s;ac;a12:40
+s;a13:50
+c y, i.e. each
+completion event is matched with the last occurring start event, and completion events
+are inserted right after unmatched start events. completion events are handled symmet-
+rically. please note that by considering unmatched completion events as atomic, we can
+handle logs that contain only completion events using the same approach.
+the pre-processing step ignores all events that contain other life cycle annotations
+than start or completion (see e.g. the lifecycle:transition extension of the xes 2.0 stan-
+dard [8]). in the remainder of this paper, we only consider event logs consisting of
+consistent traces.
+4 transactional information in process models
+in standard petri nets, a transition is considered atomic, i.e. when ﬁring a transition its
+start is indistinguishable from its completion. this poses a problem for performance
+measurements if we map activities onto transitions, as a transition cannot take time.
+a solution could be to use separate transitions for the start and completion of ac-
+tivities, such that their execution can be distinguished. this poses a new challenge to
+process models: if the start and completion transitions do not match, the model might
+allow for inconsistent traces, such as two starts followed by one completion. this may
+severely jeopardise the accuracy of performance measurements. moreover, in order to
+measure performance, it must be known which combinations of start and completion
+transitions correspond to an activity.
+a common solution to these issues is to expand each transition ( a, figure 2a) in
+two transitions, connected with a place: one transition denotes the start ( as), the other
+transition denotes the completion ( ac) of the transition (figure 2b) [3]. the connection
+between the two newly created transitions is kept, and therefore the model does not
+allow inconsistent traces. we refer to this existing technique as expanding a process
+model; the un-expanded process model is a collapsed model.
+process trees. process trees are abstract representations of block-structured work-
+ﬂow nets [2]. process trees are particularly suitable for process discovery, as they are by
+deﬁnition free of deadlocks and other anomalies ( sound [1]). a process tree describes a
+language, and it consists of a hierarchy of operators being the nodes of the tree, and ac-
+tivities being the leaves of the tree. an activity describes the singleton language of that
+activity, while an operator describes how the languages of its children are to be com-
+bined. in [12], the four operators sequence ( ñ), exclusive choice ( ), concurrency ( ^)
+and loop ( ö) are considered. for example, the process tree
+ñpa; p^pb;c q; ö pd;e qq;f qhas, among other things, the following traces xa;b;c;f y,using life cycle information in process discovery 5
+xa;c;b;f y, xa;d;f y, xa;d;e;d;e;d;f y. we use l pt qto denote the language of process
+treet.
+collapsed process trees. process trees can be mapped onto petri nets using the
+translation presented in [12]. hence, they face the problem of atomicity as well. there-
+fore, we lift the expanding technique to process trees by introducing a variant that keeps
+the link between starts and completes: collapsed process trees . a collapsed process
+tree can be expanded into a normal process tree, e.g pa;b qexpands to pñpas;ac q,
+ñpbs;bc qq.
+deﬁnition 2. acollapsed process tree is a process tree in which each activity - a- de-
+notes the process tree ñpas;ac q.
+5 inductive miner - life cycle
+in this section, we introduce an algorithm (inductive miner - life cycle (im lc)) that
+is able to handle life cycle data and distinguishes concurrency and interleaving. in this
+section, we ﬁrst recall principles of recursive process discovery with im. second, we
+describe how transactional data is dealt with in this framework (section 5), and intro-
+duce a way to distinguish interleaving from concurrency (section 5). finally, we give
+an example (section 5) and we describe the implementation (section 5).
+inductive miner
+the divide-and-conquer framework inductive miner [12] (im) recursively applies four
+steps. (1) select a cut: a division of activities in the event log and a process tree operator,
+e.g. p^; ta;b u; tc uq. (2) split the log into smaller sub-logs according to this cut. (3)
+recurse on each sub-log. the recursion ends when a base case, e.g. a log containing
+only a single activity, is left. (4) if no cut can be selected, a fall through is returned. we
+will make use of this conceptual framework. however, in its current form, im simply
+treats each event as a separate activity instance.
+in order to select a cut, im considers the directly-follows graph, which contains
+which activities were directly followed by other activities. each of the process tree
+operators leaves a speciﬁc footprint in the directly-follows graph. thus, im detects
+cuts by identifying these footprints. figure 3 shows the footprints of the process tree
+operators (ignoring the dashed box); [12] provides details and log splitting procedures.
+imlcuses the im framework and needs to adapt all four steps to cope with trans-
+actional events and to detect interleaving. we ﬁrst introduce how im lchandles trans-
+actional events, after which we introduce how it detects interleaving.
+transactional events
+in order to handle transactional events, changes are required in three of the four steps
+of im; log splitting requires no changes. as base case detection involves little changes
+to cope with transactional events, it will not be discussed in this paper.
+cut detection. most parts of cut detection remain roughly as in previous works [12],
+however cut detection in im relies on directly-follows graphs, which are constructed
+differently in case of transactional events. the method presented here is based on ideas
+used in e.g. t and pm, but differs in details. (collapsed) activity afollows (collapsed)
+activitybdirectly, if in the event log an (expanded) event of afollows an (expanded)6 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+...sequence:
+...exclusive choice:
+...concurrency:
+...loop:
+interleaved:
+figure 3: cut footprints in the directly-follows graph, see [12].
+event ofbwithout both a start and completion event of the same activity between them.
+for instance, consider trace t  xas;ac;bs;cs;bc;cc;ds;dc y; visualised in figure 4a.
+int, consider the event cs. obviously, csfollowsbsdirectly, so in figure 4b, cdirectly
+followsb. moreover,csfollows event acdirectly, as there is only a completion event of
+bin between them, which is not a full activity instance. in contrast, between acandds
+there are two full activity instances ( bandc), thusais not directly followed by dint.
+any activity instance of which the start event is not preceded by the completion
+event of another activity instance is called a start activity . int,ais the only start activity;
+b,canddare not, as there occurs an acevent before them. similarly, dis the only end
+activity oft. in figure 4b, these start and end activities are denoted by incoming and
+outgoing edges.
+fall throughs if no cut can be found, a fall through is to be selected. im lccon-
+tains several fall throughs, of which the last one is a model that expresses all behaviour
+in the event log, and therefore guarantees ﬁtness. for non-collapsed process trees, the
+ﬂower model ö p;a;b;c;::: qserves this purpose, as it allows for any behaviour of
+the included activities abc . . . . for collapsed process trees, a model allowing for all
+behaviour may not exist, as in a collapsed process tree, no activity can be concurrent
+with itself (see section 6). hence, im lccounts the maximum number of times an ac-
+tivity is concurrent with itself in the event log, and constructs a model accordingly.
+for instance, in the event log txas;as;ac;bs;ac;bc yu, at most 2a’s and 1bare con-
+current with themselves. then, the fall through collapsed model that im lcchooses is
+^p ö p;a q; ö p;a q; ö p;b qq. this model can produce any behaviour of two a’s and one
+b all concurrent to each other.
+a b
+cd
+(a) tracet
+a
+bc d (b) directly-follows graph
+a
+bc d (c) concurrency graph
+figure 4: trace tand its corresponding graphs.using life cycle information in process discovery 7
+interleaving
+besides handling transactional data, im lcis able to detect interleaving. we ﬁrst intro-
+duce the corresponding process tree operator, then describe how to detect it. the inter-
+leaving operator øtakes any number of subtrees ( ¥2) and combines their languages.
+deﬁnition 3. lett1:::t nbe process trees. let p pn qbe the set of all permutations of
+the numbers t1:::n u. then l pøpt1;:::;t n qq 
+pi1:::in qpp pn ql pñpti1:::t in qq.
+note that the union can also be expressed as an exclusive choice over each sequence
+ñpti1:::t in q.
+detection strategy. this structure is exploited in the detection of ø, and im lc
+applies a three-stage strategy: (1) an interleaving cut is detected using the footprint
+of ø(see figure 3). however, detection of this footprint is insufﬁcient to conclude
+interleaving, as e.g. the footprint does not guarantee that each child is executed at
+most once. therefore, we denote the detection with an additional operator ( maybe-
+interleaved (? ø)), e.g. the cut pø; ta u; tb uqis detected but p? ø; ta u; tb uqis reported.
+(2) using the ? øcut, the event log is split and recursion continues as usual. (3) af-
+ter recursion, interleaving is derived from the structure of the process tree, e.g. each
+occurrence of ? øpñpt1;t2 q; ñpt2;t1 qqis replaced by øpt1;t2 q.
+...concurrency
+operator:interleavedoperator:
+figure 5: cut footprints in the con-
+currency graph.(1) detection of ø.to detect interleaving,
+imlcuses the footprint of the øoperator in the
+directly-follows graph. this footprint is shown in
+figure 3: from each end activity, an edge must be
+present to all start activities of all other circles,
+and vice versa. other directly-follows edges be-
+tween circles are not allowed.
+notice that if the start and end activities over-
+lap, this footprint might overlap with the concur-
+rency footprint, e.g. øpa;b qhas the same foot-
+print as ^pa;b q. therefore, im lcalso considers
+theconcurrency graph . as shown in [20], transactional data allows for direct detection
+of concurrency: whenever two activity instances overlap in time (such as bandcin
+figure 4a), their activities are concurrent. figure 4c shows the concurrency graph of
+our example. for this step, it sufﬁces to keep track of the number of started-but-not-
+yet-completed activity instances. interleaving and concurrency have clearly different
+footprints in the concurrency graph (see figure 5).
+(2) log splitting for ? ø.for ? ø, the log is split by dividing traces based on the activ-
+ities with which they start. for instance, consider the event log l  txxs;xc;ms;mc y,
+xms;mc;xs;xc yuand the cut p? ø; tx u; tm uq. based on this cut, lis split into the sub-
+logs txxs;xc;ms;mc yuand txms;mc;xs;xc yu.
+(3) from ? øto ø.intuitively, log splitting ‘unravels’ the interleaved execution: the
+sub-trees of tx uand tm ucan be executed in any order; for each such ordering, a dif-
+ferent sub-log is returned. after unraveling the order, recursion continues and, by the
+interleaving semantics, we expect ñoperators to appear in both branches. therefore,
+after recursion, each occurrence of the pattern ? øpñpt1;t2 q; ñpt2;t1 qq(or ann-ary
+generalisation thereof) is replaced with øpt1;t2 q. in case further recursion shows that8 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+interleaving was not present, i.e. the pattern does not show up, any remaining ? øop-
+erator is replaced with an operator; the subtrees remain untouched. effectively, this
+allows a single activity label to occur in multiple branches of the model.
+example
+we illustrate im lcusing an example, derived from figure 1a. consider log l1 
+txis;ic;ms;mc;xs;ls;xc;lc;fs;fc y, xis;ic;ls;xs;xc;ms;lc;mc;fs;fc yu. the directly-
+follows and concurrency graphs of l1are shown in ﬁgures 6a and 6b. cut detection
+will ﬁnd the cut pñ; ti u; tx;m;l u; tf uq, after which l1is split into l2  txis;ic yu,
+l3  txms;mc;xs;ls;xc,lc y, xls;xs;xc;ms;lc;mc yuandl4  txfs;fc yu. the par-
+tial result up till this point is ñpimlc pl2 q;imlc pl3 q;imlc pl4 qq. next, im lcre-
+curses on the ﬁrst and last branch, both of which result in a base case, after which
+the partial result becomes ñpi;imlc pl3 q;f q. next, im lcrecurses onl3; ﬁgures 6c
+and 6d show the corresponding graphs. based on the concurrency graph, im lcse-
+lects the cut p^; tm;x u; tl uq. using this cut, l3is split intol5  txms;mc;xs;xc y,
+xxs;xc;ms;mc yuandl6  txls;lc y, xls;lc yu. a recursion on the base case l6yields
+the partial result ñpi; ^pimlc pl5 q;l q;f q. next, im lcrecurses on l5; ﬁgures 6e
+and 6f show its graphs. as the directly-follows graph shows interconnected activities
+mandxthat are not concurrent according to the concurrency graph, im lcselects
+p? ø; tm u; tx uq. logl5is split intol7  txms;mc;xs;xc yuandl8  txs;xc;ms;mc u.
+the partial result becomes ñpi; ^p? øpimlc pl7 q;imlc pl8 qq;l q;f q. as im lcrecurses
+onl7, using the directly-follows graph of figure 6g, the cut pñ; tm u; tx uqis selected,
+and by log splitting, two recursions and two base cases, the intermediate result be-
+comes ñpi; ^p? øpñpm;x q;imlc pl8 qq;l q;f q. a similar recursion on l8yields the
+result ñpi; ^p? øpñpm;x q; ñpx;m qq;l q;f q. finally, the post-processing step trans-
+forms this result into ñpi; ^pøpm;x q;l q;f q, which corresponds to figure 1a.
+ix
+/uni2113m f
+(a) þñofl1
+i x
+/uni2113m
+f (b) }ofl1
+x
+/uni2113m (c) þñofl3
+x
+/uni2113m (d) }ofl3
+xm
+(e) þñofl5
+xm (f) }ofl5
+xm (g) þñofl7
+figure 6: the directly-follows þñand concurrency }graphs for a few (sub-)logs.
+implementation
+imlcand the pre-processing step described in section 3 are available as plug-ins of
+the prom framework [7]. to guarantee compatibility with existing plug-ins, im lcre-
+turns models being collapsed trees, i.e. the leaves are activities (for instance ^pa;b q).
+a separate plug-in (“expand collapsed process tree”) is available to expand these trees
+according to deﬁnition 2.using life cycle information in process discovery 9
+6 discussion
+in this section, we ﬁrst study some guarantees offered by im lcand illustrate some
+results using real-life data. second, we discuss the theoretical limits of any process
+discovery algorithm that uses the abstraction of section 4.
+guarantees
+as im lcuses process trees, any model returned by it is guaranteed to be sound. fur-
+thermore, by the collapsed/expanding concept, all traces that such a model can produce
+are consistent.
+f m
+xli
+(a) t
+i
+mxl
+f
+waiting: 1.5sync: 2
+waiting: 2.5waiting: 3waiting: 1
++ +
+(b) im
++ i
+mxlfwaiting: 2.5 
+waiting: 1.5 
+waiting: 1waiting: 1
+sync: 1+
+(c) im lc
+figure 7: results on pn of figure 1a.fitness and termination are guar-
+anteed by the inductive miner
+framework for consistent traces:
+theorem 3 of [12] holds because
+deﬁnition 1 of [12] holds: case
+distinction on the patterns of fig-
+ure 3 ensures that we add an ø
+node in the model as a shorthand
+for the ? øpñp::: q; ñp::: qqcon-
+struct (which enumerates all inter-
+leaved sequences) only when parti-
+tioning the log into several sublogs
+based on the start activity (preserves
+ﬁtness to each interleaving); each
+sublog is strictly smaller (termina-
+tion).
+rediscoverability, i.e. whether
+imlcis able to rediscover the lan-
+guage of a system underlying the
+event log, is still guaranteed for sys-
+tems consisting of , ñ, ^and ö.
+under which assumptions rediscoverability holds for ørequires further research.
+illustrative results
+we applied im lc, im, and tto the event log of figure 1a and section 5, enriched
+with time stamps: l1  txi1
+s;i2
+c;m3
+s;m4
+c;x5
+s;l6
+s;x7
+c;l8
+c;f9
+s;f10
+c y, xi2
+s;i3
+c;l4
+s,x5
+s;x6
+c;m7
+s,
+l8
+c;m9
+c;f10
+s;f11
+c yu; figure 7 shows the results. im misses the concurrency relation be-
+tweenmandland does restrict the number of times each activity can be executed. the
+model produced by t can only ﬁre i(it is not sound), so no performance measure can
+be computed.
+for the two other models, we measured waiting and synchronisation time by ﬁrst
+removing the deviations using an alignment [3], after which we obtained average syn-
+chronisation and waiting times by considering the last completed non-concurrent ac-
+tivity instance, as described in [21]. even on such a small log, the measured waiting
+and synchronisation times differ wildly, illustrating the need for reliable performance
+measures. in case xandmare indeed interleaved instead of concurrent, we argue that
+the measured times on the model returned by im lcare correct.10 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+w_completeren
+aanvraaga_accepteda_cancelled
+a_declined
+a_finalized
+waiting: 16h10
+sojourn: 13h19sojourn: 139h34
+sojourn: 39h21sojourn: 0h03
+sojourn: 0h05
+(a) imi
+++w_completeren
+aanvraag
+a_accepteda_cancelled
+a_declined
+a_finalizedwaiting: 16h10
+sojourn: 17h47
+sojourn: 0h05sojourn: 39h21sojourn: 86h27
+sojourn: 33h51
+(b) imilc
+figure 8: excerpts of models obtained from bpic12.
+as a second experiment, we created a secondary algorithm that applies infrequent-
+behaviour ﬁltering, similar to imi [11]. this algorithm, inductive miner - infrequent &
+life cycle (imilc) was applied to the bpi challenge log of 2012 [6], ﬁltered to contain a
+subset of activities (starting with a and w), and only the cases denoted as ’successful’
+in the log. this event log describes a mortgage application process in a dutch ﬁnancial
+institution. figure 8 shows an exerpt of the results obtained by imilc and imi, enriched
+with average waiting and sojourn times. the model obtained by applying t is unsound
+and therefore, performance could not be computed.. waiting time can be computed de-
+terministically only for wcompleteren aanvraag , as that is the only activity in the event
+log having start events. in the model by imi, wcompleteren aanvraag has a waiting
+time of 16and a sojourn time of 13. this is inconsistent, as sojourn time = waiting time
++ service time. manual inspection reveals that this activity overlaps with the a activi-
+ties in this excerpt, which is correctly captured by concurrency. imi (figure 8a) did not
+detect the concurrency, and therefore some sojourn times are measured with respect to
+completion events of different activities, making the results unreliable.
+limitations of collapsed models
+the idea of collapsed tasks implies some representational bias on several process for-
+malisms; we identiﬁed three main restrictions. first, as the start and complete transitions
+acts as a transactional envelope for an activity, no restrictions can be posed on start and
+completion transitions themselves. for instance, take the partial workﬂow net shown
+in figure 9, in which approvesmust happen before send starts. this restriction is not
+expressible in collapsed process models, as it inherently involves targeting the ‘hidden’
+start in a collapsed activity, regardless of the formalism used.
+approvec
+approves
+sendcsends
+figure 9: a partial workﬂow net
+in whichapproveshappens before
+send .second, unbounded concurrency cannot be
+expressed in most formalisms. consider the inﬁ-
+nite set of traces l  txas;as;:::a c;ac yu, i.e.
+acan be parallel with itself arbitrarily often. the
+yawl [10] language supports unbounded con-
+currency by means of ‘multiple-instance activi-using life cycle information in process discovery 11
+ties’. however, correctly handling multi-instance
+activities requires an emptiness test [13] which is
+expressible in neither process trees nor regular petri nets. this restriction also implies
+that a ﬂower model that produces only consistent traces cannot exist.
+third, the language of any collapsed process model can obviously only contain
+consistent traces (deﬁnition 2). even though, as shown in section 3, inconsistent traces
+show inherent ambiguity, input traces might be inconsistent and therefore, traditional
+perfect ﬁtness might be unachievable. e.g. there is no collapsed process model to repre-
+sent xas;as y. we argue that ﬁtness measures should be robust against such ambiguities,
+but adapting measures is outside the scope of this paper.
+related work
+several process discovery techniques take transactional data into account, e.g. [20,17,4,9]:
+transactional data is used to aid in directly-follows relation construction. for instance,
+transactional data enables explicit concurrency detection in low information settings [20].
+imlcuses a similar idea, but slightly differs in details, e.g. in im lc, two activity in-
+stances can be both directly-following as well as concurrent. however, none of the other
+approaches distinguishes concurrency and interleaving, and most [4,20,9] do not guar-
+antee to return sound models. unsound models, as shown in section 6, cannot be used
+to measure performance in some cases.
+of the mentioned approaches, only pm [17] guarantees to return sound models: it
+constructs structured models similar to process trees based on the directly-follows re-
+lation over transactional data. however, the particular approach does not generalise the
+behaviour of the log [17], is not robust to noise [5], and does not distinguish concur-
+rency and interleaving.
+7 conclusion
+we investigated an aspect of measuring business process performance by discovering
+process models with performance information from event logs with transactional data,
+i.e., start and complete events that are recorded for each activity instance. we have
+shown that performance information depends on whether activities have been executed
+truly concurrently or interleaved. all existing process discovery algorithms assume no
+difference between concurrency and interleaving and thus may yield inaccurate perfor-
+mance results.
+we presented a ﬁrst process discovery technique that can distinguish concurrency
+and interleaving in the presence of transactional data, i.e. start and completion events,
+using the inductive miner [12] framework. the algorithm guarantees soundness and ﬁt-
+ness; a ﬁrst evaluation showed that it can return more accurate performance information
+than the state of the art.
+an open question remaining is under which assumptions rediscoverability holds for
+imlc, and how discovery can beneﬁt from other life cycle transitions, e.g. assign, re-
+assign, schedule, suspend etc. for instance, an enqueue event [18] might reveal when
+queueing commenced and hence provide even more information about dependencies
+with other activities. another point of future research is how expanding and collapsing12 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+inﬂuences the existing model/log evaluation criteria ﬁtness, precision and generalisa-
+tion.
+references
+1. van der aalst, w.m.p., van hee, k.m., ter hofstede, a.h.m., sidorova, n., verbeek, h.m.w.,
+v oorhoeve, m., wynn, m.t.: soundness of workﬂow nets: classiﬁcation, decidability, and
+analysis. formal asp. comput. 23(3), 333–363 (2011)
+2. van der aalst, w., weijters, a., maruster, l.: workﬂow mining: discovering process models
+from event logs. ieee trans. knowl. data eng. 16(9), 1128–1142 (2004)
+3. adriansyah, a.: aligning observed and modeled behavior. ph.d. thesis, eindhoven univer-
+sity of technology (2014)
+4. burattin, a., sperduti, a.: heuristics miner for time intervals. esann (2010)
+5. de weerdt, j., de backer, m., vanthienen, j., baesens, b.: a multi-dimensional quality as-
+sessment of state-of-the-art process discovery algorithms using real-life event logs. informa-
+tion systems 37, 654–676 (2012)
+6. van dongen, b.: bpi challenge 2012 dataset (2012), http://dx.doi.org/10.4121/
+uuid:3926db30-f712-4394-aebc-75976070e91f
+7. van dongen, b., de medeiros, a., verbeek, h., weijters, a., van der aalst, w.: the prom
+framework: a new era in process mining tool support. icatpn 3536, 444–454 (2005)
+8. g ¨unther, c., verbeek, h.: xes v2.0 (2014), http://www.xes-standard.org/
+9. g ¨unther, c., rozinat, a.: disco: discover your processes. ceur workshop proceedings,
+vol. 940, pp. 40–44. ceur-ws.org (2012)
+10. ter hofstede, a.h.m., van der aalst, w.m.p., adams, m., russell, n.: modern business
+process automation - yawl and its support environment. springer (2010)
+11. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured pro-
+cess models from event logs containing infrequent behaviour. lnbip, vol. 171, pp. 66–78.
+springer (2013)
+12. leemans, s., fahland, d., van der aalst, w.: discovering block-structured process models
+from event logs - a constructive approach. lncs, vol. 7927, pp. 311–329. springer (2013)
+13. linz, p.: an introduction to formal languages and automata. jones & bartlett learning (2011)
+14. redlich, d., molka, t., gilani, w., blair, g.s., rashid, a.: constructs competition miner:
+process control-ﬂow discovery of bp-domain constructs. lncs, vol. 8659, pp. 134–150
+(2014)
+15. redlich, d., molka, t., gilani, w., blair, g.s., rashid, a.: scalable dynamic business pro-
+cess discovery with the constructs competition miner. ceur-wp, vol. 1293, pp. 91–107
+(2014)
+16. schimm, g.: process miner - a tool for mining process schemes from event-based data.
+lncs, vol. 2424, pp. 525–528. springer (2002)
+17. schimm, g.: mining exact models of concurrent workﬂows. computers in industry 53(3),
+265–281 (2004)
+18. senderovich, a., leemans, s., harel, s., gal, a., mandelbaum, a., van der aalst, w.: dis-
+covering queues from event logs with varying levels of information. bpi. accepted (2015)
+19. sol ´e, m., carmona, j.: process mining from a basis of state regions. lncs, vol. 6128, pp.
+226–245. springer (2010)
+20. wen, l., wang, j., van der aalst, w., huang, b., sun, j.: a novel approach for process mining
+based on event types. jiis 32(2), 163–190 (2009)
+21. wolffensperger, r.: static and dynamic visualization of quality and performance dimen-
+sions on process trees. master’s thesis, eindhoven university of technology (2015)

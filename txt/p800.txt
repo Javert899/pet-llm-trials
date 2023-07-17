@@ -1,0 +1,863 @@
+control-ﬂow discovery from event streams
+andrea burattin
+university of paduaalessandro sperduti
+university of paduawil m. p. van der aalst
+eindhoven university of technology
+abstract — process mining represents an important research
+ﬁeld that connects business process modeling and data mining.
+one of the most prominent task of process mining is the
+discovery of a control-ﬂow starting from event logs. this paper
+focuses on the important problem of control-ﬂow discovery
+starting from a stream of event data. we propose to adapt
+heuristics miner, one of the most effective control-ﬂow dis-
+covery algorithms, to the treatment of streams of event data.
+two adaptations, based on lossy counting and lossy counting
+with budget, as well as a sliding window based version of
+heuristics miner, are proposed and experimentally compared
+against both artiﬁcial and real streams. experimental results
+show the effectiveness of control-ﬂow discovery algorithms for
+streams on artiﬁcial and real datasets.
+i. i ntroduction
+process mining is an emerging research ﬁeld that comes
+from two areas: data mining on one hand, and business
+process modeling (bpm) on the other [1]. in typical sce-
+narios, process mining algorithms take an event log as
+input. an event log is a set of observations that refer
+to executions of a business process. one of the possible
+outcome of process mining algorithms is a control-ﬂow,
+which is a formal description of the relationships among
+activities. several control-ﬂow discovery algorithms have
+been proposed in the past [2]. the ﬁrst work in the ﬁeld
+of process mining is reported in a paper by j. cook and
+a. wolf [3], where three approaches (based on recurrent
+neural networks, transition systems, and markov chains)
+were proposed. these approaches, however, do not gener-
+ate models that are considered useful for business people.
+r. agrawal et al. [4] presented an approach that might
+be considered as the ﬁrst process mining algorithm in
+the context of bpm. speciﬁcally, they generate a directed
+graph where nodes represent activities and arcs represent
+dependencies between activities. several other works have
+been produced in the meanwhile [5], [6], [7], generating
+models represented in different formalisms (i.e., stochastic
+activity graph, dependency graph, and a custom “block-
+based” language), whose semantics, however, is not always
+well-deﬁned. the ﬁrst approach capable of mining a petri
+net [8] is reported in [9]. a petri net is a bipartite graph
+that represents a concurrent and distributed system. nodes
+can either be “transitions” or “places”. transitions, typically,
+represent activities; nodes represent the states (intermediate
+or ﬁnal) that the process can reach. petri nets are also
+a. burattin ( burattin@math.unipd.it ) and a. sperduti ( sper-
+duti@math.unipd.it ) are with the department of mathematics, university
+of padua, italy. wil m. p. van der aalst ( w.m.p.v.d.aalst@tue.nl ) is with the
+department of mathematics and computer science, eindhoven university
+of technology, the netherlands
+events emi�ed over �me
+stream miner instance... network communica�ontime
+...
+ab
+b2c
+a b cfig. 1: general idea of spd: the stream miner continuously
+receives events and, using the latest observations, updates the
+process model (in this case, a petri net).
+characterized by a well deﬁned “dynamic semantic”, which
+allows them to express “high level” control-ﬂow patterns
+(such as sequence, parallelism, synchronization, exclusive
+choice, and simple merge) [10]. several other control-ﬂow
+discovery algorithms have been subsequently deﬁned and
+experimentally evaluated. all these control-ﬂow discovery
+algorithms have been deﬁned for “batch processing”, i.e.,
+on a complete event log. nowadays, however, information
+systems supporting business processes are able to produce a
+huge amount of events thus creating new opportunities and
+challenges from a computational point of view. in fact, in
+case of streaming data it is impossible to store all events.
+in addition to that, a business process may evolve over
+time. manyika et al. [11] report possible ways for exploiting
+large amount of data to improve the company business. in
+their paper, stream processing is deﬁned as “ technologies
+designed to process large real-time streams of event data ”
+and one of the example applications is process monitoring .
+the challenge to deal with streaming event data is also
+discussed in the process mining manifesto1.
+this paper proposes and compares some algorithms for the
+discovery of control-ﬂow models, starting from streaming
+event data. in the remainder of this paper we refer to
+this problem as streaming process discovery (spd). the
+fundamental characteristics of our approach consist in the
+ability of generating a model with a well-deﬁned semantics2.
+the general representation of the spd problem that we adopt
+in this paper is shown in figure 1: one or more sources emit
+events (represented as solid dots) which are observed by the
+stream miner that keeps the representation of the process
+model up-to-date.
+according to [12], [13], [14], a data stream consists of
+an unbounded sequence of data items with a very high
+1the process mining manifesto is authored by the ieee cis task force
+on process mining ( http://www.win.tue.nl/ieeetfpm/ ).
+2we also require that the model can easily be converted, preserving its
+semantics, to a petri net.throughput. in addition to that, the following assumptions
+are typically made: i)data is assumed to have a small and
+ﬁxed number of attributes; ii)mining algorithms should be
+able to process an inﬁnite amount of data, without exceeding
+memory limits; iii)the amount of memory available to a
+learning/mining algorithm is considered ﬁnite, and typically
+much smaller than the data observed in a reasonable span of
+time; iv)there is a small upper bound on the time allowed
+to process an item, e.g. algorithms have to scale linearly
+with the number of processed items: typically the algorithms
+work with one pass of the data; v)stream “concepts” (i.e.
+models generating data) are assumed to be stationary or
+evolving [15]. the task of mining data streams is typically
+focused on speciﬁc types of algorithms [16], [15], [13], [17].
+in particular, techniques have been developed for clustering,
+classiﬁcation, frequency counting, time series analysis, and
+changes diagnosis (concept drift detection).
+the remainder of this paper is organized as follows:
+section ii reports on related work; section iii introduces
+the basic concepts required to analyze the spd problem;
+sections iv to vii describe and discuss the three approaches
+we propose; section viii reports experimental results; sec-
+tion ix concludes the paper.
+ii. r elated work
+over the last decade, dozens of process discovery tech-
+niques have been proposed [2], e.g., heuristics miner [18].
+few works in process mining literature touch issues related
+to mining event data streams. in [19], the authors focus
+on incremental workﬂow mining and task mining (i.e. the
+identiﬁcation of the activities starting from the documents
+accessed by users). the basic idea of this work is to mine
+process instances as soon as they are observed; each new
+model is then merged with the previous one so to reﬁne
+the global process representation. the approach described
+is thought to deal with the incremental process reﬁnement
+based on logs generated from version management systems.
+however, as authors state, only the initial idea is sketched.
+another approach for mining legacy systems is described
+in [20]. in particular, after the introduction of monitoring
+statements into the legacy code, an incremental process
+mining approach is presented. the idea is to apply the
+same heuristics of the heuristics miner into the process
+instances and add these data into a vl trees (adelson-velskii
+and landis’ trees, a kind of self-balancing binary search
+trees), which are then used to ﬁnd the best holding relations.
+actually, this technique operates on “log fragments”, and
+not on single events, so it is not really suitable for an online
+setting. an interesting contribution to the analysis of evolving
+processes is given in [21]. the proposed approach, based on
+statistical hypothesis testing, aims at detecting concept drift ,
+i.e. changes in event logs, and to identify regions of change
+in a process. maggi et al. [22] propose an online technique
+to extract a declarative process model (using the declare
+language). declare models, however, are sets of constraints
+over activities (the language is based on linear temporal
+logic) which cannot be used to model full control-ﬂows.table i: example of event log.
+# case id activity timestamp
+1 c1 a 01-10-2013 00:01
+2 c1 b 01-10-2013 01:12
+3 c2 a 01-10-2013 15:23
+4 c2 b 01-10-2013 15:52
+5 c2 c 01-10-2013 18:34
+6 c1 d 01-10-2013 20:45
+7 c2 d 01-10-2013 22:56
+none of the above works, however, is able to address the
+stream processing requirements and to generate a process
+model using an imperative language.
+iii. b asic concepts
+in this section we introduce the basic concepts required to
+comprehend the rest of the paper.
+in order to better understand how an event log is com-
+posed, it is necessary to clarify that each execution of a
+business process constitutes a case. each case, therefore, is
+a process instance that produces a trace . each trace consists
+of the list of events that refer to speciﬁc executed activities.
+the fundamental attributes of an event are the name of
+the executed activity and the timestamp (that reports the
+execution time of the given activity). table i presents a
+brief example of an event log, which consists of 7 events,
+divided into two cases ( c1andc2), and referring to 4
+activities (a,b,c, andd). please note that the data ﬁelds
+that we assume in this log structure, should be considered
+typically available in real-world event logs (all process-aware
+information systems need to encode the described entities
+somehow). more formally, given the set of all possible
+activity namesa, the set of all possible case identiﬁers c
+and the set of timestamps t, it is possible to deﬁne:
+deﬁnition 1: aneventeis a triplete= (c;a;t )2c
+at , and it describes the occurrence of activity afor the
+casecat timet. the set of all possible events is called event
+universee=cat .
+an event log is then deﬁned as a set of events. starting
+from an event log, it is useful to isolate the set of observed
+activities, and the set of observed case ids: given an event e=
+(c;a;t ), we get each ﬁeld using #case(e) =c;#activity (e) =
+a; and #time(e) =t.
+deﬁnition 2: given a ﬁnite set n+
+n=f1;2;:::;ngand
+a “target” set a, we deﬁne a sequence as a function :
+n+
+n!a. we say that maps indexes to the corresponding
+elements in a. for simplicity, we refer to a sequence using
+its “string” interpretation: =hs1;:::;sni, wheresi=(i)
+andsi2a.
+in our context, we use timestamps to sort the events. there-
+fore, it is safe to consider a trace just as a sequence of activity
+recordings. for example, assuming again the event log of
+table i, we observe these two traces: c1 =ha;b;diand
+c2 =ha;b;c;di.
+deﬁnition 3: given the event universe e, anevent stream
+sis a sequence of events s:n+!e .e f
+eg
+f
+e fg
+gh i
+h
+hefegfefggh ihh σ
+time
+case: cx
+case: cy
+case: czfig. 2: graphical representation of an event stream. boxes
+represent events: their background colors represent the case
+id, and the letters inside are the activity names. first line
+reports the stream, following lines are the single cases.
+an event stream is an unbounded sequence of events. we
+make the assumption that sequence indexes comply with the
+time order of events (i.e. given the sequence s, for any index
+i2n+,#time(s(i))#time(s(i+ 1)) ). figure 2 reports a
+simple representation of an event stream. please note that two
+subsequent events of an event stream may belong to different
+process instances. our on-line algorithms assume to analyze
+an event stream one item per time. speciﬁcally, given an
+event stream s, we will use the notation e observe (s)to
+indicate that we are going to assign to ethe ﬁrst element not
+yet taken into account. therefore, two successive calls of the
+observe (s)function will return two successive elements of
+the sequence s.
+one of the most used control-ﬂow discovery algorithm
+is heuristics miner [23], [18]. it is composed of a set of
+heuristics speciﬁcally designed to handle real-world data
+(e.g., to be noise tolerant). the algorithm discovers, via
+statistical measures and user deﬁned acceptance thresholds,
+sets of dependencies from the event log and then builds a
+control-ﬂow model on the basis of these observed causal
+relations.
+a core concept of the algorithm is the directly-follows
+measure. this measure counts the number of times that two
+activities,aandb, are directly followed each other on an
+event log (within the same trace). its value is indicated as
+ja>bj. if we consider again the event log reported in table i,
+we haveja>bj= 2(it appears in c1andc2),jb >cj=
+1(it appears only in c2),ja>dj= 0 (there are no traces
+withadirectly followed by d), and so on.
+using this frequency measure, heuristics miner can cal-
+culate the dependency measure , a measure of the strength of
+the causal relation between two activities aandb:
+a)b=ja>bj jb>aj
+ja>bj+jb>aj+ 12[ 1;1]: (1)
+when the value is close to 1, there is a strong dependency
+betweenaandb(brequiresa). if the value is close to
+ 1, then there is a strong dependency between banda(a
+requiresb). using the dependency measure and a set of user
+deﬁned thresholds, heuristics miner builds a control-ﬂow
+model which is represented as a heuristics net , i.e. a directed
+graph in which nodes represent activities and arcs represent
+causal dependencies. moreover, outgoing (ingoing) arcs of anode are annotated as xor or and splits (joins) in case
+they constitutes exclusive choices or parallel alternatives,
+respectively.
+given a log, the heuristics net is constructed as follows.
+first of all, the dependency measure is computed for all
+couples of activities occurring in the log. these dependency
+values are collected into a dependency matrix dm with
+as many rows and columns as the number of occurring
+activities. after that, a dependency graph is constructed with
+a node for each activity. the node corresponding to the
+activity for which none of the column (row) entries in dm
+are positive is marked as start (resp. end) node. if the use
+all-activities-connected parameter is set to true (i.e., the
+default value), the graph is connected by identifying, for
+each activity a, successors (the activities with the largest
+value in the row of dm indexed bya), and predecessors (the
+activities with the largest value in the column of dm indexed
+bya). moreover, additional arcs are added between activities
+aandbfor which all the following conditions are satisﬁed:
+i)ja > bj po, wherepois a user deﬁned positive
+observations threshold; ii)a)bdep, wheredepis a
+user deﬁned dependency threshold; iii)[(a)amax) (a)
+b)]< bestor[(bmax)b) (a)b)]< best, whereamax
+(bmax) is any of the strongest (i.e. with highest dependency
+value) followers (predecessors) of a(b), i.e.,a)amaxis a
+maximum of the row of dm indexed by a(bmax)bis a
+maximum of the column of dm indexed byb), andbestis
+a user deﬁned relative-to-best threshold.
+finally, splits and joins types are identiﬁed using the and-
+measure. given a dependency graph with an activity aand
+two successor nodes bandc, their and-measure is:
+a)(b^c) =jb>cj+jc>bj
+ja>bj+ja>cj+ 12[0;1]: (2)
+when the value of the and-measure is high (i.e. close to 1),
+it is likely that ais an and-split (parallelism) and, therefore,
+thatbandccan be executed in parallel. if the value of this
+measure is close to 0, then bandcare in mutual exclusion
+and thenais a xor-split (exclusive choice). using the
+and-measure and the and-threshold , which is a parameter
+of the algorithm, heuristics miner “decorates” all the splits
+of the dependency graph (either as and orxor split).
+heuristics miner considers few other heuristics, to handle
+special cases (such as self loops or long distance dependen-
+cies) that we are not going in details here. the dependency
+graph that heuristics miner generates, decorated with the
+and/xor information, can be easily converted into a petri
+net [18].
+iv. b aseline algorithm for stream mining (sw)
+the simplest way to exploit the heuristics miner algorithm
+with data coming from an event stream is to feed it with
+the more recently observed events. we call this approach
+“heuristics miner with sliding window” (sw).
+the basic idea is to: i)collect events for a given time
+span; ii)generate a ﬁnite event log; iii)apply the “standard
+version” of the algorithm. this idea is described in alg. 1.algorithm 1: heuristics miner with sw
+input :s: event stream; m: memory; maxm: maximum
+memory size
+1forever do
+2 e observe (s) /*observe a new event,
+where e= (ci; ai; ti)*/
+/*memory update */
+3 ifsize(m) =maxmthen
+4 shift (m)
+5 insert (m; e )
+/*mining update */
+6 ifperform mining then
+7 l convert (m)/*conversion of the
+memory into an event log */
+8 heuristicsminer (l)
+speciﬁcally, an event e= (ci;ai;ti)from the stream s
+is observed ( e observe (s)). after that, it is checked
+whether there is room in memory to accommodate the event.
+if the memory is full ( size(m) = maxm) then a sliding
+window policy is adopted [13, ch. 8], and the oldest event
+is deleted ( shift ). subsequently, eis inserted in memory.
+periodically (according to user’s requirement, line 6) the
+memory is converted into an event log ( l convert (m)),
+and the model is updated by executing the heuristics miner
+algorithm ( heuristicsminer (l)).
+the above-mentioned approach has several advantages.
+the most important one consists in the possibility of mining
+the log with any process mining algorithm already available
+in the literature. for example, it is possible to extract
+information about the social network of people working for
+the business process. however, the notion of “history” is not
+very accurate: only the more recent events are considered,
+and equal importance is assigned to all of them. moreover,
+the model is not constantly updated since each new received
+event triggers only the update of the memory, not necessarily
+an update of the model: performing a model update for each
+new event would result in a signiﬁcant computational burden,
+well outside the computational limitations assumed for a
+true online approach. in addition to that, the time required
+by this approach is completely unbalanced: when a new
+event arrives, inexpensive operations are performed ( shift
+andinsert ); instead, when the model needs to be updated,
+the log retained in memory is mined from scratch. so, every
+event is handled at least twice: the ﬁrst time to store it into a
+log and subsequently any time the mining phase takes place
+on it. in online settings, it is more desirable to process each
+event only once (“one pass algorithm” [24]).
+v. h euristics miner with lossy counting (lc)
+the approach presented in this section is an adaptation of
+an existing technique, used for approximate frequency count.
+in particular, we adapted the “lossy counting” (lc) algo-
+rithm described in [25]. the same paper proposes another
+approach, named sticky sampling. however, we preferredlossy counting since, as authors stated, in practice, it reaches
+better performances.
+the basic idea of lossy counting is to conceptually
+divide the stream into buckets of width w=1
+
+, where
+2(0;1)represents the maximum approximation error
+allowed. the current bucket (i.e., the bucket of the latest
+seen element) is identiﬁed with bcurr=n
+w
+, wherenis
+the progressive events counter. the basic data structure used
+by lossy counting is a set of entries of the form (e;f;)
+where:eis an element of the stream; fis the estimated
+frequency of the item e; and is the maximum number of
+timesehas already occurred. every time a new element e
+is observed, the algorithm looks whether the data structure
+contains an entry for the corresponding element. if such
+entry exists then its frequency value fis incremented by
+one, otherwise a new tuple is added: (e;1;bcurr 1). every
+timen0 modw, the algorithm cleans the data structure
+by removing the entries that satisfy the following inequality:
+f+ bcurr. such inequality ensures that, every time the
+cleanup procedure is executed, bcurrn.
+our proposal consists in adapting the lossy counting
+algorithm to the spd problem, by creating an online version
+of heuristics miner. speciﬁcally, since the two fundamental
+measures of heuristics miner (i.e., the dependency measure
+and the and-measure) are based on the directly-follows
+measure (e.g.ja > bj), our idea is to “replace” the batch
+version of this frequency measure, with statistics computed
+over an event stream. to achieve this goal, we need a couple
+of instances of the basic lossy counting data structure. in
+particular, we need a ﬁrst instance to count the frequencies
+of the activities (we will call it da), and another to count the
+frequencies of the direct succession relations ( dr). however,
+since the event stream may contain several overlapped traces,
+a third instance of the same data structure is used to keep
+track of different cases running at the same time ( dc). in
+da, each item is of the type (a;f;), wherea2a (set of
+activity names); fandcorrespond to the frequency and to
+the maximum possible error, respectively. in dr, each item
+if of the type (r;f;), wherer2aa (set of possible
+direct succession relations). finally, in dc, each item is of
+the type (c;a;f; )wherec2crepresents the case identiﬁer
+anda2ais the latest activity observed for case c. this
+last instance of the data structure has to behave slightly
+differently from the typical lossy counting data structures:
+it does not count the frequencies of the two stored items ( c
+anda), but just the frequency of c(ais just updated with
+the latest observed value).
+the entire procedure is presented in alg. 2. speciﬁcally,
+every time a new event e= (ci;ai;ti)is observed ( iindicates
+that we observed the i-th item),dais updated with the
+new observation of the activity ai. after that, the procedure
+checks if there is an entry in dcassociated to the case
+id of the current event ( ci). if this is not the case a new
+entry is added to dc(by adding the current case id and
+the activity observed). otherwise, if the data structure dc
+already contains an entry for ci, it means that the new eventalgorithm 2: heuristics miner with lc
+input :sevent stream; : approximation error
+1initialize the data structure da,dc,dr
+2n 1
+3w 1
+
+/*bucket size */
+4forever do
+5e observe (s) /*evente= (ci;ai;ti)*/
+6bcurr=l
+n
+wm
+/*current bucket id */
+/*update thedadata structure */
+7 if9(a;f;)2dasuch thata=aithen
+8 remove the entry (a;f;)fromda
+9da da[f(a;f+ 1;)g
+10 else
+11da da[f(ai;1;bcurr 1)g
+/*update thedcdata structure */
+12 if9(c;a last;f;)2dcsuch thatc=cithen
+13 remove the entry (c;a last;f;)fromdc
+14dc dc[f(c;ai;f+ 1;)g
+/*update thedrdata structure */
+15 build relation riasalast!ai
+16 if9(r;f;)2drsuch thatr=rithen
+17 remove the entry (r;f;)fromdr
+18dr dr[f(r;f+ 1;)g
+19 else
+20dr dr[f(ri;1;bcurr 1)g
+21 else
+22dc dc[f(ci;ai;1;bcurr 1)g
+/*periodic cleanup */
+23 ifn= 0 modwthen
+24 foreach (a;f;)2das.t.f+ bcurr do
+25 remove (a;f;)fromda
+26 foreach (c;a;f; )2dcs.t.f+ bcurr do
+27 remove (c;a;f; )fromdc
+28 foreach (r;f;)2drs.t.f+ bcurr do
+29 remove (r;f;)fromdr
+30n n+ 1
+31 update the model as described in section iii. for the directly
+follows relations, use the frequencies in dr.
+is not the ﬁrst of the given process instances and, therefore,
+we are observing a directly-follows relation. the algorithm
+builds the relation riand updates its corresponding frequency
+indr. after the possible update of dr, the periodic cleanup
+operation might be performed. please note that when an entry
+is removed fromda, the corresponding activity cannot ap-
+pear in any relations in dr. this happens because, according
+to our approach, relations always have lower frequency than
+activities, and therefore they are removed sooner. the model
+generation follows exactly the same procedure of heuristics
+miner: the dependency graph is built using the procedure
+described in section iii. the only difference with heuristics
+miner, in this case, is that given two activities aandb, the
+directly-follows frequency ja > bjmust be retrieved from
+thedrdata structure. in section vii we discuss how to
+dynamically update the model.
+vi. h euristics miner with lossy counting with
+budget (lcb)
+the main drawback of the approach based on lossy
+counting, presented in the previous section, is that the only
+parameter of lossy counting is the maximum allowed error in the frequency approximation and no information on space
+usage can be provided. in a recent work by da san martino et
+al. [26], a “lossy counting with budget” (lcb) is proposed.
+the underlying rationale of lossy counting with budget
+is to “adapt” the approximation error according to the stream
+and the available budget (i.e. the maximum memory that the
+algorithm can use). as stated in the previous section, lossy
+counting divides the stream in virtual buckets, each of them
+with sizew=d1
+e. lossy counting with budget, instead,
+divides the stream in buckets of variable sizes. in particular,
+each bucket biwill contain all occurrences that can be
+accommodated into the available budget. the approximation
+error, for a given bucket bi, depends on the bucket size
+and is deﬁned as i=1
+jbij. buckets of variable sizes imply
+that the cleanup operations do not occur always at the same
+frequency, but only when the current bucket cannot store
+the new observed item. the cleanup operation iterates the
+data structure looking for items to be removed. the remove
+condition is the same as in lossy counting: given an item
+(a;f;)the deletion condition is f+bcurr. the current
+bucketbcurr, however, is updated only when no more items
+can be stored. moreover, the deletion condition may not be
+satisﬁed by any item, thus not creating space for the new
+observation. in this case, the algorithm has to increase the
+bcurr arbitrarily, until at least one item is removed.
+the basic structure of the procedure is exactly the same
+of lossy counting, reported in alg. 2. there are, however,
+two main differences: one related to the cleanup operations,
+and another related to the budget. concerning the ﬁrst point,
+the cleanup operations must be performed before inserting
+an item (not after, as in lossy counting) and the cleanup
+has to update the current bucket accordingly (several updates
+might be required, if no elements are removed during the
+ﬁrst attempt). concerning the budget, since we have three
+different data structures, we need to let them share the
+memory. just splitting the available budget, one third per data
+structure, may lead to a too raw partitioning. therefore we
+let the three data structures to grow independently of each
+other. once the sum of their sizes has reached the budget
+size, the cleanup on the shared memory is performed. this
+implies that, for example, a new activity may kick out an
+old relation (in this case, the size of daincreases, the size
+ofdrdecreases), thus allowing a dynamic adaptation of the
+three partitions.
+vii. d ynamic model update
+in this section, we discuss how to update the dependency
+graph dynamically, as soon as a new event is processed. the
+synopsis (i.e. the data structures) maintained by the proposed
+lc-based algorithms (lc and lcb) contains counts. after
+any update of these synopses (an update occurs when a
+new event is observed and when the cleanup operations
+are performed) we would like to update the model with
+the minimum computational effort, just by looking at the
+update data structures. in order to do that, we observe that
+the conditions over dependency measures can actually be
+rewritten as conditions on the available counts: given twoactivitiesaandb, the condition involving the dependency
+thresholddepcan be restated as
+ja>bj(1 +dep)jb>aj+dep
+1 depor
+jb>aj(1 dep)ja>bj dep
+1 +dep
+according to whether the last updated count has been ja>bj
+orjb>aj.
+a bit more involved is the treatment of the relative-to-
+best threshold, since a modiﬁcation of the maximum row
+(column) value may lead to a modiﬁcation of the dependency
+graph involving several arcs. first of all, let best 1(a) =
+max
+x2a(a)x)and best 2(b)=max
+x2a(x)b). the condition
+[(a)amax) (a)b)]<bestcan be rewritten as:
+ja>bj>(best best 1(a) 1)jb>aj best 1(a) +best
+best 1(a) 1 best;
+while condition [(bmax)b) (a)b)]<best can be
+rewritten as:
+ja>bj>(best best 2(b) 1)jb>aj best 2(b) +best
+best 2(b) 1 best:
+similar disequalities can be derived for jb>aj. in addition,
+we observe that the dependency measure is monotonic with
+respect to the counts: w.r.t. ja>bj, its derivative is@(a)b)
+@ja>bj=
+2jb>aj+1
+(ja>bj+jb>aj+1)2>0(monotonically increasing), and w.r.t.
+jb>aj, its derivative is@(a)b)
+@jb>aj= 2ja>bj 1
+(ja>bj+jb>aj+1)2<0(mono-
+tonically decreasing). thus, given a new event involving
+activitya, it is not difﬁcult to identify the arcs entering and
+exiting node athat need to be added or deleted. therefore,
+it is sufﬁcient to keep sorted lists of “counts” where ais, in
+turn, the ﬁrst or the second element of the relation, together
+with pointers to the ﬁrst count not satisfying conditions for
+inserting the corresponding arc. because of monotonicity of
+the dependency measure, a local search starting from these
+pointed counts allows an efﬁcient update of the model. a
+similar approach is adopted to distinguish the “type” of splits
+(either and or xor). given three activities a,b, andc(such
+thatbandcare exiting from a), and the and threshold andit
+is possible to derive conditions similar to the previous ones:
+jb>cjand(ja>bj+ja>cj+ 1) jc>bj
+jc>bjand(ja>bj+ja>cj+ 1) jb>cj
+ja>bjjb>cj+jc>bj
+and ja>cj 1
+ja>cjjb>cj+jc>bj
+and ja>bj 1
+in this case, as long as all these inequalities are satisﬁed, the
+type of the split is and, once at least one of these are not
+satisﬁed, the split type becomes xor.
+viii. e xperimental evaluation
+we performed evaluations on both artiﬁcial and real
+datasets, with different parameter conﬁgurations.
+00.10.20.30.40.50.60.70.80.91
+  0   2000 4000 6000 8000 10000 12000 14000 16000 18000model‐to‐model similarity
+observed events
+lcb (b = 300)
+lcb (b = 100)lc (ε = 0.000001)
+lc (ε = 0.001)sw (w = 300)
+sw (w = 100)fig. 3: model-to-model metric for the approaches presented
+in this work, with different conﬁgurations. vertical black
+lines indicate concept drifts.
+a. evaluation on artiﬁcial models
+we evaluated our approach on an artiﬁcial dataset, in
+order to be able to compare the mined model with the one
+that originated the event stream. the comparison between
+these two models is performed using the model-to-model
+metric reported in [27]. this metric performs a “behavioral
+comparison” between the set of “mandatory behavior” and
+the set “forbidden behavior” (combined using the jaccard
+similarity) of the two process models.
+we generated three artiﬁcial processes, and corresponding
+execution logs, using plg [28]. then, we combined the three
+logs in a single stream, in order to simulate two concept
+drifts. in total, this stream contains 17265 events, referring
+to 16 activities (the most complex model has 3 splits: 1
+and and 2 xor). we compared our three approaches using
+different conﬁgurations: for lc we tested = 0:000001 and
+= 0:001; for lcb we tested b= 300 andb= 100 ; and
+for sw we tested w= 300 andw= 100 . fig. 3 reports the
+values of the model-to-model metric (computed every 200
+events). sw is almost always the worst approach. the other
+two approaches are basically equivalent and both of them
+(with all conﬁgurations) are able to detect the drifts and cor-
+rect the model. fig. 4 reports the space requirements of the
+approaches (computed every 200 events). as we expected,
+lc is very eager in terms of space requirements. sw requires
+constant space. lcb is the most parsimonious. comparing
+the results of lc and lcb, both in terms of model-to-model
+similarity and space requirements, lcb clearly outperforms
+lc. fig. 5 reports the average time required to process each
+event (computed every 200 events). lc and lcb require,
+basically, half of the time that sw requires. fig. 6 reports the
+memory partitioning, for lcb, over its three data-structures
+da,dranddc. as we expect, the space required by da
+anddris almost constant (except when drifts occur, in this
+case, new events and relations are observed), while most of
+the space is reserved for cases, which are many more in
+number and covering a relatively small span of time. this
+is the reason that makes the cleanup procedure prefers the
+deletion of old cases.025050075010001250150017502000
+  0   2000 4000 6000 8000 10000 12000 14000 16000 18000no. stored items
+observed events
+lcb (b = 300)
+lcb (b = 100)lc (ε = 0.000001)
+lc (ε = 0.001)sw (w = 300)
+sw (w = 100)fig. 4: space required by the approaches with different
+conﬁgurations. vertical black lines indicate concept drifts.
+05101520
+  0   2000 4000 6000 8000 10000 12000 14000 16000 18000time per event (ms)
+observed events
+lcb (b = 300)
+lcb (b = 100)lc (ε = 0.000001)
+lc (ε = 0.001)sw (w = 300)
+sw (w = 100)
+fig. 5: processing time, per event, required by the ap-
+proaches. vertical black lines indicate concept drifts.
+b. evaluation on real dataset
+we performed some evaluations also against a real dataset.
+this dataset is called bpic-12, and it has been used for
+the business processing intelligence challenge 20123. the
+dataset we used is publicly available4and comes from
+a dutch financial institute. this stream contains 262198
+events, distributed among 13087 process instances. the
+process originating the events consists in the application
+process for a personal loan or overdraft within the ﬁnancing
+organization. since a formalization of the original process
+model is not available, it is impossible to compare the mined
+models with the target one (as we did for the artiﬁcial
+case). in order to compute the quality of the results, we
+considered the adaptations to process mining of ﬁtness [29]
+andprecision [30] measures. the ﬁrst considers the ability,
+for the model, to replay the log. the latter indicates whether
+the model does not allow for “too much” behavior. we
+compute these two measures against ﬁnite logs generated
+using the latest nobserved events. since we do not know
+the original process, and since we are not able to discuss it
+with the data producer, we are not going to dive into details
+on the quality of the mined processes.
+fig. 7 reports the average values of ﬁtness and precision
+of the three approaches, with different conﬁgurations and
+3more information are reported at http://www.win.tue.nl/
+bpi2012/doku.php?id=challenge .
+4the dataset can be downloaded from http://dx.doi.org/10.
+4121/uuid:3926db30-f712-4394-aebc-75976070e91f .
+050100150200250300
+0 2000 4000 6000 8000 10000 12000 14000 16000no. sotred item
+observed events
+size of da size of dr size of dcfig. 6: partitioning of the three lossy counting with budget
+data structures:da,dranddcwithb= 300 .
+precision (sw)
+250500 1000 2000
+evalua�on log sizes25050010002000window size
+0.50.550.60.650.70.750.80.85fitness (sw)
+250500 1000 2000
+evalua�on log sizes25050010002000
+0.620.640.660.680.70.720.740.760.78
+precision (lc)
+250500 1000 2000
+evalua�on log sizes1e‐05
+0.001
+0.1ε
+0.750.80.850.90.951fitness (lc)
+250500 1000 2000
+evalua�on log sizes1e‐05
+0.001
+0.1 0.40.420.440.460.480.50.520.540.560.58
+precision (lcb)
+250500 1000 2000
+evalua�on log sizes25050010002000budget
+0.740.760.780.80.820.840.86fitness (lcb)
+250500 1000 2000
+evalua�on log sizes25050010002000
+0.40.410.420.430.440.450.460.470.480.490.50.51
+fig. 7: average precision and ﬁtness of sw (top), lc
+(middle), and lcb (bottom), on the bpic-12 dataset, with
+different window sizes/budget and evaluation log sizes.
+against logs generated with a different number of events.
+analyzing the two graphs referring to lcb (bottom), it is
+interesting to note, as we expected, that the two measures
+are capturing orthogonal quality perspectives: we can use
+these graphs to identify the best parameters conﬁguration (to
+maximize both qualities and avoiding over- and underﬁtting).
+concerning lcb, as the available budget and the evaluation
+log size increase, the precision increases proportionally, but
+the ﬁtness decreases. the ﬁtness of lc (middle) behaves
+similarly to lcb, but the model precision values, when
+= 0:1, instead, are so high because of which allows the
+approach to store too few elements and so to be extremely
+small. it is also interesting to note that the ﬁtness measure of
+sw (top) tends to be higher when the window sizes and the00.20.40.60.81
+0*10050*103100*103150*103200*103250*103precision
+observed events
+sw (w = 1000) lc (ε = 0.00001) lcb (b = 1000)fig. 8: comparison of the precision of the models generated
+by sw, lc and lcb on bpic-12.
+evaluation log sizes are “synchronized”. instead, its precision
+is extremely unstable, as shown in fig. 8. this phenomenon
+indicates that the extracted model, although it is capable of
+replaying the log (high ﬁtness), it is not very precise (i.e., it
+is too general).
+to analyze the bpic-12 dataset, the three approaches
+required (per event): i)sw: 24.59 ms; ii)lc: 5.68 ms;
+andiii)lcb: 2.56 ms. these time performance demonstrate
+the applicability of the approaches in real-world business
+scenarios.
+ix. c onclusions
+in this paper, we addressed the problem of discovering
+process models from streams of event data. as baseline ap-
+proach we have considered a sliding window-based approach,
+where the standard batch-based heuristics miner algorithm
+is applied to logs obtained using a moving window. two
+adaptations of lossy counting and lossy counting with
+budget5are proposed and experimentally evaluated. these
+algorithms extend the ideas of heuristics miner in the context
+of stream. discussions on time/space requirements and on-
+line model generation are reported. the approaches we
+proposed show important improvements, w.r.t. the baseline,
+in terms of quality of the mined models, execution time,
+and space requirements as well. as future work, we plan to
+improve the process analyst “experience” by extending the
+current approach to mine different perspectives (such as data
+or time) and to generate animations that point out evolution
+points of the process.
+acknowledgment
+the work by a. burattin and a. sperduti is supported by
+the eurostars-eureka project prompt (e!6696). authors are also
+grateful to francesca rossi and fabio aiolli for their advice.
+references
+[1] w. m. p. van der aalst, “process discovery: capturing the invisible,”
+ieee computational intelligence magazine , vol. 5, no. 1, pp. 28–41,
+2010.
+[2] ——, process mining: discovery, conformance and enhancement of
+business processes . springer, 2011.
+[3] j. e. cook, “process discovery and validation through event-data
+analysis,” phd thesis, university of colorado, 1996.
+5the alternative use of space sketching algorithms would lead to much
+frequent cleanup operations.[4] r. agrawal, d. gunopulos, and f. leymann, “mining process models
+from workﬂow logs,” in proc. of edbt , jan. 1998, pp. 469–483.
+[5] j. herbst, “a machine learning approach to workﬂow management,”
+inproc. of ecml , vol. 1810, 2000, pp. 183–194.
+[6] s.-y . hwang and w.-s. yang, “on the discovery of process models
+from their instances,” decision support systems , vol. 34, no. 1, pp.
+41–57, 2002.
+[7] g. schimm, “process miner – a tool for mining process schemes
+from event-based data,” in proc. of jelia . springer, 2002, pp.
+525–528.
+[8] t. murata, “petri nets: properties, analysis and applications,” proc. of
+the ieee , vol. 77, no. 4, pp. 541–580, 1989.
+[9] w. m. p. van der aalst and b. van dongen, “discovering workﬂow
+performance models from timed logs,” in proc. of edcis . springer,
+2002, pp. 45–63.
+[10] n. russell, a. h. ter hofstede, w. m. p. van der aalst, and n. mulyar,
+“workﬂow control-ﬂow patterns: a revised view,” bpm center
+report bpm-06-22, bpmcenter. org , 2006.
+[11] j. manyika, m. chui, b. brown, j. bughin, r. dobbs, c. roxburgh,
+and a. hung byers, “big data: the next frontier for innovation,
+competition, and productivity,” mckinsey global institute, tech. rep.
+june, 2011.
+[12] l. golab and m. t. ¨ozsu, “issues in data stream management,” acm
+sigmod record , vol. 32, no. 2, pp. 5–14, jun. 2003.
+[13] c. aggarwal, data streams: models and algorithms , ser. advances in
+database systems. boston, ma: springer us, 2007, vol. 31.
+[14] a. bifet, g. holmes, r. kirkby, and b. pfahringer, “moa: massive
+online analysis learning examples,” the journal of machine learn-
+ing research , vol. 11, pp. 1601–1604, 2010.
+[15] g. widmer and m. kubat, “learning in the presence of concept drift
+and hidden contexts,” machine learning , vol. 23, no. 1, pp. 69–101,
+1996.
+[16] m. m. gaber, a. zaslavsky, and s. krishnaswamy, “mining data
+streams: a review,” acm sigmod record , vol. 34, no. 2, pp. 18–26,
+jun. 2005.
+[17] j. gama, knowledge discovery from data streams . chapman and
+hall/crc, may 2010.
+[18] w. m. p. van der aalst and t. a. j. m. m. weijters, “rediscover-
+ing workﬂow models from event-based data using little thumb,”
+integrated computer-aided eng. , vol. 10, no. 2, pp. 151–162, 2003.
+[19] e. kindler, v . rubin, and w. sch ¨afer, “incremental workﬂow mining
+for process flexibility,” in proc. of bpmds , 2006, pp. 178–187.
+[20] a. c. kalsing, g. s. do nascimento, c. iochpe, and l. h. thom,
+“an incremental process mining approach to extract knowledge from
+legacy systems,” in proc. of edoc , oct. 2010, pp. 79–88.
+[21] r. p. j. c. bose, w. m. p. van der aalst, i. ˇzliobait ˙e, and m. pech-
+enizkiy, “handling concept drift in process mining,” in proc. of
+caise . springer, 2011, pp. 391–405.
+[22] f. m. maggi, a. burattin, m. cimitile, and a. sperduti, “online
+process discovery to detect concept drifts in ltl-based declarative
+process models,” in proc. of coopis . springer, 2013, pp. 94–111.
+[23] w. m. p. van der aalst, t. a. j. m. m. weijters, and a. k. a.
+de medeiros, “process mining with the heuristics miner-algorithm,”
+beta working paper series, wp 166, eindhoven university of
+technology, eindhoven, 2006.
+[24] n. schweikardt, “short-entry on one-pass algorithms,” in encyclo-
+pedia of database systems , l. liu and m. t. ¨oszu, eds. springer,
+2009, pp. 1948–1949.
+[25] g. s. manku and r. motwani, “approximate frequency counts over
+data streams,” in proc. of vldb . hong kong, china: morgan
+kaufmann, 2002, pp. 346–357.
+[26] g. da san martino, n. navarin, and a. sperduti, “a lossy counting
+based approach for learning on streams of graphs on a budget,” in
+proc. of ijcai . aaai press, 2012, pp. 1294–1301.
+[27] f. aiolli, a. burattin, and a. sperduti, “a business process metric
+based on the alpha algorithm relations,” in proc. of bpi . springer,
+2011.
+[28] a. burattin and a. sperduti, “plg: a framework for the generation
+of business process models and their execution logs,” in proc. of
+bpi. springer, 2010, pp. 214–219.
+[29] a. adriansyah, b. van dongen, and w. m. p. van der aalst, “con-
+formance checking using cost-based fitness analysis,” in proc. of
+edoc . ieee, aug. 2011, pp. 55–64.
+[30] j. mu ˜noz gama and j. carmona, “a fresh look at precision in process
+conformance,” in proc. of bpm . springer, 2010, pp. 211–226.

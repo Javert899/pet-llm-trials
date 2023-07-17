@@ -1,0 +1,3957 @@
+time prediction based on process mining
+w.m.p. van der aalsta,, m.h. schonenberga, m. songb,a
+aeindhoven university of technology, p.o. box 513, nl-5600 mb, eindhoven, the netherlands.
+bulsan national institute of science and technology 689-798 100 banyeon-ri, ulsan, south korea
+abstract
+process mining allows for the automated discovery of process models from event logs. these models provide
+insights and enable various types of model-based analysis. this paper demonstrates that the discovered
+process models can be extended with information to predict the completion time of running instances. there
+are many scenarios where it is useful to have reliable time predictions. for example, when a customer phones
+her insurance company for information about her insurance claim, she can be given an estimate for the
+remaining processing time. in order to do this, we provide a congurable approach to construct a process
+model, augment this model with time information learned from earlier instances, and use this to predict e.g.
+the completion time. to provide meaningful time predictions we use a congurable set of abstractions that
+allow for a good balance between \overtting" and \undertting". the approach has been implemented in
+prom and through several experiments using real-life event logs we demonstrate its applicability.
+keywords: process mining, business process management, time prediction, performance analysis, business
+intelligence
+1. introduction
+more and more information about processes is recorded by information systems in the form of so-called
+\event logs". a wide variety of process-aware information systems (paiss) [14] is recording events as they
+are taking place. erp (enterprise resource planning), wfm (workflow management), bpm (business
+process management), crm (customer relationship management), scm (supply chain management), and
+pdm (product data management) systems are examples of paiss that log detailed information about events
+in a structured manner. despite the omnipresence and richness of these event logs, most software vendors use
+this information for answering only relatively simple questions under the assumption that the process is xed
+and known , e.g., the calculation of simple performance metrics like utilization and ow time for a well-known
+process. however, in many domains processes are evolving and people typically have an oversimplied and
+incorrect view of the actual business processes. therefore, process mining techniques attempt to extract
+non-trivial and useful information from event logs. one aspect of process mining is control-ow discovery ,
+i.e., automatically constructing a process model (e.g., a petri net or bpmn model) describing the causal
+dependencies between activities [6, 4, 7, 9, 11, 38, 37]. the basic idea of control-ow discovery is very simple:
+given an event log containing a set of traces, automatically construct a suitable process model \describing
+the behavior" seen in the log. such discovered processes have proven to be very useful for the understanding,
+redesign, and continuous improvement of business processes [3].
+as process mining techniques are getting more mature, there is the desire to use the discovered models
+in an operational setting . this means that the pais is using results from process mining at runtime . an
+example is the recommendation service presented in [31]. this service, which is implemented in the process
+mining tool prom , gives advice on the best possible next activity. unlike the xed routing in a workow
+management system which is strictly enforced, the recommendation service merely gives an advice what to
+do next. another example is the prediction service presented in [13]. this service is using non-parametric
+corresponding author
+email addresses: w.m.p.v.d.aalst@tue.nl (w.m.p. van der aalst), m.h.schonenberg@tue.nl (m.h. schonenberg),
+msong@unist.ac.kr (m. song)
+url: www.processmining.org (w.m.p. van der aalst)
+preprint submitted to information systems august 5, 2010regression to predict the completion time of partially executed process instances. using the same regression
+technique it is also estimated whether activities will be executed in the future and, if so, the time it takes to
+reach them.
+the goal of the approach presented in this paper is similar to the prediction service described in [13].
+however, we want to overcome some of the limitations of this earlier approach and therefore use a completely
+new approach to time prediction. unlike existing approaches, the problem is not reduced to a simple heuristic
+(e.g., always estimating half of the average ow time or the average ow time minus the already elapsed time)
+or a regression model. instead an annotated transition system is generated that represents an abstraction of
+the process with time annotations .
+annotated 
+transition 
+systemevent
+logoperational 
+business
+processes
+process 
+discoveryprediction
+enginepartial caseprediction
+information 
+system
+figure 1: overview of our approach.
+figure 1 shows an overview of the approach. there is an information system supporting some operational
+process. events that take place in this process are recorded (e.g., starting some activity). this recorded
+information is used to derive a process model. in the process mining eld, many process discovery algorithms
+have been proposed. here we use a variant of the approach described in [4], i.e., using various abstractions a
+transition system is derived. this transition system is annotated with information about elapsed times (e.g.,
+the average time to reach a particular state), sojourn times (e.g., the average time spent in a particular state),
+andremaining times (e.g., the average time to reach the end from this state). the annotated transition system
+can be used to predict the remaining ow time of all or some of the running cases (i.e., process instances). in
+our approach, we heavily rely on the transition system generation and corresponding abstractions presented
+in [4]. this allows us to nd a balance between a transition system that is too specic (overtting) and one
+that is too general (undertting) with respect to the log and thus provide better predictions. as will be
+demonstrated, our approach performs much better than simple heuristics and also outperforms regressions
+models in terms of eciency and precision.
+the approach can be easily extended to predict other features of a case. for example, the transition
+system can also be annotated with information about the occurrence of particular event or the time until
+a particular event. this can lead to predictions such as: \there is a 90% probability that your claim will
+be rejected", \there is 90% probability that this activity will be conducted in the next three days", and
+\the expected time until the submission of some intermediate report is 11 days". although these additional
+features can easily be added, we focus here on predicting the completion of a case.
+the approach presented in this paper has been implemented in prom , cf. www.processmining.org .
+prom serves as a testbed for our process mining research [1] and has been applied in various domains,
+e.g., hospitals (amc and catherina hospitals), banks (ing), several municipalities (heusden, alkmaar,
+etc.), high-tech system manufacturers (asml and philips medical systems), software repositories for open-
+source projects, etc. to show the applicability of our results, we present an experimental evaluation using a
+simulation model and two real-life case studies. in these case studies, we use our techniques to predict the
+completion time of cases in two dierent dutch municipalities.
+the remainder of this paper is organized as follows. related work is discussed in section 2. section 3
+introduces process mining and shows that a transition system can be derived after (potentially) making some
+abstractions. section 4 presents the main idea of time prediction based on annotated transition systems.
+the implementation in prom is described in section 5. section 6 discusses various ways of dening and
+measuring the quality of predictions. the approach has been validated and tested using several (real-life)
+examples. the results of our evaluation are given in section 7. section 9 concludes the paper.
+22. related work
+since the mid-nineties several groups have been working on techniques for process mining [6, 4, 7, 9, 11,
+38, 17, 37], i.e., discovering process models based on observed events. in [5] an overview is given of the early
+work in this domain. the idea to apply process mining in the context of workow management systems was
+introduced in [7]. in parallel, datta [11] looked at the discovery of business process models. cook et al.
+investigated similar issues in the context of software engineering processes [9]. herbst [18] was one of the
+rst to tackle more complicated processes, e.g., processes containing duplicate tasks. most of the classical
+approaches have problems dealing with concurrency. the -algorithm [6] was the rst technique taking
+concurrency as a starting point. however, this simple algorithm has problems dealing with complicated
+routing constructs and noise (like most of the other approaches described in literature). in the context of
+theprom framework [1] more robust techniques have been developed. the heuristics miner [37] and the
+fuzzy miner [17] can deal with incomplete, unbalanced, and/or noisy events logs. the two-phase approach
+presented in [4] allows for various abstractions to obtain more useful models. the rst step in [4] is used
+as a basis for approach described in this paper. however, two-phase approach presented in [4] only aims at
+process discovery and not at prediction. moreover, in [4] time does not play a role and the theory of regions
+is used to construct the nal models.
+for more pointers to relevant literature on process mining we refer to our process mining website.1
+the approaches mentioned above focus on control-ow discovery. however, when event logs contain time
+information, the discovered models can be extended with timing information. for example, in [35] it is
+shown how timed automata can be derived. in [28] it is shown how any petri net discovered by prom can
+be enriched with timing and resource information.
+the above approaches all focus on discovering process models based on historic information and do not
+support users at run-time. the recommendation service of prom learns based on historic information and
+uses this to guide the user in selecting the next work-item [31]. this is related to the use of case-based
+reasoning in workow systems [36]. most related to our work is the prediction service presented in [13]. this
+service predicts the completion time of cases by using non-parametric regression [13, 10]. in [12] dierent
+techniques are compared using a case study including various heuristics and the prediction service presented
+in [13]. in [30] it is shown that the interaction between cases and the availability of resources are important
+factors when predicting the remaining time until completion. the topic of time prediction was also discussed
+in [24], but no concrete prediction technique was proposed. instead the problem of having cross-trained
+resources (i.e., resources that are more exible to perform also other tasks) on performance prediction was
+highlighted. eder et al. [15, 16] also looked into time management in workow systems. however, the focus
+of their work is more on scheduling and escalation and like in [12, 24] assuming that the workow is known
+beforehand and stable. also related is the prediction engine of staware [33, 30] which is using simulation
+to complete audit trails with expected information about future events. this particular approach is rather
+unreliable since it is based on one run through the system using a copy of the actual engine. hence, no
+probabilities are taken into account and there is no means of \learning" to make better predictions over time.
+a more rened approach focusing on the transient behavior (called \short-term simulation") is presented in
+[29].
+in [2] a generic approach to \operational support" in the context of the prom framework is presented.
+here is it shown that process mining is not restricted to the \past", but also relevant for the \present"
+(recommendation and real-time conformance checking), and the future (prediction). this demonstrates that
+the technique presented in this chapter can be used to actively provide predictions to users interacting with
+a pais (e.g., a workow system like yawl ordeclare ).
+the approach presented in this paper diers from existing approaches in various ways. first of all, an
+explicit process model (i.e., the annotated transition system) is constructed (unlike heuristics or simple re-
+gression models) and this model is used for predictions. second, the degree of abstraction can be adjusted
+based on the questions at hand and the volume of historic information. note that the process model can
+become more ne-grained once more data is available. third, the approach allows for better diagnostics
+(unlike for example the non-parametric regression approach [13]). finally, the approach has a better perfor-
+mance compared to approaches based on simulation or regression (both in terms of quality of prediction and
+1www.processmining.org
+3computation time).
+3. transition system generation using abstractions
+this section describes the basis for our prediction approach. we rst show how to construct a transition
+system based on an event log. in section 4, we annotate this transition system and use it to predict e.g.
+completion times.
+3.1. preliminaries
+to explain the dierent strategies for constructing transition systems from event logs, we need the following
+notations.
+f2a!bis a function with domain aand range b.f2a7!bis a partial function, i.e., the domain
+offmay be a subset of a.
+amulti-set (also referred to as bag) is like a set where each element may occur multiple times. for
+example, [ a;b2;c3;d;d;e] is the multi-set with nine elements: one a, two b's, three c's, two d's, and one e.
+i b(a) = a!nis the set of multi-sets (bags) over a nite domain a, i.e., x2i b(a) is a multi-set,
+where for each a2a,x(a) denotes the number of times ais included in the multi-set. for example,
+ifx= [a;b2;c3;d], then x(b) = 2 and x(e) = 0. the sum of two multi-sets ( x+y), the dierence
+(x y), the presence of an element in a multi-set ( x2x), and the notion of subset ( xy) are dened
+in a straightforward way. for example, [ a;b2;c3;d] + [c3;d;e2;f3] = [a;b2;c6;d2;e2;f3]. moreover, we also
+apply these operators to sets, where we assume that a set is a multi-set in which every element occurs exactly
+once. the operators are also robust with respect to the domains of the multi-sets, i.e., even if xand yare
+dened on dierent domains, x+y,x y, and xyare dened properly by extending the domain
+where needed.jxj=p
+a2ax(a) is the cardinality of some multi-set xover a.set(x) transforms a bag x
+into a set, i.e., set(x) =fa2xjx(a)>0g.
+p(a) is the powerset of a, i.e.,p(a) =fxjxag.
+for a given set a,ais the set of all nite sequences over a. a nite sequence over aof length n
+is a mapping 2f1;:::; ng! a. such a sequence is represented by a string, i.e., =ha1;a2;:::; ani
+where ai=(i) for 1in.hdk() =ha1;a2;:::; akmin ni, i.e., the \head" of the sequence consisting
+of the rst kelements (if possible). note that hd0() is the empty sequence and for kn:hdk() =.
+tlk() =ha(n k+1)max 1;ak+2;:::; ani, i.e., the \tail" of the sequence composed of the last kelements (if
+possible). note that tl0() is the empty sequence and for kn:tlk() =."xis the projection of onto
+some subset xa, e.g.,ha;b;c;a;b;c;di"f a;bg=ha;b;a;biandhd;a;a;a;a;a;a;di"f dg=hd;di.
+for any sequence over a, the parikh vector par() maps every element aofaonto the number of
+occurrences of ain, i.e.,par()2i b(a) where for any a2a:par()(a) =j"fagj. later, we will use
+the parikh vector to count the number of times an activity occurs in a log trace.
+3.2. event logs
+the goal of process mining is to extract knowledge about a particular (business) process from event logs,
+i.e., process mining describes a family of a-posteriori analysis techniques exploiting the information recorded
+in audit trails, transaction logs, databases, etc. typically, these approaches assume that it is possible to
+sequentially record events such that each event refers to an activity (i.e., a well-dened step in the process)
+and is related to a particular case (i.e., a process instance). furthermore, some mining techniques use
+additional information such as the performer or originator of the event (i.e., the person / resource executing
+or initiating the activity), the timestamp of the event, or data elements recorded with the event (e.g., the
+size of an order). today, many information systems record such information. to explain the kind of input
+needed for process mining and our prediction approach, we rst dene the concept of an event .
+denition 1 (event, property). letebe the event universe, i.e., the set of all possible events identiers,
+andtthe time domain. we assume that events are characterized by various properties , e.g., an event has
+a timestamp, corresponds to an activity, is executed by a particular person, has associated costs, etc. we do
+not impose a specic set of properties, however, given the focus of this paper, we assume that one of these
+properties is the timestamp of the event, i.e., there is a function propt2e!t assigning timestamps to
+events. as a shorthand, we denote e=propt(e), i.e., the time of an event e 2e.
+4event id properties
+timestamp activity resource cost:::
+35654423 30-12-2008:11.10 a john 300:::
+35654424 30-12-2008:15.21 b john 400:::
+35654425 30-12-2008:15.35 c john 100:::
+35654426 30-12-2008:15.55 d john 400:::
+35655526 29-12-2008:16.15 a ann 300:::
+35655527 30-12-2008:16.05 c john 450:::
+35655528 30-12-2008:16.25 b pete 350:::
+35655529 31-12-2008:10.55 d ann 300:::
+::: ::: ::: ::: ::::::
+table 1: a fragment of an event log.
+so an event eis described by some unique identier and can have several properties. in this paper, we
+focus on the timestamp of an event e=propt(e). however, other properties such as the person executing the
+event (propresource (e)), the name of the corresponding activity ( propa(e)), the cost of an event ( propcost(e)),
+etc. can be used both for process discovery and prediction techniques presented in thus paper.
+anevent log is simply a set of events. each event in the log is linked to a particular trace and globally
+unique, i.e., the same event cannot occur twice in a log. note that a trace in a log represents a particular
+process instance also referred to as \case" (e.g., a customer order, the treatment of a patient, or an insurance
+claim). moreover, time should be non-decreasing within each trace in the log.
+denition 2 (trace, event log). atrace is a nite sequence of events 2esuch that each event appears
+only once and time is non-decreasing, i.e., for 1i<jjj:(i)6=(j)and(i)(j).cis the set
+of all possible traces (including partial traces). an event log is a set of traces l c such that each event
+appears at most once in the entire log, i.e., for any 1;22l:set(par(1))\set(par(2)) =;or1=2.
+note that(i)(j) means that time is non-descending (i.e., propt((i))propt((j)) if ioccurs
+before j). in the expression \ set(par(1))\set(par(2))" traces are converted into multi-sets using parwhich
+in turn are converted into sets using set. this is done to ensure that events are globally unique and do not
+appear in multiple traces.
+table 1 shows a fragment of some event log. only two traces are shown, both containing 4 events. each
+event has a unique id and several properties. for example event 35654423 is an instance of activity athat
+occurred on december 30th at 11.10, was executed by john, and costed 300 euros. the second trace starts
+with event 35655526 and also refers to an instance of activity a.
+3.3. constructing a transition system
+one of the goals of process mining is to extract process models from logs such as the one depicted in
+table 1. in this paper, we partly use the approach presented in [4]. we rst dene a transition system. a
+transition system is a triplet ( s;e;t) where sis the state space (i.e., possible states of the process), eis
+the set of event labels (i.e., transition labels), and tsesis the transition relation describing how
+the system can move from one state to another. a transition ( s1;e;s2)2tdescribes that the process can
+move from state s1tos2by an event labeled e. this is often denoted as s1e!s2. a transition system has
+some initial state and set of nal states. the set of behaviors possible according to a transition system is
+given by all \walks" from the initial state to some nal state. hence a trace is possible according to the
+transition system if it corresponds to such a \walk" in the transition system. so the goal is to come up with
+a transition system that given an event log, characterizes the observed behaviors well. typically, one aims
+at a model that allows for most of the behavior in the log and not \too much" additional behavior. before
+discussing the delicate balance between \overtting" en \undertting", we rst provide the general idea of
+extracting a transition system from an event log.
+5it is natural to assume that at any point in time a process instance is in some state and that this state
+depends on its history. hence, any prex of a trace in the log should be mapped onto some state. the state
+representation function takes care of this.
+denition 3 (state representation). a state representation function lstateis a function that, given a
+(partial) trace produces some representation. formally, lstate2c!r wherecis the set of possible traces
+andris the set of possible (state) representations (e.g., sequences, sets, or bags over one or more event
+properties).
+assume that is the partial trace consisting of the rst two events in table 1. one possibility is that
+function lstatemapson the last activity, i.e., the activity name property of the last event in . so
+lstate() =b. another possibility is that function lstatemapsonto the set of resources that have worked
+on the process instance, i.e., lstate() =fjohng. note that these two examples use abstractions, e.g., only
+the last activity is relevant or only the people that have worked on the case are relevant. it is also possible
+to have no abstractions, i.e., lstate() =. however, as we will see later, it is impossible to make predictions
+without some form of abstraction.
+just like we need to label the states in the transition system, we also need to label events. note that
+any event ein the log extends a partial trace 1into a longer trace 2=1;hei, i.e.,1concatenated with
+the sequence just containing event e. in the transition system there should be a transition connecting state
+lstate(1) to state lstate(2). this transition has an event label levent(e), based on some event representation
+function levent.
+denition 4 (event representation). an event representation function leventis a function that, given
+an event e produces some representation. formally, levent2e!r whereeis the set of possible events and
+ris the set of possible (event) representations (e.g., the corresponding activity name).
+based on particular lstateand leventfunctions, we can dene the transition system. the approach is
+very simple. the states in the transition system correspond to prexes in the log mapped to the desired
+representation using a particular state representation function lstate. moreover, the transition relation is
+computed by \replaying" the traces on the transition system while using the event representation function
+levent.
+denition 5 (transition system). let lc be an event log. given a state representation function lstate
+and an event representation function levent, we dene a labeled transition system ts= (s;e;t)where
+s=flstate(hdk())j2l^0kjjgis the state space2, e=flevent((k))j2l^1kjjg
+is the set of events labels, and t ses with t =f(lstate(hdk());levent((k+ 1));lstate(hdk+1()))j
+2l^0k<jjgis the transition relation. sstart=flstate(hi)gis the singleton set of initial states.
+send=flstate()j2lgis the set of nal states.
+the set of states of the transition system is determined by the range of function lstatewhen applied to
+the log data. the transitions in the transition system have a label based on function levent. the naive
+algorithm for constructing a transition system is straightforward: for every trace , iterating over k(i.e.
+06k6jj), we create a new state lstate(hdk()) if it does not exist yet. then the traces are scanned for
+transitions lstate(hdk())levent((k+1)) ! lstate(hdk+1()) and these are added if they do not exist already. so
+given concrete functions lstateand levent, it is possible to automatically build a transition system.
+figure 2 shows an example of a trace represented as a sequence of activity names ha;b;c;d;c;d;c;d;e;
+f;a;g;h;h;h;ii. after the prex ha;b;c;d;c;d;c;d;eiis executed it is in principle unknown that
+the \future" ishf;a;g;h;h;h;iiand that the process instance ends at a particular time. however, based
+on the event log consisting of full traces executed in the past, one can construct a transition system as
+sketched in figure 2. moreover, based on the prex ha;b;c;d;c;d;c;d;eiandlstate, one can determine
+the current state in the transition system. based on this a prediction is made as will be elaborated later.
+2recall that hdk() is a prex of , i.e., the sequence consisting of the rst kelements of (cf. section 3.2).
+6pastcurrent state
+unknown
+futurepartial trace
+historyfull traces
+predictprocess
+discovery
+annotated
+transition
+systemunknown 
+completion 
+time
+predicted 
+completion 
+timefigure 2: illustrating the approach using an example trace with a known past and an unknown future.
+3.4. abstraction
+based on a log land the lstateand leventfunctions, a transition system is dened. the key element
+is to select the right lstateand leventfunctions. in the extreme case, lstate() =and levent(e) = e
+for any prex and event e. in this case, there are no abstractions and all states (except the initial
+state) are visited only once when replaying the event log. hence, every new process instance will be unique
+and one cannot learn form earlier instances. clearly, this is undesirable and some degree of abstraction
+is needed. therefore, we consider an example where some form of abstraction is used. assume we have
+an event log and we are only interested in activity names. suppose that propa2e !a is a function
+mapping events onto the corresponding activity names. figure 3 refers to such a log without showing
+the complete log, i.e., just a few traces are shown. also note that per event only the activity name is
+shown and other properties and the event's id are not shown. the rst line in the log shown in figure 3
+could refer to the rst event in table 1. since we are only interested in activity names, it makes sense to
+choose the event representation function such that levent(e) =propa(e). now assume that we let states
+only depend on the occurrences of earlier activities, i.e., the order is not important. moreover, we do
+not distinguish between the single execution of an activity and multiple executions of this activity. this
+corresponds to the state representation function lstate
+1() =fpropa(e)je2g(for2lor some prex).
+alternatively, one could argue that the order is important and choose the state representation function
+lstate
+2() =hpropa((1));propa((2));:::;propa((jj))i(for2l). figure 3 shows the result of applying
+these two state representation functions. note that the transition system in figure 3(b) is more precise than
+figure 3(a), i.e., a weaker abstraction is used. for example, lstate
+2 distinguishes between activity sequences
+ha;b;ciandha;c;biwhile lstate
+1 does not.
+note that both transition systems provided in figure 3 can replay the log, i.e., any trace corresponds to
+a walk in the transition system starting in a initial state and ending in a nal state. this shows that the
+transition system indeed reects the behavior seen in the log. in figure 3, initial and nal states are denoted
+using \small dangling arcs" going into respectively out of the respective nodes.
+3.5. balancing between \overtting" and \undertting"
+when building a transition system, we aim at a balance between \overtting" and \undertting". there-
+fore, we elaborate on these two notions. let lbe a log and tsbe a transition system.
+ts is overtting l iftsdoes not generalize and is sensitive to particularities in l. in an extreme
+case, tscould merely be a representation of the log without any inference. a mining algorithm is
+producing overtting models if the removal or addition of a small percentage of the process instances
+inlwould lead to a remarkably dierent model. in a complex process with many possible paths, most
+7abcd
+acbd
+aed
+abcd
+abcd
+aed
+acbd
+...{}a{a} {a,c}c{a,b}
+b{a,b,c}c{a,b,c,d}d
+{a,e} {a,d,e}de
+(a) transition system based on setsb
+<>a<a> <a,e>e<a,e,d>d<a,b>
+b<a,b,c>c<a,b,c,d>d
+<a,c> <a,c,b>b<a,c,b,d>dc
+(b) transition system based on sequencesfigure 3: two example transition systems extracted from the same log using (a) lstate
+1() =fpropa(e)je2gand (b)
+lstate
+2() =hpropa((1));propa((2));:::;propa((jj))ias state representation functions.
+process instances will follow a path not taken by other instances in the same period. therefore, it is
+undesirable to construct a model that allows only for the paths that happened to be present in the log
+as this is only a fraction of all possible paths. if one knows that only a fraction of the possible event
+sequences are in the log, the only way to avoid overtting is to generalize and have a model tsthat
+allows for more behavior than recorded in l.
+ts is undertting l iftsallows for \too much behavior" that is not supported by l. this is also
+referred to as \overgeneralization". it is very easy to construct a model that allows for the behavior
+seen in the log but also completely dierent behavior. for example, assume a log lconsisting of 1000
+cases. for each case ais followed by band there are no cases where bis followed by a. obviously,
+one could derive a causal dependency between aand b. however, one could also create a model ts
+where aand bare in parallel (i.e., all interleavings are included). the latter would not be \wrong"
+in the sense that the behavior seen in the log is possible according to the model. however, it is very
+unlikely and therefore one could argue that this tsis undertting l.
+note that the notions of overtting and undertting are orthogonal to \non-tting". a model is non-
+tting if the observed traces are not possible according to the model. an overtting log that merely encodes
+all observed traces is still tting in the sense that the log could have been produced by the model. an
+undertting log that allows for any trace over a given alphabet is also still tting because it does not exclude
+the observed behavior. there are various ways of quantifying these notions [26]. this is, however, outside
+the scope of this paper.
+3.6. example abstractions
+to conclude this section, we give some examples of possible abstractions and illustrate the importance of
+such abstractions using a real-life example.
+let us rst consider abstractions with respect to event names . as indicated earlier, the event representation
+function levent(e) =edoes not provide any abstraction and will result in arcs in the transition system that
+are taken only once when relaying a log. a typical abstraction is levent(e) =propa(e), i.e., mapping the
+event onto the name of the activity. this was used in figure 3. of course other properties or combinations
+of properties can be used, e.g., levent(e) =propcost(e) or levent(e) = (propa(e);propresource (e)). note that
+8it is also possible to use a rather coarse abstraction such as levent(e) =null. now all events are labeled null
+and it becomes impossible to distinguish activities, etc. an abstraction becomes coarser when more events
+are mapped onto the same term.
+abstractions with respect to states are more involved because they are not based on a single event but on
+a sequence of events. below, we informally discuss some of the abstraction mechanisms for states.
+3.6.1. abstraction 1: maximal horizon
+the basis of the state calculation can be the complete prex or some partial prex. in the latter case, only a
+subset of the trace is considered. for example, instead of taking the complete prex ha;b;c;d;c;d;c;d;ei
+shown in figure 2, only the last four ( h= 4) events could be considered: hd;c;d;ei. in this case the \hori-
+zon" is limited to 4. in a partial prex, only the hmost recent events are considered as input for the state
+calculation. taking a complete prex corresponds to h=1, i.e., the horizon is not limited.
+3.6.2. abstraction 2: filter
+the second abstraction is to lter the (partial) prex, i.e., certain events are simply not considered
+when calculating the current state. for example ltering could be used to project the horizon onto a set of
+activities x, i.e., only events that correspond to some activity in xare considered in lstate. for example, if
+x=fc;dg, then the prexha;b;c;d;c;d;c;d;eishown in figure 2 is reduced to hc;d;c;d;c;di.
+note that the ltering is applied to the sequence resulting from the horizon. the occurrence of some activity
+a2xis considered relevant for the state of a case. if a62x, then the occurrence of ais still relevant
+for the process (i.e., it may appear on the arcs in the transition system) but is assumed to be irrelevant for
+determining the state. if ais not relevant at all, it should be ltered out before and should not appear in l.
+the above two abstractions (i.e., limiting the horizon to hand ltering events using x) can be swapped.
+however, note that the order inuences the result.
+3.6.3. abstraction 3: sequence, bag, or set
+the rst two abstractions yield a sequence. the third abstraction mechanism optionally removes the
+order or frequency from the resulting trace. for the current state it may be less interesting to know when
+some activity aoccurred and how many times aoccurred, i.e., only the fact that it occurs within the scope
+determined by the rst three abstractions is relevant. in other cases, it may be relevant to know how many
+times aoccurred or it may be essential to know whether aoccurred before bor not. this suggests that there
+are three ways of representing knowledge about the past:
+sequence , i.e., the order of activities is recorded in the state,
+multi-set of activities , i.e., the number of times each activity is executed ignoring their order, and
+set of activities , i.e., the mere presence of activities.
+consider again the prex ha;b;c;d;c;d;c;d;ei. the above three possibilities result in ha;b;c;d;c;d;c;
+d;ei(sequence), [ a;b;c3;d3;e] (multi-set), orfa;b;d;eg(set).
+the notations introduced in section 3.1 can be used to formalize the abstractions mentioned above.
+for example, let () =hpropa((1));propa((2));::: ;propa((jj))ibe a prex based on activity
+names. then state representation lstate
+1() =set(par(())) uses the set abstraction without ltering and
+an innite horizon. lstate
+2() =() uses the sequence abstraction without ltering and an innite hori-
+zon. lstate
+3() =par(tl4(())) uses the multi-set abstraction without ltering and nite horizon ( h= 4).
+lstate
+4() =par(()"fa;b;cg) uses the multi-set abstraction after ltering. lstate
+5() =set(par(tl10(())"
+fa;b;cg)) uses various abstractions, i.e., the state based on a prex is determined by which of the activities
+a,b, and/or coccurred in the last 10 events.
+3.7. application
+so far, we only used rather academic examples to illustrate issues related to abstraction and the need
+to balance between overtting and undertting. however, it is important to realize that these issues are of
+the utmost importance when applying process mining in a real-life setting. we have been applying process
+mining in a wide variety of organizations and were often confronted with spaghetti-like models when applying
+91010(a) only a set 
+abstraction is 
+used
+(b) only a horizon of one is considered
+figure 4: two models discovered using an event log of a dutch municipality. although both models are based on the same log
+and provide information on the same set of activities, they are very dierent. the larger model is clearly overtting, dicult
+to interpret, and, therefore, not very useful. the smaller model is obtained after applying a coarser abstraction (setting the
+horizon h= 1). this more simple model provides better insights.
+classical process mining approaches. these models where typically the result of overtting, i.e., the models
+were a correct reection of reality, but not very useful.
+to illustrate this we show some results based on an event log of a municipality of about 40.000 citizens
+in the south of the netherlands. the event log is based on the process \bezwaar woz". later we will use
+the same log in one of the case studies used to evaluate our prediction approach.
+the \bezwaar woz" process handles objections (i.e., appeals) against the real-estate property valuation
+or the real-estate property tax. we used an event log with data on 1982 objections handled by the munici-
+pality. the log contains 12726 events. because the actual activity names are not relevant for our discussion
+here (and because of reasons of condentiality), we anonymized the process and replaced names by letters.
+figure 4 shows two transition systems generated using our approach. note that the two transitions
+systems are not intended to be readable, but merely illustrate the eect of abstraction. the larger model was
+obtained by assuming that the state of a case is determined by the set of activities that have taken place,
+i.e.,lstate() =set(par(())). figure 4(a) shows the whole model and the selected part in a bit more detail.
+this model is able to reproduce the event log, i.e., all observed traces can be reproduced and the model does
+not allow for any traces not present in the original event log. so the model is denitely \correct" but not
+very useful as it does not give much insight into the municipality's appeal process. the second (smaller)
+transition system (cf. figure 4(b)) was obtained based the same log but now using a coarser abstraction. it
+uses the abstraction that the state of a case is determined by only the last activity that has taken place (if
+any), i.e., lstate() =tl1(()). this simpler model is also able to reproduce the event log, i.e., all observed
+traces can be generated by the net. however, the model also allows for many traces not present in the original
+log. note that the two transition systems in figure 4 are not supposed to be readable and are only shown to
+illustrate the eect of abstraction.
+it should be noted that both models in figure 4 provide information on identical sets of activities, i.e., the
+scope is not changed. both models are able to reproduce the initial log and no noise or infrequent behavior
+have been removed for the smaller model. therefore, figure 4 nicely illustrates the relevance of abstraction.
+by using an appropriate state representation function lstateand an appropriate event representation function
+101ha00;b06;c12;d18i
+2ha10;c14;b26;d36i
+3ha12;e22;d56i
+4ha15;b19;c22;d28i
+5ha18;b22;c26;d32i
+6ha19;e28;d59i
+7ha20;c25;b36;d44i
+table 2: an example log. each line corresponds to a trace represented as a sequence of activities with timestamps.
+levent, one can balance between undertting and overtting.
+4. time prediction
+in the previous section, we showed how a transition system can be generated on the basis of an event
+log. in this section, we show how this transition system can be annotated and used for prediction purposes.
+in figure 2, we already showed an overview of the overall approach. based on the event log, an annotated
+transition system is generated. whenever we want to predict the completion time of some process instance, we
+take its partial trace (i.e., the sequence of events executed thus far) and use the state representation function
+lstateto map the partial trace onto a state in the transition system. here we can learn from the information
+collected for earlier process instances that visited the same state . using this information, a prediction is made,
+e.g., based on the average time to completion for earlier process instances in a similar state.
+in this section, we rst show how to construct the annotated transition system. then, we show how it
+can be used for predictions.
+4.1. constructing an annotated transition system
+the goal is to attach predictive information to the states of the transition system, e.g., \in this state the
+average time until completion is 6.5 days". in order to do so, we annotate the states with measurements . for
+example, we scan the history and for each situation were an instance was in a state s, we annotate the state
+with the remaining time until completion. this way states are annotated with multi-sets of measurements
+that are used as a basis for predictions.
+as a running example, we use the event log shown in table 2. each line corresponds to a process instance,
+e.g., the rst trace ha00;b06;c12;d18irefers to a process instance where activity awas executed at time
+0, activity bwas executed at time 6, activity cwas executed at time 12, and activity dwas executed at
+time 183. for simplicity, execution durations are not considered in this example and we assume that each
+instance starts with the execution of its rst event.
+suppose we use a state representation function lstatethat represents partial traces by the set of activities
+that have been executed. now consider all prexes of the rst trace ha00;b06;c12;d18i. the empty prex
+himaps onto state;and has a remaining time of 18 time units.4therefore, we add 18 to the annotation of
+state;. the prexha00imaps onto statefagand also has a remaining time of 18. therefore, we add 18
+to the annotation of state fag. the prexha00;b06imaps onto statefa;bgand has a remaining time of
+18 6 = 12 time units. therefore, we add 12 to the annotation of state fa;bg. the prexha00;b06;c12i
+results in the addition of annotation \6" to state fa;b;cgand nally prex ha00;b06;c12;d18iresults in
+the addition of annotation \0" to state fa;b;c;dg. this process is repeated for all other traces. consider
+for example the third trace ha12;e22;d56i. the empty prex himaps onto state;and has a remaining time
+of 56 12 = 44 time units. therefore, we add 44 to the annotation of state ;. the prexha12imaps onto
+statefagand also has a remaining time of 44. therefore, we add 44 to the annotation of state fag. the
+prexha12;e22imaps onto statefa;egand has a remaining time of 56  22 = 34 time units. therefore,
+3note that we use a more compact representation here, e.g., we assume that the only two relevant properties are (a) the
+activity name and (b) the timestamp, and we do not attach unique id's to events. as discussed in section 3.2, events can have
+many more properties and are uniquely identiable.
+4this is the best guess we can make as the rst event is at time 0 and the last one is at time 18.
+11we add 34 to the annotation of state fa;eg. etc. after we have followed this procedure for the whole
+log in table 2, then state ;is annotated with a bag containing seven elements: [18 ;26;44;13;14;40;24].
+statefa;egis annotated with a bag containing two elements: [34 ;31]. statefa;b;cgis annotated with a
+bag containing ve elements: [6 ;10;6;6;8]. statefa;b;c;dgis also annotated with a bag containing ve
+elements: [0 ;0;0;0;0].
+the following denition formalizes the way of annotating states described before. each full trace is split
+into a prex 1(\the part that already took place") and the postx 2(\the part that still needs to happen").
+based on this a measurement lmeasure(1;2) is generated that can be attached to the corresponding state.
+note that it is crucial that we have full historic information, i.e., although we only consider 1to determine
+the corresponding state lstate(1), we can use both the \past" 1and \future" 2to generate a measurement.
+denition 6 (measurement). a measurement function lmeasureis a function that, given a prex trace 1
+and a postx trace 2produces some measurement lmeasure(1;2), e.g., the remaining time until completion.
+formally, lmeasure2(cc )! m wherecis the set of possible traces and mis the set of possible
+measurement values (e.g., some time duration).
+in principle, dierent measurement functions can be used. thus far, we focused on the remaining time
+until completion. if this is the thing we want to predict, the following measurement function should be used:
+lmeasure
+remaining (1;2) =8
+<
+:0 if 2=hi
+max t(2) min t(2) if1=hiand26=hi
+max t(2) max t(1) if16=hiand26=hi
+wheremax t() =maxfeje2gandmin t() =minfeje2g. to illustrate lmeasure
+remaining consider the
+rst trace in table 2 after executing the rst two activities. the full trace ( ha00;b06;c12;d18i) is split into
+1=ha00;b06iand2=hc12;d18i. for this particular situation lmeasure
+remaining (1;2) =max t(hc12;d18i) 
+max t(ha00;b06i) = 18 6 = 12.
+as mentioned before, dierent measurement functions can be used. for example the function that con-
+siders the time that has already elapsed:
+lmeasure
+elapsed (1;2) =0 if 1=hi
+max t(1) min t(1) if16=hi
+note that this function has no predictive value. it is merely added to show another example. the total time
+can be measured as follows:
+lmeasure
+total (1;2) =0 if 1;2=hi
+max t(1;2) min t(1;2) if1;26=hi
+it is easy to see that lmeasure
+total (1;2) =lmeasure
+elapsed (1;2) +lmeasure
+remaining (1;2). one can also measure the time
+spent in a particular state:
+lmeasure
+sojourn (1;2) =0 if 1=hior2=hi
+min t(2) max t(1) if16=hiand26=hi
+note that lmeasure
+sojourn (1;2) is included in lmeasure
+elapsed (1;2).
+the functions listed above are all related to the duration of a process instance. it is also possible to
+provide completely other measurement functions using the principle of knowing both the past 1and the
+future2of earlier instances. some examples:
+one can dene a function that determines whether some activity xwill take place in the future. such as
+measurement function can be used to predict the probability of certain desirable or undesirable eects.
+one can dene a function that measures the time until a particular activity xis executed. this is
+useful if the process has so-called milestones and one is interested in the moment the milestone will be
+reached.
+one can have functions associated to costs, e.g., \what will the total cost of a case be?".
+12one can have functions related to service level agreements, e.g., \will the case be nished in four
+weeks?".
+one can have functions related to resources, e.g., \will a particular resource be used for this case?".
+the above examples show that our approach allows for all kinds of measurements and that there are many
+interesting application scenarios. however, in the remainder we focus on lmeasure
+remaining , i.e., the time until
+completion.
+using a log, a transition system, and a measurement function lmeasure, we can annotate the transition
+system as described before.
+denition 7 (annotated transition system). let lcbe an event log and ts = (s;e;t)a transition
+system obtained based on a state representation function lstateand an event representation function levent.
+for a particular measurement function lmeasure2(cc )!m , we construct an annotation a 2s!i b(m)
+where for any s2s:5
+a(s) =x
+2lx
+0kjj
+s=lstate(hdk())h
+lmeasure(hdk();tljj k())i
+(s;e;t;a)is an annotated transition system parameterized by l, lstate, levent, and lmeasure.
+function aattaches a bag of measurements to each state, i.e., a(s) is a multi-set. note that the twop
+operators range over all prexes that correspond to a particular state s. then for each prex that maps onto
+s, a measurement lmeasure(hdk();tljj k()) is added to corresponding multi-set.
+abcd
+acbdaed
+abcd
+abcdaedacbd{}
+a{a} {a,c}c{a,b}
+b{a,b,c}c{a,b,c,d}d
+{a,e} {a,d,e}deb
+figure 5: the annotated transition system based on the log shown in table 2 using lmeasure
+remaining.
+figure 5 shows an annotated transition system. it is based on the log shown in table 2. some example
+annotations are: a(;) = [18;26;44;13;14;40;24], a(fa;eg) = [34;31], a(fa;b;cg) = [6;10;6;6;8], and
+a(fa;b;c;dg) = [0;0;0;0;0]. note that the annotated transition system is completely determined by
+choosing l,lstate,levent, and lmeasure. the annotated transition system figure 5, is completely parame-
+terized by (a) the log shown in table 2, (b) lstate() =set(par(())), (c) levent(e) =propa(e), and (d)
+lmeasure(1;2) =lmeasure
+remaining (1;2).
+4.2. predictions
+next we show how an annotated transition system (like the one in figure 5) can be used for making
+predictions. consider a new case nthat did not yet nish. the partial trace observed so far is n=
+ha85;e95i(using the shorthand notation also used in table 2), i.e., activity aoccurred at time 85 and e
+5note thath
+lmeasure(hdk();tljj k())i
+denotes a multi-set containing precisely one element (a particular measurement).
+using the twopoperators multi-sets are joined into larger multi-sets to collect all relevant measurements for a particular state
+s.
+13occurred at time 95. lstate(n) =fa;eg. for this state we have two earlier measurements: 31 and 34
+(a(lstate(n)) = [34;31]). hence, the best prediction for the remaining time until completions seems to
+be the average of 31 and 34, i.e., 32.5. therefore, it can be predicted that the completion time will be
+95 + 32:5 = 127:5. this example shows that we need a prediction function that converts a multi-set of
+measurements into a single value.
+denition 8 (prediction function). a prediction function is a function that, given a bag a measurements
+produces some prediction, e.g., the average. formally, predict2i b(m)!m , i.e., for some bag of measure-
+ments b,predict (b)returns some prediction.
+an obvious choice for predict is simply taking the average. however, before dening prediction functions
+we stress that the bag b=a(s) for a particular state sshould be seen as a sample . in statistics, a sample is a
+(hopefully) representative subset of an unknown population. let us assume that b= [b1;b2;:::; bn], i.e., the
+nmeasurements linked to state sare taken as a sample. the sample mean is dened as follows: b=pn
+i=1bi
+n.
+the sample mean is a good estimator of the population mean, i.e., bis the best guess for real expected value.
+based on this we dene predictaverage (b) =bas a prediction function.
+if the sample b= [b1;b2;:::; bn] is taken as a population, the sample variance is s2
+n=pn
+i=1(bi b)2
+n. ifs2
+n
+is small, then the values in the sample are closer together. if s2
+nis large, then the values in the sample are
+further apart. s2=pn
+i=1(bi b)2
+n 1is an unbiased estimator of the population variance, i.e., it is the best guess
+for the real variance knowing that we have only seen a subset of the whole population. note that s2
+nand s2
+converge for larger values of n.
+the square root of the variance, called the standard deviation , has the same unit as the original variable
+and, for this reason, is easier to interpret. therefore, predictstdev(b) =p
+s2is another example of a prediction
+function.
+other prediction functions can be used for the measurements, for example predictmin(b) =minfb1;b2;:::; bng
+orpredictmax(b) =maxfb1;b2;:::; bng. note that these are not really estimators for the whole population,
+but only for the sample. nevertheless, these functions provide interesting information, especially if many
+measurements are linked to the states. based on a particular prediction function predict , we can dene the
+notion of a prediction .
+denition 9 (prediction). let lc be an event log and (s;e;t;a)an annotated transition system
+parameterized by l, lstate, levent, and lmeasure. moreover, let predict2i b(m)! m be a prediction
+function. for any partial trace n, the predicted value ispredict (a(lstate(n)))if lstate(n)2s.
+as the above denition shows, a prediction for a running instance is made by looking up the state
+corresponding to the partial trace n. for this state there have been a number of measurements and using
+an appropriate prediction function a prediction is made. note that it is only possible to make a meaningful
+prediction if the calculated state is in the annotated transition system (i.e. lstate(n)2s) and there are a
+reasonable number of measurements for this state.
+figure 6 shows per state predictions based on predictaverage ,predictmin,predictmax,predictstdev. for
+example, process instances that have completed activities a,b, and c(but not yet d) have an expected
+remaining processing time of 7 :2. at the start, when no information is available yet, the predicted remaining
+processing is 25 :75.
+5. implementation
+the work presented in this paper is supported by various plug-ins of our process mining tool prom
+[1, 3, 26]. the rst version of prom was released in 2004. the initial goal of prom was to unify process
+mining eorts at eindhoven university of technology and other cooperating groups [5]. traditionally, most
+analysis tools focusing on processes are restricted to model-based analysis , i.e., a model is used as the starting
+point of analysis. such analysis is only useful if the model reects reality. process mining techniques use
+event logs as input, i.e., information recorded by systems ranging from information systems to embedded
+systems. hence the starting point is not (only) some model, but the \observed reality". since predictions
+14{}
+a{a} {a,c}c{a,b}
+b{a,b,c}c{a,b,c,d}d
+{a,e} {a,d,e}deb
+[18,26,44,13,
+14,40,24]
+[34,31] [0,0][0,0,0,0,0] [6,10,6,6,8]
+[22,19][12,9,10]
+[18,26,44,13,
+14,40,24]
+average : 25.75
+st. dev.: 12.25
+min: 13
+max: 44average : 25.75
+st. dev.: 12.25min: 13
+max: 44
+average : 0
+st. dev. : 0
+min: 0
+max: 0average : 0
+st. dev. : 0
+min: 0
+max: 0
+average : 32.5
+st. dev.: 2.12
+min: 31
+max: 34average : 20.5
+st. dev.: 2.12min: 19
+max: 22average : 10.33
+st. dev. : 1.53
+min: 9
+max: 12average : 7.2
+st. dev.: 1.79
+min: 6
+max: 10figure 6: the annotated transition system showing per state: the average, standard deviation, minimum, and maximum
+remaining time until completion.
+are also based on observations, like other process mining techniques, prom is a good basis to implement the
+ideas presented in this paper.
+prom is open source and uses a plug-able architecture, e.g., people can add new process mining techniques
+by adding plug-ins without spending any eorts on the loading and ltering of event logs and the visualization
+of the resulting models. one of the rst plug-ins was the plug-in implementing the -algorithm [6], i.e., a
+technique to automatically derive petri nets from event logs. currently, prom provides 274 plug-ins.6to
+facilitate a basic understanding of the scope and architecture of prom , we briey describe the six types of
+plug-ins supported by prom :
+mining plug-ins implement some mining algorithm, e.g., the -miner to discover a petri net, the fsm
+miner to discover a transition system, or the social network miner to discover a social network.
+export plug-ins implement some \save as" functionality for specic objects in prom . for example,
+there are plug-ins to save petri nets, epcs, social networks, yawl models, spreadsheets, etc. often
+also in dierent formats (pnml, cpn tools, epml, aml, etc.).
+import plug-ins implement an \open" functionality for specic objects, e.g., load instance-epcs from
+aris ppm or bpel models from websphere.
+analysis plug-ins which typically implement some property analysis on some mining result. for ex-
+ample, for petri nets there is a plug-in which constructs place invariants, transition invariants, and
+a coverability graph. however, there are also analysis plug-ins to compare a log and a model (i.e.,
+conformance checking) or a log and an ltl formula. moreover, there are analysis plug-ins related to
+performance measurement (e.g., projecting waiting times onto a petri net).
+conversion plug-ins implement conversions between dierent data formats, e.g., from epcs to petri
+nets or from petri nets to bpel.
+log lter plug-ins implement dierent ways of \massaging" the log before applying process mining tech-
+niques. for example, there are plug-ins to select dierent parts of the log, to abstract from infrequent
+behavior, clean the log by removing incomplete cases, etc.
+6this paper uses the prom nightly build of 9-1-2009. prom can be downloaded from www.processmining.org .
+15in this paper we do not elaborate on the architecture and implementation framework for plug-ins (for this
+we refer to earlier papers [1, 3, 26]). instead we focus on the new prediction functionality.
+first of all, prom provides the so-called fsm miner plug-in [4] to extract a transition system from
+an event log. the fsm miner is an example of mining plug-in in the classication given above. the
+basic functionality of this plug-in is to create a transition system based on an event log, i.e., it implements
+denition 5 and supports the abstractions presented in section 3.6. in fact, even more abstractions and
+perspectives are supported, e.g., also data elements, resources, transactional information, etc. can be used to
+build a transition system. as shown in [4], the fsm miner can be used for various purposes. for example,
+using the theory of regions, the transition system can be converted into a petri net or some other higher-level
+representation. however, the fsm miner does not provide any functionality directly related to prediction.
+for this paper, we implemented another plug-in called the fsm analyzer which takes a transition system
+and an event log as input. the output of the fsm analyzer is a transition system extended with information
+useful for predictions. for example, the fsm analyzer can produce results such as shown figure 6. the fsm
+analyzer is an example of an analysis plug-in in the classication given earlier. figure 7 shows a screenshot
+of the fsm analyzer.
+figure 7: screenshot of the fsm analyzer showing some results for the log described in table 2.
+the fsm analyzer visualizes the transition system and by default shows information about elapsed times
+(i.e., the average time to reach a particular state based on lmeasure
+elapsed ),sojourn times (i.e., the average time
+spent in a particular state based on lmeasure
+sojourn ), and remaining times (i.e., the average time to reach the end
+from this state lmeasure
+remaining ). the user can select the time unit, the measurement function, and the coloring
+function. the measurement function is the implementation of predict (cf. denition 8) and currently average,
+variance, minimum, maximum, frequency, sum, standard deviation, and median are supported. the coloring
+function determines the coloring of arcs and nodes. in figure 7 the colors are based on the remaining time
+until completion. the nodes indicated in red represent states from which the predicted time until completion
+is long. the nodes indicated in blue represent states from which the predicted time until completion is
+short. the nodes that are yellow correspond to states which fall in-between these two categories. a similar
+coloring is applied to arcs, e.g., if it typically takes a long time to move from one node to another, then the
+corresponding arc is colored red. the coloring can be customized by setting thresholds, etc.
+the result of the fsm analyzer can be used to make predictions at run-time. for this we use the same
+approach as the recommendation service [31] and the earlier prediction service [13]. the basic idea is that
+some run-time environment supplies a partial trace and waits for a recommendation or prediction as described
+in denition 9. note that this only requires a lookup in the result provided by the fsm analyzer. to realize
+this, the link between declare [23] and prom described in [31, 2] can be used. declare is a workow
+management system providing more exibility than the traditional systems by supporting various declarative
+16languages (decserflow, condec, etc.) rather than some xed procedural language [23]. in [31] it is shown
+howprom can be used to recommend the next step based on the analysis of historic data. although the
+recommendation service described in [31] is a very specic application using predictions, a similar interface
+can be used for the broad spectrum of predictions based on the output of the fsm analyzer (also see [10]).
+in fact, in [2] a more generic approach called \operational support" is presented. newer versions of prom
+will provide such a facility.
+in this paper, we do not elaborate on the link between prom anddeclare . instead we refer to [31, 10].
+moreover, we would like to stress that the idea and implementation are not specic for declare . any
+workow management system can be taken and extended with prediction functionality based on the fsm
+analyzer. the only functionality required is that the workow management system stores event logs and is
+able to supply a partial trace when it needs a prediction.
+[[a, c]]
+ sojourn = 11.5
+ elapsed = 4.5
+ remaining = 20.5
+[[a, d, e]]
+ sojourn = 0.0
+ elapsed = 42.0
+ remaining = 0.0[[a]]
+ sojourn = 6.0
+ elapsed = 0.0
+ remaining = 25.5714285
+[[a, b, c]]
+ sojourn = 7.2
+ elapsed = 11.8
+ remaining = 7.2[[a, b]]
+ sojourn = 4.33333333
+ elapsed = 4.66666666
+ remaining = 10.3333333
+[[a, b, c, d]]
+ sojourn = 0.0
+ elapsed = 19.0
+ remaining = 0.0[[]]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 25.5714285
+[[a, e]]
+ sojourn = 32.5
+ elapsed = 9.5
+ remaining = 32.5
+d
+complete
+d
+completea
+complete
+c
+completeb
+completee
+complete
+b
+completec
+complete
+(a) predictions based on the set abstraction
+[{0=c, 1=b, 2=a}]
+ sojourn = 6.0
+ elapsed = 9.0
+ remaining = 6.0[{0=c, 1=a}]
+ sojourn = 11.5
+ elapsed = 4.5
+ remaining = 20.5
+[{0=d, 1=e, 2=a}]
+ sojourn = 0.0
+ elapsed = 42.0
+ remaining = 0.0[{0=a}]
+ sojourn = 6.0
+ elapsed = 0.0
+ remaining = 25.5714285
+[{0=d, 1=c, 2=b, 3=a}]
+ sojourn = 0.0
+ elapsed = 15.0
+ remaining = 0.0[{0=b, 1=c, 2=a}]
+ sojourn = 9.0
+ elapsed = 16.0
+ remaining = 9.0[{0=b, 1=a}]
+ sojourn = 4.33333333
+ elapsed = 4.66666666
+ remaining = 10.3333333
+[{0=d, 1=b, 2=c, 3=a}]
+ sojourn = 0.0
+ elapsed = 25.0
+ remaining = 0.0[{}]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 25.5714285
+[{0=e, 1=a}]
+ sojourn = 32.5
+ elapsed = 9.5
+ remaining = 32.5a
+complete
+e
+completec
+completeb
+complete
+b
+completec
+completed
+complete
+d
+completed
+complete (b) predictions based on the sequence abstraction
+figure 8: two transition systems with prediction information based on the same event log.
+to further illustrate the functionality of the fsm analyzer, we revisit our running example. figure 8
+shows two transition systems derived from table 2 using prom 's fsm miner. these are the same transition
+systems as shown in figure 3, but now automatically generated by prom . figure 8(a) is based on the
+set abstraction and figure 8(b) uses the sequence abstraction. both only consider the activity names and
+no other properties. the fsm analyzer has been applied to both transition systems resulting in the two
+diagrams depicted in figure 8. now let us assume that we have a new process instance nfor which we want
+to make a prediction. the partial trace observed so far is n=ha20;b30;c40i(using the shorthand notation
+also used in table 2). based on figure 8(a) the predicted remaining time is 7 :2 while based on figure 8(b)
+the predicted remaining time is 6 :0. so using the set abstraction, the predicted end time is 47 :2, while using
+the sequence abstraction, the predicted end time is 46 :0. this example nicely illustrates that the prediction
+17depends on the abstractions selected when generating the transition system. both predictions are \correct",
+however, figure 8(a) assumes that the order of past activities does not matter, while figure 8(b) assumes
+that the order is relevant. note that the predictions after just executing ha20iorha20;b30iare identical for
+both transition systems because ais always rst no matter which abstraction is chosen.
+the fact that dierent predictions are possible based on the abstraction selected, illustrates the need to
+assess the quality of predictions.
+6. quality of predictions
+as shown thus far, our approach allows for the prediction of various things including the remaining time
+until completion. depending on the abstraction chosen, dierent predictions are possible. moreover, under
+certain circumstances one prediction may be less reliable than another. therefore, this section elaborates on
+the quality of predictions.
+intuitively, the quality of the prediction depends on the number of measurements per state. if there are
+only few observations, the predictive value is limited. moreover, if the individual measurements are very
+dierent, then the predictive value seems less than in the situation were all measurements are similar. as
+indicated in section 4.2, the bag of measurements a(s) associated to some state scan be seen as a random
+sample. let a(s) = b= [b1;b2;:::; bn], i.e., nobservations have been made: b1;b2;:::; bn. now we need
+to predict the next observation bn+1based on b1;b2;:::; bn. let br
+n+1be the real value and bp
+n+1be the
+predicted value. clearly the goal is to minimize the error jbr
+n+1 bp
+n+1j.
+we will look at the quality of predictions from dierent angles. first, we try to compute a condence
+interval for the true average. second, we compute a condence interval for the real value assuming that we
+know the true average. finally, we discuss cross-validation as a means to assess the quality of a prediction
+in an experimental setting.
+6.1. predicting the average right
+leta(s) =b= [b1;b2;:::; bn] be the bag of measurements and let us assume that these are all sampled
+from some random variable. we assume that these samples are independent, i.e., bidoes not depend on bj,
+and the next realization br
+n+1does not depend on earlier samples. based on b1;b2;:::; bn, the best estimator
+forbr
+n+1isb, i.e., the sample mean. however, if there are only a few measurements, then bmay be very
+dierent than the true expected value ofbr
+n+1. therefore, we rst try to establish a condence interval
+for the true expected value ofbr
+n+1. there are various ways of calculating such a condence interval. here,
+we sketch two of the most basic approaches. these can be found in many textbooks, e.g., books explaining
+statistical hypothesis testing in the context of simulation [20, 25].
+first, let us assume that we have many measurements (say n30). because bis the average of a large
+number of independent measures, we can assume that bis approximately normally distributed (cf. law of large
+numbers). from this fact, we deduce the probability that the true expected value lies within a so-called
+condence interval. given the sample mean band the sample standard deviation s, the real value conforms
+with condence (1  ) to the following equation: b spnz(
+2)<  < b+spnz(
+2) where z(
+2) is dened
+as follows. if zis a standard normally distributed random variable, then i p[ z>z(x)] = x. the value 
+represents the unreliability, that is the chance that does not conform to the equation. some example values
+for the zfunction: z(0:001) = 3:090, z(0:005) = 2:576, z(0:01) = 2:326, z(0:05) = 1:645, and z(0:1) = 1:282.
+the intervalh
+b spnz(
+2);b+spnz(
+2)i
+is also called the (1  )-condence interval for the estimated value
+.
+if there are fewer measurements, then the above approach cannot be used because it depends on the law
+of large numbers. therefore, we mention a second approach that can still be applied if there are just a few
+observations. however, for this approach it needs to be assumed that the original distribution is normally
+distributed. in this case the student's t-distribution can be used to calculate the condence intervals. let
+[b1;b2;:::; bn] be again the bag of measurements with a sample mean b, sample deviation s. for condence
+(1 ) the following condence interval can be deduced:h
+b spntn 1(
+2);b+spntn 1(
+2)i
+where tv(x) is
+the critical value of a student's t-distribution, also called t-distribution, with vdegrees of freedom.
+in our running example, there are only a few observations. therefore, we apply the second approach. as
+figure 6 shows there are only 5 measurements linked to state fa;b;cg:a(fa;b;cg) =b= [6;10;6;6;8].
+18hence, n= 5, b= 7:2 and s= 1:79. let us assume that we are interested in a 90% condence interval, i.e.,
+= 0:1. by simply applying the formula, we geth
+b spntn 1(
+2);b+spntn 1(
+2)i
+=h
+7:2 1:79p
+5t5 1(0:05);7:2 +1:79p
+5t5 1(0:05)i
+. since t4(0:05) = 2:13, the 90% condence interval for the com-
+pletion time in state fa;b;cgis [5:5;8:9]. so, assuming a normal distribution, the expected ow time for
+partial cases in state fa;b;cgis with 90% condence between 5.5 and 8.9. this simple example shows that
+by making some basic assumptions, the quality of the predicted average can be quantied.
+6.2. estimating the quality of a prediction
+we just showed that under certain assumptions, we can establish a condence interval for the true expected
+value of br
+n+1. however, even if the condence interval is very narrow, the error jbr
+n+1 bp
+n+1jmay still be
+substantial.
+suppose that b1;b2;:::; bnare mutually independent and sampled from a probability distribution with
+meanand variance 2and that the next realization will be sampled from the same probability distribution.
+asnbecomes larger, the condence interval will become more narrow with upper and lower bounds close to
+. however, the expected average error jbr
+n+1 bp
+n+1jremains roughly .
+note that in general we do not know and2. however, when we have sucient measurements, we
+can approximate them as described in section 6.1. moreover, let us assume that the b1;b2;:::are mutually
+independent and sampled from a normal distribution with mean and variance 2. under these assumptions
+we can state that with probability 0.683 the next measurement will be between [  ;+], with probability
+0.954 the next measurement will be between [  2;+2], and with probability 0.997 the next measurement
+will be between [  3;+3]. this illustrates that for a known distribution, it is possible to not only supply
+a prediction but also provide information about the quality of the prediction.
+6.3. cross-validation
+in the previous subsections, we made assumptions about the underlying probability distribution. for
+example, we assumed that the measurements are independent and that the shape of the distribution is
+known (e.g., normal distribution). however, it is possible to measure the quality in a more direct manner.
+one way would be to simply take the log, derive the annotated transition system and predictions and then in
+a second run compare the predicted values with the real values. the term mean squared error (mse) is used
+to quantify the dierence between the predicted and real values. suppose that for a particular state swith
+a(s) =b= [b1;b2;:::; bn], we predict predict (b). the mse for this state is mse =pn
+i=1(bi predict (b))2
+n. we
+can also take the root mean squared error (rmse), by taking the square root of mse.
+although the principle described above is appealing, there is one problem. the same data set is used both
+for making the predictions and evaluating the quality of the predictions. this is undesirable. for example, if
+n= 1, thenmse = 0 by denition. this is why cross-validation is needed. cross-validation is the statistical
+practice of partitioning a sample data set into two subsets such that the analysis is initially performed on
+one subset (the \training set") while the other subset is used for validation (the \test set").
+the most basic form of cross-validation, holdout validation , is to randomly select samples to form the test
+set, and the remaining observations are retained as the training data. more involved is k-fold cross-validation
+where the whole data set is partitioned into ksets of equal size. of the ksets, one set is selected as test set,
+while the union of the other k 1 sets is used as training set. the cross-validation process is then repeated
+ktimes (the folds), with each of the k sets used exactly once as the validation data. the kresults from
+the folds then can be averaged (or otherwise combined) to produce a single estimation. the advantage of
+this method is that all observations are used for both training and validation, and that it is possible to get
+insight into the reliability of the validation itself. a commonly used value for kis 10.
+note that for cross validation, there is no need to make assumptions about the underlying distribution.
+prom supports this kind of cross validation through the so called fsm evaluator . this plug-in takes (a) a
+transition system with predictions based on one log and (b) another event log, and then calculates the mse
+and other statistics for each state. we will use this plug-in in the next section to evaluate our approach.
+197. experiments
+in this section, we demonstrate the applicability of our approach using one synthetic event log obtained
+via simulation and two real-life logs used in two case studies. for the case studies we analyzed processes in
+two dierent dutch municipalities.
+7.1. synthetic example
+for our rst experiment we use an event log of a reviewing process. this log was obtained through
+simulation. we rst use this synthetic log to allow for a controlled experiment where it is clear what the
+desired outcome should be. this way we can validate our approach.
+using cpn tools [19] we have modeled the reviewing process in terms of a so-called colored petri net.
+from prom it is possible to generate cpn models [27] and from cpn tools it is possible to generate
+event logs for prom [21]. hence, there is a bidirectional coupling of cpn tools andprom .
+the stimulated reviewing process starts with inviting reviewers. then the reviewers can return their
+reviews. however, some reviewers may not return their review resulting in a time-out event. after a while
+the reviews are collected and a decision is made. based on the decision, the paper is accepted or rejected.
+for internal activities such as inviting reviewers, making decisions, and accepting/rejecting papers, we record
+a start and complete event. for external activities such as reviewing, we can only see the completion. the
+cpn model also contains information about timing and resources, e.g., the various internal activities are
+done by particular people having distinct roles. the external activities are done by a large pool of reviewers.
+decide
+decide
+completedecide
+startcollect reviews
+collect reviews
+completecollect reviews
+startinvite reviewers
+invite reviewers
+completeinvite reviewers
+startaccept
+accept
+startaccept
+complete
+reject
+reject
+startreject
+completet:1
+time-out 2
+completeget review 2
+complete
+time-out 3
+completeget review 3
+completeget review 1
+completetime-out 1
+complete
+figure 9: petri net discovered by prom using the-algorithm.
+based on the cpn model described above, we generated two event logs: a training set l1and a test set
+l2. both event logs have information about 200 process instances, i.e., submitted papers. to provide some
+insight into the process we use the -algorithm [6] to discover a petri net based on l1(i.e., the event log
+holding the training set). the discovered model indeed matches the model constructed using cpn tools (cf.
+figure 9). note that the model indicates start and complete events by grouping two transitions in a single
+box.
+it is important to note that we only show the petri net representation of the process to provide the reader
+with some insight into the process. our approach does not need a process model in terms of a petri net or
+any other notation and it is not necessary to use process discovery algorithms such as the -algorithm.
+based on l1, we can use the fsm miner of prom to extract a transition system using a particular
+abstraction. using the fsm analyzer we can extend this transition system with predictive information as
+shown before. figure 10 shows a screenshot of an annotated transition system based on l1while using a
+set abstraction based on all activities. for example, figure 10 shows the state [[ invite reviewers-complete,
+invite reviewers-start ]].7as indicated in figure 10, the predicted time until completion is 21 :605 days,
+i.e., after completing the invitations it takes on average three weeks to complete the reviewing process.
+7this is the way the fsm analyzer represents the set containing two events related to the start and completion of activity
+invite reviewers , i.e., [[ invite reviewers-complete, invite reviewers-start ]] denotes finvite reviewers-complete, invite reviewers-
+startg.
+20figure 10: screenshot of prom 's fsm analyzer while making a prediction model based on an event log of 200 cases.
+figure 10 also shows information about the average/expected sojourn time for this state (1.53 days) and the
+average/expected elapsed time (2.51 days). for state fcollect reviews-start, get review 1-complete, get review
+2-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start gthe predicted time until
+completion is 11.87 days (not visible in figure 10). this means that for cases where all reviews are sent back
+in time, it takes on average 12 days to make the decision, inform the author, and complete the reviewing
+process. for the empty state, the predicted remaining time until completion is 24.12 days. note that this is
+the average total time to handle reviews from begin to end.
+the screenshot shown in figure 10 is based on the set abstraction. however, as described in section 3.6
+various abstractions are possible. figure 11 shows four transition systems obtained using four dierent
+abstractions. figure 11(a) shows the set abstraction already used in figure 10. figure 11(b) shows an
+abstraction where the six \time out" and \get review" activities are ignored, but the order of the remaining
+activities is taken into account. this results in a simpler model. the transition system can be based on all
+kinds of properties of events, i.e., the data and resource perspectives can also be used. figure 11(c) only looks
+at the resource perspective. in this particular transition system, the state of a paper is determined by which
+resources have worked on it. here only the three key resources working in the editorial oce are taken into
+account. moreover, since a bag abstraction is used, the order is not important, but the frequency is. this
+results in a completely dierent transition systems with nodes such as [ anne2;mike2;wil1] indicating that
+anne has performed two events, mike has performed two events, and wil has performed one event. for this
+state the predicted time until completion is 6.78 days. figure 11(d) uses a full abstraction, i.e., lstate() =;
+meaning that all prexes are mapped onto the same state. this is an interesting abstraction as it serves as
+a benchmark . this benchmark abstraction assumes that one knows nothing and simply takes the average
+over all events in the past. when the transition system shown in figure 11(d) is used, the prediction for the
+remaining time until completion is always 13.06 days. this value is obtained by simply taking the average of
+all remaining times in the whole log l1. note that 13.06 is more than half of the average total time (which
+is 24.12 days). in the beginning of the process there are more events than at the end. therefore, the average
+remaining time until completion is more than half of the average total time.
+the four transition systems shown in figure 11 can be used to make concrete predictions for individual
+cases. suppose that the set abstraction is used (i.e., figure 11(a)), then initially the predicted remaining
+21[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get review 3-complete,  invite reviewers-complete, invite reviewers-start, reject-complete, reject-start, time-out 2-complete]]
+ sojourn = 0.0
+ elapsed = 24.2777777
+ remaining = 0.0[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, invite reviewers-compl ete, invite reviewers-start, reject-start, time-out 2-complete, time-out 3-complete]]
+ sojourn = 2.11111111  elapsed = 19.4444444
+ remaining = 2.11111111[[get review 1-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start, time-out 2-complete]]
+ sojourn = 4.78125
+ elapsed = 8.40625
+ remaining = 15.21875[[get review 1-complete, get review 2-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 2.56521739
+ elapsed = 5.26086956
+ remaining = 17.8260869[[get review 1-complete, invite reviewers-complete, invite reviewers-start, time-out 3-complete]]
+ sojourn = 3.33333333
+ elapsed = 4.66666666
+ remaining = 11.4444444
+[[accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 3-complete, invite r eviewers-complete, invite reviewers-start, time-out 1-complete, time-out 2-complete]]
+ sojourn = 2.3
+ elapsed = 23.7
+ remaining = 2.3
+[[accept-complete, accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-c omplete, invite reviewers-complete, invite reviewers-start, time-out 2-complete, time-out 3-complete]]
+ sojourn = 0.0
+ elapsed = 21.6666666
+ remaining = 0.0[[get review 2-complete, invite reviewers-complete, invite reviewers-start, time-out 3-complete]]
+ sojourn = 2.75
+ elapsed = 4.83333333
+ remaining = 22.0
+[[get review 1-complete, invite reviewers-complete, invite reviewers-start, time-out 2-complete, time-out 3-complete]]
+ sojourn = 2.58333333
+ elapsed = 9.20833333
+ remaining = 12.4166666
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-complete, get review 3-complete,  invite reviewers-complete, invite reviewers-start, reject-complete, reject-start, time-out 1-complete]]
+ sojourn = 0.0
+ elapsed = 24.1333333
+ remaining = 0.0[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get review 2-complete,  get review 3-complete, invite reviewers-complete, invite reviewers-start, reject-complete, reject-start]]
+ sojourn = 0.0
+ elapsed = 21.2727272
+ remaining = 0.0[[accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get revi ew 3-complete, invite reviewers-complete, invite reviewers-start, time-out 2-complete]]
+ sojourn = 2.35714285
+ elapsed = 20.4285714
+ remaining = 2.35714285[[collect reviews-complete, collect reviews-start, invite reviewers-complete, invite reviewers-start, time-out 1-complete, time -out 2-complete, time-out 3-complete]]
+ sojourn = 4.12903225
+ elapsed = 16.8064516
+ remaining = 10.6451612[[invite reviewers-complete, invite reviewers-start]]
+ sojourn = 1.53  elapsed = 2.51
+ remaining = 21.605
+[[collect reviews-complete, collect reviews-start, decide-start, get review 1-complete, get review 2-complete, invite reviewers -complete, invite reviewers-start, time-out 3-complete]]
+ sojourn = 2.66666666
+ elapsed = 18.5
+ remaining = 6.61111111[[collect reviews-start, get review 2-complete, invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-ou t 3-complete]]
+ sojourn = 2.17391304
+ elapsed = 12.3478260
+ remaining = 10.6086956[[get review 3-complete, invite reviewers-complete, invite reviewers-start, time-out 2-complete]]
+ sojourn = 2.5
+ elapsed = 6.875
+ remaining = 16.0
+[[collect reviews-complete, collect reviews-start, decide-start, get review 3-complete, invite reviewers-complete, invite revie wers-start, time-out 1-complete, time-out 2-complete]]
+ sojourn = 1.68181818
+ elapsed = 18.0
+ remaining = 7.77272727[[collect reviews-complete, collect reviews-start, get review 2-complete, get review 3-complete, invite reviewers-complete, inv ite reviewers-start, time-out 1-complete]]
+ sojourn = 1.77777777
+ elapsed = 15.1851851
+ remaining = 8.70370370[[invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-out 3-complete]]
+ sojourn = 3.33333333
+ elapsed = 6.11111111
+ remaining = 16.4444444
+[[accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get revi ew 2-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 1.91666666
+ elapsed = 20.6666666
+ remaining = 1.91666666[[collect reviews-complete, collect reviews-start, decide-start, get review 1-complete, get review 3-complete, invite reviewers -complete, invite reviewers-start, time-out 2-complete]]
+ sojourn = 2.40625
+ elapsed = 17.71875
+ remaining = 5.90625[[collect reviews-complete, collect reviews-start, get review 1-complete, get review 2-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 2.52173913
+ elapsed = 12.2608695
+ remaining = 9.69565217[[get review 1-complete, invite reviewers-complete, invite reviewers-start, time-out 2-complete]]
+ sojourn = 3.09523809
+ elapsed = 6.09523809
+ remaining = 19.0
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-complete, invite reviewers-compl ete, invite reviewers-start, time-out 1-complete, time-out 3-complete]]
+ sojourn = 0.86956521
+ elapsed = 19.8260869
+ remaining = 3.13043478[[get review 2-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 3.0
+ elapsed = 5.65384615
+ remaining = 17.8461538[[get review 3-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 2.02040816  elapsed = 4.02040816
+ remaining = 20.7346938
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get review 3-complete,  invite reviewers-complete, invite reviewers-start, reject-start, time-out 2-complete]]
+ sojourn = 2.55555555
+ elapsed = 21.7222222
+ remaining = 2.55555555[[get review 1-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 3.11111111
+ elapsed = 5.37037037
+ remaining = 17.2222222[[get review 1-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 1.86666666
+ elapsed = 3.73333333
+ remaining = 18.7666666
+[[get review 2-complete, invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-out 3-complete]]
+ sojourn = 3.13043478
+ elapsed = 9.21739130
+ remaining = 13.7391304[[invite reviewers-start]]
+ sojourn = 2.51
+ elapsed = 0.0
+ remaining = 24.115
+[[collect reviews-complete, collect reviews-start, get review 3-complete, invite reviewers-complete, invite reviewers-start, ti me-out 1-complete, time-out 2-complete]]
+ sojourn = 1.63636363
+ elapsed = 16.3636363
+ remaining = 9.40909090
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 3-complete, invite reviewers-compl ete, invite reviewers-start, reject-complete, reject-start, time-out 1-complete, time-out 2-complete]]
+ sojourn = 0.0
+ elapsed = 25.5833333
+ remaining = 0.0[[get review 1-complete, get review 2-complete, invite reviewers-complete, invite reviewers-start, time-out 3-complete]]
+ sojourn = 5.55555555
+ elapsed = 8.44444444
+ remaining = 16.6666666[[invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-out 2-complete]]
+ sojourn = 1.92857142
+ elapsed = 7.28571428
+ remaining = 17.7857142
+[[collect reviews-start, get review 2-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start, time- out 1-complete]]
+ sojourn = 2.88888888
+ elapsed = 12.2962962
+ remaining = 11.5925925
+[[accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-complete, get revi ew 3-complete, invite reviewers-complete, invite reviewers-start, time-out 1-complete]]
+ sojourn = 2.5
+ elapsed = 21.0833333
+ remaining = 2.5[[get review 3-complete, invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-out 2-complete]]
+ sojourn = 4.40909090
+ elapsed = 9.86363636
+ remaining = 15.9090909
+[[accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, invite r eviewers-complete, invite reviewers-start, time-out 2-complete, time-out 3-complete]]
+ sojourn = 2.8
+ elapsed = 18.8666666
+ remaining = 2.8[[]]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 24.115
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-complete, get review 3-complete,  invite reviewers-complete, invite reviewers-start, reject-start, time-out 1-complete]]
+ sojourn = 2.93333333
+ elapsed = 21.2
+ remaining = 2.93333333[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get review 2-complete,  get review 3-complete, invite reviewers-complete, invite reviewers-start, reject-start]]
+ sojourn = 2.54545454
+ elapsed = 18.7272727
+ remaining = 2.54545454
+[[accept-complete, accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-c omplete, get review 2-complete, invite reviewers-complete, invite reviewers-start, time-out 3-complete]]
+ sojourn = 0.0
+ elapsed = 25.0
+ remaining = 0.0[[accept-complete, accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, invite reviewe rs-complete, invite reviewers-start, time-out 1-complete, time-out 2-complete, time-o u
+ sojourn = 0.0
+ elapsed = 24.4
+ remaining = 0.0[[collect reviews-complete, collect reviews-start, get review 1-complete, get review 2-complete, invite reviewers-complete, inv ite reviewers-start, time-out 3-complete]]
+ sojourn = 1.44444444
+ elapsed = 17.0555555
+ remaining = 8.05555555[[collect reviews-start, invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-out 2-complete, time-out 3-complete]]
+ sojourn = 2.67741935
+ elapsed = 14.1290322
+ remaining = 13.3225806
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get review 2-complete,  invite reviewers-complete, invite reviewers-start, reject-complete, reject-start, time-out 3-complete]]
+ sojourn = 0.0
+ elapsed = 25.2
+ remaining = 0.0[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, invite reviewers-complete, invite reviewers-s tart, reject-start, time-out 1-complete, time-out 2-complete, time-out 3-complete]]
+ sojourn = 2.125
+ elapsed = 28.1875  remaining = 2.125
+[[accept-complete, accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-c omplete, invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-out 3-complete]]
+ sojourn = 0.0
+ elapsed = 23.5714285
+ remaining = 0.0[[invite reviewers-complete, invite reviewers-start, time-out 2-complete, time-out 3-complete]]
+ sojourn = 2.53846153  elapsed = 6.92307692
+ remaining = 22.3076923
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get review 2-complete,  get review 3-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 2.04347826
+ elapsed = 17.6956521
+ remaining = 4.26086956[[collect reviews-complete, collect reviews-start, get review 1-complete, get review 3-complete, invite reviewers-complete, inv ite reviewers-start, time-out 2-complete]]
+ sojourn = 1.96875
+ elapsed = 15.75
+ remaining = 7.875[[collect reviews-start, get review 1-complete, get review 2-complete, get review 3-complete, invite reviewers-complete, invite  reviewers-start]]
+ sojourn = 2.17391304
+ elapsed = 10.0869565
+ remaining = 11.8695652
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-complete, get review 3-complete,  invite reviewers-complete, invite reviewers-start, time-out 1-complete]]
+ sojourn = 1.25925925
+ elapsed = 19.8888888
+ remaining = 4.0[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, invite reviewers-compl ete, invite reviewers-start, time-out 2-complete, time-out 3-complete]]
+ sojourn = 0.95833333
+ elapsed = 18.125
+ remaining = 3.5[[invite reviewers-complete, invite reviewers-start, time-out 2-complete]]
+ sojourn = 1.67647058
+ elapsed = 4.44117647
+ remaining = 20.6764705
+[[collect reviews-complete, collect reviews-start, get review 1-complete, invite reviewers-complete, invite reviewers-start, ti me-out 2-complete, time-out 3-complete]]
+ sojourn = 1.41666666
+ elapsed = 14.5833333
+ remaining = 7.04166666
+[[collect reviews-complete, collect reviews-start, decide-start, get review 2-complete, invite reviewers-complete, invite revie wers-start, time-out 1-complete, time-out 3-complete]]
+ sojourn = 3.17391304
+ elapsed = 16.6521739
+ remaining = 6.30434782
+[[accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get revi ew 2-complete, invite reviewers-complete, invite reviewers-start, time-out 3-complete]]
+ sojourn = 3.125
+ elapsed = 21.875
+ remaining = 3.125[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get review 3-complete,  invite reviewers-complete, invite reviewers-start, time-out 2-complete]]
+ sojourn = 1.03125
+ elapsed = 20.125
+ remaining = 3.5[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, invite reviewers-complete, invite reviewers-s tart, time-out 1-complete, time-out 2-complete, time-out 3-complete]]
+ sojourn = 1.41935483
+ elapsed = 23.4193548
+ remaining = 4.03225806[[get review 2-complete, invite reviewers-complete, invite reviewers-start, time-out 1-complete]]
+ sojourn = 2.83333333
+ elapsed = 6.77777777
+ remaining = 16.2777777
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get review 2-complete,  invite reviewers-complete, invite reviewers-start, reject-start, time-out 3-complete]]
+ sojourn = 2.9
+ elapsed = 22.3
+ remaining = 2.9[[accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-complete, invite r eviewers-complete, invite reviewers-start, time-out 1-complete, time-out 3-complete]]
+ sojourn = 2.14285714
+ elapsed = 21.4285714
+ remaining = 2.14285714[[collect reviews-start, get review 3-complete, invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-ou t 2-complete]]
+ sojourn = 2.09090909
+ elapsed = 14.2727272
+ remaining = 11.5
+[[accept-complete, accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-c omplete, get review 3-complete, invite reviewers-complete, invite reviewers-start, time-out 1-complete]]
+ sojourn = 0.0
+ elapsed = 23.5833333
+ remaining = 0.0[[invite reviewers-complete, invite reviewers-start, time-out 1-complete]]
+ sojourn = 2.21052631
+ elapsed = 3.63157894
+ remaining = 20.4736842
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 3-complete, invite reviewers-compl ete, invite reviewers-start, reject-start, time-out 1-complete, time-out 2-complete]]
+ sojourn = 3.58333333
+ elapsed = 22.0
+ remaining = 3.58333333[[get review 2-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start, time-out 1-complete]]
+ sojourn = 3.07407407
+ elapsed = 9.22222222
+ remaining = 14.6666666
+[[collect reviews-start, get review 1-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start, time- out 2-complete]]
+ sojourn = 2.5625
+ elapsed = 13.1875
+ remaining = 10.4375[[get review 1-complete, get review 2-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 4.13043478
+ elapsed = 5.95652173
+ remaining = 16.0
+[[accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, invite reviewers-complete, invi te reviewers-start, time-out 1-complete, time-out 2-complete, time-out 3-complete]]
+ sojourn = 3.13333333
+ elapsed = 21.2666666
+ remaining = 3.13333333
+[[accept-complete, accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 3-c omplete, invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-out 2-complete]]
+ sojourn = 0.0
+ elapsed = 26.0
+ remaining = 0.0[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, invite reviewers-complete, invite reviewers-s tart, reject-complete, reject-start, time-out 1-complete, time-out 2-complete, time-out 3-complete]]
+ sojourn = 0.0
+ elapsed = 30.3125
+ remaining = 0.0[[collect reviews-start, get review 1-complete, get review 2-complete, invite reviewers-complete, invite reviewers-start, time- out 3-complete]]
+ sojourn = 3.05555555
+ elapsed = 14.0
+ remaining = 11.1111111[[invite reviewers-complete, invite reviewers-start, time-out 1-complete, time-out 2-complete, time-out 3-complete]]
+ sojourn = 4.25806451
+ elapsed = 9.87096774
+ remaining = 17.5806451
+[[collect reviews-start, get review 1-complete, invite reviewers-complete, invite reviewers-start, time-out 2-complete, time-ou t 3-complete]]
+ sojourn = 2.79166666
+ elapsed = 11.7916666
+ remaining = 9.83333333
+[[collect reviews-complete, collect reviews-start, get review 2-complete, invite reviewers-complete, invite reviewers-start, ti me-out 1-complete, time-out 3-complete]]
+ sojourn = 2.13043478
+ elapsed = 14.5217391
+ remaining = 8.43478260[[invite reviewers-complete, invite reviewers-start, time-out 3-complete]]
+ sojourn = 1.74074074  elapsed = 3.66666666
+ remaining = 21.2222222
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-complete, invite reviewers-compl ete, invite reviewers-start, reject-complete, reject-start, time-out 1-complete, time-out 3-complete]]
+ sojourn = 0.0
+ elapsed = 22.0
+ remaining = 0.0[[collect reviews-complete, collect reviews-start, decide-start, get review 1-complete, get review 2-complete, get review 3-com plete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 2.91304347
+ elapsed = 14.7826086
+ remaining = 7.17391304
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, invite reviewers-compl ete, invite reviewers-start, reject-complete, reject-start, time-out 2-complete, time-out 3-complete]]
+ sojourn = 0.0
+ elapsed = 21.5555555
+ remaining = 0.0[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 3-complete, invite reviewers-compl ete, invite reviewers-start, time-out 1-complete, time-out 2-complete]]
+ sojourn = 3.09090909
+ elapsed = 19.6818181
+ remaining = 6.09090909[[collect reviews-complete, collect reviews-start, decide-start, get review 2-complete, get review 3-complete, invite reviewers -complete, invite reviewers-start, time-out 1-complete]]
+ sojourn = 2.92592592
+ elapsed = 16.9629629
+ remaining = 6.92592592[[collect reviews-complete, collect reviews-start, decide-start, get review 1-complete, invite reviewers-complete, invite revie wers-start, time-out 2-complete, time-out 3-complete]]
+ sojourn = 2.125
+ elapsed = 16.0
+ remaining = 5.625[[get review 3-complete, invite reviewers-complete, invite reviewers-start, time-out 1-complete]]
+ sojourn = 3.25  elapsed = 6.15
+ remaining = 21.1
+[[accept-complete, accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-c omplete, get review 3-complete, invite reviewers-complete, invite reviewers-start, time-out 2-complete]]
+ sojourn = 0.0
+ elapsed = 22.7857142
+ remaining = 0.0[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-complete, get review 2-complete,  invite reviewers-complete, invite reviewers-start, time-out 3-complete]]
+ sojourn = 0.94444444
+ elapsed = 21.1666666
+ remaining = 3.94444444[[collect reviews-complete, collect reviews-start, decide-start, invite reviewers-complete, invite reviewers-start, time-out 1- complete, time-out 2-complete, time-out 3-complete]]
+ sojourn = 2.48387096
+ elapsed = 20.9354838
+ remaining = 6.51612903[[get review 2-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 1.92682926  elapsed = 4.39024390
+ remaining = 18.8048780
+[[collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 2-complete, invite reviewers-compl ete, invite reviewers-start, reject-start, time-out 1-complete, time-out 3-complete]]
+ sojourn = 2.44444444
+ elapsed = 19.5555555
+ remaining = 2.44444444
+[[accept-complete, accept-start, collect reviews-complete, collect reviews-start, decide-complete, decide-start, get review 1-c omplete, get review 2-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start]]
+ sojourn = 0.0
+ elapsed = 22.5833333
+ remaining = 0.0decide-start
+completeget review 3-complete
+complete
+reject-start
+complete
+reject-complete
+completeget review 1-complete
+complete
+time-out 1-complete
+complete
+collect reviews-start
+complete
+reject-start
+completetime-out 2-complete
+complete
+accept-start
+completeget review 3-complete
+complete
+accept-start
+completeget review 3-complete
+completetime-out 1-complete
+completeget review 2-complete
+complete
+accept-start
+completetime-out 2-complete
+complete
+collect reviews-start
+complete
+accept-complete
+completecollect reviews-complete
+completecollect reviews-start
+completeget review 3-complete
+complete
+accept-complete
+completedecide-start
+completetime-out 2-complete
+complete
+decide-complete
+completedecide-start
+completeget review 1-complete
+completeget review 1-complete
+complete
+collect reviews-start
+complete
+accept-complete
+completetime-out 1-complete
+complete
+reject-start
+completecollect reviews-start
+completeget review 1-complete
+completetime-out 1-complete
+completeinvite reviewers-start
+complete
+accept-complete
+completeaccept-complete
+completereject-complete
+completedecide-start
+completeget review 3-complete
+completetime-out 3-complete
+completetime-out 2-complete
+complete
+accept-complete
+completeget review 2-complete
+complete
+get review 2-complete
+complete
+reject-start
+completecollect reviews-complete
+complete
+reject-start
+completeget review 3-complete
+complete
+decide-complete
+completetime-out 3-complete
+complete
+decide-start
+complete
+decide-complete
+completetime-out 1-complete
+complete
+time-out 3-complete
+complete
+reject-complete
+completeget review 1-complete
+complete
+get review 2-complete
+complete
+decide-complete
+complete
+reject-start
+completecollect reviews-complete
+completecollect reviews-complete
+completetime-out 1-complete
+complete
+reject-start
+completetime-out 3-complete
+complete
+get review 3-complete
+complete
+accept-complete
+completetime-out 3-complete
+complete
+accept-start
+completeget review 3-complete
+complete
+accept-complete
+completereject-complete
+completetime-out 1-complete
+complete
+collect reviews-complete
+completeget review 1-complete
+complete
+time-out 2-complete
+complete
+collect reviews-complete
+completetime-out 2-complete
+complete
+collect reviews-start
+complete
+accept-start
+completedecide-complete
+completetime-out 3-complete
+complete
+accept-start
+completereject-start
+completetime-out 1-complete
+complete
+collect reviews-complete
+completeget review 1-complete
+complete
+reject-complete
+completetime-out 3-complete
+completeget review 2-complete
+completeget review 3-complete
+complete
+decide-complete
+completetime-out 3-complete
+completeget review 2-complete
+complete
+decide-complete
+complete
+accept-start
+completetime-out 1-complete
+complete
+collect reviews-complete
+completeget review 1-complete
+completeget review 2-complete
+complete
+decide-start
+complete
+reject-complete
+completereject-complete
+completeaccept-start
+completecollect reviews-start
+completetime-out 2-complete
+completeinvite reviewers-complete
+complete
+decide-complete
+completetime-out 2-complete
+complete
+collect reviews-start
+completetime-out 2-complete
+complete
+decide-start
+completeget review 2-complete
+completeget review 1-complete
+complete
+reject-complete
+completetime-out 3-complete
+complete
+decide-start
+complete(a) set abstraction based on all activities
+[{0=reject-start, 1=decide-complete, 2=decide-start, 3=collect reviews-complete, 4=collect reviews-start, 5=invite reviewers-co mplete, 6=invite reviewers-start}]
+ sojourn = 2.65
+ elapsed = 22.04
+ remaining = 2.65[{0=decide-start, 1=collect reviews-complete, 2=collect reviews-start, 3=invite reviewers-complete, 4=invite reviewers-start}]
+ sojourn = 2.545
+ elapsed = 17.55
+ remaining = 6.565
+[{0=accept-start, 1=decide-complete, 2=decide-start, 3=collect reviews-complete, 4=collect reviews-start, 5=invite reviewers-co mplete, 6=invite reviewers-start}]
+ sojourn = 2.53
+ elapsed = 21.01
+ remaining = 2.53[{0=invite reviewers-start}]
+ sojourn = 2.51
+ elapsed = 0.0
+ remaining = 24.115
+[{0=reject-complete, 1=reject-start, 2=decide-complete, 3=decide-start, 4=collect reviews-complete, 5=collect reviews-start, 6= invite reviewers-complete, 7=invite reviewers-start}]
+ sojourn = 0.0
+ elapsed = 24.69
+ remaining = 0.0[{0=collect reviews-start, 1=invite reviewers-complete, 2=invite reviewers-start}]
+ sojourn = 2.555
+ elapsed = 12.785
+ remaining = 11.33
+[{0=decide-complete, 1=decide-start, 2=collect reviews-complete, 3=collect reviews-start, 4=invite reviewers-complete, 5=invite  reviewers-start}]
+ sojourn = 1.43
+ elapsed = 20.095 remaining = 4.02[{0=collect reviews-complete, 1=collect reviews-start, 2=invite reviewers-complete, 3=invite reviewers-start}]
+ sojourn = 2.21
+ elapsed = 15.34
+ remaining = 8.775[{}]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 24.115
+[{0=accept-complete, 1=accept-start, 2=decide-complete, 3=decide-start, 4=collect reviews-complete, 5=collect reviews-start, 6= invite reviewers-complete, 7=invite reviewers-start}]
+ sojourn = 0.0
+ elapsed = 23.54
+ remaining = 0.0[{0=invite reviewers-complete, 1=invite reviewers-start}]
+ sojourn = 2.56875
+ elapsed = 5.32625
+ remaining = 18.78875get review 1-complete
+completeget review 3-complete
+complete
+reject-complete
+completeaccept-start
+completedecide-complete
+completeinvite reviewers-start
+complete
+time-out 1-complete
+complete
+collect reviews-complete
+completetime-out 2-complete
+complete
+accept-complete
+completeinvite reviewers-complete
+complete
+reject-start
+completetime-out 3-complete
+complete
+decide-start
+completeget review 2-complete
+complete
+collect reviews-start
+complete
+(b) sequence abstraction based on activities while lter-
+ing out the \time out" and \get review" activities
+[{anne=2}]
+ sojourn = 2.59793814
+ elapsed = 5.25
+ remaining = 18.9458762
+[{anne=1, mike=4, wil=2}]
+ sojourn = 3.19354838
+ elapsed = 18.8709677
+ remaining = 3.19354838
+[{anne=6, wil=2}]
+ sojourn = 0.0
+ elapsed = 22.5833333
+ remaining = 0.0[{anne=1, mike=2}]
+ sojourn = 2.38461538
+ elapsed = 13.0961538
+ remaining = 12.1730769
+[{anne=4, wil=2}]
+ sojourn = 1.61363636
+ elapsed = 19.3636363
+ remaining = 3.84090909[{}]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 24.115
+[{anne=4, mike=1, wil=2}]
+ sojourn = 2.35
+ elapsed = 21.6
+ remaining = 2.35[{anne=4, wil=1}]
+ sojourn = 2.15909090
+ elapsed = 17.2045454
+ remaining = 6.0[{anne=3}]
+ sojourn = 2.54545454
+ elapsed = 12.4318181
+ remaining = 10.7727272[{mike=1}]
+ sojourn = 2.46601941
+ elapsed = 0.0
+ remaining = 24.0388349
+[{anne=3, mike=2, wil=2}]
+ sojourn = 2.45614035
+ elapsed = 22.0701754
+ remaining = 2.45614035[{anne=2, mike=3, wil=2}]
+ sojourn = 2.72916666
+ elapsed = 23.1458333
+ remaining = 2.72916666[{anne=5, wil=2}]
+ sojourn = 2.125
+ elapsed = 20.4583333
+ remaining = 2.125
+[{mike=6, wil=2}]
+ sojourn = 0.0
+ elapsed = 23.9
+ remaining = 0.0[{mike=4, wil=2}]
+ sojourn = 1.05882352
+ elapsed = 18.8039215
+ remaining = 3.98039215[{anne=4}]
+ sojourn = 2.22727272
+ elapsed = 14.9772727
+ remaining = 8.22727272[{mike=4}]
+ sojourn = 1.72549019
+ elapsed = 14.4509803
+ remaining = 8.33333333
+[{anne=2, mike=4, wil=2}]
+ sojourn = 0.0
+ elapsed = 24.3797468
+ remaining = 0.0[{anne=2, mike=2, wil=2}]
+ sojourn = 1.53333333
+ elapsed = 21.0285714
+ remaining = 4.11428571[{anne=2, mike=2}]
+ sojourn = 2.43809523
+ elapsed = 15.9238095
+ remaining = 9.21904761
+[{mike=5, wil=2}]
+ sojourn = 2.5
+ elapsed = 21.4
+ remaining = 2.5[{mike=4, wil=1}]
+ sojourn = 2.62745098
+ elapsed = 16.1764705
+ remaining = 6.60784313[{mike=3}]
+ sojourn = 2.29411764
+ elapsed = 12.1568627
+ remaining = 10.6274509
+[{anne=2, mike=2, wil=1}]
+ sojourn = 2.66666666
+ elapsed = 18.3619047
+ remaining = 6.78095238[{anne=1}]
+ sojourn = 2.55670103
+ elapsed = 0.0
+ remaining = 24.1958762
+[{mike=2}]
+ sojourn = 2.54126213
+ elapsed = 5.39805825
+ remaining = 18.6407766
+[{anne=4, mike=2, wil=2}]
+ sojourn = 0.0
+ elapsed = 24.3766233
+ remaining = 0.0[{anne=2, mike=1}]
+ sojourn = 2.98113207
+ elapsed = 13.3773584
+ remaining = 11.6415094
+reject-start
+completeget review 1-complete
+complete
+accept-complete
+completecollect reviews-start
+complete
+accept-start
+completetime-out 3-complete
+completeget review 2-complete
+complete
+decide-start
+complete
+reject-start
+completetime-out 3-complete
+complete
+collect reviews-complete
+complete
+reject-start
+completetime-out 2-complete
+complete
+accept-complete
+completeinvite reviewers-complete
+complete
+reject-complete
+completeaccept-start
+completecollect reviews-complete
+complete
+accept-start
+completereject-start
+completecollect reviews-complete
+complete
+decide-complete
+completetime-out 2-complete
+completetime-out 1-complete
+completeget review 3-complete
+completeinvite reviewers-complete
+complete
+reject-complete
+completeget review 3-complete
+complete
+decide-complete
+completecollect reviews-start
+complete
+accept-start
+complete
+accept-complete
+completeinvite reviewers-start
+complete
+reject-complete
+completeaccept-start
+completereject-start
+completecollect reviews-complete
+complete
+accept-complete
+completecollect reviews-start
+completetime-out 1-complete
+complete
+decide-complete
+complete
+reject-complete
+completecollect reviews-start
+complete
+decide-start
+complete
+reject-complete
+completeget review 1-complete
+completeinvite reviewers-start
+complete
+get review 2-complete
+complete
+reject-start
+complete
+accept-complete
+completedecide-start
+complete
+accept-complete
+completereject-complete
+completeaccept-start
+complete(c) bag abstraction based on the three key resources
+[]
+ sojourn = 2.00958333
+ elapsed = 11.0595833
+ remaining = 13.0554166invite reviewers-start
+completetime-out 1-complete
+completetime-out 2-complete
+completecollect reviews-complete
+completeinvite reviewers-complete
+completetime-out 3-complete
+completedecide-start
+completeaccept-complete
+completereject-start
+completeget review 1-complete
+completeget review 3-complete
+completeget review 2-complete
+completecollect reviews-start
+completedecide-complete
+completereject-complete
+completeaccept-start
+complete
+(d) complete abstraction: lstate() =;
+figure 11: four transition systems with prediction information based on the same event log but using dierent abstractions.
+note that the labels are not intended to be readable. the goal is to merely show the size and shape of each transition system.
+22time is 24.12 days. after the reviewers have been invited (i.e., the prex is mapped onto state finvite
+reviewers-complete, invite reviewers-start g), then the predicted remaining time is reduced to 21.6 days, etc.
+as discussed in section 6, it is important to be able to asses the quality of a prediction. prom 's fsm
+analyzer provides metrics such as standard deviation, etc. to determine the quality of a prediction. the
+standard deviation in the initial state of figure 11(a) is 10.3. the standard deviation in state fcollect
+reviews-start, get review 1-complete, get review 2-complete, get review 3-complete, invite reviewers-complete,
+invite reviewers-start gis 8.3. the standard deviation steadily decreases as the process progresses. this means
+that towards the end of the process the predictions become more reliable.
+to truly evaluate the quality of the predictions and to compare the four transition systems shown in
+figure 11, we use cross validation. to keep things simple, we do not perform a k-fold validation and
+merely test l2(the test set) on the model learned using l1(the training set). hence, we take the four
+models depicted in figure 11 and compare the predicted times with the real times for the papers in l2.
+earlier we already mentioned the terms mean squared error (mse =pn
+i=1(bi b)2
+n, with b=predict (b))
+androot mean squared error (rmse =p
+mse ). for our evaluation we also use the mean absolute error
+(mae =1
+npn
+i=1jbi bj) and the mean absolute percentage error (mape =1
+npn
+i=1jbi bj
+bi) [8]. note
+that for calculating mape, we divide by the individual values bi. hence, mape only has a meaningful
+interpretation if all individual values are positive. moreover, a few smaller values can lead to a large mape.
+figure 12: screenshot of prom 's fsm evaluator while analyzing the quality of the prediction on the test set l2.
+figure 12 shows prom 's fsm evaluator while cross validating the results using the second event log
+l2. for statefinvite reviewers-complete, invite reviewers-start g, mse equals 49.923 (see graph on left-hand-
+side of figure 12). the other metrics for this state are shown in tabular form (see right-hand-side of gure):
+mae=5.857, rmse=7.0656, and mape=0.45252.8recall that the predicted time until completion from this
+state is 21:605 days, hence an average error of 5.857 days is quite acceptable. figure 12 also shows that this
+state was evaluated 200 times. let us now consider a later state: fcollect reviews-start, get review 1-complete,
+8note that prom 's fsm evaluator shows mape as a percentage, i.e., 45.252 percent equals 0.45252.
+23abstraction mae rmse mape
+set abstraction based on all activities
+(cf. figure 11(a))4.079 4.917 0.562
+sequence abstraction based on activi-
+ties while ltering out the \time out"
+and \get review" activities (cf. fig-
+ure 11(b))4.119 4.984 0.566
+bag abstraction based on the three key
+resources (cf. figure 11(c))4.139 4.997 0.569
+complete abstraction: lstate() =;(cf.
+figure 11(d))7.239 8.635 1.209
+simple heuristic: half of average total
+ow time (12 days)7.053 8.479 1.110
+table 3: cross-validation results: the models are learned using event log l1and evaluated using event log l2.
+get review 2-complete, get review 3-complete, invite reviewers-complete, invite reviewers-start g. for this state
+we obtain the following quality metrics: mse=19.134, mae=3.888, rmse=4.3742, and mape=0.49676.
+as can be expected the average error decreases when a paper is further in the process. the relative error
+(mape) increases slightly because the absolute times get smaller. the various quality metrics can also be
+given for the whole process, i.e., all states. in order to do this, each state is weighted by the number of times
+it is visited. for the set abstraction based on all activities (i.e., the transition system shown in figure 11(a)),
+the overall values are mae=4.079, rmse=4.917, and mape=0.562.
+table 3 compares the four transition systems shown in figure 11 using cross validation. all four models
+are learned using l1and evaluated using l2. it shows that the rst three models perform comparable, e.g.,
+the average error is around 3 days. however, the fourth model does not perform as good. the average error
+is much higher: more than 7 days. the average time it takes to complete the process is about 24 days.
+hence, a naive approach would be to always guess 24 =2 = 12 days. if this is done, then the performance is
+comparable to the complete abstraction shown in figure 11(d) (which always guesses 13.06 days). the last
+row in table 3 shows the results for this heuristic.
+note that the mape values tend to become rather large. this is caused by the fact that only a few
+smaller values can result in extremely large relative errors (dividing by \almost zero" leads to \almost
+innite"). mape only makes sense if there are no really small values. this is not necessarily the case in
+time prediction. this is a known problem of this error measure [8], therefore, we do not report on mape
+values in the remainder.
+no matter what statistic is considered (mae, rmse, or mape), we can conclude that the ndings in
+table 3 support our approach and show that a proper abstraction easily outperforms simple heuristics. please
+note that our approach does not require an a-priori model; the predictions are just learned from the training
+setl1.
+7.2. case study i: wmo process of a municipality
+in the previous subsection, it was shown that the average error using our prediction method is much smaller
+than using a simple heuristic. however, this analysis was based on event logs generated by simulation. a
+valid question is whether we can achieve the same performance for real-life logs. therefore, we also tested
+our approach using an event log from the dutch municipality of harderwijk. harderwijk is a municipality
+and a small city in the eastern part of the netherlands.
+the event log of harderwijk used for cross-validation contains information about 796 cases. each case
+corresponds to a request to the municipality in the context of the so-called \wet maatschappelijke onder-
+steuning" (wmo). wmo is a dutch law regulating how municipalities should support their citizens. the
+purpose of wmo is to support elderly people, people having a chronic illness, handicapped citizens, etc.
+through wmo citizens can request wheelchairs, household help, etc. the particular log chosen for this
+evaluation only concerns citizens asking for household help.
+the 796 requests for household help, triggered 5187 events that were recorded over a period of 1.5 years
+(2007-2008). in this process 8 dierent types of activities were used and the average time it takes to handle
+24figure 13: the distribution of the total ow time of cases extracted using prom . note that some cases almost take 400 days.
+a request from begin to end is 117 days with some cases taking longer than one year. see figure 13 for the
+distribution of total ow times for all cases. the x-axis shows the 796 cases and the y-axis shows the duration
+in days. given the long ow times, it is interesting to predict the overall time.
+slotfase
+completeadministratieve verwerking
+completewachten terugmelding zorgaanb.
+complete
+verzending\dossiervorming
+completetoetsen en beslissen
+completerapportage & beschikking
+completeaanvraag registratie
+complete
+figure 14: a simplied representation of the process obtained by prom .
+to provide some insight into the structure of the process, we have used the heuristics miner of prom to
+extract a petri net from the event log (cf. figure 14). note that in this model infrequent activities have been
+removed and only the main ows are shown. the black transitions in the petri net represent the skipping of
+activities. in this paper, we do not discuss the wmo process in detail, instead we focus on the quality of
+our predictions.
+figure 15 shows three transition systems extended with prediction information. these are all based on
+only half of the event log, i.e., the original log with 796 requests for household help is split into a log l1with
+400 requests and a log l2with 396 requests. event log l1is used as the training set and log l2is used as a
+test set. hence, the three transition systems shown in figure 15 are based on l1. figure 15(a) was obtained
+using the set abstraction based on all activities, i.e., a state is determined by the set of activities that have
+been conducted. figure 15(b) uses the same abstraction, but now only uses two activities: \administratieve
+verwerking" and \wachten terugmelden zorgaanbieder". these two activities have been chosen because
+they are expected to be relevant for the time until completion. figure 15(c) completely abstracts from all
+information and this extreme abstraction is again used as a benchmark.
+let us consider some example predictions based on figure 15(a). for the initial state ;, the predicted
+remaining time until completion is 113 days.9the rst activity is always \aanvraag registratie" and the
+second activity is always \rapportage & beschikking". on average 5 days are spent in the state in-between
+these two activities, so after \aanvraag registratie" the predicted remaining time until completion is 108
+days. note that after these rst two steps, the process is less structured. (recall that figure 14 abstracts
+from less frequent paths/activities.)
+let us now compare the three prediction models shown in figure 15. we use l2to evaluate and compare
+9note that this number is based on l1while the average of 117 was based on l1+l2.
+25[[aanvraag registratie, rapportage & beschikking, retour, toetsen en beslissen, verzending\dossiervorming, wachten terugmelding  zorgaanb.]]
+ sojourn = 51.5555555
+ elapsed = 99.0555555
+ remaining = 51.5567129[[aanvraag registratie, rapportage & beschikking]]
+ sojourn = 11.2139303
+ elapsed = 5.51990049
+ remaining = 108.315652[[]]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 113.458472
+[[aanvraag registratie, administratieve verwerking, rapportage & beschikking, toetsen en beslissen, verzending\dossiervorming]]
+ sojourn = 0.00182291
+ elapsed = 122.7625
+ remaining = 0.00182291[[aanvraag registratie, rapportage & beschikking, retour]]
+ sojourn = 0.0
+ elapsed = 8.0
+ remaining = 101.067592
+[[aanvraag registratie, rapportage & beschikking, slotfase, toetsen en beslissen, verzending\dossiervorming]]
+ sojourn = 0.0
+ elapsed = 9.72549019
+ remaining = 0.0
+[[aanvraag registratie, rapportage & beschikking, retour, slotfase, toetsen en beslissen, verzending\dossiervorming]]
+ sojourn = 0.0
+ elapsed = 4.6
+ remaining = 0.0[[aanvraag registratie, rapportage & beschikking, toetsen en beslissen]]
+ sojourn = 3.36760925
+ elapsed = 17.4575835
+ remaining = 97.1282401
+[[aanvraag registratie, rapportage & beschikking, retour, toetsen en beslissen]]
+ sojourn = 5.6
+ elapsed = 16.8181818
+ remaining = 91.4916666
+[[aanvraag registratie, administratieve verwerking, rapportage & beschikking, retour, slotfase, toetsen en beslissen, verzendin g\dossiervorming]]
+ sojourn = 0.0
+ elapsed = 60.0
+ remaining = 0.0[[aanvraag registratie, administratieve verwerking, rapportage & beschikking, slotfase, toetsen en beslissen, verzending\dossie rvorming, wachten terugmelding zorgaanb.]]
+ sojourn = 0.0
+ elapsed = 157.615496
+ remaining = 0.0[[aanvraag registratie, administratieve verwerking, rapportage & beschikking, retour, toetsen en beslissen, verzending\dossierv orming]]
+ sojourn = 0.33333333
+ elapsed = 59.6666666
+ remaining = 0.33333333[[aanvraag registratie, rapportage & beschikking, toetsen en beslissen, verzending\dossiervorming, wachten terugmelding zorgaan b.]]
+ sojourn = 61.3482905
+ elapsed = 95.5384615
+ remaining = 62.7854789
+[[aanvraag registratie, administratieve verwerking, rapportage & beschikking, retour, toetsen en beslissen, verzending\dossierv orming, wachten terugmelding zorgaanb.]]
+ sojourn = 0.00115740
+ elapsed = 150.611111
+ remaining = 0.00115740[[aanvraag registratie, administratieve verwerking, rapportage & beschikking, slotfase, toetsen en beslissen, verzending\dossie rvorming]]
+ sojourn = 0.0
+ elapsed = 122.764322
+ remaining = 0.0[[aanvraag registratie]]
+ sojourn = 5.525
+ elapsed = 0.0
+ remaining = 113.458472
+[[aanvraag registratie, administratieve verwerking, rapportage & beschikking, toetsen en beslissen, verzending\dossiervorming, wachten terugmelding zorgaanb.]]
+ sojourn = 0.00127215
+ elapsed = 157.614224
+ remaining = 0.00127215[[aanvraag registratie, rapportage & beschikking, retour, toetsen en beslissen, verzending\dossiervorming]]
+ sojourn = 51.0740740
+ elapsed = 22.6296296
+ remaining = 86.6304012
+[[aanvraag registratie, administratieve verwerking, rapportage & beschikking, retour, slotfase, toetsen en beslissen, verzendin g\dossiervorming, wachten terugmelding zorgaanb.]]
+ sojourn = 0.0
+ elapsed = 150.612268
+ remaining = 0.0[[aanvraag registratie, rapportage & beschikking, toetsen en beslissen, verzending\dossiervorming]]
+ sojourn = 54.356
+ elapsed = 20.7306666
+ remaining = 93.1623240retour
+complete
+wachten terugmelding zorgaanb.
+complete
+administratieve verwerking
+completeslotfase
+complete
+slotfase
+completeslotfase
+completeretour
+complete
+toetsen en beslissen
+complete
+slotfase
+completetoetsen en beslissen
+complete
+wachten terugmelding zorgaanb.
+completeverzending\dossiervorming
+complete
+slotfase
+completeretour
+complete
+wachten terugmelding zorgaanb.
+completerapportage & beschikking
+complete
+retour
+complete
+administratieve verwerking
+completeverzending\dossiervorming
+complete
+administratieve verwerking
+completetoetsen en beslissen
+completeaanvraag registratie
+complete
+verzending\dossiervorming
+completeverzending\dossiervorming
+completerapportage & beschikking
+complete
+slotfase
+completeverzending\dossiervorming
+completetoetsen en beslissen
+complete
+administratieve verwerking
+complete(a) set abstraction based on all activities
+[[administratieve verwerking, wachten terugmelding zorgaanb.]]
+ sojourn = 6.31944444
+ elapsed = 157.110631
+ remaining = 6.31944444[[administratieve verwerking]]
+ sojourn = 0.01247577
+ elapsed = 118.372940
+ remaining = 0.01247577[[]]
+ sojourn = 13.8702764
+ elapsed = 8.96543778
+ remaining = 99.5002320
+[[wachten terugmelding zorgaanb.]]
+ sojourn = 60.6488095
+ elapsed = 95.7896825
+ remaining = 61.9834242
+administratieve verwerking
+completewachten terugmelding zorgaanb.
+completeslotfase
+completeslotfase
+completeaanvraag registratie
+completeverzending\dossiervorming
+complete
+slotfase
+completeverzending\dossiervorming
+completerapportage & beschikking
+complete
+administratieve verwerking
+completewachten terugmelding zorgaanb.
+completeretour
+completetoetsen en beslissen
+complete
+(b) set abstraction based on just two activities (\administratieve verwerking" and \wachten terugmelden
+zorgaanbieder")
+[]
+ sojourn = 15.0875627
+ elapsed = 43.9924830
+ remaining = 76.9736420toetsen en beslissen
+completeadministratieve verwerking
+completeaanvraag registratie
+completeverzending\dossiervorming
+completeslotfase
+completerapportage & beschikking
+completewachten terugmelding zorgaanb.
+completeretour
+complete
+(c) complete abstraction
+figure 15: three transition systems with prediction information based on the same event log but using dierent abstractions.
+abstraction mae rmse
+set abstraction based on all activities (cf. fig-
+ure 15(a))63.805 74.947
+set abstraction based on just two activities (cf.
+figure 15(b))67.329 79.034
+complete abstraction (cf. figure 15(c)) 83.469 98.158
+simple heuristic: half of average total ow
+time (56.73 days)80.823 101.342
+table 4: some results for the municipality's wmo process
+26the quality of the three models. the rst two models perform better than the benchmark model. set
+abstractions based on all activities or the two key activities lead to an average error of roughly 65 days. if
+we completely abstract from the history of a case, the average error is more than 80 days. if one takes half
+of the average ow time for each prediction, the average error is similar as for the model in figure 15(c)
+(see last row in table 4). hence, also for this real log, we can conclude that simple abstractions outperform
+simple heuristics.
+moreover, it is interesting to note that for some states the mean average error is very small. for example,
+after executing \aanvraag registratie", \administratieve verwerking", \rapportage & beschikking", \toet-
+sen en beslissen", \verzending dossiervorming", \wachten terugmelding zorgaanb." the mean average error
+of predictions based on the annotated transition system in figure 15(c) is only 0.00163.
+note that the average error over all activities is still substantial for all models. this is due to the huge
+variations in ow time. note that some cases take more than one year to be handled while other just take
+a few days. hence, one cannot expect a better performance for this process with so little information. we
+expect that in most processes, the variation is smaller thus allowing for better predictions. moreover, in most
+processes more data is available that can be exploited by our prediction techniques.
+7.3. case study ii: woz process of another municipality
+as a second case study, we revisit the process mentioned in section 3.6. this case study is based on
+a log from another municipality and another process that deals with objections (i.e., appeals) against the
+real-estate property valuation or the real-estate property tax. this municipality is located in the south of
+the netherlands and has a similar size as the municipality involved in the rst case study (more than 40.000
+inhabitants). the municipality is using eistream workow (formerly known as eastman software and today
+named global 360).
+figure 16: the distribution of the total ow time of cases extracted using prom . note that some cases almost take 250 days.
+this process considered in this case study is called \bezwaar woz", where woz (\waardering on-
+roerende zaken") refers to the particular law describing regulations related to real-estate property valuation
+by municipalities. we used an event log with data on 1882 objections handled by the municipality. the
+log contains 11985 events and the average total ow time is 107 days while some cases take more than 200
+days. figure 16 shows the distribution of total ow times. the x-axis shows the 1882 cases and the y-axis
+shows the duration in days. note that some cases take a very short time while others take much longer, thus
+making it dicult to predict the remaining time for cases in the system. as before we split the log into a
+training set (log l1) and a test set (log l2). log l1contains 982 cases and log l2contains 900 cases.
+figure 17 shows four transition systems extended with prediction information based on log l1. the rst
+transition system (figure 17(a)) uses the set abstraction over all activities. the second one (figure 17(a))
+uses the same abstraction but now with horizon 1, i.e., only the last activity is considered. note that these
+rst two transition systems correspond to the ones already shown in figure 4. the third transition system
+27[[a, b, c, d, h, l, m, q]]
+ sojourn = 15.9668
+ elapsed = 109.719
+ remaining = 16.5769[[a, b, c, d, g, q]] sojourn = 44.5182
+ elapsed = 57.4977
+ remaining = 46.3944[[a, b, d, g, i, q]]
+ sojourn = 2.21766
+ elapsed = 175.941
+ remaining = 3.09860[[a, b, c, d, h, l]]
+ sojourn = 1.08781
+ elapsed = 82.1325
+ remaining = 13.3837[[a, b, c, g, i]]
+ sojourn = 1.57714
+ elapsed = 199.080
+ remaining = 5.23029
+[[a, b, c, f, h, l, m, n]]
+ sojourn = 0.04186
+ elapsed = 147.810
+ remaining = 0.33653[[a, b, c, h, l, m, n]]
+ sojourn = 15.9448
+ elapsed = 119.503
+ remaining = 17.4980[[a, b, d, e, g]]
+ sojourn = 0.0
+ elapsed = 59.7911
+ remaining = 0.0
+[[a, b, d, h, l, q]]
+ sojourn = 0.80608
+ elapsed = 131.953
+ remaining = 1.05758[[b, c, d, g, i, q]]
+ sojourn = 1.90109
+ elapsed = 153.962
+ remaining = 4.50341[[a, b]]
+ sojourn = 17.3307
+ elapsed = 3.73798
+ remaining = 119.430
+[[a, b, g, i, l, n, o, p]]
+ sojourn = 0.41059
+ elapsed = 177.595
+ remaining = 0.41059
+[[a, b, h, l, m, n, o, p, q]]
+ sojourn = 0.0
+ elapsed = 130.972
+ remaining = 0.0[[d, h, l]]
+ sojourn = 1.63855
+ elapsed = 68.6798
+ remaining = 11.8171
+[[a, b, d, g, i, l, m, q]]
+ sojourn = 0.02953
+ elapsed = 178.840
+ remaining = 0.19945[[a, b, h, l, m, n, o, p]]
+ sojourn = 0.67465
+ elapsed = 122.696
+ remaining = 0.67465[[a, b, h, l]]
+ sojourn = 2.15080
+ elapsed = 104.194
+ remaining = 23.5126
+[[d, g, i, l, m]]
+ sojourn = 0.37651
+ elapsed = 162.225
+ remaining = 1.84165[[b, c, q]]
+ sojourn = 6.29152
+ elapsed = 32.1955
+ remaining = 48.7338
+[[a, g, i, l]]
+ sojourn = 0.67876
+ elapsed = 171.099
+ remaining = 2.14128[[a, h, l, n]]
+ sojourn = 41.8339
+ elapsed = 68.0265
+ remaining = 42.0059
+[[a, b, c, h, l, m]] sojourn = 4.20908
+ elapsed = 115.294
+ remaining = 21.7071
+[[a, b, g, i, l, m, n, q]]
+ sojourn = 0.04224
+ elapsed = 209.729
+ remaining = 0.16928[[a, b, d, q]]
+ sojourn = 26.6797
+ elapsed = 64.4499
+ remaining = 48.6793[[a, b, d, g]]
+ sojourn = 50.0508
+ elapsed = 60.8574
+ remaining = 51.5606
+[[a, d, g, i, l, m, n, o]]
+ sojourn = 0.12693
+ elapsed = 197.045
+ remaining = 2.61953[[a, b, c, f, h]]
+ sojourn = 0.00158
+ elapsed = 147.008
+ remaining = 1.1386[[a, b, d, h, q]]
+ sojourn = 0.81833
+ elapsed = 131.135
+ remaining = 1.87591[[b, c, d, g, q]]
+ sojourn = 30.5418
+ elapsed = 55.1687
+ remaining = 31.6015
+[[a, b, g, i, l, n, o]]
+ sojourn = 0.12753
+ elapsed = 177.057
+ remaining = 0.94871[[a, b, c, d, e, h]]
+ sojourn = 46.9368
+ elapsed = 139.879
+ remaining = 47.5258
+[[a, b, h, l, m, n, o, q]]
+ sojourn = 0.17156
+ elapsed = 130.801
+ remaining = 0.17156[[a, b, c, d, h, l, q]]
+ sojourn = 1.26602
+ elapsed = 108.453
+ remaining = 17.8429[[a, b, c, d, h]]
+ sojourn = 4.15672
+ elapsed = 82.6531
+ remaining = 16.1559
+[[a, b, h, l, m, n, o]]
+ sojourn = 0.15580
+ elapsed = 121.875
+ remaining = 1.07579[[d, g, i, l]]
+ sojourn = 1.36351
+ elapsed = 160.943
+ remaining = 3.16424[[d, g]]
+ sojourn = 55.9269
+ elapsed = 5.26854
+ remaining = 57.5829
+[[a, b, c, f, h, l, m]]
+ sojourn = 0.02893
+ elapsed = 147.781
+ remaining = 0.36547[[a, g, i]]
+ sojourn = 0.92465
+ elapsed = 170.174
+ remaining = 3.06593
+[[g, i, l, m, n, o, p]]
+ sojourn = 0.36645
+ elapsed = 145.730
+ remaining = 0.36645[[a, b, q]]
+ sojourn = 10.9637
+ elapsed = 41.8586
+ remaining = 68.7446
+[[a, b, g, i, l, m, q]]
+ sojourn = 0.02196
+ elapsed = 209.707
+ remaining = 0.19125[[a, b, d]]
+ sojourn = 9.28023
+ elapsed = 49.8785
+ remaining = 55.5840
+[[a, d, g, i, l, m, n]]
+ sojourn = 0.03170
+ elapsed = 198.506
+ remaining = 1.99635[[a, b, h]]
+ sojourn = 1.33727
+ elapsed = 103.586
+ remaining = 23.6123
+[[a, b, c, g, h]]
+ sojourn = 4.64015
+ elapsed = 211.915
+ remaining = 5.40071[[b, q]]
+ sojourn = 8.32876
+ elapsed = 27.9144
+ remaining = 67.2690
+[[a, h, l]]
+ sojourn = 3.17959
+ elapsed = 64.8469
+ remaining = 45.1855
+[[a, b, c, h, l]]
+ sojourn = 0.98963
+ elapsed = 114.305
+ remaining = 22.6967
+[[a, b, c, d, g, i, l, m, n, o, q]]
+ sojourn = 0.12676
+ elapsed = 179.856
+ remaining = 0.17259[[d, h, l, n, o]]
+ sojourn = 0.17216
+ elapsed = 82.0232
+ remaining = 0.17216
+[[a, b, c, d, e, g, i, l, m, n]]
+ sojourn = 0.0
+ elapsed = 227.965
+ remaining = 0.0[[a, b, d, g, q]]
+ sojourn = 31.7557
+ elapsed = 91.8674
+ remaining = 32.5303[[d]]
+ sojourn = 9.11147
+ elapsed = 0.0
+ remaining = 63.4979
+[[a, b, c, f]]
+ sojourn = 18.4115
+ elapsed = 141.730
+ remaining = 18.6393[[a, b, d, e]]
+ sojourn = 0.43228
+ elapsed = 59.1430
+ remaining = 0.64803
+[[a, b, g, i, l, n]]
+ sojourn = 0.04244
+ elapsed = 177.014
+ remaining = 0.99115[[h, l, m, n, o, p]] sojourn = 9.61690
+ elapsed = 30.1272
+ remaining = 9.61690[[a, b, g, q]]
+ sojourn = 154.018
+ elapsed = 52.8121
+ remaining = 157.086
+[[a, b, h, l, m, n, q]]
+ sojourn = 20.3048
+ elapsed = 110.496
+ remaining = 20.4764[[a, b, c, d, h, q]]
+ sojourn = 14.6631
+ elapsed = 93.7906
+ remaining = 32.5060
+[[a, b, d, h, l, m, n, o, p]]
+ sojourn = 5.02045
+ elapsed = 89.5090
+ remaining = 7.82242
+[[a, b, c, d, g, i, l, m, n, o, p]]
+ sojourn = 0.64614
+ elapsed = 207.572
+ remaining = 0.64614[[a, b, d, h, l, m, n]]
+ sojourn = 6.27059
+ elapsed = 83.1119
+ remaining = 14.8201[[a, d, g, i]]
+ sojourn = 2.20199
+ elapsed = 201.624
+ remaining = 4.31563
+[[a, b, h, l, m, n]] sojourn = 14.8187
+ elapsed = 107.056
+ remaining = 15.8945[[d, g, i]]
+ sojourn = 1.58750
+ elapsed = 160.373
+ remaining = 4.55397
+[[a, b, d, h, l, n, o, p]]
+ sojourn = 0.0
+ elapsed = 45.6705
+ remaining = 0.0[[a, b, g, i, l, m, n, o]]
+ sojourn = 0.14211
+ elapsed = 186.229
+ remaining = 2.12036[[a, b, c, f, h, l]]
+ sojourn = 0.77153
+ elapsed = 147.010
+ remaining = 1.13701[[a, g]]
+ sojourn = 68.5426
+ elapsed = 40.8002
+ remaining = 70.0756
+[[a, b, c, h]]
+ sojourn = 8.07530
+ elapsed = 115.214
+ remaining = 29.3219[[d, e, l]]
+ sojourn = 13.9925
+ elapsed = 33.0829
+ remaining = 27.9146
+[[a, b, f, g]]
+ sojourn = 0.0
+ elapsed = 132.370
+ remaining = 0.0
+[[a, b, c, d, g, i, l, m, n, q]]
+ sojourn = 0.02802
+ elapsed = 173.538
+ remaining = 0.14309[[d, h, l, n]]
+ sojourn = 33.7626
+ elapsed = 48.2606
+ remaining = 33.9347
+[[g, i, l, m, n, o]]
+ sojourn = 0.14676
+ elapsed = 145.214
+ remaining = 0.65622[[a, b, g, i, l, q]]
+ sojourn = 2.25558
+ elapsed = 207.452
+ remaining = 2.44684[[a, b, g, h]]
+ sojourn = 0.0
+ elapsed = 118.058
+ remaining = 0.0
+[[a, b, c, d, e, g, i, l, m]]
+ sojourn = 0.83767
+ elapsed = 227.127
+ remaining = 0.83767[[a, d, g, i, l, m]]
+ sojourn = 0.25860
+ elapsed = 200.900
+ remaining = 1.85568[[q]]
+ sojourn = 12.7617
+ elapsed = 0.0
+ remaining = 80.9294
+[[a, b, d, g, i, l, m, n, o, p]]
+ sojourn = 0.28259
+ elapsed = 190.733
+ remaining = 0.35785[[a, h]]
+ sojourn = 1.50219
+ elapsed = 64.8467
+ remaining = 45.1857
+[[h, l, m]]
+ sojourn = 6.39916
+ elapsed = 1.84382
+ remaining = 30.6215
+[[d, e, g, l]]
+ sojourn = 0.0
+ elapsed = 60.9976
+ remaining = 0.0
+[[a, b, c, d, g, i, l, m, n, o, p, q]]
+ sojourn = 0.03055
+ elapsed = 176.001
+ remaining = 0.03055[[d, h, l, n, o, p]]
+ sojourn = 0.0
+ elapsed = 82.1953
+ remaining = 0.0[[a, b, c, d, e]]
+ sojourn = 3.23453
+ elapsed = 121.327
+ remaining = 74.1903
+[[a, b, h, l, m, q]] sojourn = 3.58412
+ elapsed = 106.912
+ remaining = 24.0605[[a, b, h, q]]
+ sojourn = 0.08359
+ elapsed = 105.843
+ remaining = 25.1290
+[[a, b, c, d, g, i, l, m, n, o]]
+ sojourn = 0.14811
+ elapsed = 206.474
+ remaining = 1.11732[[a, b, d, h, l, m]] sojourn = 1.24136
+ elapsed = 73.1319
+ remaining = 13.9443[[a, b, f]]
+ sojourn = 6.81952
+ elapsed = 125.551
+ remaining = 6.81952
+[[a, b, c, d, h, l, n, o, p]]
+ sojourn = 0.0
+ elapsed = 136.234
+ remaining = 0.0[[h, l, m, n, o]]
+ sojourn = 0.16973
+ elapsed = 19.7936
+ remaining = 12.6717[[g, i, l, m, n]]
+ sojourn = 0.03955
+ elapsed = 145.389
+ remaining = 0.68014[[g, i, l]]
+ sojourn = 1.75773
+ elapsed = 143.905
+ remaining = 2.46304
+[[a, b, g, i, q]]
+ sojourn = 0.62166
+ elapsed = 206.830
+ remaining = 3.06850[[d, e, g]]
+ sojourn = 25.5566
+ elapsed = 25.7844
+ remaining = 25.9724[[a, q]]
+ sojourn = 17.9502
+ elapsed = 31.1331
+ remaining = 83.3987
+[[a, b, c, d, e, g]] sojourn = 155.035
+ elapsed = 71.8545
+ remaining = 156.111
+[[a, b, d, h, l, m, n, o]]
+ sojourn = 0.18214
+ elapsed = 89.3825
+ remaining = 8.54956[[a, d, g, i, l]]
+ sojourn = 0.68068
+ elapsed = 200.219
+ remaining = 2.53637[[a, b, h, l, m]]
+ sojourn = 4.96419
+ elapsed = 102.092
+ remaining = 20.8587
+[[a, b, g, i, l, m, n, o, p]]
+ sojourn = 1.42617
+ elapsed = 188.508
+ remaining = 1.48127[[a, b, d, h, l, n, o]]
+ sojourn = 0.14967
+ elapsed = 45.5209
+ remaining = 0.14967[[a, b, g, i, l, m, n]]
+ sojourn = 0.03980
+ elapsed = 186.189
+ remaining = 2.16017
+[[a, b, d, g, i, l, m, n, o]]
+ sojourn = 0.13484
+ elapsed = 191.548
+ remaining = 0.57639[[h, l]]
+ sojourn = 1.71968
+ elapsed = 0.12414
+ remaining = 32.3412
+[[a, b, c, d, e, g, q]]
+ sojourn = 0.0
+ elapsed = 217.924
+ remaining = 0.0[[a, b, c, d, e, q]]
+ sojourn = 45.8863
+ elapsed = 132.159
+ remaining = 85.7646
+[[a, b, c, d, g, i, l, m, q]]
+ sojourn = 0.97961
+ elapsed = 172.559
+ remaining = 1.12270[[d, h, l, m, n, o, p]]
+ sojourn = 0.01303
+ elapsed = 78.8924
+ remaining = 0.01303
+[[b, c, d, h, l, m, n, o, p, q]]
+ sojourn = 0.0
+ elapsed = 67.1377
+ remaining = 0.0[[a, b, c, d, e, g, i, l]]
+ sojourn = 0.16919
+ elapsed = 226.958
+ remaining = 1.00686
+[[a, b, c, d, h, l, m, n, o, p]]
+ sojourn = 0.79123
+ elapsed = 92.5850
+ remaining = 1.32723[[a, b, c, g, i, l, m, n, o]]
+ sojourn = 0.15140
+ elapsed = 200.076
+ remaining = 2.44221[[a, b, c, d, h, l, n, o]]
+ sojourn = 0.12674
+ elapsed = 136.108
+ remaining = 0.12674[[h, l, m, n]]
+ sojourn = 11.5506
+ elapsed = 8.24299
+ remaining = 24.2223
+[[a, b, c, d, g, i]]
+ sojourn = 1.37938
+ elapsed = 218.097
+ remaining = 3.70198[[g, i]]
+ sojourn = 1.13898
+ elapsed = 142.766
+ remaining = 3.60203
+[[a, b, c, d, g, h, l, m, n]]
+ sojourn = 0.04236
+ elapsed = 68.8259
+ remaining = 0.16942[[a, b, h, l, q]]
+ sojourn = 0.98490
+ elapsed = 105.927
+ remaining = 25.0454
+[[a, b, c, d, g, i, l, m, n]]
+ sojourn = 0.02871
+ elapsed = 213.776
+ remaining = 0.78849[[a, b, d, h, l, n]]
+ sojourn = 8.45357
+ elapsed = 15.3361
+ remaining = 8.52840[[a, b, g, i, l, m]]
+ sojourn = 0.01697
+ elapsed = 186.172
+ remaining = 2.17715
+[[a, b, c, g, h, l, m, n, o]]
+ sojourn = 0.12737
+ elapsed = 191.842
+ remaining = 0.12737[[d, e, g, i, l, m, n, o, p]]
+ sojourn = 0.0
+ elapsed = 135.050
+ remaining = 0.0[[a, b, c, d, g, i, l, q]]
+ sojourn = 1.24813
+ elapsed = 171.311
+ remaining = 2.37083[[g, i, l, m]]
+ sojourn = 0.04097
+ elapsed = 145.663
+ remaining = 0.70530[[d, e]]
+ sojourn = 11.6285
+ elapsed = 13.8122
+ remaining = 35.3671
+[[b, c, d, h, l, m, q]]
+ sojourn = 8.53835
+ elapsed = 58.4275
+ remaining = 8.71022
+[[a, b, c, g, i, l, m, n]]
+ sojourn = 0.03975
+ elapsed = 200.755
+ remaining = 2.41013
+[[b, c, d, g, i, l, m, n, o, p, q]]
+ sojourn = 0.0
+ elapsed = 132.322
+ remaining = 0.0[[a, b, d, g, i, l, m, n]]
+ sojourn = 0.02411
+ elapsed = 202.632
+ remaining = 0.35347
+[[a, b, d, h, l, m, n, o, q]]
+ sojourn = 0.12836
+ elapsed = 132.809
+ remaining = 0.20202[[a, b, c, d, e, g, h]]
+ sojourn = 0.0
+ elapsed = 232.777
+ remaining = 0.0[[h]]
+ sojourn = 8.64672
+ elapsed = 0.0
+ remaining = 38.0478
+[[a, b, c, d, g]]
+ sojourn = 49.1433
+ elapsed = 68.2379
+ remaining = 50.4962[[a, b, c, f, g]]
+ sojourn = 0.0
+ elapsed = 163.424
+ remaining = 0.0
+[[d, h, l, m, n, o]]
+ sojourn = 0.14493
+ elapsed = 80.1250
+ remaining = 0.15960
+[[b, c, d, h, l, m, n, o, q]]
+ sojourn = 0.12900
+ elapsed = 67.0087
+ remaining = 0.12900
+[[a, b, c, d, h, l, m, n, o, p, q]]
+ sojourn = 0.0
+ elapsed = 126.296
+ remaining = 0.0[[a, b, d, g, i, l, m, n, o, p, q]]
+ sojourn = 0.0
+ elapsed = 179.039
+ remaining = 0.0[[a, b, c, d, e, g, i]]
+ sojourn = 0.06877
+ elapsed = 226.889
+ remaining = 1.07563
+[[a, b, c, d, h, l, m, n, o]]
+ sojourn = 0.99964
+ elapsed = 95.4690
+ remaining = 2.11456
+[[a, b, c, g, i, l, m, n, o, p]]
+ sojourn = 1.36209
+ elapsed = 202.175
+ remaining = 2.65135[[d, g, i, l, m, n, o, p]]
+ sojourn = 2.56445
+ elapsed = 158.894
+ remaining = 2.56455[[a, b, c, g, h, l, m, n]]
+ sojourn = 0.04257
+ elapsed = 191.800
+ remaining = 0.16994[[a, g, i, l, m, n, o]]
+ sojourn = 0.12686
+ elapsed = 171.829
+ remaining = 1.41131[[a, b, c, d, h, l, n]]
+ sojourn = 0.04251
+ elapsed = 136.065
+ remaining = 0.16925[[g]]
+ sojourn = 68.9769
+ elapsed = 0.0
+ remaining = 70.7172
+[[a, b, c, d, g, h, l, m]]
+ sojourn = 0.01509
+ elapsed = 68.8108
+ remaining = 0.18451[[e]]
+ sojourn = 2.97950
+ elapsed = 0.0
+ remaining = 65.6498
+[[a, b, c, e]]
+ sojourn = 11.3159
+ elapsed = 52.9310
+ remaining = 175.034
+[[a, b, c, d, g, i, l, m]]
+ sojourn = 0.34157
+ elapsed = 219.660
+ remaining = 0.91294[[a, b, d, h, l]]
+ sojourn = 1.13813
+ elapsed = 50.9771
+ remaining = 13.1130[[a, b, g, i, l]]
+ sojourn = 1.71961
+ elapsed = 184.600
+ remaining = 3.79485
+[[a, b, c, h, l, m, n, o, p]]
+ sojourn = 0.71309
+ elapsed = 137.353
+ remaining = 0.84301[[a, b, c, d, g, j]]
+ sojourn = 6.83795
+ elapsed = 62.9295
+ remaining = 6.83795
+[[a, b, c, g, h, l, m, n, o, p]]
+ sojourn = 0.0
+ elapsed = 191.970
+ remaining = 0.0[[a, b, d, g, i]]
+ sojourn = 2.13651
+ elapsed = 204.418
+ remaining = 4.44978
+[[b, c, d, g, i, l, m, q]]
+ sojourn = 0.05404
+ elapsed = 158.326
+ remaining = 0.13885[[d, e, g, i, l, m, n, o]]
+ sojourn = 0.29664
+ elapsed = 134.753
+ remaining = 0.29664[[a, b, c, d, g, i, q]]
+ sojourn = 2.63241
+ elapsed = 168.678
+ remaining = 5.00325[[b, c, f, g, q]]
+ sojourn = 0.0
+ elapsed = 64.3837
+ remaining = 0.0
+[[a, b, c, d, e, h, l, m, n]]
+ sojourn = 0.04183
+ elapsed = 141.818
+ remaining = 0.21508[[d, h, l, m, n]]
+ sojourn = 1.73613
+ elapsed = 78.3889
+ remaining = 1.89573
+[[b, c, d, h, l, q]] sojourn = 0.95100
+ elapsed = 57.4765
+ remaining = 9.66122
+[[a, b, c, d, h, l, m, n, o, q]]
+ sojourn = 0.56761
+ elapsed = 125.729
+ remaining = 0.56761[[a, b, d, g, i, l, m, n, o, q]]
+ sojourn = 0.12733
+ elapsed = 178.912
+ remaining = 0.12733[[a, b, c, d, h, l, m, n]]
+ sojourn = 8.92448
+ elapsed = 86.5445
+ remaining = 11.0390[[a, b, c, g, i, l, m]]
+ sojourn = 0.04825
+ elapsed = 202.895
+ remaining = 2.32449[[d, g, i, l, n]]
+ sojourn = 0.0
+ elapsed = 165.897
+ remaining = 0.0
+[[a, b, c, f, h, l, m, n, o, p]]
+ sojourn = 0.0
+ elapsed = 148.147
+ remaining = 0.0[[b, c, d, g, i, l, m, n, o, q]]
+ sojourn = 0.12711
+ elapsed = 132.195
+ remaining = 0.12711[[a, g, i, l, m, n]]
+ sojourn = 0.04208
+ elapsed = 171.787
+ remaining = 1.45339
+[[a, b, d, g, i, l, m]]
+ sojourn = 0.57090
+ elapsed = 207.324
+ remaining = 0.83840
+[[a, b, d, h, l, m, n, o, p, q]]
+ sojourn = 0.03682
+ elapsed = 132.974
+ remaining = 0.03682[[a, b, d, h, l, m, n, q]]
+ sojourn = 0.04201
+ elapsed = 132.767
+ remaining = 0.24403[[a, b, c, d]]
+ sojourn = 15.2864
+ elapsed = 54.7078
+ remaining = 61.2724
+[[a, b, c, d, g, h, l]]
+ sojourn = 0.66679
+ elapsed = 68.1440
+ remaining = 0.85130[[a, b, c, d, q]]
+ sojourn = 18.9642
+ elapsed = 62.6724
+ remaining = 55.2332
+[[a, b, g, i, l, m, n, o, p, q]]
+ sojourn = 0.0
+ elapsed = 209.898
+ remaining = 0.0[[a]]
+ sojourn = 5.26360
+ elapsed = 0.0
+ remaining = 122.664
+[[a, b, c, d, e, h, l, m, n, o, p]]
+ sojourn = 0.02366
+ elapsed = 142.009
+ remaining = 0.02366[[a, d, g, h]]
+ sojourn = 0.0
+ elapsed = 211.795
+ remaining = 0.0
+[[a, b, c, d, g, i, l]]
+ sojourn = 1.56621
+ elapsed = 218.386
+ remaining = 2.45344
+[[b, c, d, h, l, m, n, q]]
+ sojourn = 0.04286
+ elapsed = 66.9659
+ remaining = 0.17186[[a, d, g]]
+ sojourn = 61.9657
+ elapsed = 52.0821
+ remaining = 63.6920
+[[a, b, c, d, g, i, l, n]]
+ sojourn = 0.0
+ elapsed = 230.036
+ remaining = 0.0[[]]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 107.138
+[[a, b, g, i]]
+ sojourn = 1.87488
+ elapsed = 182.725
+ remaining = 5.66974
+[[a, b, h, l, n, o]]
+ sojourn = 0.16523
+ elapsed = 134.878
+ remaining = 0.30124
+[[d, g, i, l, m, n, o]]
+ sojourn = 0.16623
+ elapsed = 154.650
+ remaining = 4.56243[[a, b, c, g, h, l, m]]
+ sojourn = 0.03114
+ elapsed = 191.768
+ remaining = 0.20108
+[[a, g, i, l, m, n, o, p]]
+ sojourn = 0.64222
+ elapsed = 172.598
+ remaining = 0.64222[[a, h, l, n, o, p]]
+ sojourn = 0.0
+ elapsed = 110.032
+ remaining = 0.0
+[[d, e, g, i, l, m, n]]
+ sojourn = 0.04255
+ elapsed = 134.710
+ remaining = 0.33920[[d, e, g, i, l]]
+ sojourn = 0.86116
+ elapsed = 133.812
+ remaining = 1.23768
+[[a, b, c, d, e, h, l, m]]
+ sojourn = 0.01029
+ elapsed = 141.808
+ remaining = 0.22537[[d, h]]
+ sojourn = 5.53926
+ elapsed = 63.1406
+ remaining = 17.3563
+[[b, c, d, h, q]]
+ sojourn = 0.01826
+ elapsed = 57.4583
+ remaining = 9.67948
+[[a, b, d, g, i, l, q]]
+ sojourn = 0.68148
+ elapsed = 178.158
+ remaining = 0.88093[[a, b, d, h]]
+ sojourn = 0.51030
+ elapsed = 46.2188
+ remaining = 12.5306
+[[b, c, d, g, i, l, m, n, q]]
+ sojourn = 0.02833
+ elapsed = 147.759
+ remaining = 0.11307[[a, b, c, h, l, m, n, o]]
+ sojourn = 0.73823
+ elapsed = 135.448
+ remaining = 1.55320[[a, b, d, g, i, l]]
+ sojourn = 1.53738
+ elapsed = 205.787
+ remaining = 2.37578[[a, b, d, l]]
+ sojourn = 0.0
+ elapsed = 28.7749
+ remaining = 0.0
+[[a, b, d, h, l, m, q]]
+ sojourn = 0.00745
+ elapsed = 132.759
+ remaining = 0.25149[[b, c, d, g, i, l, q]]
+ sojourn = 2.46346
+ elapsed = 155.863
+ remaining = 2.60231
+[[a, b, c, d, e, h, l, m, n, o]]
+ sojourn = 0.12590
+ elapsed = 141.860
+ remaining = 0.17324[[b, c, f, q]]
+ sojourn = 0.01974
+ elapsed = 64.3640
+ remaining = 0.01974[[a, d, h]]
+ sojourn = 93.8720
+ elapsed = 117.923
+ remaining = 93.8720
+[[a, b, c, d, g, h, l, m, n, o, p]]
+ sojourn = 0.0
+ elapsed = 68.9954
+ remaining = 0.0[[d, h, l, m]]
+ sojourn = 5.31331
+ elapsed = 73.0756
+ remaining = 7.20905
+[[a, b, c, d, h, l, m, n, q]]
+ sojourn = 0.04250
+ elapsed = 125.686
+ remaining = 0.61011[[a, b, d, g, i, l, m, n, q]]
+ sojourn = 0.04258
+ elapsed = 178.869
+ remaining = 0.16991[[a, b, c, d, h, l, m]]
+ sojourn = 3.18734
+ elapsed = 78.8165
+ remaining = 13.3064[[a, b, h, l, n]]
+ sojourn = 21.8510
+ elapsed = 113.027
+ remaining = 22.1523
+[[d, g, i, l, m, n]]
+ sojourn = 0.01793
+ elapsed = 159.360
+ remaining = 1.95351[[a, b, c, g, i, l]]
+ sojourn = 1.37939
+ elapsed = 201.516
+ remaining = 3.70388[[a, b, c, g, h, l]]
+ sojourn = 0.68125
+ elapsed = 191.087
+ remaining = 0.88233
+[[a, b, c, f, h, l, m, n, o]]
+ sojourn = 0.29467
+ elapsed = 147.852
+ remaining = 0.29467[[a, g, i, l, m]]
+ sojourn = 0.00912
+ elapsed = 171.778
+ remaining = 1.46251[[d, e, g, i]]
+ sojourn = 0.84165
+ elapsed = 132.970
+ remaining = 2.07934[[a, b, c]]
+ sojourn = 57.7437
+ elapsed = 5.42723
+ remaining = 122.777
+[[a, b, c, d, g, h]]
+ sojourn = 4.74372
+ elapsed = 107.802
+ remaining = 4.95655[[a, b, c, q]]
+ sojourn = 3.58990
+ elapsed = 58.2794
+ remaining = 55.1409
+[[a, b, g, i, l, m, n, o, q]]
+ sojourn = 0.12704
+ elapsed = 209.771
+ remaining = 0.12704[[g, h]]
+ sojourn = 0.0
+ elapsed = 93.8725
+ remaining = 0.0[[a, d]]
+ sojourn = 9.42368
+ elapsed = 46.7735
+ remaining = 75.0019
+[[a, d, g, i, l, m, n, o, p]]
+ sojourn = 1.49556
+ elapsed = 198.702
+ remaining = 1.49556[[a, b, h, l, n, o, p]]
+ sojourn = 0.11901
+ elapsed = 138.896
+ remaining = 0.11901[[a, b, g]]
+ sojourn = 100.934
+ elapsed = 43.6649
+ remaining = 105.002
+[[b, c, d, q]]
+ sojourn = 18.4040
+ elapsed = 37.3619
+ remaining = 44.2868
+[[a, h, l, n, o]]
+ sojourn = 0.17200
+ elapsed = 109.860
+ remaining = 0.17200
+[[d, e, g, i, l, m]]
+ sojourn = 0.03731
+ elapsed = 134.673
+ remaining = 0.37651
+[[a, b, c, d, e, h, l]]
+ sojourn = 0.95271
+ elapsed = 140.855
+ remaining = 1.17809[[a, b, c, g]]
+ sojourn = 86.6687
+ elapsed = 60.0423
+ remaining = 89.8772
+[[a, b, c, d, g, h, l, m, n, o]]
+ sojourn = 0.12706
+ elapsed = 68.8683
+ remaining = 0.12706h
+complete
+l
+complete
+o
+complete
+p
+completep
+completed
+complete
+l
+complete
+o
+completed
+completei
+complete
+i
+complete
+n
+complete
+o
+completel
+complete
+n
+complete
+p
+completeg
+completen
+completen
+completen
+complete
+o
+completee
+complete
+m
+completeg
+complete
+p
+completeg
+completeh
+complete
+p
+completel
+complete
+n
+completea
+complete
+m
+completel
+completeg
+complete
+m
+completel
+complete
+h
+completeq
+complete
+m
+complete
+o
+completed
+complete
+n
+completel
+complete
+o
+completen
+complete
+o
+completel
+complete
+p
+completei
+complete
+p
+completen
+complete
+p
+completed
+complete
+m
+complete
+n
+completep
+completel
+completeg
+complete
+o
+completep
+completee
+completem
+complete
+o
+completem
+completeb
+completeb
+complete
+p
+completee
+complete
+o
+completep
+completeg
+complete
+l
+complete
+f
+complete
+h
+completen
+complete
+m
+completen
+complete
+i
+completec
+completeh
+complete
+p
+completeo
+complete
+n
+completel
+completel
+complete
+l
+completeo
+completeg
+completeo
+complete
+o
+completep
+completel
+complete
+m
+complete
+p
+completeo
+completem
+completel
+complete
+o
+complete
+p
+completel
+completeg
+completeg
+complete
+h
+completeg
+complete
+o
+completeo
+complete
+p
+completem
+completed
+complete
+n
+completei
+complete
+o
+completeg
+completei
+complete
+l
+completeq
+completeb
+complete
+n
+completeg
+completei
+complete
+n
+completeb
+complete
+g
+complete
+l
+completen
+completeg
+complete
+p
+completem
+complete
+o
+completeo
+complete
+o
+completeo
+complete
+n
+completen
+completeg
+completeq
+complete
+h
+complete
+o
+completeo
+completef
+completeg
+complete
+e
+complete
+n
+completeo
+completeh
+complete
+m
+completel
+completem
+complete
+o
+completed
+completen
+complete
+p
+completee
+complete
+m
+completeg
+complete
+p
+completeo
+complete
+p
+completed
+complete
+h
+complete
+l
+completeo
+complete
+p
+complete
+o
+completen
+completeo
+complete
+o
+completel
+completei
+completed
+complete
+m
+completej
+completem
+complete
+n
+completeq
+complete
+n
+completep
+complete
+o
+completem
+completeh
+complete
+p
+completen
+complete
+l
+complete
+p
+completed
+complete
+d
+completef
+complete
+m
+completeh
+complete
+m
+completen
+complete
+l
+completeg
+complete
+o
+completep
+completep
+complete
+n
+completei
+complete
+p
+completeg
+complete
+o
+completel
+completee
+complete
+l
+complete
+n
+completeg
+completec
+complete
+o
+completel
+complete
+o
+completei
+completem
+complete
+m
+completem
+completem
+complete
+n
+completeh
+complete
+p
+completeo
+completep
+complete
+o
+completep
+completeh
+completeb
+complete
+o
+completel
+completei
+complete
+p
+completed
+complete
+g
+complete
+d
+completei
+complete
+o
+completep
+completel
+complete
+n
+completen
+complete
+p
+completec
+complete
+o
+complete
+o
+completem
+completei
+complete
+n
+completei
+complete
+p
+completeg
+complete
+m
+completel
+complete
+o
+completem
+completeo
+complete
+o
+complete
+p
+completeo
+completep
+complete
+p
+completen
+completel
+completeg
+completeq
+complete
+n
+completeb
+complete
+o
+completed
+completeh
+complete
+o
+completep
+completen
+completeg
+complete
+g
+complete
+o
+completep
+complete
+m
+completed
+complete
+h
+completeh
+complete
+g
+complete
+g
+complete
+l
+completeo
+complete
+n
+completeo
+complete(a) set abstraction based on all activities
+[[b]]
+ sojourn = 16.3629
+ elapsed = 7.86427
+ remaining = 112.792[[]]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 107.138
+[[c]]
+ sojourn = 51.9436
+ elapsed = 9.94651
+ remaining = 115.056
+[[o]]
+ sojourn = 0.45839
+ elapsed = 159.219
+ remaining = 1.73753[[j]]
+ sojourn = 13.6759
+ elapsed = 56.0915
+ remaining = 13.6759[[h]]
+ sojourn = 7.09205
+ elapsed = 87.5322
+ remaining = 24.6030
+[[p]]
+ sojourn = 1.26478
+ elapsed = 155.082
+ remaining = 1.69408[[n]]
+ sojourn = 3.60209
+ elapsed = 155.972
+ remaining = 5.26848[[l]]
+ sojourn = 1.43620
+ elapsed = 157.379
+ remaining = 7.93469[[e]]
+ sojourn = 4.31920
+ elapsed = 51.3724
+ remaining = 53.6329[[f]]
+ sojourn = 13.2145
+ elapsed = 128.014
+ remaining = 13.3569
+[[m]]
+ sojourn = 1.83842
+ elapsed = 161.461
+ remaining = 6.16146[[q]]
+ sojourn = 11.8378
+ elapsed = 26.5137
+ remaining = 75.7916
+[[g]]
+ sojourn = 59.7765
+ elapsed = 47.9646
+ remaining = 61.6373[[a]]
+ sojourn = 5.26360
+ elapsed = 0.0
+ remaining = 122.664
+[[i]]
+ sojourn = 1.57712
+ elapsed = 188.213
+ remaining = 4.43585[[d]]
+ sojourn = 12.8837
+ elapsed = 40.6624
+ remaining = 59.6669q
+complete
+l
+completeg
+complete
+i
+completeg
+complete
+h
+completed
+complete
+p
+completed
+completec
+complete
+h
+completee
+complete
+m
+completed
+complete
+h
+completeg
+complete
+f
+completeb
+completeq
+complete
+g
+completeg
+completeb
+complete
+g
+completeg
+completeh
+complete
+o
+completee
+completeb
+complete
+l
+completed
+complete
+l
+completeq
+complete
+h
+completeh
+complete
+o
+completed
+complete
+d
+completef
+complete
+j
+complete
+n
+completeg
+complete
+n
+completee
+completea
+complete
+h
+complete
+(b) set abstraction with a horizon of 1
+[[b],[i]]
+ sojourn = 15.3332
+ elapsed = 4.27168
+ remaining = 202.780[[],[i]]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 192.649
+[[],[]]
+ sojourn = 0.0
+ elapsed = 0.0
+ remaining = 63.4624[[e],[i]]
+ sojourn = 8.25098
+ elapsed = 26.4655
+ remaining = 155.042
+[[g],[]]
+ sojourn = 0.17968
+ elapsed = 51.7855
+ remaining = 0.25572[[c],[i]]
+ sojourn = 50.5984
+ elapsed = 6.55942
+ remaining = 204.546
+[[o],[]]
+ sojourn = 0.45839
+ elapsed = 159.219
+ remaining = 1.73753
+[[j],[]]
+ sojourn = 13.6759
+ elapsed = 56.0915
+ remaining = 13.6759[[d],[]]
+ sojourn = 15.0304
+ elapsed = 41.2688
+ remaining = 19.4577
+[[h],[]]
+ sojourn = 7.09205
+ elapsed = 87.5322
+ remaining = 24.6030
+[[p],[]]
+ sojourn = 1.26478
+ elapsed = 155.082
+ remaining = 1.69408[[c],[]]
+ sojourn = 52.5662
+ elapsed = 11.5144
+ remaining = 73.6310
+[[n],[]]
+ sojourn = 3.60209
+ elapsed = 155.972
+ remaining = 5.26848[[l],[]]
+ sojourn = 1.43620
+ elapsed = 157.379
+ remaining = 7.93469
+[[e],[]]
+ sojourn = 3.53284
+ elapsed = 56.3538
+ remaining = 33.3511[[f],[]]
+ sojourn = 13.2145
+ elapsed = 128.014
+ remaining = 13.3569[[b],[]]
+ sojourn = 16.8129
+ elapsed = 9.43436
+ remaining = 73.4641
+[[q],[]]
+ sojourn = 12.1739
+ elapsed = 28.1960
+ remaining = 65.5129
+[[m],[]]
+ sojourn = 1.83842
+ elapsed = 161.461
+ remaining = 6.16146[[g],[i]]
+ sojourn = 145.761
+ elapsed = 42.4520
+ remaining = 150.197[[a],[i]]
+ sojourn = 4.88454
+ elapsed = 0.0
+ remaining = 207.543
+[[q],[i]]
+ sojourn = 8.98153
+ elapsed = 12.2141
+ remaining = 163.160
+[[a],[]]
+ sojourn = 5.45194
+ elapsed = 0.0
+ remaining = 80.4937
+[[i],[]]
+ sojourn = 1.57712
+ elapsed = 188.213
+ remaining = 4.43585[[d],[i]]
+ sojourn = 7.47458
+ elapsed = 39.1344
+ remaining = 160.984
+d
+completeb
+complete
+o
+completeg
+completeq
+completeb
+complete
+b
+complete
+h
+completeb
+complete
+l
+completed
+complete
+e
+completeg
+complete
+h
+completeb
+complete
+o
+completeg
+complete
+j
+completed
+complete
+f
+completeg
+completed
+complete
+n
+completeq
+complete
+d
+completeb
+complete
+g
+completed
+completed
+completea
+complete
+switch start state
+d
+complete
+h
+completeq
+completei
+complete
+l
+completee
+complete
+n
+completeh
+complete
+g
+completeq
+complete
+p
+completeg
+completee
+complete
+c
+completec
+complete
+g
+complete
+d
+complete
+m
+completeq
+complete
+d
+completeq
+complete
+f
+complete
+l
+completeg
+complete
+a
+completed
+complete
+h
+complete
+g
+completeg
+completeg
+complete
+h
+completee
+complete
+h
+completeg
+complete (c) set abstraction with a horizon of 1 and knowledge
+about the case
+[]
+ sojourn = 14.5942
+ elapsed = 69.9587
+ remaining = 62.0593p
+completee
+completea
+completed
+completef
+completel
+completeb
+completeg
+completem
+completeq
+completeo
+completeh
+completej
+completec
+completei
+completen
+complete
+(d) complete abstraction
+figure 17: four transition systems with prediction information based on the same event log but using dierent abstractions.
+28abstraction mae rmse
+set abstraction based on all activities (cf. fig-
+ure 17(a))41.648 47.513
+set abstraction based on last activity (cf. fig-
+ure 17(b))43.080 49.666
+set abstraction based on last activity and ad-
+ditional information related to the occurrence
+of \i" (cf. figure 17(c))17.129 23.550
+complete abstraction (cf. figure 17(d)) 63.391 74.965
+simple heuristic: half of average total ow
+time (53.57 days)61.750 75.505
+table 5: some results for the municipality's woz process
+uses knowledge about the property of the case, i.e., based on this knowledge it is known whether a particular
+task (labeled \i") needs to be executed. figure 17(c) shows the resulting transition system. note that
+it extends figure 17(b) with additional knowledge about the occurrence of task \i". the last abstraction
+(figure 17(d)) is again the extreme case where no historic information is used. this is again used as a
+benchmark.
+table 5 shows the results for the four annotated transition systems shown in figure 17. the last row
+shows again the results for simply predicting half of the average ow time. note that the transition systems
+are constructed based on l1while the error rates in table 5 are based on l2. again simple abstractions such
+as shown in gure 17(a) and 17(b) outperform simple heuristics. note that the the complete abstraction and
+simple heuristic have a mae of more than 60 days while set abstractions based on all activities or just the
+last activity have a mae of just above 40 days. the third row of table 5 shows the spectacular performance
+of the annotated transition system shown in figure 17(c). the mae drops to 17 days. this illustrates
+that additional information can be very valuable. note that the average total ow time is about 107 days.
+moreover, as shown in figure 16 there is a huge variation in ow times. hence, it is quite remarkable that
+we can predict the remaining time until completion so accurately.
+8. discussion
+after presenting our approach and prom plug-ins for time prediction and illustrating these using some
+case studies, we now discuss potential limitations and data requirements.
+the previous section clearly showed that our prediction approach outperforms more naive approaches like
+always predicting half of average total ow time. moreover, in section 6 we discussed various techniques
+to measure the quality of predictions using cross-validation and error measures such as rmse and mae.
+however, these quality considerations are based on experimentation and do not provide clear rules on \how
+much event data is needed to reach a particular accuracy". given a transition system and an event log it is
+quite easy to characterize \sucient data" as shown in section 6.2. the wider the condence interval is, the
+poorer the accuracy will be. in general it is wise to use a coarser abstraction if a substantial fraction of states
+in the transition system has been visited infrequently. it is impossible to give general rules beforehand, as
+this depends on the variability of observations and these are not known upfront. therefore, we propose an
+incremental approach where the quality is continuously estimated based on the techniques given in section 6
+and only presented to the user if the quality is acceptable.
+there are also several limitations of the approach not considered thus far.
+first of all, the approach assumes that the process that is observed is in steady state . for many processes
+this is not realistic and this is often referred to as \concept drift". in predictive analytics, concept drift
+means that the statistical properties of the target variable, which the model is trying to predict, change over
+time. for example, towards of the end of the year more requests arrive per time unit thus increasing the
+overall ow time. moreover, an organization that is rapidly expanding may experience all kinds of concept
+drift, causing predictions to be less accurate.
+second, we base our predictions on prexes of a single process instance. the transitions systems learned
+from event logs describe one case in isolation . in practical applications of our approach we noted that the
+29context of a case is also important when predicting ow times. here we interpret the context of a case as
+(a) the other cases it is competing with, (b) the availability and load of resources, and (c) external factors
+inuencing the process. for example, suppose that there are many cases queueing. in this case it is likely
+that the next case will need more time. however, this is not taken into account in the example abstractions
+used in this paper. knowledge about resources may also help predicting the ow time, e.g., non-availability
+of workers due to holidays can have a signicant impact. there may also be factors outside of the process
+and its associated set of resources. for example, in some processes, the weather, the time of the day, trac
+conditions, etc. may have a signicant impact on remaining processing times. note that our approach allows
+for the encoding of such factors. in denition 1 we allowed an event eto have any set of properties. for
+example,propresource load(e),propbusyness (e),propweather (e), etc. could be properties added to the event log
+and used in the abstractions. however, the challenge is to select the right features and avoid looking for the
+\needle in a haystack" when many potential contextual factors are recorded in the log.
+the last limitation we would like to mention here is that by providing a prediction, one is inuencing
+the future . for example, we have been applying prediction to the study behavior of students. we have
+a detailed record of all exam attempts by all students that ever studied computer science at eindhoven
+university of technology [34]. recently, we used the approach presented in this paper to predict whether
+students will graduate and, if so, the remaining study time. in the future, we plan to use these results to give
+advice to individual students. however, this creates the dilemma that by providing early warnings we are
+inuencing the process and thus make the results less reliable. this is similar to \schr odinger's cat paradox"
+in quantum mechanics; that it is impossible to observe and use predictions without inuencing the future
+and thus jeopardizing the quality of the prediction. for example, if the prediction indicates that the expected
+remaining processing time of a case is short, people may not work on the case and thus delay it. therefore,
+one should apply predictions carefully and consider the intended eect of predictions.
+9. conclusion
+in this paper, we presented a new method for predicting the \future of a running instance". given a
+running case, our prediction approach allows answering questions like \when will this case be nished?",
+\how long does it take before activity ais completed?", \how likely is it that activity bwill be performed in
+the next two days?", etc. in this paper, we mainly focused on the remaining time until completion. however,
+our approach can easily be used for other types of predictions. the basic idea of the approach is to build
+an annotated transition system. this transition system is learned from past executions using an appropriate
+abstraction mechanism.
+the approach is fully implemented in prom . using the fsm miner a transition system is learned. the
+fsm analyzer extends this transition system with predictive information. this information can be used to
+make predictions at run-time. currently, we only support a link between the workow management system
+declare and our prediction tools in prom. however, it is easy to extend the same toolset to other workow
+management systems. to support experiments and to cross validate results, our fsm evaluator can be used
+to measure standard quality metrics such as mse, rmse, mae, and mape.
+in this paper, we evaluated our approach using a synthetic event log and two real-life event logs. both
+experiments show that our approach outperforms simple heuristics. this is quite remarkable as we do not
+use a-priori knowledge. note that we learn the model from past executions. the model can be used for
+predictions, but also has a value by itself as it shows where in the process the bottlenecks are.
+as future work we plan to work more on the automation of abstractions, i.e., now the user still needs to
+select an abstraction based on the characteristics of the process and log. for example, when there are fewer
+process instances, then a more abstract transition system is desirable. it seems possible to automatically
+rene or aggregate states based on the quality metrics already gathered. such approaches are not only
+interesting for predictions but also for process discovery, i.e., the parts of the process where there is more
+certainty are depicted in more detail and the more \fuzzy" parts of the process are simplied. for predictions
+all measures are considered to be of equal importance, while there could be correlations between activities.
+for example, after the occurrence of some activity it is very unlikely that some other activity will occur.
+in this case it does not make sense to (fully) use measures from traces that contain that latter activity for
+predicting an instance where the former activity has already been exectued. correlations can be mined from
+the log [32] and be used to select or to weigh the state prediction measures. an assumption in our approach
+30is the independency of the samples, i.e., the bag of measurements. however, the interaction between cases
+and the availability of resources are important factors when predicting the remaining time until completion
+[22, 30]. these interactions should be incorporated into the predictions.
+10. acknowledgements
+this research is supported by eit, nwo-ew, super, and the technology foundation stw. we would
+like to thank the many people involved in the development of prom . in particular we would like to thank eric
+verbeek for implementing the fsm miner, maja pesic for her work on operational support, and boudewijn
+van dongen and ronald crooy for their work on the regression-based prediction service.
+references
+[1] w.m.p. van der aalst, b.f. van dongen, c.w. g unther, r.s. mans, a.k. alves de medeiros, a. rozinat,
+v. rubin, m. song, h.m.w. verbeek, and a.j.m.m. weijters. prom 4.0: comprehensive support for
+real process analysis. in j. kleijn and a. yakovlev, editors, application and theory of petri nets
+and other models of concurrency (icatpn 2007) , volume 4546 of lecture notes in computer science ,
+pages 484{494. springer-verlag, berlin, 2007.
+[2] w.m.p. van der aalst, m. pesic, and m. song. beyond process mining: from the past to present
+and future. in b. pernici, editor, advanced information systems engineering, proceedings of the 22nd
+international conference on advanced information systems engineering (caise'10) , volume 6051 of
+lecture notes in computer science , pages 38{52. springer-verlag, berlin, 2010.
+[3] w.m.p. van der aalst, h.a. reijers, a.j.m.m. weijters, b.f. van dongen, a.k. alves de medeiros,
+m. song, and h.m.w. verbeek. business process mining: an industrial application. information
+systems , 32(5):713{732, 2007.
+[4] w.m.p. van der aalst, v. rubin, b.f. van dongen, e. kindler, and c.w. g unther. process mining: a
+two-step approach to balance between undertting and overtting. software and systems modeling ,
+9(1):87{111, 2010.
+[5] w.m.p. van der aalst, b.f. van dongen, j. herbst, l. maruster, g. schimm, and a.j.m.m. weijters.
+workow mining: a survey of issues and approaches. data and knowledge engineering , 47(2):237{267,
+2003.
+[6] w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. workow mining: discovering process
+models from event logs. ieee transactions on knowledge and data engineering , 16(9):1128{1142,
+2004.
+[7] r. agrawal, d. gunopulos, and f. leymann. mining process models from workow logs. in sixth
+international conference on extending database technology , pages 469{483, 1998.
+[8] j.s. armstrong and f. collopy. error measures for generalizing about forecasting methods: empirical
+comparisons. international journal of forecasting , 8(1):69{80, 1992.
+[9] j.e. cook and a.l. wolf. discovering models of software processes from event-based data. acm
+transactions on software engineering and methodology , 7(3):215{249, 1998.
+[10] r. crooy. predictions in information systems: a process mining perspective. master's thesis, eindhoven
+university of technology, eindhoven, 2008.
+[11] a. datta. automating the discovery of as-is business process models: probabilistic and algorithmic
+approaches. information systems research , 9(3):275{301, 1998.
+[12] s.n. den hertog. case prediction in bpm systems: research to the predictability of the remaining time
+of individual cases. master's thesis, eindhoven university of technology, eindhoven, 2008.
+31[13] b.f. van dongen, r.a. crooy, and w.m.p. van der aalst. cycle time prediction: when will this
+case finally be finished? in r. meersman and z. tari, editors, proceedings of the 16th international
+conference on cooperative information systems, coopis 2008, otm 2008, part i , volume 5331 of
+lecture notes in computer science , pages 319{336. springer-verlag, berlin, 2008.
+[14] m. dumas, w.m.p. van der aalst, and a.h.m. ter hofstede. process-aware information systems:
+bridging people and software through process technology . wiley & sons, 2005.
+[15] j. eder, e. panagos, and m. rabinovich. time constraints in workow systems. in m. jarke and
+a. oberweis, editors, proceedings of the 11th international conference on advanced information systems
+engineering (caise '99) , volume 1626 of lecture notes in computer science , pages 286{300. springer-
+verlag, berlin, 1999.
+[16] j. eder and h. pichler. probabilistic calculation of execution intervals for workows. in proceed-
+ings of the 12th international symposium on temporal representation and reasoning , pages 183{185,
+washington, dc, usa, 2005. ieee computer society.
+[17] c.w. g unther and w.m.p. van der aalst. fuzzy mining: adaptive process simplication based on
+multi-perspective metrics. in g. alonso, p. dadam, and m. rosemann, editors, international conference
+on business process management (bpm 2007) , volume 4714 of lecture notes in computer science , pages
+328{343. springer-verlag, berlin, 2007.
+[18] j. herbst. a machine learning approach to workow management. in proceedings 11th european
+conference on machine learning , volume 1810 of lecture notes in computer science , pages 183{194.
+springer-verlag, berlin, 2000.
+[19] k. jensen, l.m. kristensen, and l. wells. coloured petri nets and cpn tools for modelling and
+validation of concurrent systems. international journal on software tools for technology transfer ,
+9(3-4):213{254, 2007.
+[20] j. kleijnen and w. van groenendaal. simulation: a statistical perspective . john wiley and sons, new
+york, 1992.
+[21] a.k. alves de medeiros and c.w. g unther. process mining: using cpn tools to create test logs
+for mining algorithms. in k. jensen, editor, proceedings of the sixth workshop on the practical use
+of coloured petri nets and cpn tools (cpn 2005) , volume 576 of daimi , pages 177{190, aarhus,
+denmark, october 2005. university of aarhus.
+[22] j. nakatumba and w.m.p. van der aalst. analyzing resource behavior using process mining. in
+s. rinderle-ma, s. sadiq, and f. leymann, editors, bpm 2009 workshops, proceedings of the fifth
+workshop on business process intelligence (bpi'09) , volume 43 of lecture notes in business informa-
+tion processing , pages 69{80. springer-verlag, berlin, 2010.
+[23] m. pesic, h. schonenberg, and w.m.p. van der aalst. declare: full support for loosely-structured
+processes. in m. spies and m.b. blake, editors, proceedings of the eleventh ieee international enter-
+prise distributed object computing conference (edoc 2007) , pages 287{298. ieee computer society,
+2007.
+[24] h. a. reijers. case prediction in bpm systems: a research challenge. journal of the korean institute
+of industrial engineers , 33:1{10, 2006.
+[25] s.m. ross. a course in simulation . macmillan, new york, 1990.
+[26] a. rozinat and w.m.p. van der aalst. conformance checking of processes based on monitoring real
+behavior. information systems , 33(1):64{95, 2008.
+[27] a. rozinat, r.s. mans, m. song, and w.m.p. van der aalst. discovering colored petri nets from event
+logs. international journal on software tools for technology transfer , 10(1):57{74, 2008.
+32[28] a. rozinat, r.s. mans, m. song, and w.m.p. van der aalst. discovering simulation models. information
+systems , 34(3):305{327, 2009.
+[29] a. rozinat, m.t. wynn, w.m.p. van der aalst, a.h.m. ter hofstede, and c. fidge. workow simu-
+lation for operational decision support using design, historic and state information. in m. dumas,
+m. reichert, and m.c. shan, editors, international conference on business process management (bpm
+2008) , volume 5240 of lecture notes in computer science , pages 196{211. springer-verlag, berlin, 2008.
+[30] b. schellekens. cycle time prediction in staware. master's thesis, eindhoven university of technology,
+eindhoven, 2009.
+[31] h. schonenberg, b. weber, b.f. van dongen, and w.m.p. van der aalst. supporting flexible processes
+through recommendations based on history. in m. dumas, m. reichert, and m.c. shan, editors,
+international conference on business process management (bpm 2008) , volume 5240 of lecture notes
+in computer science , pages 51{66. springer-verlag, berlin, 2008.
+[32] m.h. schonenberg, n. sidorova, w.m.p. van der aalst, and k. van hee. history-dependent stochastic
+petri nets. in a. pnueli, i. virbitskaite, and a. voronkov, editors, perspectives of systems informatics ,
+volume 5947 of lecture notes in computer science , pages 366{379. springer-verlag, berlin, 2010.
+[33] staware. staware process suite version 2 { white paper . staware plc, maidenhead, uk, 2003.
+[34] n. trcka, m. pechenizkiy, and w.m.p. van der aalst. chapter 9: process mining from educational
+data. in c. romero, s. ventura, m. pechenizkiy, and r. baker, editors, handbook of educational data
+mining , data mining and knowledge discovery series. taylor and francis, 2010.
+[35] s.e. verwer, m.m. de weerdt, and c. witteveen. eciently learning timed models from observations.
+in l. wehenkel, p. geurts, and r. maree, editors, benelearn , pages 75{76. university of liege, 2008.
+[36] b. weber, w. wild, and r. breu. cbrflow: enabling adaptive workow management through
+conversational case-based reasoning. in advances in case-based reasoning , volume 3155 of lecture
+notes in computer science , pages 434{448. springer-verlag, berlin, 2004.
+[37] a.j.m.m. weijters and w.m.p. van der aalst. rediscovering workow models from event-based data
+using little thumb. integrated computer-aided engineering , 10(2):151{162, 2003.
+[38] j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, and a. serebrenik. process discovery using
+integer linear programming. in k. van hee and r. valk, editors, proceedings of the 29th international
+conference on applications and theory of petri nets (petri nets 2008) , volume 5062 of lecture notes
+in computer science , pages 368{387. springer-verlag, berlin, 2008.
+33

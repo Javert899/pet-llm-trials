@@ -1,0 +1,525 @@
+data- and resource-aware conformance checking of
+business processes
+massimiliano de leoni, wil m. p. van der aalst, and boudewijn f. van dongen
+eindhoven university of technology, eindhoven, the netherlands
+{m.d.leoni,w.m.p.v.d.aalst,b.f.v.dongen}@tue.nl
+abstract. process mining is not restricted to process discovery and also includes
+conformance checking , i.e., checking whether observed behavior recorded in the
+event log matches modeled behavior. many organizations have descriptive or nor-
+mative models that do not adequately describe the actual processes. therefore, a
+variety of techniques for conformance checking have been proposed. however,
+all of these techniques focus on the control-ﬂow and abstract from data and re-
+sources . this paper describes an approach that aligns event log and model while
+taking all perspectives into account (i.e., also data and resources). this way it is
+possible to quantify conformance and analyze differences between model and re-
+ality. the approach has been implemented in prom and evaluated using a variety
+of model-log combinations.
+1 introduction
+modern organizations are centered around the processes needed to deliver products and
+services in an efﬁcient and effective manner. organizations that operate at a higher pro-
+cess maturity level use formal/semiformal models (e.g., uml, epc, bpmn and yawl
+models) to document their processes. in some case these models are used to conﬁgure
+process-aware information systems (e.g., wfm or bpm systems). however, in most
+organizations process models are not used to enforce a particular way of working. in-
+stead, process models are used for discussion, performance analysis (e.g., simulation),
+certiﬁcation, process improvement, etc. however, reality may deviate from such mod-
+els. people tend to focus on idealized process models that have little to do with reality.
+this illustrates the importance of conformance checking [1, 2, 3].
+an important enabler for conformance checking is the availability of event data in
+modern organizations. even though processes are typically not enforced by a process-
+aware information system, still most events are recorded. consider for example a hos-
+pital. medical doctors are not controlled by some bpm system. however, many events
+are recorded, e.g., blood tests, x-ray images, administered drugs, surgery, etc. all result
+in events that can be linked to a particular patient. digital data is everywhere – in every
+sector, in every economy, in every organization, and in every home – and will continue
+to grow exponentially. mgi estimates that enterprises globally stored more than 7 ex-
+abytes of new data on disk drives in 2010, while consumers stored more than 6 exabytes
+of new data on devices such as pcs and notebooks [4]. the growing availability of event
+data is an important enabler for conformance checking.2 m. de leoni, w. m. p. van der aalst, b. f. van dongen
+fig. 1: bpmn diagram of a data and resource-aware process to manage credit requests
+to buy home appliances. in the remainder, data objects are simply referred with the
+upper-case initials, e.g., v=veriﬁcation , and activity names by the letter in brackets,
+e.g.a=credit request .
+along with process discovery (learning process models from logs) and process en-
+hancement (e.g., extending process models with bottleneck information based on times-
+tamps in event logs), conformance checking belongs to the area of process mining [5],
+which is a relatively young research discipline that sits between computational intelli-
+gence and data mining on the one hand, and process modeling and analysis on the other
+hand.
+conformance checking techniques take an event log and a process model and com-
+pare the observed behavior with the modeled behavior. there are different dimensions
+for comparing process models and event logs. in this paper, we focus of the ﬁtness di-
+mension: a model with good ﬁtness allows for most of the behavior seen in the event
+log. a model has a perfect ﬁtness if all traces in the log can be replayed by the model
+from beginning to end. other quality dimensions are simplicity ,precision , and general-
+ization [1, 2].
+various conformance checking techniques have been proposed in recent years [1,
+2, 3, 6, 7, 8, 9, 10, 11]. however, all of the techniques described in literature focus
+on the control ﬂow, i.e. the ordering of activities. they do not take into account other
+perspectives, such as resources and data. for example, when an activity is executed
+by the wrong person it is important to detect such a deviation. conformance checking
+techniques need to detect that an activity reserved for gold customers is executed for
+silver customers. note that information about cases and data is readily available in
+today’s event logs. the routing of a case may depend on data, i.e., a check needs to bedata- and resource-aware conformance checking of business processes 3
+performed for claims over 5000. therefore, it is important to look at the combination
+of all perspectives.
+in a process model each case, i.e. a process instance, is characterized by its case
+attributes. paths taken during the execution may be governed by guards and conditions
+deﬁned over such attributes. process models also deﬁne, for each attribute, its domain,
+i.e. the values that can be given. moreover, process models prescribe which attributes
+every activity can read or write. last but not least, process models also describe which
+resources are allowed to execute which activities. an activity is typically associated
+with a particular role, i.e., a selected group of resources. moreover, there may be ad-
+ditional rules such as the “four-eyes principle” which does not allow for the situation
+where the same resource executes two related tasks. if the data and the resource per-
+spective are not considered, process executions can apparently be fully conforming,
+whereas actually they are not. let us consider the following example:
+example 1 a credit institute has activated a process to deal with loans requested by clients.
+these loans can be used to buy small home appliances (e.g., fridges, tvs, high-quality digital
+sound systems). a customer can apply for a loan through a shop clerk. the clerk prepares the re-
+quest by ﬁlling out the form and attaching documents that prove the capability to pay off the loan.
+upon receiving a new request, the credit institute opens a new case of the process in figure 1.
+dotted lines going from activities to data objects indicate the data objects (i.e., the attributes) that
+activities are allowed to change the value of. the resource perspective is speciﬁed by deﬁning the
+role that participants need to have in order to execute the corresponding activity.
+let us also consider the following trace where attribute estands for executor and
+denotes the activity executor:1
+h(a;fa= 3000;r=michael;e=peteg);(b;fv=ok;e =sue;a= 3000;r=michaelg);
+(c;fi= 530;d=ok;e =sue;a= 3000;r=michaelg);(f;fe=pete;a= 3000;r=michaelg)i:
+existing conformance checking techniques [2, 3, 6, 7, 8, 9, 10, 11] would only consider
+the control ﬂow and ignore the decision points, values assigned to attributes and re-
+sources. hence, the given trace would be considered as perfectly ﬁtting. the approach
+proposed in this paper also considers the data and resource perspectives. for example,
+using our techniques, we can discover violations of rules, such as: (i)activity cshould
+not be executed since the loan amount is not greater than 5000 (conversely, activity d
+should); (ii)for the considered credit loan, the interest should not be more 450 euros
+and, hence, proposing an interest of 530 euros is against the credit-institute’s policy
+for small loans; (iii)‘sue’ is not authorized to execute activity bsince she cannot play
+roleassistant ;(iv)activity hhas not been executed and, hence, the decision cannot be
+positive. the approach we propose is based on the principle of ﬁnding an alignment
+of event log and process model. the events in the traces are mapped to the execution
+of activities in the process model. such an alignment shows how the event log can be
+replayed on the process model. in [12] an alignment-based conformance checking tech-
+niques is described. however, this approach is limited to the control-ﬂow perspective.
+this paper extends [12] by also taking the data and resource perspectives into account.
+we allow costs to be assigned to every potential deviation. some deviations are
+more severe than others and the severity can also be inﬂuenced by the point in the
+1notation (act;fattr 1=val1;:::;attr n=valng)is used to denote the occurrence of activ-
+ityactin which attributes attr 1;:::;attr nare assigned values val1;:::;val n, respectively.4 m. de leoni, w. m. p. van der aalst, b. f. van dongen
+process when these occur, e.g., skipping a notiﬁcation activity is more severe for gold
+customers. our approach uses the a* algorithm [13] to ﬁnd, for each trace in the event
+log, the process execution, among those possible, whose deviations from the log trace
+has the lowest overall cost. in order to keep the technique as general as possible, we have
+developed it as independent of both the actual language in which business processes
+are described and the log format. together with measuring the degree of conformance,
+the technique highlights where deviations occur thereby showing the control-ﬂow, data
+and resource perspectives. in particular, among the different types of deviations that
+the technique can diagnose, it is capable to compute how much a value assignment to
+an attribute deviates. similarly, from the resource viewpoint, the techniques pinpoints
+which resources and activities more often violate the authorization.
+section 2 illustrates a formalism that abstracts from the actual log and process nota-
+tion and focuses on the behavior described by the model and recorded in the event logs.
+section 3 shows how constructing an optimal alignment of process model and event
+log can be used to diagnose non-conformance and quantify the ﬁtness. section 4 elabo-
+rates the adaptation of the a* algorithm to solve the problem of conformance checking.
+section 5 describes our implementation of this new approach in prom. moreover, ex-
+perimental results are given. finally, section 6 concludes the paper, describing future
+directions of improvement.
+2 the general framework
+typically, any process model, such as the bpmn diagram in figure 1, relies on con-
+structs such as parallel split nodes, synchronization nodes, decision/choice nodes, con-
+ditions, merge nodes, etc. however, the model description can be “expanded” into a
+(possible inﬁnite) set of (potentially arbitrarily long) traces yielding to a ﬁnal state, i.e.
+the set of admissible behaviors. each trace can be seen as a sequence of execution steps ,
+each of which corresponds to the execution of a given process activity. usually, a pro-
+cess model also deﬁnes a set of attributes together with their domain (i.e., the values
+that can be given). an activity is allowed to read and write attributes in a predeﬁned
+manner.
+leta,vbe, respectively, the ﬁnite set of activities and attributes. for all attributes
+v2v, let us denote with domattr (v)the set of values allowed for v(i.e., the attribute
+domain). let be u=s
+v2vdomattr (v). aexecution step s= (as;'s)consists of
+an executed activity asand a function that denotes an assignment of values to process
+attributes:'s2v6!us.t.8v2dom('s): 's(v)2domattr (v).2letsbe the set
+of possible execution steps. a processpis the set of all admissible execution traces:
+ps. for each execution step s= (as;'s), we use function #act(s) =asto extract
+the activity associated to the execution step.
+resources are taken into account by “reserving” a special attribute to carry the
+executor information. each value assignment to attributes can either be a read or
+write operation and the semantics depends on the executed activity and event log.
+for instance, let us consider the trace in section 1 and the ﬁrst two execution steps
+2the domain of a function fis denoted by dom (f).data- and resource-aware conformance checking of business processes 5
+s0= (a;fa= 3000;r=michael;e=peteg)ands00= (b;fv=ok;e =
+sue;a= 3000;r=michaelg). the assignment a= 3000 fors0denotes that the
+execution of step s0provokes an assignment of value 3000 to attribute a. conversely,
+a= 3000 fors00indicates that, during the execution of step s00, the value 3000 has
+been read for attribute a. in the remainder, we focus on the writing operations. it is
+obvious to see that our approach can be extended to distinguish between read and write
+operations.
+an event log contains events associated to cases, i.e., process instances. each case
+follows a trace of events. each trace records the execution of a process instance. differ-
+ent instances may follow the same trace. therefore, an event log is a multi-set of traces,
+i.e.,l2b(s).3
+3 aligning event log and process model
+conformance checking requires an alignment of event logland process model p: the
+events in the event log need to be related to model elements and vice versa. such an
+alignment shows how the event log can be replayed on the process model. this is far
+from being trivial since the log may deviate from the model and not all activities may
+have been modeled and recorded.
+we need to relate “moves” in the log to “moves” in the model in order to establish
+an alignment between a process model and an event log. however, it may be the case
+that some of the moves in the log cannot be mimicked by the model and vice versa. we
+explicitly denote “no move” by ?. for convenience, we introduce the set s?=s[f?g .
+one step in an alignment is represented by a pair (s0;s00)2(s?s?)nf(?;?)g
+such that
+–(s0;s00)is amove in log ifs02sands00=?,
+–(s0;s00)is amove in process ifs0=?ands002s,
+–(s0;s00)is amove in both ifs02sands002s.
+sa= (s?s?)nf(?;?)gis the set of all legal moves where the ﬁrst and the second
+element of every pair denote possible moves in the log and in the process, respectively.
+thealignment of two execution traces 0;002sis a sequence 2sasuch
+that, ignoring all occurrences of ?, the projection on the ﬁrst element yields to 0and
+the project on the second yields to 00. in particular, is acomplete alignment if02l
+and002p.
+in order to deﬁne the severity of a deviation, we introduce a cost function on legal
+moves:2sa!r+
+0. the costs of each legal move depends on the speciﬁc model
+and process domain and, hence, cost function needs to be deﬁned ad-hoc for every
+speciﬁc case. the cost function can be generalized to alignments as the sum of the
+cost of each individual move: k() =p
+(s0;s00)2(s0;s00).
+example 1 (cont.). when checking for conformance, the business analysts repute more severe
+the misconformances on activities that are concerned with interactions with customers, since they
+can undermine the reputation of the credit institute. therefore, every alignment step between ?
+3b(x)the set of all multi-sets over x.6 m. de leoni, w. m. p. van der aalst, b. f. van dongen
+1
+a,fa=3000,r=michael,e=pete ga,fa=3000,r=michael,e=pete g
+b,fv=ok,e=pete g b,fv=ok,e=sue g
+c,fi=530,d=ok,e=sue g ?
+? d,fi=599,d=nok,e=sue g
+f,fe=peteg f,fe=peteg2
+a,fa=3000,r=michael,e=pete ga,fa=3000,r=michael,e=pete g
+b,fv=ok,e=pete g ?
+? b,fv=ok,e=sue g
+c,fi=530,d=ok,e=sue g ?
+d,fi=599,d=nok,e=sue g
+f,fe=peteg f,fe=elleng
+3
+a,fa=3000,r=michael,e=pete ga,fa=3000,r=michael,e=pete g
+b,fv=ok,e=pete g b,fv=ok,e=sean g
+c,fi=530,d=ok,e=sue g ?
+? d,fi=500,d=nok,e=sue g
+f,fe=peteg f,fe=peteg4
+a,fa=3000,r=michael,e=pete ga,fa=5001,r=michael,e=pete g
+b,fv=ok,e=pete g b,fv=ok,e=sean g
+c,fi=530,d=ok,e=sue g c,fi=530,d=nok,e=sue g
+f,fe=peteg f,fe=peteg
+fig. 2: four possible alignments of the log trace described in section 1 and the process
+model in figure 1
+and an execution step for activities cordis given a cost 1, whereas a cost of 10 is given to
+alignment steps between ?and execution steps for any activity different from candd:
+8s2s:(s;?) =(?;s) =1 if#act(s)2fc;dg
+10 if#act(s)62fc;dg
+letdiff(s0;s00)be the set of attributes to which both steps s0ands00assign a value, but a different
+one. every move in both is assigned a cost as follows:
+8s0;s002s:(s0;s00) =8
+<
+:0:2kdiff(s0;s00)kif#act(s0) = # act(s00)^#act(s0)2fc;dg
+3kdiff(s0;s00)k if#act(s0) = # act(s00)^#act(s0)62fc;dg
+1 otherwise
+the idea is that moves in both with different value assignment to attributes are given a higher cost
+for activities canddrather than for any other activity. let us consider again the log trace given
+in section 1. figure 2 shows four possible alignments. it is easy to check that k(1) =k(3) =
+0+3+1+1+0 = 5 ,k(2) = 0+10+10+1+1+2 = 24 andk(4) = 3+2+0 :6+0 = 5:6
+and, hence, alignments 1and3are certainly better than 2and4.
+so far we have considered single complete alignments. however, given a log trace l2
+l, our goal is to ﬁnd a complete alignment of landpwhich minimizes the cost with
+respect to all 0
+p2p. we refer to it as an optimal alignment. let  l;pbe the set of all
+complete alignments of landp. the alignment 2 l;pis an optimal alignment
+if802 l;p:k()k (0). note that there may exist several optimal alignments,
+i.e. several complete alignments of the same minimal cost.
+example 1 (cont.). for this example, using the cost function deﬁned above, 1and3are
+both optimal alignments. of course, the set of optimal alignments depends on the cost function
+. for instance, let us consider a cost function bs.t.8s2s:b(?;s) =b(s;?) = 10 and
+8s0;s002s:b(s0;s00) =(s0;s00):usingbas cost function, the alignment 4would be optimal
+withk(4) = 5:6, whereas alignments 1and3would no more be optimal since k(1) =
+k(3) = 22 .
+in the next section we propose an approach to create an optimal alignment with
+respect to a custom cost function . the approach is based on the a* algorithm, i.e. an
+algorithm intended to ﬁnd the path with the lowest overall cost between two nodes in
+a direct graph with costs associated to nodes. we have adapted it to derive one of the
+optimal alignments.data- and resource-aware conformance checking of business processes 7
+4 the a* algorithm for conformance checking
+the a* algorithm, initially proposed in [13], aims at ﬁnding a path in a graph vfrom
+a given source nodev0to any node v2vin a target set. with every node vof graph
+vthere is an associated cost, which is determined by an evaluation functionf(v) =
+g(v) +h(v), where
+–g:v!r+
+0is a function that returns the smallest path cost from v0tov;
+–h:v!r+
+0is an heuristic function that estimates the path cost from vto its
+preferred target node.
+functionhis said to be admissible if it returns a value that underestimates the distance
+of a path from a node v0to its preferred target node v00, i.e.h(v0)g(v00). ifhis
+admissible, a* ﬁnds a path that is guaranteed to have the overall lowest cost.
+the a* algorithm keeps a priority queue of nodes to be visited: higher priority is
+given to nodes with lower costs so as to traverse those with the lowest costs at ﬁrst. the
+algorithms works iteratively: at each step, the node vwith lowest cost is taken from
+the priority queue. if vbelongs to the target set, the algorithm ends returning node v.
+otherwise,vis expanded: every successors v0is added to priority queue with a cost
+f(v0).
+we employ a* to ﬁnd any of the optimal alignments between a log trace l2s
+and a process model p. in order to be able to apply a*, an opportune search space
+needs to be deﬁned. every node of the search space vis associated to a different
+alignment that is a preﬁx of some complete alignment of landp. since a different
+alignment is also associated to every node and vice versa, later on we use the alignment
+to refer to the associated state. the source node is empty alignment 0=hiand the set
+of target nodes includes every complete alignment of landp.
+let us denote the length of a sequence withkk. given a node/alignment 2v,
+the search-space successors of include all alignments 02vobtained from by
+concatenating exactly one move step. let us consider a custom cost function and
+denote with minthe smallest value returned by that is greater than 0. given an
+alignment2vof0
+land0
+p, the cost of path from the initial node to node 2vis:
+g() =mink0
+lk+k():
+it is easy to check that, given a log trace land two complete alignments 0
+cand00
+c
+oflandp,k(0
+c)<k(0
+c)iffg(0
+c)< g(00
+c)andk(0
+c) =k(00
+c)iffg(0
+c) =
+g(00
+c). therefore, an optimal solution returned by the a* algorithm coincides with an
+optimal alignment. term mink0
+lk, which does not affect the optimality, has been
+added because it allows us to deﬁne a more efﬁcient admissible heuristics. given an
+alignment2vof0
+land0
+p, we employ the following heuristics:
+h() =min(klk k0
+lk)
+for alignment , the number of steps to add in order to reach a complete alignment is
+lower bounded by the number of execution steps of trace lthat have not been included
+yet in the alignment, i.e. klk k0
+lk. since the additional cost to traverse a single node
+is at leastmin, the cost to reach a target node is at least h(), corresponding to the case
+when the part of the log trace that still needs to be included in the alignment ﬁts in full.8 m. de leoni, w. m. p. van der aalst, b. f. van dongen
+5 implementation and experiments
+thedata-aware conformance checker is implemented as a software plug-in of prom,
+a generic open-source framework for implementing process mining tools in a standard
+environment [14]. the plug-in takes as input a process model and a log and, by em-
+ploying the techniques described in section 4, answers to the conformance-checking
+questions expressed in the section 1.
+extended casual nets. our data-aware conformance-checking engine is completely
+independent of the process modeling language. as a proof of concept, we have used
+causal nets as concrete language to represent process models and extended it in order to
+describe the aspects related to the data and resource perspective.
+fig. 3: an extended causal net for example 2.while casual nets without
+the data and resource per-
+spective are thoroughly de-
+scribed in [1], space limita-
+tions prevent us from giv-
+ing here a full formaliza-
+tion for their extension with
+these perspectives. a ca-
+sual net extended with data
+is a graph where nodes rep-
+resent activities and arcs
+represent causal dependen-
+cies. each activity has a set
+of possible input bindings
+and output bindings . the
+occurrence of an activity is represented by an activity binding (a;abi;abo;), which
+denotes the occurrence of activity awith input binding abiand output binding aboand
+data binding function , where data attributes have global scopes. the input and output
+bindings include the activities that precede and succeed the occurrence of activity a. if
+there exists an attribute v2dom())and a valueusuch that(v) =u, the occurrence
+ofaprovokes to overwrite the value of attribute uwithu. the deﬁnition of a process
+pin section 2 is also applicable to extended casual nets: there exists a distinct pro-
+cess trace for each legal sequence of activity bindings that ends with the ﬁnal activity.4
+given a valid sequence of activity bindings, the corresponding process trace contains a
+different execution step (a;)for each activity binding (a;abi;abo;). and the order
+of the execution steps in a process trace complies the order of activity bindings in the
+corresponding activity-bindings sequences.
+example 2 figure 3 shows an example of a causal net extended with data. there is a set of
+ndifferent process attributes x1;:::;x n, each of which is a natural number between 1andm.
+4the lack of space does not allow us to elaborate more the concept of “legal sequence”. in a
+few words, a sequence of activity bindings is valid if every predecessor activity and successor
+activity always agree on their bindings as well as the guards always hold in relation with the
+value assignments given. interested readers can also refer to [1].data- and resource-aware conformance checking of business processes 9
+nodesis the starting activity: it has no input binding and one output binding, which is the set
+fa1;:::;a ngof activities. this means activity sis followed by activities a1;:::;a nexecuted
+in any order (i.e., and-split). activity aiis associated a guard x0
+i0; when an attribute, e.g.
+xi, is annotated with the prime symbol in a guard, the activity, e.g. ai, is prescribed to update
+the value of the attribute. and the written value must not violate the guards, e.g. xihas to be
+assigned a non-negative value. activity ois characterized by an input binding fa1;:::;a ng,
+which means that ocan only be executed after all activities a1;:::;a nhave been (i.e., and-
+join). two possible output bindings are modeled for o:bandc. therefore,ois followed by
+eitherborc(i.e., xor-split). bandcare associated with two guards indicating that activities
+borccan followoif the average of values for x1;:::;x nis less thanm=2or, vice versa,
+greater or equal to m=2.
+experiments. as input for experiments, we generated event logs by modeling the ex-
+amples 2 in cpn tools ( http://cpntools.org ) and simulating the model. in
+particular, we considered all combinations in which the number nof parallel activi-
+ties ranges from 3 to 6 and each attribute can be given a value between 1andm, with
+m2f12;22;32;42g.
+for each combinations, the log is composed by 6 different traces, generated in a
+random fashion but perfectly ﬁtting. in order to make the conformance-checking anal-
+ysis more challenging, from the generated logs, we have removed every occurrence of
+activitya1as well as we have swapped every occurrence of activity bandc. more-
+over, we have set the cost of moving only in the process or in the log three times bigger
+than moving in both with different value assignments to attribute. in this way, complete
+alignments that contain move only in the process and in the log are always given a cost
+higher than move in both with different value assignments. therefore, in order to ﬁnd an
+optimal alignment, the conformance checker needs to ﬁnd different value assignments
+to attributes x1;:::;xnfrom what encountered in the log. in this way, moves only in
+the log or in the process can be avoided for borc.
+figure 4 illustrates the results of the experiments. the graph in figure 4a shows the
+computation time to ﬁnd optimal alignments for different numbers nof parallel activ-
+ities and for different sizes mof the domain of each attribute xi. the x axis refers to
+numbern, where the y axis is the computation time. four series are plotted for different
+attribute domain sizes m2f12;22;32;42g.
+for each series, the computation time grows exponentially with the number nof
+parallel activities. on the other hand, the size of the input domain is roughly mnand,
+hence, grows exponentially with the number nof parallel activities. indeed, each of n
+attributesx1;:::;xnshould be assigned one out of mvalues.
+to sum up, the experiments proves that the computation time is upper bounded by
+a polynomial expression in the size of the input. to have a more precise estimation,
+we have plotted a different graph in which the xaxis is the domain size and yis the
+computation time. the graph is shown in figure 4b where the dotted line delineates
+the regression curve that better represents the trend. for this example, the actual com-
+putation time to ﬁnd a solution grows as a square root of the input domain size. this
+sub-linear trend demonstrates that, in practical cases, the time to ﬁnd an optimal align-
+ment is only relatively affected by the number of values a certain process attribute can
+be given. this remarkable result is certainly related to the goodness of the employed
+heuristic function. in the worst case, the theoretical complexity remains exponential in10 m. de leoni, w. m. p. van der aalst, b. f. van dongen
+(a) the computation time
+for different numbers n
+of parallel activities. each
+series refers to a differ-
+ent sizemof the domain
+of each attribute xi(with
+m2f12;22;32;42g).
+(b) the inﬂuence of the
+size of the input do-
+main on the computation
+time. in particular, the
+trend line shows that the
+computation time grows
+sub-linearly with growing
+sizes of the input domain.
+(c) the number of visited
+search-space nodes in the
+case of 3 parallel activi-
+ties with and without us-
+ing the heuristics. the x
+axis refers to the size m
+of the domain of each at-
+tributexi.
+fig. 4: the results of the experiments conducted on example 2.
+the size of the domain. but, in practice, the heuristic allows the algorithm to signiﬁ-
+cantly cut the number of search-space nodes to visit and, hence, the computation time
+to ﬁnd a solution. as a matter of fact, figure 4c shows the number of visited nodes
+in case of 3 parallel activities and for different values of m. in particular, we compare
+such a number in the case both the heuristic is used and is unused: the heuristics roughly
+instructs the algorithm to only visit a logarithmic number of nodes with respect to the
+case when the heuristic is not used.
+visualization of the results in the operationalization as prom plug-in. we conclude
+this section by showing the actual operationalization as prom plug-in in a scenarios
+in which we want to check the conformance of a given log against the process of
+example 1. the log contains one perfectly-ﬁtting trace and other trace with different
+problems. figure 5 illustrates how the conformance-checking results are visualized: the
+optimal alignment of each log trace is shown as a sequence of triangles, each represent-
+ing a move in the process and/or in the log. the triangle colors represent the alignment
+type. the green and white color identify moves in both with the same attribute assign-
+ment or with a different one; yellow and purple report moves only in the log or in the
+process, respectively. when the user passes over a triangle with the mouse, the plug-in
+shows the execution step(s) associated to the move. the value near to every trace is the
+ﬁtness value of the trace, i.e. a value between 0 and 1 which quantiﬁes the quality of the
+alignment. fitness value 1 identiﬁes the perfect alignment. conversely, a ﬁtness value
+0 pinpoints the alignment with the largest possible cost, which typically only consists
+by moves in log and moves in process. interested readers can refer to [2] where ﬁtness
+values are computed in the same way. at the bottom, a table shows some statistics on
+the attribute assignments in the moves present in the optimal alignments shown in the
+upper part of the screen. the second column highlights the percentage of log steps thatdata- and resource-aware conformance checking of business processes 11
+fig. 5: a screenshot of the prom plug-in: how optimal alignments are visualized and
+what statistics are available on the process attributes.
+do not provide assignment. the last two columns report the average and the standard
+deviation of the difference of the values assigned to attributes in the moves. we use the
+hamming distance to compute the string differences and, in case of boolean attributes,
+we consider trueas value 1 and false as value 0.
+6 conclusion
+process mining can be seen as the “missing link” between data mining and business
+process management. although process discovery attracted the lion’s share of attention,
+conformance checking is at least as important. it is vital to relate process models (hand-
+made or discovered) to event logs. first of all, it may be used to audit processes to
+see whether reality conforms to some normative of descriptive model [15]. deviations
+may point to fraud, inefﬁciencies, and poorly designed or outdated procedures. second,
+conformance checking can be used to evaluate the performance of a process discovery
+technique. finally, the alignment between model and log may be used for performance
+analysis, e.g., detecting bottlenecks [1].
+existing conformance checking techniques focus on the control ﬂow thereby ignor-
+ing the other perspectives (data and resources). this paper presents a technique that
+takes data and resources into account when checking for process conformance. the
+proposed heuristics-based approach seems extremely promising since it allows for cut-
+ting out a signiﬁcant part of the search space during the analysis. as a matter of fact,
+the computation time seems to be sub-linear, at least for the example used during the
+experiments.
+of course, a larger set of experiments with different processes is needed to verify
+our ﬁndings. moreover, the absolute value of the computation time is still relatively high12 m. de leoni, w. m. p. van der aalst, b. f. van dongen
+and that seems to be mostly related to the parsing of the guard expressions to determine
+the node successors in the search space. the parsing operations approximately take
+70% of the overall computation time: we are currently investigating how to reduce the
+number of guards to be evaluated, along with integrating a more efﬁcient parser.
+acknowledgements. the research leading to these results has received funding from the
+european community’s seventh framework programme fp7/2007-2013 under grant
+agreement no257593 (acsi).
+references
+1. van der aalst, w.m.p.: process mining - discovery, conformance and enhancement of
+business processes. springer (2011)
+2. van der aalst, w., adriansyah, a., van dongen, b.: replaying history on process models
+for conformance checking and performance analysis. wiley interdisciplinary reviews: data
+mining and knowledge discovery 2(2) (2012) 182–192
+3. rozinat, a., van der aalst, w.: conformance checking of processes based on monitoring
+real behavior. information systems 33(march 2008) 64–95
+4. manyika, j., chui, m., brown, b., bughin, j., dobbs, r., roxburgh, c., byers, a.h.: big
+data: the next frontier for innovation, competition, and productivity. technical report, mck-
+insey global institute (mgi) (may 2011)
+5. van der aalst, w.m.p. et al.: process mining manifesto. in: proceedings of business pro-
+cess management workshops 2011. v olume 99 of lecture notes in business information
+processing (lnbip)., springer verlag (2012)
+6. weijters, a., van der aalst, w., de medeiros, a.a.: process mining with the heuristics
+miner-algorithm. technical report, eindhoven university of technology, eindhoven (2006)
+beta working paper series, wp 166.
+7. de medeiros, a.a., weijters, a., van der aalst, w.: genetic process mining: an experimental
+evaluation. data mining and knowledge discovery 14(2007) 245–304
+8. adriansyah, a., van dongen, b., van der aalst, w.: towards robust conformance checking.
+in: proceedings of the 6th workshop on business process intelligence (bpi 2010). (2010)
+9. weidlich, m., polyvyanyy, a., desai, n., mendling, j.: process compliance measurement
+based on behavioural proﬁles. in: proceedings of the 22nd international conference on
+advanced information systems engineering. caise’10, springer-verlag (2010) 499–514
+10. rozinat, a., veloso, m., van der aalst, w.: using hidden markov models to evaluate the
+quality of discovered process models. technical report (2008) bpm center report bpm-08-
+10.
+11. cook, j., wolf, a.: software process validation: quantitatively measuring the correspon-
+dence of a process to a model. acm transactions on software engineering and methodol-
+ogy (tosem) 8(april 1999) 147–176
+12. adriansyah, a., van dongen, b., van der aalst, w.: conformance checking using cost-
+based fitness analysis. in: ieee international enterprise distributed object computing
+conference, ieee computer society (2011) 55–64
+13. dechter, r., pearl, j.: generalized best-ﬁrst search strategies and the optimality of a*. jour-
+nal of the acm (jacm) 32(july 1985) 505–536
+14. verbeek, h.m.w., buijs, j.c.a.m., van dongen, b.f., van der aalst, w.m.p.: xes, xesame,
+and prom 6. in: proceedings of information systems evolution (caise forum 2010). v ol-
+ume 72 of lecture notes in business information processing. (2011) 60–75
+15. van der aalst, w.m.p., van hee, k., j.m. van der werf, j., verdonk, m.: auditing 2.0: using
+process mining to support tomorrow’s auditor. ieee computer 43(3) (2010) 90–93

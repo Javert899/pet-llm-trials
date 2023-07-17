@@ -1,0 +1,1402 @@
+a tour in process mining: from practice to
+algorithmic challenges
+wil van der aalst1, josep carmona2, thomas chatain3, and boudewijn van
+dongen4
+1process and data science group, rwth aachen university (germany)
+2computer science department, universitat polit ecnica de catalunya, barcelona
+(spain)
+jcarmona@cs.upc.edu
+3lsv, ens paris-saclay, cnrs, inria, universit e paris-saclay, cachan (france)
+chatain@lsv.fr
+4eindhoven university of technology, eindhoven, the netherlands
+b.f.v.dongen@tue.nl
+abstract. process mining seeks the confrontation between modeled be-
+havior and observed behavior. in recent years, process mining techniques
+managed to bridge the gap between traditional model-based process anal-
+ysis (e.g., simulation and other business process management techniques)
+and data-centric analysis techniques such as machine learning and data
+mining. process mining is used by many data-driven organizations as a
+means to improve performance or to ensure compliance. traditionally,
+the focus was on the discovery of process models from event logs de-
+scribing real process executions. however, process mining is not limited
+to process discovery and also includes conformance checking. process
+models (discovered or hand-made) may deviate from reality. therefore,
+we need powerful means to analyze discrepancies between models and
+logs. these are provided by conformance checking techniques that rst
+align modeled and observed behavior, and then compare both. the re-
+sulting alignments are also used to enrich process models with perfor-
+mance related information extracted from the event log. this tutorial
+paper focuses on the control-ow perspective and describes a range of
+process discovery and conformance checking techniques. the goal of the
+paper is to show the algorithmic challenges in process mining. we will
+show that process mining provides a wealth of opportunities for people
+doing research on petri nets and related models of concurrency.
+1 introduction to process mining
+this tutorial paper is based on a tutorial given at petri nets 2017 in zaragoza
+(spain) on tuesday, june 27th, 2017 and a tutorial given at petri nets 2018
+in bratislava (slovakia) on tuesday, june 26th, 2018. the goal of these two
+tutorials was to introduce the topic of process mining for people with a petri
+nets background and to show the exciting algorithmic challenges provided by
+the various process mining tasks. although process mining is widely used inindustry, there are still many open research questions that require knowledge of
+both process science (e.g., formal methods and concurrency theory) and data
+science (e.g., data mining, machine learning, and statistics). to limit the scope,
+we focus on control ow and petri nets as a representation.
+1.1 opportunities provided by event data
+modeling behavior is valuable, but is often based on (unrealistic) simplifying
+assumptions. simulation models and specications can be used to get process
+insights, but these insights depend on the assumptions and abstraction used
+while modeling. fortunately, when it comes to existing processes and systems,
+we no longer need to rely on modeling only. there is an abundance of event
+data. in the book [1], the term internet of events (ioe) is used to refer to the
+dierent types of event data readily available. these include: the internet of
+content (traditional databases, web pages, e-books, newsfeeds, movies, music,
+etc.), the internet of people (e-mail, facebook, twitter, forums, linkedin, etc.),
+theinternet of things (smart homes, high-tech systems, industry 4.0, etc.), and
+theinternet of locations (smartphones, wearables, etc.). events may take place
+inside machines, enterprise information systems, hospital information systems,
+social networks, and transportation systems. events may be \life events", \ma-
+chine events", or \organization events". process mining aims to exploit event
+data in a meaningful way, for example, to provide insights, identify bottlenecks,
+anticipate problems, record policy violations, recommend countermeasures, and
+streamline processes. event data are like the breadcrumbs in the fairy tale of
+hansel and gretel. when stored properly, we can use them to reconstruct the
+real behavior.
+table 1 shows a small fragment of a larger event log describing 16218 events
+related to 1266 cases. the events in this log correspond to the handling of orders.
+each row corresponds to two events , i.e., the start of an activity instance and the
+completion of an activity instance. each activity instance (i.e., row) describes
+the execution of an activity for a particular order. the rst column refers to
+the order number. the second column shows the activity name. the next two
+columns show the start time and end time of an activity. there are also additional
+attributes such as the person executing the event.
+event data, as shown in table 1, can be used to discover process models
+best describing the behavior observed. this is similar to discovering a decision
+tree based on labeled instances, i.e., instances having descriptive attributes and
+a class label. however, in process mining, the instances correspond to events
+referring to cases (i.e., process instances), activities, timestamps, etc. process
+discovery starts from the situation without a model and just event data. given
+a process model, it is also possible to check conformance . conformance checking
+uses as input both modeled and observed behavior. discrepancies can be detected
+by replaying the event data on the process model. the process model may be
+hand-made or discovered using some process discovery technique. next to process
+discovery and conformance checking, there are many additional process mining
+techniques using both event data and models. for example, events data can betable 1. fragment of an event log with 16218 events related to 1266 cases.order number activity start time end time resource product prod-price quantity address
+::: ::: ::: ::: ::: ::: :::::: :::
+989 place order 10/07/2015 05:10 10/07/2015 05:25 sophia apple iphone 6s 64 gb 858.0 2 nl-7742xg-17
+984 send invoice 10/07/2015 08:47 10/07/2015 08:57 jack samsung core prime g361 135.0 2 nl-9468hg-14
+810 prepare delivery 10/07/2015 08:50 10/07/2015 08:53 emma apple iphone 6s plus 64 gb 969.0 4 nl-7875eh-26
+898 conrm payment 10/07/2015 08:56 10/07/2015 09:02 lily samsung galaxy s4 329.0 4 nl-7944bb-6
+858 prepare delivery 10/07/2015 09:01 10/07/2015 09:04 emma samsung galaxy j5 219.99 1 nl-7823jj-7
+990 place order 10/07/2015 09:41 10/07/2015 09:51 sophia motorola moto g 199.0 4 nl-9514bv-16
+838 conrm payment 10/07/2015 09:56 10/07/2015 10:03 jack samsung core prime g361 135.0 3 nl-7826gd-9
+869 prepare delivery 10/07/2015 10:39 10/07/2015 10:42 emma samsung galaxy s4 329.0 1 nl-7742xg-17
+875 prepare delivery 10/07/2015 10:42 10/07/2015 10:46 aiden samsung core prime g361 135.0 4 nl-9407em-35
+898 make delivery 10/07/2015 10:44 10/07/2015 11:06 aubrey samsung galaxy s4 329.0 4 nl-7944bb-6
+914 send reminder 10/07/2015 11:38 10/07/2015 11:58 abigail motorola moto g 199.0 3 nl-7828am-11a
+991 place order 10/07/2015 11:41 10/07/2015 15:32 lucas samsung core prime g361 135.0 4 nl-7905bc-40a
+888 pay 10/07/2015 11:49 10/07/2015 11:54 lily apple iphone 6 16 gb 639.0 3 nl-7821ac-3
+977 send invoice 10/07/2015 11:56 10/07/2015 12:01 madison samsung galaxy s4 329.0 3 nl-7908xb-46
+889 pay 10/07/2015 12:03 10/07/2015 12:09 lily samsung galaxy s4 329.0 2 nl-7948bx-10
+883 make delivery 10/07/2015 12:09 10/07/2015 12:37 aubrey motorola moto g 199.0 1 nl-7751ar-19
+912 send reminder 10/07/2015 12:34 10/07/2015 12:46 abigail apple iphone 6 16 gb 639.0 1 nl-9402nv-25
+823 conrm payment 10/07/2015 12:56 10/07/2015 13:04 lily samsung galaxy s4 329.0 7 nl-7943mc-4
+863 prepare delivery 10/07/2015 12:59 10/07/2015 15:21 lucas apple iphone 6 16 gb 639.0 2 nl-7905ax-38
+860 make delivery 10/07/2015 13:04 10/07/2015 13:32 aubrey samsung galaxy s6 32 gb 543.99 3 nl-7823jj-7
+992 place order 10/07/2015 13:41 10/07/2015 13:51 jacob samsung galaxy s4 329.0 3 nl-7948dn-12a
+900 send reminder 10/07/2015 13:45 10/07/2015 13:59 abigail apple iphone 6 16 gb 639.0 2 nl-9521kj-34
+905 send reminder 10/07/2015 13:52 10/07/2015 14:08 luke apple iphone 5s 16 gb 449.0 4 nl-7942gt-2
+867 prepare delivery 10/07/2015 14:36 10/07/2015 14:43 sophia samsung galaxy s6 32 gb 543.99 2 nl-7908xb-46
+::: ::: ::: ::: ::: ::: :::::: :::used to enrich orrepair process models. it is also possible to predict performance
+or compliance. see [1] for a more complete overview of process discovery. the
+book [2] focuses on conformance checking.
+1.2 control flow as the backbone of any process
+in this paper, we focus on control ow . this means that we ignore most of
+the attributes in table 1. initially, we are only interested in the ordering of
+activities within a case (i.e., process instance). to illustrate this, consider a
+particular order, e.g., order 889. there are six activity instances in table 1
+related to this order. each activity instance corresponds to two events: start and
+complete. suppose we focus on the start events. this means that order 889 is
+described by six events (rather than twelve). table 2 shows these six events.
+note that we only show the rst three columns. table 2 describes a sequence of
+activities for one case, namely: hplace order ;send invoice ;pay;prepare delivery ;
+make delivery ;conrm paymenti. note that the timestamps are only used to
+order the events.
+table 2. the events of type \start" for case 889.
+order number activity timestamp
+889 place order 23/06/2015 19:45
+889 send invoice 24/06/2015 18:23
+889 pay 10/07/2015 12:03
+889 prepare delivery 21/07/2015 11:22
+889 make delivery 22/07/2015 13:00
+889 conrm payment 23/07/2015 10:53
+each of the 1266 cases in table 1 can be described as such a trace.
+there are 503 cases that correspond to the trace hplace order ;send invoice ;pay;
+prepare delivery ;make delivery ;conrm paymenti(including order 889). table 3
+shows the frequency of each observed trace. as we will see later, the control-ow
+aspect of an event log table 3 can be formally represented as a mulsetti-set of
+activity sequences.
+clearly, table 3 contains only a fraction of the information in the original
+event log (compare with the fragment in table 1). however, this information is
+sucient to construct a control-ow model, e.g., a petri net. to further simplify
+things, assume that we abstract from activity sr=send reminder , i.e., we create
+a new log without this activity and feed it to various discovery algorithms.
+figure 1 shows a few discovered process models that will be discussed later.
+control-ow models such as the ones shown in figure 1 are just the starting
+point for process mining. by replaying the event log on the discovered model, one
+can show bottlenecks, etc. actually, the control-ow model may be extended with
+additional perspectives: the organizational perspective (\what are the organiza-
+tional roles and which resources are performing particular activities?"), the casetable 3. event log represented as a multi-set of traces using the short names po=
+place order ,si=send invoice ,py=pay,pd=prepare delivery ,md=make delivery ,
+cp=conrm payment ,co=cancel order ,sr=send reminder .
+trace frequency
+hpo;si;py;pd;md;cpi 503
+hpo;si;sr;py;pd;md;cpi 247
+hpo;si;sr;sr;coi 141
+hpo;si;sr;sr;py;pd;md;cpi 139
+hpo;si;py;pd;cp;mdi 135
+hpo;si;sr;py;pd;cp;mdi 57
+hpo;si;sr;sr;py;pd;cp;mdi 36
+hpo;py;si;pd;md;cpi 6
+hpo;py;si;pd;cp;mdi 2
+total 1266
+perspective (\which characteristics of a case inuence a particular decision?"),
+and the time perspective (\where are the bottlenecks in my process?"). these
+additional perspectives are very important from a practical point of view.
+analysts applying process mining are interested in questions such as:
+{what is the main bottleneck in the process and is this caused by particular
+resources?
+{what do the incompliant cases have in common? do they lead to higher
+costs?
+{will we be able to handle 95% of the cases in two hours in the coming days?
+{does the workload have an eect on the durations of activities?
+for all of these questions, we rst need to have a control-ow model. moreover,
+we need to be able to link events in the log to activities in the process model
+in order to discuss bottlenecks, deviations, decisions, etc. transitional machine
+learning, data mining, and optimization techniques can be used once the control-
+ow model is in place and the event log is aligned with the model. however, these
+techniques cannot be used to handle the control-ow perspective. therefore, this
+paper focuses on control-ow.
+1.3 process discovery 6= synthesis
+data science techniques need to deal with uncertainty and incompleteness [3].
+suppose that we learn a decision tree that adequately predicts that one is less
+likely to claim insurance when being middle-aged and female and that one is
+more likely to claim insurance when being young and male. however, even a
+properly constructed decision tree will not be able to classify things correctly
+and we accept that there will be young males not claiming insurance or middle-
+aged females that do claim insurance. moreover, we do not expect to see all
+combinations in our input data. for example, when customers are described
+by 10 dierent attributes age, gender, income, region, brand, etc., we cannot(a) process model discovered using the inductive miner .
+(b) petri net discovered using the inductive miner .
+(c) petri net discovered using state -based regions .
+(e) process model discovered using celonis . (d) process model discovered using disco .
+(f) bpmn model discovered using celonis .
+fig. 1. dierent process models discovered using plug-ins of prom (models (a), (b),
+and (c)), disco (model (d)), and celonis (models (e) and (f)). process models (d) and
+(e) are so-called directly follows graphs. process models (a), (b), and (f) all describe
+the same process, but use dierent notations. process model (c) describes the process
+best, because payand cancel order are mutually exclusive.expect to see all combinations in our training data. despite these limitations, the
+decision tree still provides valuable insights. when performing process discovery,
+we are facing similar challenges. the event log is just a sample and the fact
+that something happens in the logs once does not imply that the model should
+allow for it. consider for example the 1266 cases in table 3. some traces are
+very frequent, e.g., hpo;si;py;pd;md;cpioccurred 503 times. other traces are
+very infrequent, e.g., hpo;py;si;pd;cp;mdihappened only twice. traces in an
+event log typically follow a pareto distribution, i.e., some are frequent, but many
+may be infrequent (for example, 80% of the log is described by 20% of the
+trace variants). when using a larger process model with many activities, one
+often witnesses that many traces in the event log are unique. taking a dierent
+sample of the same process will lead to dierent unique variants. for example,
+if we take only the rst 500 cases from the log shown in table 3, we may not
+seehpo;py;si;pd;cp;mdi. moreover, if we observe the same process for a longer
+time, we will see cases that are not in table 3 (e.g., new trace variants with three
+or more reminders). we may also be just interested in the dominant behavior.
+for example, to resolve a bottleneck, we may want to focus on the most frequent
+behavior. however, when investigating fraud we may be most interested in the
+least frequent behavior.
+researchers working on formal methods and concurrency theory often have
+problems dealing with uncertainty and incompleteness. most synthesis ap-
+proaches assume that the input provides a fulland unambiguous description
+ofallpossible behavior [4]. when performing process mining in reality such as-
+sumptions are very unrealistic. to reason about the correctness of process mining
+results one needs to use a data science approach (e.g., cross-validation using test
+and training data) and apply notions such as precision and recall to assess the
+quality.
+1.4 industrial uptake of process mining and commercial software
+around 2002, only simple stand-alone process mining tools were available (e.g.,
+mimo ,emit ,little thumb , and inwolve ) [1]. this triggered the development
+of the prom framework . in 2004, the rst fully functional version of the prom
+framework was released. since then, prom has been the de facto standard for pro-
+cess mining research. prom provides a \plug-able" open-source platform where
+developers can contribute new analysis techniques in the form of plug-ins. cur-
+rently, there are over 1500 plug-ins. prom served as an example for a \wave" of
+commercial process mining tools.
+reports by gartner [5] and forrester [6] report on the uptake of process
+mining in industry. there are more than 25 commercial tools supporting process
+mining. examples include: disco (fluxicon), celonis process mining (celonis),
+processgold enterprise platform (processgold), qpr processanalyzer (qpr),
+snp business process analysis (snp ag), minit (gradient ecm), myinvenio
+(cognitive technology), everow (accelera labs), prodiscovery (puzzeldata),
+pafnow (process analytics factory), stereologic (stereologic), aris process
+mining (software ag), mehrwerk process mining (mehrwerk), logpickr processexplorer (logpickr), and lana process mining (lanalabs) [1]. see the website
+of the ieee task force on process mining for examples of successful case stud-
+ies [7]. for example, within siemens there are currently over 2,500 active users
+ofcelonis process mining . siemens reported savings of \double-digit millions
+euros" as a result of the worldwide application of process mining [8]. celonis is
+a process mining start-up founded in 2011 that is now valued over one billion
+dollar. the many tools available and the widespread adoption illustrate the rele-
+vance of process mining. however, at the same time, there are many challenges,
+as demonstrated in this paper.
+as described in gartner [5], there is an increasing need for process mining
+capabilities that go beyond process discovery. initially, commercial tools focused
+on process discovery and often discovery capabilities were limited to the so-
+called directly-follows graph . in such a graph, nodes represent activities and arcs
+represent a simplistic view on causality. activities aandbare connected if a
+is frequently followed by b. in the event log used before, po=place order is
+directly followed by si=send invoice 1258 times, and po=place order is
+directly followed by py=payonly 8 times. depending on the threshold set, an
+arc connecting place order topayis added to the directly-follows graph.
+figure 1 shows six process models discovered based on the event log described
+in tables 1 and 3 (without activity send reminder ). figure 1(a) shows a screen-
+shot of prom's visual inductive miner [9]. this model can be converted into a
+petri net as shown in figure 1(b). note that the model allows for the trace where
+payis followed by cancel order , i.e., the model is \undertting" and allowing for
+unseen behavior (in the event log there are no orders for which both payand
+cancel order occurred). figure 1(c) shows a model generated by prom based
+on state-based regions. this petri net does not allow for the unseen behavior
+mentioned before (there is an exclusive choice between payand cancel order ).
+figure 1(d) shows a directly-follows graph generated using disco, the software
+from fluxicon. the directly-follows graph is annotated with the frequencies. us-
+ing two sliders, it is possible to remove infrequent arcs and activities. figure 1(e)
+shows a similar directly-follows graph generated using celonis. celonis also sup-
+ports the basic inductive mining algorithm [1, 10]. the result is presented as a
+bpmn model as shown in figure 1(f). note that models (a), (b), and (f) are
+semantically equivalent, but use dierent notations. each of the models in fig-
+ure 1 denes a language, i.e., the (possibly innite) set of traces accepted by the
+model. ideally, the model accepts most of the traces in the event log (but not
+necessarily all, e.g., outlier behavior may not be accepted) and does not accept
+behavior that is unlikely given the event log. later, these notions will be dened
+more precisely.
+although the initial focus of commercial tools was on discovery, vendors
+started to add functionality related to conformance checking (i.e., monitoring
+deviations by comparing model and log), social network/organizational mining,
+root-cause analysis using machine learning, and case prediction. for example,
+it is possible to nd possible causes for bottlenecks and compliance problems
+and generate statements like \the extreme waiting times are caused by unnec-essary rework involving an external party and under-stang of the backoce
+on fridays" and \most of the compliance violations were caused by this new
+manager that approved requests without the necessary checks". note that these
+more advanced questions have been researched for over more than a decade [1].
+all of the analysis features that can be found in today's commercial tools, had
+been implemented in prom years before. note that, currently, prom provides
+over 1500 plug-ins providing a wide range of analysis techniques.
+in this paper, we focus on conformance checking and limit the scope to
+control-ow [1, 2]. given a trace 1=hpo;si;pd;py;md;cpiand a process
+model like figure 1(c), we would like to decide if the trace ts the model
+and if not, diagnose the dierence(s). in 1,pd=prepare delivery is per-
+formed before the py=paywhich is impossible according to the petri net
+in figure 1(c). in 2=hpo;py;si;py;pd;md;cpi, the order is paid twice. in
+3=hpo;py;si;md;cpi, the order was delivered without the mandatory prepa-
+ration step. given an event log with possibly millions of events, conformance
+checking techniques need to provide aggregate diagnostics (e.g., the activity was
+skipped 1500 times).
+1.5 killer app for petri nets
+the process mining discipline is highly relevant (see the uptake of commercial
+process mining tools and activities) and provide interesting scientic challenges.
+progress in this young scientic discipline has been remarkable and this resulted
+in powerful techniques that are highly scalable. however, many of the problems
+identied (process discovery, conformance checking, etc.) are notoriously dicult
+and have not been solved satisfactorily. process mining provides a great oppor-
+tunity for petri net researchers. when studying real-life processes, concurrency
+should be a starting point for analysis and not added as an afterthought (locality
+of actions). many other modeling approaches start from a sequential view on the
+world and then add special operators to introduce concurrency. petri nets are
+inherently concurrent. although petri nets are often seen as a procedural lan-
+guage, in essence, petri nets are declarative. a petri net without any places and
+a non-empty set of transitions allows for any behavior involving the activities
+represented by these transitions. adding a place is like introducing a constraint.
+the idea that transitions (modeling activities or actions) are independent (i.e.,
+concurrent) unless specied otherwise is foundational ( [11]).
+most data science approaches do not consider behavioral aspects and when
+they do, they typically use sequential models (e.g., sequential patterns, markov
+models, etc.). as the evolution of the process mining discipline shows, the com-
+bination of event data and petri nets is very powerful. therefore, we encour-
+age petri-net researchers to tackle the open problems identied in this paper.
+however, as section 1.3 describes this is not \business as usual": one needs to
+approach the problem from a data-science perspective.1.6 outline
+the remainder of this paper is organized as follows. section 2 introduces prelim-
+inaries, including basic notations, event logs, and petri nets. section 3 discusses
+the challenges related to process discovery and presents inductive and region-
+based discovery techniques. section 4 is devoted to conformance checking. the
+focus here is on alignment-based techniques. alignments relate seen behavior
+to modeled behavior even when there are deviations. such alignments are used
+for a range of analyses (bottleneck analysis, predictions, etc.). section 5 focuses
+on the quality of a process model in the context of a given event log. notions
+such as tness, precision, generalization, and simplicity are discussed. section 6
+concludes the paper.
+2 preliminaries
+2.1 mathematical notation
+a multi-set is like a set in which each element may occur multiple times. for ex-
+ample, [a;b2;c3;d2;e] is the multi-set with nine elements: one a, twob's, threec's,
+twod's, and one e. the following three multi-sets are identical: [ a;b;b;c3;d;d;e ],
+[e;d2;c3;b2;a], and [a;b2;c3;d2;e]. formally, i b( a) =a!nis the set of multi-
+sets (bags) over a nite domain a, i.e.,x2i b(a) is a multi-set, where for each
+a2a,x(a) denotes the number of times ais included in the multi-set. for
+example, if x= [a;b2;c3], thenx(b) = 2 andx(e) = 0.
+the sum of two multi-sets ( x]y), the dierence ( xny), the presence of
+an element in a multi-set ( x2x), and the notion of subset ( xy) are dened
+as usual.
+for a given set a,ais the set of all nite sequences over a. a nite se-
+quence over aof lengthnis a mapping 2f1;:::;ng!a. such a sequence is
+represented by a string, i.e., =ha1;a2;:::;aniwhereai=(i) for 1in.
+jjdenotes the length of the sequence, i.e. jj=n.a0=ha1;:::;an;a0iis
+the sequence with element a0appended at the end. similarly, 12appends
+sequence2to1resulting a sequence of length j1j+j2j.
+hdk() =ha1;a2;:::;akminni, i.e., the \head" of the sequence consisting of
+the rstkelements (if possible). note that hd0() is the empty sequence and
+forkn:hdk() =.pref() =fhdk()j0kngis the set of prexes of
+.
+tlk() =ha(n k+1) max 1;ak+2;:::;ani, i.e., the \tail" of the sequence com-
+posed of the last kelements (if possible). note that tl0() is the empty sequence
+and forkn:tlk() =.
+"xis the projection of onto some subset xa, e.g.,ha;b;c;a;b;c;di"
+fa;bg=ha;b;a;biandhd;a;a;a;a;a;a;di"fdg=hd;di.
+for any sequence =ha1;a2;:::;aniovera,fa2g=fa1;a2;:::;angand
+[a2] = [a1;a2;:::;an], e.g., if=hd;a;a;a;a;a;a;di, thenfa2g=fa;dg
+and [a2] = [a6;d2].2.2 process models as petri nets
+denition 1 ((labeled) petri net). a (labeled) petri net [12] is a tuple n=
+hp;t;f;m0;mf;;i, wherepis the set of places, tis the set of transitions
+(withp\t=;),f: (pt)[(tp)!f0;1gis the ow relation, m02i b(p)is
+the initial marking, mf2i b(p)is the nal marking, is an alphabet of actions
+and:t![fglabels every transition by an action, or as a silent action
+denoted by the symbol .
+a marking m2i b(p) is an assignment of a non-negative integer to each
+place. ifkis assigned to place pby marking m(denotedm(p) =k), we say that
+pis marked with ktokens. given a node x2p[t, its pre-set and post-set are
+denoted byxandxrespectively.
+a transition tisenabled in a marking mwhen all places intare marked.
+when a transition tis enabled, it can reby removing a token from each place
+intand putting a token to each place in t. a marking m0isreachable from
+mif there is a sequence of rings t1:::tnthat transforms mintom0, de-
+noted bym[t1:::tnim0. we dene the language ofnas the set of full runs
+dened byl(n) :=f(t1):::(tn)jm0[t1:::tnimfg. a petri net is k-bounded
+if no reachable marking assigns more than ktokens to any place. a petri net
+is bounded if there exist a kfor which it is k-bounded. a petri net is safeif it
+is 1-bounded. a bounded petri net has an executable loop if it has a reachable
+markingmand sequences of transitions u12t,u22t+,u32tsuch that
+m0[u1im[u2im[u3imf.
+2.3 process event data
+processes are crucial to manage the operations in organizations. often, processes
+are complex, due to many reasons: they can comprise a large number of activ-
+ities, can have many decision points, there can be many participants working
+jointly on a case, etcetera. also, there can be many work streams running in
+parallel, possibly with the support of multiple information systems and also ex-
+ternal suppliers. regardless of their complexity, processes in organizations have
+a common element: they generate data. we call the event data generated in a
+process event logs .
+the collection and analysis of event logs opens various opportuni-
+ties for improving the underlying process. table 4 shows a simple event
+log, which contains information about the underlying process, including
+data in the form of event attributes . the event log underlying traces are
+fha;b;c;di;hc;d;a;bi;hb;a;d;ci;hd;c;b;aigand they correspond to `case ids' 1,
+2, 3, and 4, respectively. we assume that the set of attributes is xed and the
+functionattr maps pairs of events and attributes to the corresponding values.
+for each eventethe log contains the case id case(e), the activity name act(e),
+and the set of attributes dened for e, e.g.,attr(e;timestamp ). for instance, for
+the event log in table 4, case(e7) = 2,act(e7) =a,attr(e7;timestamp ) = \10-
+04-2015 10:28pm", and attr(e7;cost ) = 19.event case id activity timestamp temperature resource cost risk
+1 1a 10-04-2015 9:08am 25.0 martin 17 low
+2 2c 10-04-2015 10:03am 28.7 mike 29 low
+3 2d 10-04-2015 11:32am 29.8 mylos 16 medium
+4 1b 10-04-2015 2:01pm 25.5 silvia 15 low
+5 1c 10-04-2015 7:06pm 25.7 george 14 low
+6 1d 10-04-2015 9:08pm 25.3 peter 17 medium
+7 2a 10-04-2015 10:28pm 30.0 george 19 low
+8 2b 10-04-2015 10:40pm 29.5 peter 22 low
+9 3b 11-04-2015 9:08am 22.5 mike 31 high
+10 4d 11-04-2015 10:03am 22.0 mylos 33 high
+11 4c 11-04-2015 11:32am 23.2 martin 35 high
+12 3a 11-04-2015 2:01pm 23.5 silvia 40 medium
+13 3d 11-04-2015 7:06pm 28.8 mike 43 high
+14 3c 11-04-2015 9:08pm 22.9 silvia 45 medium
+15 4b 11-04-2015 10:28pm 23.0 silvia 50 high
+16 4a 11-04-2015 10:40pm 23.1 peter 35 medium
+table 4. an example event log
+for the sake of understandability, in this paper we will focus on the data
+corresponding to the temporal relation of activities, i.e., the control-ow per-
+spective of a process. the reader can nd in the literature references to also
+explore process mining techniques that go beyond this perspective.
+formally, an event log is a collection of traces, where a trace may appear
+more than once. formally:
+denition 2 (event log). anevent logl2i b()(over an alphabet of
+actions) is a multiset of traces. 2is a possible trace.
+the event log in figure 2 can be compactly represented
+asl = [hpo;si;py;pd;md;cpi503;hpo;si;sr;py;pd;md;cpi247;
+hpo;si;sr;sr;coi141;hpo;si;sr;sr;py;pd;md;cpi139;hpo;si;py;pd;cp;mdi135;
+hpo;si;sr;py;pd;cp;mdi57;hpo;si;sr;sr;py;pd;cp;mdi36;
+hpo;py;si;pd;md;cpi6;hpo;py;si;pd;cp;mdi2].
+3 discovering process models
+this section focuses on process discovery and introduces various techniques. the
+goal is not to be complete, but to provide valuable insights into the dierent
+solution approaches.
+3.1 denition of discovery
+the input for process discovery is an event log l2i b(). as mentioned before,
+we focus on control ow and leave out other perspectives (time, costs, data, etc.).
+process discovery algorithms take an event log as input and aim to output
+a process model that satises certain properties. to judge the quality of the
+discovered model the following four quality dimensions of process mining [1] are
+used:{tness (also called recall ): the discovered model should allow for the behavior
+seen in the event log (avoiding \non-tting" behavior),
+{precision : the discovered model should not allow for behavior completely
+unrelated to what was seen in the event log (avoiding \undertting"),
+{generalization : the discovered model should generalize the example behavior
+seen in the event log (avoiding \overtting"), and
+{simplicity : the discovered model should not be unnecessarily complex.
+the simplicity dimension refers to occam's razor: \one should not increase,
+beyond what is necessary, the number of entities required to explain anything".
+in the context of process mining, this is often operationalized by quantifying the
+complexity of the model (number of nodes, number of arcs, understandability,
+etc.). the other three dimensions typically abstract from the representation. this
+means that an event log l2i b() is a multiset of traces and a model m
+is simply seen as a set of traces (a language). is this paper mcorresponds to
+the language of a labeled accepting petri net n=hp;t;f;m0;mf;;i, i.e.,
+m=l(n).
+many conformance measures have been proposed throughout the years. there
+seems to be consensus on the four quality dimensions, but these can be opera-
+tionalized in many dierent ways. in [13], 21 so-called conformance propositions
+were dened to discuss desirable properties of existing measures for recall, preci-
+sion, and generalization. it has been shown that seemingly obvious conformance
+propositions are violated by existing approaches. furthermore, [13] also shows
+the importance of probabilistic conformance measures that also take into account
+trace likelihoods in process models. however, to date, very few conformance mea-
+sures exist that can actually support probabilistic process models.
+another approach to get handle on the problem of evaluating a process model
+in the context of an event log is to assume the existence of an underlying system
+sthat generated the event log l. (note that we assume sto be a language
+just likem.). process mining techniques aim at extracting a process model
+l(n) =mfrom a loglwith the goal to elicit the process underlying system s.
+by relating the behaviors of l,mands, particular concepts can be dened [14].
+a log is incomplete ifsnf2lg 6=;. a modelmtsloglperfectly if
+f2lgm . a model is precise in describing a log lifmnf2lgis small.
+a modelm=l(n) represents a generalization of loglwith respect to system
+sif some behavior in snf2lgexists inm.
+as shown in [1,13], the above line of thinking is rather naive when it comes
+to real-life problems. the following properties make process discovery and the
+evaluation of process discovery results particulary challenging.
+{in reality one will never know the underlying system s. this is only possible
+in a simulation setting.
+{one cannot witness negative examples, i.e., the event log does not show what
+could not happen.
+{the event log only contains a tiny fraction of the set of all possible traces.
+{if the model has loops, then the set mnf2lgis innitely large and
+expressions such as mnf2lgdo not make any sense.{if one observes a system for a longer time, one can see new behaviors. this
+may be due to the large number of possible variants, the low probability of
+some variants, or concept drift (the underlying system changes over time).
+hence, murphy's law for process mining states that \anything is possible
+if one waits long enough". therefore, one cannot assume the existence of
+a system oracle that acts as a binary classier, and therefore it is vital to
+take frequencies, incompleteness, and probabilities into account to get the
+full picture [13].
+the above challenges explain why a range of discovery approaches have been
+developed over time. in the remainder of this section we aim to provide insights
+into a few representative examples.
+3.2 process discovery using inductive mining
+process models discovered from event logs describe possible life-cycles of cases
+(i.e., process instances). such models have a start and end. in terms of petri
+nets, we are interested in models that have an initial marking m02i b(p) and
+a nal marking mf2i b(p). all accepted traces correspond to paths from m0
+tomf. however, petri nets may be deadlocking or livelocking. it may even
+be the case that there is no accepting trace (i.e., mfis not reachable from
+m0). the notion of soundness was rst introduced in the context of workow
+nets [15], but can be relaxed and generalized to accepting petri nets. soundness
+cannot be decided locally, yet process discovery techniques may need to make
+local decisions. therefore, most process discovery techniques may generate un-
+sound models. one way to ensure soundness is to only consider block-structured
+process models. inductive process discovery, as presented in [9, 10, 16, 17], uses
+process trees to ensure soundness. moreover, the hierarchical nature of a pro-
+cess tree also enables a divide-and-conquer approach. rather than using a single
+pass through the event log, it is also possible to try and break the problem into
+smaller problems. inductive process discovery approaches split the event log re-
+cursively into smaller sublogs. for example, if one group of activities is preceded
+by another group of activities, but never the other way around, then we may
+deduce that these two groups are in a sequence relation. subsequently, the event
+log is decomposed based on the two groups of activities. next to the sequence
+relation, it is also possible to detect choices, concurrency, and loops, and split the
+log accordingly. this divide-and-conquer approach is repeated until each sublog
+refers to single activity. leemans et al. developed a family of inductive mining
+techniques [9, 10, 16, 17]. some of these techniques are tailored to dealing with
+huge event logs and process models, other techniques address challenges such as
+infrequent behavior and incompleteness of logs. in this section, we only consider
+the basic algorithm also described in [1].
+figure 2 shows a process tree. this process tree was discovered using the event
+log introduced in section 1. next to the visual tree representation, process trees
+also have a textual description !(po;^((;py);si);(co;!(pd;^(md;cp)))).
+the root node is of type !meaning that the three subtrees po,^((;py);si),po
+si coplace 
+order
+make 
+deliveryconfirm 
+paymentcancel 
+ordersend 
+invoicesequential 
+compostion
+exclusive 
+choice a
+τ parallel 
+compositionredo 
+loop
+normal 
+activity
+silent 
+activity
+py
+paypd
+prepare 
+delivery
+mdτ 
+cpfig. 2. process tree!(po;^((;py);si);(co;!(pd;^(md;cp)))) discovered for the
+event log described in tables 1 and 3 (without activity sr=send reminder ). the
+process tree corresponds to models (a), (b), and (f) in figure 1.
+and(co;!(pd;^(md;cp))) are executed in sequence. the subtree in the middle
+^((;py);si) is of type^meaning that its two parts are executed concurrently.
+the subtree on the left (co;!(pd;^(md;cp))) is of typemeaning that there
+is an exclusive choice between its two children.
+next to!(sequential composition), (exclusive choice), and ^(parallel
+composition), there is also the 	(redo loop) operator. the redo loop operator
+	has at least two children. the rst child is the \do" part and the other children
+are alternative \redo" parts. process tree 	(a;b;c ) allows for traces fhai;ha;b;ai;
+ha;c;ai;ha;b;a;b;ai;ha;c;a;c;ai;ha;c;a;b;ai;ha;b;a;c;ai;:::g. activityais ex-
+ecuted at least once and the process always starts and ends with a. the \do"
+part alternates with the \redo" parts borc. when looping back either borc
+is executed. the redo loop operator 	is often used in conjunction with silent
+activity. for example, 	(;a;b;c;:::;z ) allows for any trace (including the
+empty one) involving activities a;b;c;:::;z .
+the same activity may appear multiple times in the same process tree. for
+example, process tree !(a;a;a ) models a sequence of three aactivities. from
+a behavioral point of view !(a;a;a ) and^(a;a;a ) are indistinguishable. both
+allow for one possible trace: ha;a;ai.
+denition 3 (process tree). letabe a nite set of activities with
+62.l=f!;;^;	gis the set of process tree operators . process trees are
+dened inductively:
+{ifa2a[fg, thenq=ais a process tree,
+{ifn1,q1;q2;:::;qnare process trees, and 2f!;;^g,
+thenq=(q1;q2;:::qn)is a process tree, and{ifn2andq1;q2;:::;qnare process trees,
+thenq=	(q1;q2;:::qn)is a process tree.
+sequential 
+compostion
+exclusive 
+choiceaτ 
+parallel 
+composition
+redo 
+loopnormal 
+activitysilent 
+activity
+a b z...a b z ...
+a b z...start end
+a b z...a
+start endτ 
+start end
+a
+start
+z...τ bτ 
+end
+a b z...a
+start
+z...τ bτ 
+enda
+start
+z...τ 
+b
+endτ 
+τ ... ...
+τ 
+τ ... ...... ...
+fig. 3. mapping process trees onto petri to illustrate their semantics.
+l(q) is the language of a process tree q. formal denitions are provided
+in [1, 9, 10, 16, 17]. here we only provide a mapping to petri nets and some ex-
+amples. figure 3 shows the semantics of each operator in terms of petri nets.
+the following examples further illustrate the process tree operators and their se-
+mantics:l() =fhig ,l(a) =fhaig,l(!(a;b;c )) =fha;b;cig,l((a;b;c )) =
+fhai;hbi;hcig,l(^(a;b;c )) =fha;b;ci;ha;c;bi;hb;a;ci;hb;c;ai;hc;a;bi;hc;b;aig,
+l(	(a;b)) =fhai;ha;b;ai;ha;b;a;b;ai;:::g,l(!(a;(b;c);^(a;a))) =
+fha;b;a;ai;ha;c;a;aig,l((;a;;!(;b);^(c;))) =fh i;hai;hbi;hcig, and
+l(	(a;;c )) =fhai;ha;ai;ha;a;ai;ha;c;ai;ha;a;c;ai;ha;c;a;c;ai;:::g.
+consider process tree q=!(po;^((;py);si);(co;!(pd;^(md;cp)))),
+i.e., the process tree shown in figure 2. l(q) =fhpo;si;py;coi;
+hpo;si;py;pd;md;cpi;hpo;si;py;pd;cp;mdi;hpo;py;si;coi;
+hpo;py;si;pd;md;cpi;hpo;py;si;pd;cp;mdi;hpo;si;coi;hpo;si;pd;md;cpi;
+hpo;si;pd;cp;mdig.given an event log l2i b() we would like to discover a process tree ql. for
+example, for event log l= [ha;b;c;ei85;ha;c;b;ei56;ha;d;ei34] we would like to
+discoverq=!(a;(^(b;c);d);e). for event log l= [ha;b;di33;ha;b;c;b;di25;
+ha;b;c;b;c;b;di12;ha;b;c;b;c;b;c;b;d i6;ha;b;c;b;c;b;c;b;c;b;d i2] we would like
+to discover q=!(a;	(b;c);d). the general idea of the inductive mining ap-
+proach is to build a directly-follows graph and decompose the event log based on
+a particular cutof the directly-follows graph. the decomposition partitions the
+set of activities, i.e., sublogs are created in such a way that each event appears in
+precisely one of the sublogs. this is repeated until each sublog refers to only one
+activity. note that each of the four operators, i.e., !(sequential composition),
+(exclusive choice), ^(parallel composition), and 	(redo loops), corresponds
+to a particular type of cut and decomposes the event log accordingly.
+to be able to dene cuts, we rst formalize the notion of a directly-follows
+graph.
+denition 4 (directly-follows graph). letlbe an event log, i.e., l2
+i b(). the directly-follows graph oflisg(l) = (al;7!l;astart
+l;aend
+l)with:
+{al=fa2j2lgis the set of activities in l,
+{7!l=f(a;b)2aaja>lbgis the directly-follows relation,5
+{astart
+l=fa2aj92la=rst()gis the set of start activities, and
+{aend
+l=fa2aj92la=last()gis the set of end activities.
+the inductive mining (im) algorithm iteratively splits the initial event log
+into smaller sublogs . for any sublog lwe can create a directly-follows graph
+g(l).a7!lbifawas directly followed by bsomewhere in l.a67!lbifa
+was never directly followed by b.7!+
+lis the transitive closure of 7!l.a7!+
+lbif
+there is a non-empty path fromatobing(l), i.e., there exists a sequence of
+activitiesa1;a2;:::;aksuch thatk2,a1=aandak=bandai7!lai+1for
+i2f1;:::;k 1g.a67!+
+lbif there is no path from atobin the directly-follows
+graph.
+note thata7!lbifawas directly followed by bonly once in l. it is also
+possible to set thresholds to lter out infrequent behavior [16].
+denition 5 (cut). letlbe an event log with corresponding directly-follows
+graphg(l) = (al;7!l;astart
+l;aend
+l). letn1. ann-ary cutofg(l)is a
+partition of alinto pairwise disjoint sets a1;a2;:::an:al=s
+i2f1;:::;ngai
+andai\aj=;fori6=j. notation: (;a1;a2;:::an)with2f!;;^;	g.
+for each type of operator ( !,,^, and	) specic conditions apply:
+{anexclusive-choice cut ofg(l)is a cut (;a1;a2;:::an)such that
+ 8i;j2f1;:::ng8a2ai8b2aji6=j=)a67!lb.
+{asequence cut ofg(l)is a cut (!;a1;a2;:::an)such that
+ 8i;j2f1;:::ng8a2ai8b2aji<j =)(a7!+
+lb^b67!+
+la).
+{aparallel cut ofg(l)is a cut (^;a1;a2;:::an)such that
+5a>lbif and only if there is a trace =ht1;t2;t3;:::t niandi2f1;:::;n 1gsuch
+that2landti=aandti+1=b. 8i2f1;:::ngai\astart
+l6=; ^ai\aend
+l6=;and
+ 8i;j2f1;:::ng8a2ai8b2aji6=j=)a7!lb.
+{aredo-loop cut ofg(l)is a cut (	;a1;a2;:::an)such that
+n2,
+astart
+l[aend
+la1,
+ fa2a1j9i2f2;:::ng9b2aia7!lbgaend
+l,
+ fa2a1j9i2f2;:::ng9b2aib7!lagastart
+l,
+ 8i;j2f2;:::ng8a2ai8b2aji6=j=)a67!lb,
+ 8i2f2;:::ng8b2ai9a2aend
+la7!lb=) 8a02aend
+la07!lb, and
+ 8i2f2;:::ng8b2ai9a2astart
+lb7!la=) 8a02astart
+lb7!la0.
+a cut (;a1;a2;:::an)with 2 f!;;^;	gof directly-follows graph
+g(l)ismaximal if there is no cut (;a0
+1;a0
+2;:::a0
+m)withm > n . cut
+(;a1;a2;:::an)is called trivial ifn= 1.
+denition 6 (projection). letlbe an event log and (;a1;a2;:::an)a cut
+with2f!;;^;	gbased on the directly-follows graph g(l)(n2).lis
+split into sublogs l1;l2;:::;lnsuch that each event ends up in precisely one log
+and[2lifa2g=aifor any 1in.
+the precise way in which the event log is split depends on the operator
+[9,10,16]. consider cut ( !;fag;fb;c;dg;feg) in the context of l= [ha;b;c;ei85;
+ha;c;b;ei56;ha;d;ei34].lwill be split into l1= [hai175],l2= [hb;ci85;hc;bi56;
+hdi34], andl3= [hei175]. consider cut ( ;fa;bg;fc;dg) in the context of
+l= [ha;bi10;hb;ai10;hc;di20].lwill be split into l1= [ha;bi10;hb;ai10] and
+l2= [hc;di20]. consider cut ( ^;fa;bg;fcg) in the context of l= [ha;b;ci10;
+hb;a;ci10;ha;c;bi10;hb;c;ai10;hc;a;bi10;hc;b;ai10].lwill be split into l1=
+[ha;bi30;hb;ai30] andl2= [hci60]. consider cut ( 	;fa;bg;fc;dg) in the con-
+text ofl= [ha;bi10;ha;b;c;d;a;bi4;ha;b;c;d;a;b;c;d;a;b i2].lwill be split into
+l1= [ha;bi24] andl2= [hc;di8]. note that each iteration creates a new case,
+e.g., caseha;b;c;d;a;b;c;d;a;b iis split into threeha;bicases and twohc;dicases.
+theimalgorithm works as follows [1].imis a function that converts an event
+log into a process tree. given a log or sublog l,q=im(l) is the corresponding
+(sub)tree. given an event log, the directly-follows graph is constructed. if there is
+a non-trivial exclusive-choice cut, then a maximal exclusive-choice cut is applied,
+splitting the event log into smaller event logs. if there is no non-trivial exclusive-
+choice cut, but there is a non-trivial sequence cut, then a maximal sequence cut is
+applied splitting the event log into smaller event logs. if there are no non-trivial
+exclusive-choice and sequence cuts, but there is a non-trivial parallel cut, then a
+maximal parallel cut is applied splitting the event log into smaller event logs. if
+there are no non-trivial exclusive-choice, sequence and parallel cuts, but there is
+a redo-loop cut, then a maximal redo-loop cut is applied splitting the event log
+into smaller event logs. after splitting the event log into sublogs the procedure
+is repeated until a base case (sublog with only one activity) is reached.
+how the event log is split into sublogs, depends on the operator (see before).
+empty traces are handled in a dedicated manner (based on the operator) and
+may result in the insertion of activities. if there are no non-trivial cuts meetingthe requirements in denition 6, a fall-through is selected. the part that cannot
+be split is presented by a so-called ower model (\anything can happen"). note
+that such a model can be easily represented as process tree 	(;a;b;::: ) allowing
+for any trace involving the activities in the dierent redo parts. the fall-through
+serves as a last resort ensuring tness, but possibly resulting in lower precision.
+in the base case, the sublog contains only events corresponding to a particular
+activity, say a. if the sublog is of the form l= [haik] withk1 (i.e.,aoccurs
+once in each trace), then the subtree ais returned. if the sublog is of the form
+l= [hik;hail] withk;l1, then the subtree (a;) is returned because a
+is sometimes skipped. if ais executed at least once in each trace in the sublog
+and sometimes multiple times (e.g., l= [hai9;ha;ai2;ha;a;ai]), then the subtree
+	(a;) is returned. in all other cases (e.g., l= [hi3;hai4;ha;a;ai]), the subtree
+	(;a) is returned because ais executed zero or more times in the traces of
+sublogl.
+first, we show a larger worked out example showing the iterative process of
+splitting the event logs into sublogs based on cuts.
+{letlabcdef = [ha;b;c;di3;ha;c;b;di4;ha;b;c;e;f;b;c;di2;
+ha;c;b;e;f;b;c;di2;ha;b;c;e;f;c;b;di;ha;c;b;e;f;b;c;e;f;c;b;d i] be an
+event log. based on the directly-follows graph we identify a maximal
+sequence cut (!;fag;fb;c;e;fg;fdg) splitting the event log into la,lbcef,
+ld.
+la= [hai13] is a base case. hence, im(la) =a.
+lbcef = [hb;ci3;hc;bi4;hb;c;e;f;b;ci2;hc;b;e;f;b;ci2;hb;c;e;f;c;bi;
+hc;b;e;f;b;c;e;f;c;b i]. there are no non-trivial exclusive-choice, se-
+quence or parallel cuts. therefore, we apply the maximal redo-loop cut
+(	;fb;cg;fe;fg) splitting the event log into lbcandlef.
+lbc= [hb;ci11;hc;bi9]. based on the maximal parallel cut
+(^;fbg;fcg), we obtain lbandlc.
+lb= [hbi20] is a base case. hence, im(lb) =b.
+lc= [hci20] is a base case. hence, im(lc) =c.
+lef= [he;fi7]. based on the maximal sequence cut ( !;feg;ffg),
+we obtainleandlf.
+le= [hei7] is a base case. hence, im(le) =e.
+lf= [hfi7] is a base case. hence, im(lf) =f.
+ld= [hdi13] is a base case. hence, im(ld) =d.
+{after splitting the event log to reach the base cases, we can construct the
+overall tree:
+im(lb;c) =^(im(lb);im(lc)) =^(b;c).
+im(le;f) =!(im(le);im(lf)) =!(e;f).
+im(lbcef) =	(im(lb;c);im(le;f)) =	(^(b;c);!(e;f)).
+im(labcdef ) =!(im(la);im(lbcef);im(ld)) =!(a;	(^(b;c);
+!(e;f));d) represents the overall process tree for the whole event log.
+to illustrate the handling of base cases we show a few smaller examples:
+{ifl= [ha;ai12;ha;a;ai6], then im(l) =	(a;).{ifl= [ha;b;ci20;ha;ci30], then im(l) =!(a;(b;);c).
+{ifl= [hbi12;ha;bi6;hb;ci5;ha;b;ci4], then im(l) =!((a;);b;(c;)).
+{ifl= [ha;ci2;ha;b;ci3;ha;b;b;ci2;ha;b;b;b;ci2;ha;b;b;b;b;b;b;ci], then
+im(l) =!(a;	(;b);c).
+in this section, we only described the basic imalgorithm [1, 10]. this algo-
+rithm provides many guarantees. the discovered models are always sound and
+are guaranteed to be able to replay the whole event log. moreover, for large sub-
+classes of process trees, rediscoverability is guaranteed (i.e., a suciently large
+event log obtained by simulating a model is sucient to reconstruct a behav-
+iorally equivalent model). however, the basic algorithm presented here cannot
+abstract from infrequent behavior and does not handle incompleteness well. the
+log is assumed to be directly-follows complete and frequencies are not taken into
+account. fortunately, the inductive mining framework is quite exible. using the
+basic ideas presented in this section, a family of inductive mining techniques has
+been developed [1, 9, 10, 16, 17]. all use a divide-and-conquer approach in com-
+bination with process trees that are sound by construction . as demonstrated
+in [9, 17] the approach can be made highly scalable and can be applied to huge
+event logs.
+3.3 process discovery using region-based approaches
+in contrast to inductive mining, which is able to guarantee a sound workow
+model, the existing approaches that rely on the notion of region theory [18]
+search for a process model that is both tting and precise [19]. this section
+shows two branches of region-based approaches for process discovery: state and
+language-based approaches.
+state-based region approach for process discovery state-based region
+approaches for process discovery need to convert the event log into a state-
+based representation, that will be used to discover the petri net. the techniques
+described in [20] present many variants for solving this rst step. the basic idea
+to incorporate state information is to look at the pre/post history of a subtrace
+in the event log. figures 4(a)-(b) show an example, where states are decided by
+looking at the set of common prexes.
+atransition system (ts) is a tuple ( s;;a;s in), wheresis a set of states ,
+is an alphabet of activities ,assis a set of (labeled) arcs , and
+sin2sis the initial state . we will use se!s0as a shortcut for ( s;e;s0)2a, and
+the transitive closure of this relation will be denoted by!. figure 4(b) presents
+an example of a transition system.
+aregion6in a transition system is a set of states that satisfy an homogeneous
+relation with respect to the set of arcs. in the simplest case, this relation can
+6in this paper we will use region to denote a 1-bounded region. however, when needed
+we will use k-bounded region to extend the notion, necessary to account for k-
+bounded petri nets.rssssb
+sbsbp
+p
+pemememac
+acrj
+rjapapc
+c
+ccrs
+rs1  r,s,sb,p,ac,ap,c
+2  r,sb,em,p,ac,ap,c
+4  r,em,sb,p,ac,ap,c
+5  r,sb,s,p,ac,rj,rs,c
+6  r,sb,p,s,ac,ap,c
+7  r,sb,p,em,ac,ap,c
+(a)(b)3  r,sb,p,em,ac,rj,rs,c
+sprj rssb
+em ac
+apcr(c)
+fig. 4. state-based region discovery: (a) log l, (b) a transition system corresponding
+tol, (c) derived petri net.
+rssssb
+sbsbp
+p
+pemememac
+acrj
+rjapapc
+c
+ccrs
+rs
+(a)
+sprj rssb
+em ac
+apcr
+(b)
+fig. 5. (a) example of region (three shadowed states). the predicates are renters,s
+andemexits, and the rest of events do not cross, (b) corresponding place shadowed
+in the petri net.
+be described by a predicate on the set of states considered. formally, let s0be
+a subset of the states of a ts,s0s. ifs62s0ands02s0, then we say that
+transitionsa!s0enterss0. ifs2s0ands062s0, then transition sa!s0exits
+s0. otherwise, transition sa!s0does not cross s0: it is completely inside ( s2s0
+ands02s0) or completely outside ( s =2s0ands062s0). a set of states rsis
+a region if for each event e2e, exactly one of the three predicates ( enters ,exits
+ordoes not cross ) holds for each of its arcs. an example of region is presented in
+figure 5 on the tsof our running example. in the highlighted region, renters
+the region, sandemexit the region, and the rest of labels do not cross the
+region.
+a region corresponds to a place in the petri net, and the role of the arcs
+determine the petri net ow relation: when an event eenters the region, there is
+an arc from the corresponding transition for eto the place, and when eexits theregion, there is an arc from the region to the transition for e. events satisfying
+the do not cross relation are not connected to the corresponding place. for
+instance, the region shown in figure 5(a) corresponds to the shadowed place in
+figure 5(b), where event rbelongs to the set of input transitions of the place
+whereas events emandsbelong to the set of output transitions. hence, the
+algorithm for petri net derivation from a transition system consists in nding
+regions and constructing the petri net as illustrated with the previous example.
+in [21] it was shown that only a minimal set of regions was necessary, whereas
+further relaxations to this restriction can be found in [19]. the petri net obtained
+by this method is guaranteed to accept the language of the transition system,
+and satisfy the minimal language containment property , which implies that if all
+the minimal regions are used, the petri net derived is the one whose language
+dierence with respect to the log is minimal, hence being the most precise petri
+net for the set of transitions considered.
+in any case, the algorithm that searches for regions in a transition system
+must explore the lattice of sets (or multisets, in the case for k-bounded regions),
+thus having a high complexity: for a transition system with nstates, the lattice
+fork-bounded regions is of size o(kn). for instance, the lattice of sets of states
+for the toy tsused in this article (which has 22 states) has 222possibles sets to
+check for the region conditions. although many simplication properties, ecient
+data structures and algorithms, and heuristics are used to prune this search
+space [19], they only help to alleviate the problem. decomposition alternatives,
+which for instance use partitions of the state space to guide the search for regions,
+signicantly alleviate the complexity of the state-based region algorithm, at the
+expense of not guaranteeing the derivation of precise models [22]. other state-
+based region approaches for discovery have been proposed, which complement
+the approach described in this section [23{25].
+language-based region approach for process discovery in language-
+based region theory [26{31] the goal is to construct the smallest petri net such
+that the beharviour of the net is equal to the given input language (or minimally
+larger). [32] provides an overview for language-based region theory for dierent
+classes of languages: step languages, regular languages, and (innite) partial
+languages.
+more formally, let l2i b() be an event log, then language based region
+theory constructs a petri net with the set of transitions equals to and in
+which all traces of lare a ring sequence. the petri net should have only
+minimal ring sequences not in the language l(and all prexes in l). this is
+achieved by adding places to the petri net that restrict unobserved behavior,
+while allowing for observed behavior. the theory of regions provides a method
+to identify these places, using language regions .
+denition 7 (prex closure). letl2i b()be an event log. the prex
+closed languageloflis dened as:l=f2j90202lg.
+the prex closure of a log is simply the set of all prexes in the log (including
+the empty prex).t1 t2
+t4 t3x1x2
+x3x4y1
+y2
+y3
+y2cfig. 6. region for a language over four activities [33].
+denition 8 (language region). letbe a set of activities. a region of
+a prex-closed language l2is a triple (x;y;c)withx;y2f0;1gand
+c2f0;1g, such that for each non-empty sequence w=w0a2l,w02l,
+a2:
+c+x
+t2(w0(t)x(t) w(t)y(t))0
+this can be rewritten into the inequation system:
+c1+m0x my0
+wheremandm0are twojljjjmatrices with m(w;t) =w(t), andm0(w;t) =
+w0(t), withw=w0a. the set of all regions of a language is denoted by <(l)
+and the region (0;0;0)is called the trivial region .
+intuitively, vectors x;ydenote the set of incoming and outgoing arcs of the
+place corresponding to the region, respectively, and csets if it is initially marked.
+figure 6 shows a region for a language over four activities, i.e. each solution
+(x;y;c) of the inequation system can be regarded in the context of a petri net,
+where the region corresponds to a feasible place with preset ftjt2t;x(t) = 1g
+and postsetftjt2t;y(t) = 1g, and initially marked with ctokens. note that
+we do not assume arc-weights here, while the authors of [26{28,34] do.
+since the place represented by a region is a place which can be added to a
+petri net, without disturbing the fact that the net can reproduce the language
+under consideration, such a place is called a feasible place.
+denition 9 (feasible place). letlbe a prex-closed language over and
+letn= ((p;;f );m)be a marked petri net. a place p2pis called feasible
+if and only if there exists a corresponding region (x;y;c)2 <(l)such that
+m(p) =c, andx(t) = 1 if and only if t2p, andy(t) = 1 if and only if t2p.
+in general, there are many feasible places for any given event log (when con-
+sidering arc-weights in the discovered petri net, there are even innitely many).
+several methods exist for selecting an appropriate subset of these places. the
+authors of [28,34] present two ways of nitely representing these places, namely a
+basis representation and a separating representation . both representations maxi-
+mize precision, i.e. they select a set of places such that the behavior of the model
+outside of the log is minimal.in contrast, the authors of [33, 35{37] focus on those feasible places that
+express some causal dependency observed in the event log, and/or ensure that
+the entire model is a connected workow net. they do so by introducing various
+cost functions favouring one solution of the equation system over another and
+then selecting the top candidates.
+process discovery vs. region theory the goal of region theory is to nd
+a petri net that perfectly describes the observed behavior (where this behavior
+is specied in terms of a language or a statespace). as a result the petri nets are
+perfectly tting and maximally precise.
+as a consequence, the assumption on the input is that it provides a full be-
+havioral specication , i.e. that the input is complete andnoise free . furthermore,
+the assumption on the output is that it is a compact, exact representation of the
+input behavior.
+when applying region theory in the context of process mining, it is there-
+fore very important to perform any generalization before calling region theory
+algorithms. for state-based regions, the challenges are in the construction of the
+statespace from the event log and in language based regions in the selection of
+the appropriate prexes to include in the nal prex-closed language in order to
+ensure some level of generalization.
+4 conformance checking and the challenge of
+alignments
+conformance checking is a crucial dimension in process mining: by relating mod-
+elled and observed behavior, process models that have either been discovered or
+manually created, can be confronted with event data [2]. on its core, confor-
+mance checking relies on the fundamental problem of identifying, among the set
+of runs of a process model (which can be innite), the run that mostly resem-
+bles an observed trace. in this section we overview the problem of computing
+alignments, and provide applications to be build on top of alignments.
+4.1 formal denition of alignments
+analignment of an observed trace and a process model relates events of the
+observed trace to elements of the model and vice versa. such an alignment reveals
+how the given trace can be replayed on the process model. the classical notion
+of aligning an event log and process model was introduced by [38]. to achieve
+an alignment, we need to relate moves in the observed trace to moves in the
+model. it may be the case that some of the moves in the observed trace can not
+be mimicked by the model and vice versa. for instance, consider the model n1
+in figure 7, with the following labels, (t1) =a1;(t2) =a2;(t3) =a3and
+(t4) =a4, and the trace =ha1;a1;a4;a2i; four possible alignments are:
+1=a1a1?a4a2
+t1?t3t4?2=a1a1?a4a2
+?t1t2t4?fig. 7. process model n1.
+3=a1a1a4a2?
+t1??t2t44=a1a1a4a2?
+?t1?t2t4
+the moves are represented in tabular form, where moves by the trace are at
+the top, and moves by the model are at the bottom of the table. for example
+the rst move in 2is (a1;?) and it means that the observed trace moves a1,
+while the model does not make any move. formally, an alignment is dened as
+follows:
+denition 10 (alignment). given a labeled petri net nand an alphabet of
+events, letamandalbe the alphabet of transitions in the model and events
+in the log, respectively, and ?denote the empty set, then:
+{(x;y )is a synchronous move if x2al,y2amandx=(y)
+{(x;y )is a move in log if x2alandy=?.
+{(x;y )is a move in model if x=?andy2am.
+{(x;y )is an illegal move, otherwise.
+the set of all legal moves is denoted as almand given an alignment 2a
+lm,
+the projection of the rst element (ignoring ?),"al, results in the observed
+trace, and projecting the second element (ignoring ?),"am, results in the
+model trace.
+for the previous example, 1"am=t1t3t4and1"al=a1a1a4a2.
+costs can be associated to the dierent types of moves in def. 10. tradi-
+tionally, the approaches in the literature use a cost function that assigns higher
+costs to asynchronous moves (move in model/log) than to synchronous moves,
+and the model trace that minimizes the cost (hence, minimizing the number of
+asynchronous moves) is computed. when a cost function is in place, then one
+can consider optimality: an optimal alignment is an alignment with minimal cost.
+the most simple cost function that satises this requirement is the standard cost
+function , which assigns cost 1 to asynchronous moves, and cost 0 to synchronous
+moves. in this paper we will assume the standard cost function, which will for
+instance assign cost 3 to the alignments 1 4shown before. according to the
+standard cost function, all four alignments are optimal.
+4.2 techniques for the computation of alignments
+in this section we report some of the existing alternatives to compute alignments.
+first we describe the reference technique nowadays for alignment computation.fig. 8. (top) process model, (bottom) synchronous product net over the trace
+ha1;a4;a2;a11i.
+then, we provide pointers to other techniques so that the reader gets an overall
+impression on the vivid eld of alignment computation.
+atechnique over the synchronous product net the reference technique
+for alignment computation was presented in the context of arya adriansyah's
+phd thesis [38]. it is based on the notion of synchronous product net (spn, for
+short), which we dene informally now with the help of an example.
+figure 8(top) describes a process model. now let us assume that it should
+be aligned with the trace =ha1;a4;a2;a11i. the idea underlying the method
+from [38] is to rst create an spn, that encompasses the joint behavior between
+the process model and . this spn is described in figure 8(bottom). transitions
+in the spn can be partitioned into three sets
+{transitions at the top (i.e., t1;:::t 11) correspond to original model transi-
+tions.
+{transitions at the bottom correspond to the petri net representation of .
+{transitions in the middle represent the joint synchronization of the model
+and the trace states.accordingly, transitions in the spn will be assigned a cost7: transitions in the
+top of the spn, and in the bottom of the spn, will receive cost one. transitions
+in the middle, will receive cost 0. informally, this cost assignment penalizes
+the process model or the log independent executions, and in contrast favours
+synchronous executions, that are executed without cost. then, a search for the
+cost-minimal path between initial and nal marking of the state space of the
+created spn is computed.
+the cost-minimal path search can be done either once the full state-space is
+computed, or more intelligently by applying a astrategy to avoid, whenever
+possible, the full exploration of the state-space. this can be achieved by using
+heuristics that at each state reached, estimate the minimal cost to reach the nal
+marking, and prune the exploration for successor states that are not promising.
+several heuristics can be applied, that include the use of the marking equation of
+petri nets [12] to estimate the remaining distance by solving an (integer) linear
+program that provides a lower bound to the real distance.
+other techniques alternatives to ahave appeared very recently: in the ap-
+proach presented in [39], the alignment problem is mapped as an automated plan-
+ning instance. unlike the a, the aforementioned work is only able to produce
+one optimal alignment (not all optimal), but it is expected to consume consid-
+erably less memory. automata-based techniques have also appeared [40, 41]. in
+particular, the technique in [40] can compute all optimal alignments. the tech-
+nique in [40] relies on state space exploration and determinization of automata,
+whilst the technique in [41] is based on computing several subsets of activities
+and projecting the alignment instances accordingly.
+the work in [42] presented the notion of approximate alignment to alleviate
+the computational demands of the current challenge by proposing a recursive
+paradigm on the basis of structural theory of petri nets. in spite of resource
+eciency, the solution is not guaranteed to be executable. a follow-up work
+of [42] is presented in [43], which proposes a trade-o between complexity and
+optimality of solutions, and guarantees executable properties of results. the
+technique in [44] presents a framework to reduce a process model and the event
+log accordingly, with the goal to alleviate the computation of alignments. the
+obtained alignment, called macro-alignment since some of the positions are high-
+level elements, is expanded based on the information gathered during the initial
+reduction. decompositional techniques have been presented [45,46] that, instead
+of computing optimal alignments, they focus on the decisional problem of whereas
+a given trace ts or not a process model.
+recently, two dierent approaches by the same authors have appeared: the
+work in [47] proposes using binary decision diagrams to alleviate the compu-
+tation of alignments. the work in [48], which has the goal of maximizing the
+synchronous moves of the computed alignments, uses a pre-processing step on
+the model.
+7remember that we are assuming the standard cost function that assigns cost 1 to
+synchronous moves and cost 0 to asynchronous moves.4.3 alignments applications
+in this section we overview dierent use cases of alignments. the reader can nd
+a complete and detailed presentation in [2].
+model enhancement alignments open the door to incorporate information
+from the event log to the process model. more concretely, from an alignment ,
+one can transfer the information from the log trace "alto the model activities
+in"amcorresponding to the synchronous moves. this information is contained
+in the events attributes. for instance, after aligning the complete log, one can
+realize that in reality a given model transition is only performed by a limited set
+of persons or roles, or the cost of executing it is within certain margins.
+alignments can also be used to animate the process model. this has already
+illustrated early in the paper (see for instance the annotations in figure 1 (a)).
+this helps to understand better the visualization of real traces through the
+process model, and is one of the most interesting features of several existing
+process mining tools.
+furthermore, more elaborated information can be projected on top of the
+process model, with the help of a tailored analysis. one possibility is performance
+analysis , in order to display performance information like activity durations ,
+waiting times and routing probabilities . for instance, in the left-most decision of
+figure 1 (a), one can see that 11 :1% (141 out of 1266) of the cases the activity
+payis skipped.
+alternatively, the event log attributes can be used to explain decision in
+process models, once alignments are obtained. this is known as decision point
+analysis . decision point analysis is based on building prediction models next to
+each decision point, using the data available. often, the data used to feed these
+models can be obtained from the events corresponding to the prexes of traces
+that lead to the decision point. examples of data attributes that can be used for
+the previous example are product, resource, prod-price, quantity and address in
+table 1. continuing with the previous example, one can for instance infer that
+the explanation on why the activity payis sometimes skipped is due to products
+orders placed which both contain more than one item and the item price is less
+than 500.
+model and log repair another interesting application of using alignments
+is the possibility to repair the model or the log, so that they are more aligned.
+model repair can be performed by selecting and resolving particular asyn-
+chronous moves in an alignment [49]. intuitively, to resolve model moves one
+need to insert routing logic that allows to skip certain activities to be executed.
+symmetrically, to resolve log moves one should extend the process model so that
+new behavior is possible in particular situations.
+on the other hand, log repair considers that models contain the truth and
+whenever deviations are found, they should be corrected at the log level. cor-
+recting deviations at log level is straightforward: model moves amounts to in-
+sert events in the observed trace, whilst log moves imply to remove events inthe observed trace. for instance, the log repair of the alignment 1for trace
+=ha1;a1;a4;a2i, and the model shown in figure 7, derives the new trace
+0=ha1;a3;a4i.
+5 evidence-based quality metrics for process models
+with the aim of quantifying the relation between observed and modeled behav-
+ior, conformance checking techniques consider four quality dimensions: tness,
+precision, generalization and simplicity [50]. in section 3.1 we already described
+the intuition behind these dimensions. in this section we do a step further, and
+present ways to measure them.
+when alignments are available, most of the quality dimensions can be de-
+ned on top [2]. in a way, alignments are optimistic: although observed behavior
+may deviate signicantly from modeled behavior, it is always assumed that the
+least deviations are the best explanation (from the model's perspective) for the
+observed behavior. for the rst three dimensions, the alignment between a pro-
+cess model and an event log is of paramount importance, since it allows relating
+modelled and observed behavior.
+5.1 fitness
+fitness evaluates to which extent the observed behavior is possible according to
+the modelled behavior. intuitively (and abusing a bit the notation), if lis also
+considered the language of the log, then the tness of lwith respect to a process
+modelncan be computed by the following formula:
+fitness =jl\l(n)j
+jlj
+alternatively, a rened metric for tness can be measured through align-
+ments. the way alignments are constructed, i.e. by looking for a shortest path
+through the state space of the spn, is not necessarily deterministic. there may
+be more than one shortest path. however, the nal cost of the alignment is
+minimal and therefore deterministic. on the basis of this cost, alignment-based
+tness is dened as:
+fitnessa= 1 cost of the optimal alignment
+cost of worst-case alignment
+again, for any log lwe have:
+fitnessl
+a= 1 p
+2lcost of the optimal alignment for p
+2lcost of worst-case alignment for 
+for alignment-based tness, two costs are of interest, namely the cost of
+the optimal alignment and the cost of the worst-case alignment. the former is
+obtained by the alignment algorithm dened in section 4.2. the latter is simply
+dened as the cost of aligning the empty trace in the model plus the cost of
+treating all events as log moves.5.2 precision
+one important metric in conformance checking is to assess the precision of the
+model with respect to the observed executions, i.e., characterize the ability of the
+model to produce behavior unrelated to the one observed. therefore, precision
+can be measured by the following formula:
+precision =jl\l(n)j
+jl(n)j
+the formula above poses a problem for measuring precision in practice: since
+in general a model can have an innite language, the formula on its limit tends
+to 0. below we provide a couple of alternatives to ght this problem, thus coining
+metrics for estimating the precision dimension.
+escaping arcs precision can be approximated by exploring the behavior of
+the process model using as a reference the traces of the log, and stopping the
+exploration each time modelled behavior deviates from recorded behavior [51].
+the following formula would then be used to estimate precision:
+precision ea(l;n) =p
+2l;e2enabledl(e)p
+2l;e2enabledn(e)
+where enabledl(e) provides the activities that are possible in lafter the same
+prex that contains the event ehas been observed, and enabledn(e) denotes the
+number of tasks that can be executed in the state right before executing the
+task corresponding to e. in the formula above, we assume tting models, i.e.,
+enabledl(e)enabledn(e). this assumption can be lifted with the help of the
+alignments [52].
+anti-alignments. the idea of anti-alignments [53] is to seek in the language
+of a model n, what are the runs which dier considerably with all the observed
+traces. hence, this is the opposite of the notion of alignment. anti-alignments
+can be used to measure precision [53,54]. the intuition behind the metric based
+on anti-alignments is as follows. a very precise process model allows for exactly
+the traces to be executed and not more. hence, if one trace is removed from the
+log, this trace becomes the anti-alignment for the remaining log, as it is the only
+execution of the model that is not in the log. this idea would lead to a trace-based
+precision metric grounded in anti-alignments, that penalizes the model precision
+for tracesin the log that are very deviating from the anti-alignment obtained
+when removing in the log. alternatively, a log-based precision metric can also
+be dened, if not per trace but instead a single anti-alignment with respect to
+the whole log is used.5.3 generalization
+in process mining, the challenge is not to discover the correct process model for
+a given log, but to discover the process model that provides the most insights
+into the process from which the log originated. this is comparable to the area
+of process modelling, where a model is made of a process in order to describe
+that process in a meaningful way [55].
+in process modelling, there are essentially two fundamental concepts that
+describe a lot of behavior using only a limited number of modelling elements,
+namely parallelism and loops. both constructs have in common that they allow
+for many traces to be executed, while at the same time the number of states
+a process model can be in remains limited. in order to generalize from a set
+of observed sequences, process mining techniques make use of the inference of
+concurrency and loops. all process discovery techniques presented in section 3
+do so, however the way they decide is dierent.
+another fundamental property of correctly modelling processes is abstraction ,
+i.e. one should only include parts of a model if they are relevant enough. by
+making models too detailed, an end-user can no longer see the important parts
+of the process.
+generalization is a quality dimension that tries to measure whether the infer-
+ence of parallelism and loops and abstraction are done properly. for generaliza-
+tion, only few metrics exist [14,53,56]. the approach in [14] considers frequency
+of use, where models are assumed to generalize if all parts of the model are
+used equally frequently when reproducing the event log, i.e. this metric focusses
+entirely on proper abstraction of the observed data. the metric in [56] uses ar-
+ticial negative events, i.e. events that were not observed at a particular point
+in the trace and uses a condence in these events to measure generalization.
+finally, in [53] a metric based on anti-alignments is presented which focusses
+entirely on the relation between the number of states and the number of traces
+in the model.
+5.4 simplicity
+when a process model is discovered, one crucial metric for its evaluation is
+simplicity: is the derived process model the most simple explanation of the un-
+derlying process? this metric refers to the occam's razor principle. one method
+for measuring simplicity is by analysing the complexity of the underlying graph.
+in [57] some examples of such complexity metrics (e.g., size,diameter ,connec-
+tivity ) can be found. alternatively, process model related metrics can also be
+dened, such as sequentiality ,structuredness , among others.
+6 concluding remarks
+process mining is a discipline which already impacts organizations in the present,
+but promises to impact them even more in the near future. in this paper wehave overviewed the area, focusing on the fundamental algorihtmic challenges
+that need to be confronted, to make these promises to become realities soon.
+behind these challenges lie traditional theory that has been there several decades
+already: petri net theory, data science methods, optimization, business process
+management, to cite the most important ones. we believe research in these
+areas would contribute to the development of the process mining eld as well, a
+phenomena that we have already observed in the last decade.
+acknowledgments. this work has been supported by mineco and feder funds
+under grant tin2017-86727-c2-1-r.
+references
+1. van der aalst, w.m.p.: process mining - data science in action, second edition.
+springer (2016)
+2. carmona, j., van dongen, b.f., solti, a., weidlich, m.: conformance checking -
+relating processes and models. springer (2018)
+3. pearl, j.: reasoning under uncertainty. annual review of computer science 4(1)
+(1990) 37{72
+4. badouel, e., bernardinello, l., darondeau, p.: petri net synthesis. texts in
+theoretical computer science. an eatcs series. springer (2015)
+5. kerremans, m.: gartner market guide for process mining, research note
+g00353970. www.gartner.com (2018)
+6. koplowitz, r., mines, c., vizgaitis, a., reese, a.: process mining: your com-
+pass for digital transformation: the customer journey is the destination.
+www.forrester.com (2019)
+7. tfpm: process mining case studies, http://www.win.tue.nl/ieeetfpm/doku.
+php?id=shared:process_mining_case_studies (2017)
+8. celonis: process mining success story: innovation is an alliance with the future,
+http://www.win.tue.nl/ieeetfpm/lib/exe/fetch.php?media=:casestudies:
+siemens_celonis_story_english.pdf (2017)
+9. leemans, s., fahland, d., van der aalst, w.: scalable process discovery and con-
+formance checking. software and systems modeling (2016) 1{33
+10. leemans, s., fahland, d., aalst, w.: discovering block-structured process models
+from event logs: a constructive approach. in colom, j., desel, j., eds.: appli-
+cations and theory of petri nets 2013. volume 7927. (2013) 311{329
+11. aalst, w.: discovering the \glue" connecting activities - exploiting monotonicity
+to learn places faster. in boer, f., bonsangue, m., rutten, j., eds.: it's all about
+coordination. (2018) 1|-20
+12. murata, t.: petri nets: properties, analysis and applications. proceedings of the
+ieee 77(4) (april 1989) 541{574
+13. aalst, w.: relating process models and event logs: 21 conformance propositions.
+in: proceedings of the international workshop on algorithms and theories for
+the analysis of event data (ataed 2018). volume 2115 of ceur workshop
+proceedings., ceur-ws.org (2018) 56{74
+14. buijs, j.c.a.m., van dongen, b.f., van der aalst, w.m.p.: quality dimensions in
+process discovery: the importance of tness, precision, generalization and simplic-
+ity. int. j. cooperative inf. syst. 23(1) (2014)15. van der aalst, w.m.p., van hee, k.m., ter hofstede, a.h.m., sidorova, n., verbeek,
+h.m.w., voorhoeve, m., wynn, m.t.: soundness of workow nets: classication,
+decidability, and analysis. formal asp. comput. 23(3) (2011) 333{363
+16. leemans, s., fahland, d., aalst, w.: discovering block-structured process mod-
+els from event logs containing infrequent behaviour. in lohmann, n., song, m.,
+wohed, p., eds.: business process management workshops, international work-
+shop on business process intelligence (bpi 2013). volume 171. (2014) 66{78
+17. leemans, s.: robust process mining with guarantees. phd thesis, eindhoven
+university of technology (2017)
+18. ehrenfeucht, a., rozenberg, g.: partial (set) 2-structures. part i, ii. acta infor-
+matica 27(1990) 315{368
+19. carmona, j., cortadella, j., kishinevsky, m.: new region-based algorithms for
+deriving bounded petri nets. ieee transactions on computers 59(3) (2009) 371{
+384
+20. van der aalst, w.m.p., rubin, v., verbeek, h.m.w.e., van dongen, b.f., kindler,
+e., g unther, c.w.: process mining: a two-step approach to balance between un-
+dertting and overtting. software and systems modeling (2009)
+21. desel, j., reisig, w.: the synthesis problem of petri nets. acta inf. 33(4) (1996)
+297{315
+22. carmona, j.: projection approaches to process mining using region-based tech-
+niques. data min. knowl. discov. 24(1) (2012) 218{246
+23. sol e, m., carmona, j.: light region-based techniques for process discovery. fun-
+dam. inform. 113(3-4) (2011) 343{376
+24. sol e, m., carmona, j.: incremental process discovery. trans. petri nets and other
+models of concurrency 5(2012) 221{242
+25. sol e, m., carmona, j.: region-based foldings in process discovery. ieee trans.
+knowl. data eng. 25(1) (2013) 192{205
+26. darondeau, p.: deriving unbounded petri nets from formal languages. in: con-
+cur 1998, london, uk, springer-verlag (1998) 533{548
+27. badouel, e., bernardinello, l., darondeau, p.: polynomial algorithms for the
+synthesis of bounded nets. in: tapsoft. (1995) 364{378
+28. lorenz, r., juh as, r.: how to synthesize nets from languages - a survey. in:
+proceedings of the wintersimulation conference (wsc) 2007. (2007)
+29. bergenthum, r., desel, j., lorenz, r., mauser, s.: synthesis of petri nets from
+innite partial languages. in: acsd. (2008) 170{179
+30. lorenz, r.: towards synthesis of petri nets from general partial languages. in:
+awpn. (2008) 55{62
+31. bergenthum, r., desel, j., mauser, s., lorenz, r.: synthesis of petri nets from
+term based representations of innite partial languages. fundam. inform. 95(1)
+(2009) 187{217
+32. mauser, s., lorenz, r.: variants of the language based synthesis problem for petri
+nets. in: acsd. (2009) 89{98
+33. van der aalst, w.m.p., van dongen, b.f.: discovering petri nets from event logs.
+trans. petri nets and other models of concurrency 7(2013) 372{422
+34. bergenthum, r., desel, j., lorenz, r., mauser, s.: process mining based on regions
+of languages. in: bpm 2007. volume 4714 of lncs., springer (2007) 375{383
+35. van der werf, j.m.e.m., van dongen, b.f., hurkens, c.a.j., serebrenik, a.: pro-
+cess discovery using integer linear programming. fundam. inform. 94(3-4) (2009)
+387{41236. van zelst, s.j., van dongen, b.f., van der aalst, w.m.p., verbeek, h.m.w.:
+discovering workow nets using integer linear programming. computing 100(5)
+(2018) 529{556
+37. van zelst, s.j., van dongen, b.f., van der aalst, w.m.p.: ilp-based process discov-
+ery using hybrid regions. in van der aalst, w.m.p., bergenthum, r., carmona, j.,
+eds.: proceedings of the international workshop on algorithms & theories for the
+analysis of event data, ataed 2015, satellite event of the conferences: 36th in-
+ternational conference on application and theory of petri nets and concurrency
+petri nets 2015 and 15th international conference on application of concurrency
+to system design acsd 2015, brussels, belgium, june 22-23, 2015. volume 1371
+of ceur workshop proceedings., ceur-ws.org (2015) 47{61
+38. adriansyah, a.: aligning observed and modeled behavior. phd thesis, technische
+universiteit eindhoven (2014)
+39. de leoni, m., marrella, a.: aligning real process executions and prescriptive pro-
+cess models through automated planning. expert syst. appl. 82(2017) 162{183
+40. reiner, d., conforti, r., dumas, m., rosa, m.l., armas-cervantes, a.: scalable
+conformance checking of business processes. in: otm coopis, , rhodes, greece.
+(2017) 607{627
+41. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: scalable process discovery
+and conformance checking. software and system modeling 17(2) (2018) 599{631
+42. taymouri, f., carmona, j.: a recursive paradigm for aligning observed behavior
+of large structured process models. in: 14th international conference of business
+process management (bpm), rio de janeiro, brazil, september 18 - 22. (2016)
+43. van dongen, b., carmona, j., chatain, th., taymouri, f.: aligning modeled and
+observed behavior: a compromise between complexity and quality. in dubois,
+e., pohl, k., eds.: proceedings of the 29th international conference on advanced
+information systems engineering (caise'17). volume 10253 of lecture notes in
+computer science., essen, germany, springer (june 2017) to appear.
+44. taymouri, f., carmona, j.: model and event log reductions to boost the com-
+putation of alignments. in: proceedings of the 6th international symposium on
+data-driven process discovery and analysis (simpda 2016), graz, austria, de-
+cember 15-16, 2016. (2016) 50{62
+45. munoz-gama, j., carmona, j., van der aalst, w.m.p.: single-entry single-exit
+decomposed conformance checking. inf. syst. 46(december 2014) 102{122
+46. van der aalst, w.m.p.: decomposing petri nets for process mining: a generic
+approach. distributed and parallel databases 31(4) (2013) 471{507
+47. bloemen, v., van de pol, j., van der aalst, w.m.p.: symbolically aligning ob-
+served and modelled behaviour. in: 18th international conference on application
+of concurrency to system design, acsd, bratislava, slovakia, june 25-29. (2018)
+50{59
+48. bloemen, v., van zelst, s.j., van der aalst, w.m.p., van dongen, b.f., van de
+pol, j.: maximizing synchronization for aligning observed and modelled behaviour.
+in: business process management - 16th international conference, bpm, sydney,
+nsw, australia. (2018) 233{249
+49. fahland, d., van der aalst, w.m.p.: model repair - aligning process models to
+reality. inf. syst. 47(2015) 220{243
+50. rozinat, a., van der aalst, w.m.p.: conformance checking of processes based on
+monitoring real behavior. inf. syst. 33(1) (2008) 64{95
+51. munoz-gama, j.: conformance checking and diagnosis in process mining - com-
+paring observed and modeled processes. volume 270 of lecture notes in business
+information processing. springer (2016)52. adriansyah, a., munoz-gama, j., carmona, j., van dongen, b.f., van der aalst,
+w.m.p.: measuring precision of modeled behavior. inf. syst. e-business manage-
+ment 13(1) (2015) 37{67
+53. chatain, t., carmona, j.: anti-alignments in conformance checking - the dark
+side of process models. in: application and theory of petri nets and concurrency
+- 37th international conference, petri nets 2016, toru n, poland, june 19-24,
+2016. proceedings. (2016) 240{258
+54. van dongen, b.f., carmona, j., chatain, t.: a unied approach for measur-
+ing precision and generalization based on anti-alignments. in: business process
+management - 14th international conference, bpm 2016, rio de janeiro, brazil,
+september 18-22, 2016. proceedings. (2016) 39{56
+55. dumas, m., rosa, m.l., mendling, j., reijers, h.a.: fundamentals of business
+process management, second edition. springer (2018)
+56. vanden broucke, s.k.l.m., weerdt, j.d., vanthienen, j., baesens, b.: determining
+process model precision and generalization with weighted articial negative events.
+ieee trans. knowl. data eng. 26(8) (2014) 1877{1889
+57. mendling, j., neumann, g., van der aalst, w.m.p.: understanding the occur-
+rence of errors in process models based on metrics. in: on the move to meaningful
+internet systems 2007: coopis, doa, odbase, gada, and is, otm confed-
+erated international conferences coopis, doa, odbase, gada, and is 2007,
+vilamoura, portugal, november 25{30, 2007, proceedings, part i. (2007) 113{130

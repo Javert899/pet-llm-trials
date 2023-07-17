@@ -1,0 +1,801 @@
+modeling and discovering cancelation behavior
+maikel leemans(b)and wil m.p. van der aalst
+eindhoven university of technology, 5600 mb eindhoven, the netherlands
+m.leemans@tue.nl
+abstract. this paper presents a novel extension to the process tree
+model to support cancelation behavior, and proposes a novel process
+discovery technique to discover sound, ﬁtting models with cancelation
+features. the proposed discovery technique relies on a generic error ora-cle function, and allows us to discover complex combinations of multi-
+ple, possibly nested cancelation regions based on observed behavior. an
+implementation of the proposed approach is available as a prom plu-gin. experimental results based on real-life event logs demonstrate the
+feasibility and usefulness of the approach.
+keywords: process mining
+·process discovery ·cancelation discov-
+ery·cancelation modeling ·process trees ·event logs ·reset nets
+1 introduction
+process mining provides a powerful way to discover and analyze operational
+processes based on recorded event data stored in event logs . these event logs
+can be found everywhere: in enterprise information systems and business trans-
+action logs, in web servers, in high-tech systems such as x-ray machines, in
+warehousing systems, etc. [ 17]. the majority of such real-life event logs contain
+some form of cancelation or error-handling behavior. a bank loan request may
+be canceled or declined, a webserver needs to handle a connection error, an x-
+ray machine may detect a sensor problem, etc. these cancelations can easilybe expressed in workﬂow languages (bpmn, yawl) and formal models such
+as reset workﬂow nets (rwf-nets). when formal process descriptions are not
+available, outdated or otherwise inaccurate, we turn to process discovery tech-
+niques. process discovery aims to learn a process model from example behavior
+in event logs. many discovery techniques have been proposed in literature, butfew take into account cancelation features.
+to illustrate the need for cancelation features, consider a bank loan request
+example, as modeled in fig. 1. after a request is registered (a), in parallel the
+client’s credit is checked (d), the request is processed (b, c, f), and a fraud check
+is performed (g). once all parallel branches succeed, the loan is granted (h). if
+the credit check failed, the loan is declined (e), and there is no need to waitfor the other activities. since the credit check can fail at any stage during the
+request processing and fraud checking, there are 3 ·2 = 6 scenarios where a
+decline loan has to be modeled (see the six black transitions in fig. 1(a)).
+c/circlecopyrtspringer international publishing ag 2017
+h. panetto et al. (eds.): otm 2017 conferences, part i, lncs 10573, pp. 93–113, 2017.https://doi.org/10.1007/978-3-319-69462-7
+_894 m. leemans and w.m.p. van der aalst
+a
+register
+loan 
+requesth
+grant 
+loan
+e
+decline loanb
+check request
+d
+check creditf
+validate requestc
+query more info
+g
+check fraud
+(a) petri net, without cancelation regiona
+register
+loan 
+requesth
+grant 
+loan
+e
+decline loanb
+check request
+d
+check creditf
+validate requestc
+query more info
+g
+check fraud
+(b) reset wf net, with cancelation region
+a) register 
+loan requestb) check
+request
+g) check 
+fraud
+d) check 
+creditc) query
+more info
+f) validate
+request
+h) grant 
+loan
+e) decline
+loan
+(c) statechart, with cancelation statea) register
+loan requestb) check
+requestc) query
+more info
+f) validate
+request
+g) check 
+fraud
+d) check 
+credith) grant
+loan
+e) decline
+loan
+(d) bpmn model, with cancelation event
+fig. 1. small loan application example with cancelation behavior, modeled in diﬀerent
+languages, illustrating the advantage of using cancelation features. as we will show in
+this paper, these models can be compactly represented using the proposed cancelationprocess tree (see deﬁnition 4):→(a,⋆→(→(∧(→(/anticlockwise(b, c),f),g,⋆{e}
+d),h),e))
+the model in fig. 1(a) is already rather complex. however, we assumed that
+the activities are atomic. this is not realistic, because the check credit, requestprocessing and check fraud happen in parallel, and if the check fails, any process-
+ing tasks need to be withdrawn. assuming we also model the start and end for
+each activity (thus modeling the running state of an activity), the number ofscenarios/black transitions increases to 6 ·3 = 18. using the cancelation fea-
+tures available in the various languages, we get a much simpler and more precise
+model, as shown in figs. 1(b), (c) and (d).
+clearly, there is a need to model cancelation features explicitly, and process
+discovery should be able to discover these cancelation features. furthermore, it
+is important that the discovered model meets certain quality criteria. obviously,
+the model should be sound, i.e., all process steps can be executed and an end
+state is always reachable. moreover, it is desirable to discover models that canreplay all the behavior in the event log, i.e., to discover ﬁtting models that relate
+to the event log. recent work proposed a framework for discovery algorithms
+which ﬁnd sound, ﬁtting models in ﬁnite time, based on process trees [ 14]. the
+process tree notation is tailored towards process discovery and is a compact way
+to represent block-structured models that can easily be represented in terms
+of, for example: workﬂow nets, statecharts and bpmn models. however, in itscurrent form, process trees cannot eﬀectively capture cancelation features.
+in this paper, we propose a novel extension to the process tree model
+to support cancelation behavior, and propose a novel process discovery tech-nique to discover sound, ﬁtting models with cancelation features. the proposedmodeling and discovering cancelation behavior 95
+discovery technique relies on a generic error oracle function, and allows us to
+discover complex combinations of multiple, possibly nested cancelation regionsbased on observed behavior.
+the approach is outlined in fig. 2. an implementation of the proposed algo-
+rithm is tested and made available via the statechart plugin for the prom frame-
+work [ 12].
+section 5 section 4
+event log cancelation
+process tree
+error oraclediscover
+heuristics
+for oraclediscovery
+algorithm
+fig. 2. approach outline.the remainder of this paper is organized as
+follows. section 2positions the work in exist-
+ing literature. section 3introduces formal deﬁ-
+nitions and the proposed cancelation model. in
+sect.4, we discuss several heuristics for our error
+oracle. the novel cancelation process discovery
+technique is explained in sect. 5. the approach
+is evaluated in sect. 6. section 7concludes the
+paper.
+2 related work
+to relate our work to existing approaches in process mining, we provide a sys-tematic comparison of discovery approaches based on four criteria (sect. 2.1).
+that is, the approach should provide expressive and sound models, and allowfor a trade-oﬀ between ﬁtness and simplicity. next, we discuss and compare the
+related work (sect. 2.2). table 1summarizes the comparison.
+2.1 criteria for comparison
+for comparing the related work, we deﬁne several comparison criteria.
+as a basis, any discovery algorithm should yield sound process models. that
+is, all process steps can be executed and an end state is always reachable. in
+addition, it is desirable to be able to discover models that can replay all the
+behavior in the event log, i.e., to discover ﬁtting models that relate to the event
+log [17].
+real-life event logs are often messy and challenging for discovery algorithms.
+in these cases, it may be necessary to trade oﬀ ﬁtness for simplicity by ﬁltering
+out infrequent behavior. in addition, some behavior can only be captured by non-
+localconstructs such as long-distance dependencies or, to a degree, cancelation
+features.
+for the related work techniques that do discover cancelation features, we look
+into how the corresponding cancelation regions are discovered from the event log.
+in addition, we will also compare on the complexity of the discovered features.
+that is, if multiple regions can be discovered, possibly in a nested conﬁguration.
+2.2 discussion of the related work
+we divided the related work discussion into several groups based on their com-
+parison characteristics, see also table 1.96 m. leemans and w.m.p. van der aalst
+table 1. comparison of related techniques from sect. 2, according to the comparison
+criteria detailed in sect. 2.
+there is a wide variety of petri net based algorithms that can discover non-
+local constructs [ 2,5,18,19,21,23,24]. even though these algorithms do not sup-
+port cancelation features, they can discover and model complex, real-life behav-ior. the major downside is that none of these techniques guarantee a sound
+model.
+a small group of algorithms focus on the process tree representation [ 4,14].
+the use of process trees guarantees the discovery of sound workﬂow nets. how-
+ever, by design, this limits the discovery search space to models with structured,
+local features only. less structured behavior, like cancelation features, cannotbe modeled or discovered.
+in recent years, several commercial process mining tools emerged on the mar-
+ket [6,9,10]. compared to academic tools, these commercial tools are easier to
+use, but provide less functionality. in particular, the commercial models provide
+no executable semantics, and do not support concurrency [ 17].
+there have been a few attempts at supporting the discovery of cancelation
+features. in the work of [ 11], cancelation discovery is based on the behavior found
+in the event log. by analyzing a transition system (ts) abstraction of the eventlog, [11] searches for a single cancelation region. in contrast, the technique out-
+lined in [ 16] uses a post-processing strategy based on conformance techniques.modeling and discovering cancelation behavior 97
+that is, given a discovered model (using an existing algorithm), it tries to deter-
+mine where a cancelation region should have been, based on unsuccessful eventlog replays (i.e., remaining tokens in the petri net). in the work of [ 7], another
+post-processing heuristic is proposed. it assumes the underlying discovery algo-
+rithm (the bpmn miner) can correctly identify subprocesses (based on the rela-tions in additional data attributes), and then checks which of these subprocesses
+should be “upgraded” to a cancelation region.
+3 event logs and process trees
+before we explain the proposed discovery technique, we ﬁrst introduce some
+deﬁnitions and our novel extension to process trees. we start with some pre-liminaries in subsect. 3.1. in subsect. 3.2we introduce event logs (our input).
+finally, in subsects. 3.3and3.4, we will discuss the process tree model and our
+novel extension: cancelation process trees .
+3.1 preliminaries
+we denote the powerset over some set aasp(a). we denote the set of all
+multisets over some set aasb(a). note that the ordering of elements in a set
+or multiset is irrelevant.
+given a set x, a sequence over xof length nis denoted as t=/angbracketlefta
+1,...,a n/angbracketright∈
+x∗. the empty sequence is denoted as ε, and we deﬁne head(t)=a1,end(t)=
+an. we deﬁne a∈tiﬀ there is at least one aisuch that ai=a. we write ·to
+denote sequence concatenation, for example: /angbracketlefta/angbracketright·/angbracketleftb,c/angbracketright=/angbracketlefta,b,c/angbracketright,a n d/angbracketlefta/angbracketright·ε=
+/angbracketlefta/angbracketright. we write /diamondmathto denote sequence interleaving (shuﬄe). for example: /angbracketlefta,b/angbracketright/diamondmath
+/angbracketleftc,d/angbracketright={/angbracketlefta,b,c,d /angbracketright,/angbracketlefta,c,b,d /angbracketright,/angbracketlefta,c,d,b /angbracketright,/angbracketleftc,a,b,d /angbracketright,/angbracketleftc,a,d,b /angbracketright,/angbracketleftc,d,a,b /angbracketright}.
+we write f:x/mapsto→yfor a function with domain dom(f)=xand range
+rng(f)={f(x)|x∈x}⊆y.
+3.2 event logs
+the starting point for any process mining technique is an event log ,as e to f events
+grouped into traces, describing what happened when. each trace corresponds to
+an execution of a process. events may be characterized by various attributes ,
+e.g., an event may have a timestamp, correspond to an activity, denote a start
+or end, is executed by a particular resource, etc.
+for the sake of clarity, we will ignore most event attributes, and use sequences
+of activities directly, as deﬁned below.
+deﬁnition 1 (event log). letabe a set of activities. let l∈b(a∗)b e
+an event log, a multiset of traces. a trace t∈l, with t∈a∗, is a sequence of
+activities. /rightanglese98 m. leemans and w.m.p. van der aalst
+given a set σ⊆aand trace t∈l, we write σ(t)=σ∩{a∈t}to denote
+the set of activities in the intersection of σandt.
+3.3 process trees
+in this subsection, we introduce process trees as a notation to compactly repre-
+sent block-structured models . an important property of block-structured models
+is that they are sound by construction ; they do not suﬀer from deadlocks, live-
+locks and other anomalies. in addition, process trees are tailored towards processdiscovery, and have been used previously to discover block-structured workﬂow
+nets [14]. a process tree describes a language; an operator describes how the
+languages of its subtrees are to be combined.
+deﬁnition 2 (process tree). we formally deﬁne process trees recursively. we
+assume a ﬁnite alphabet aof activities and a set/circlemultiplytextof operators to be given.
+symbol τ/∈adenotes the silent activity.
+–awitha∈(a∪{τ}) is a process tree;
+–l e t p
+1,...,p nwithn>0 be process trees and let ⊗∈/circlemultiplytextbe a process
+tree operator, then ⊗(p1,...,p n) is a process tree. we consider the following
+operators for process trees:
+–→denotes the sequential execution of all subtrees;
+–×denotes the exclusive choice between one of the subtrees;
+–/anticlockwisedenotes the structured loop of loop body p1and alternative loop back
+paths p2,...,p n(with n≥2);
+–∧denotes the parallel (interleaved) execution of all subtrees.
+/rightanglese
+deﬁnition 3 (process tree semantics). to describe the semantics of
+process trees, the language of a process tree pis deﬁned using a recursive
+monotonic function l(p), where each operator ⊗∈/circlemultiplytexthas a language join
+function ⊗l:(p(a∗)×...×p(a∗))/mapsto→p(a∗):
+l(a)= {/angbracketlefta/angbracketright}fora∈a
+l(τ)= {ε}l(⊗(p1,...,p n))
+=⊗l(l(p1),..., l(pn))
+each operator has its own language join function ⊗l. the language join
+functions below are borrowed from [ 14,17], with li⊆a∗:
+→l(l1,...,l n)= {t1·... ·tn|∀1≤i≤n:ti∈li}
+×l(l1,...,l n)=/uniontext
+1≤i≤nli
+/anticlockwisel(l1,...,l n)= {t1·t/prime
+1·t2·t/prime
+2·... ·tm−1·t/prime
+m−1·tm|∀i:ti∈l1,t/prime
+i∈/uniontext
+2≤j≤nlj}
+∧l(l1,...,l n)= {t/prime∈(t1/diamondmath... /diamondmathtn)|∀1≤i≤n:ti∈li}
+/rightanglesemodeling and discovering cancelation behavior 99
+example models and their languages:
+l(∧(a, b)) = {/angbracketlefta, b /angbracketright,/angbracketleftb, a /angbracketright}
+l(/anticlockwise(a, b)) = {/angbracketlefta/angbracketright,/angbracketlefta, b, a /angbracketright,
+/angbracketlefta, b, a, b, a /angbracketright,... }l(→(a,×(b, c))) = {/angbracketlefta, b /angbracketright,/angbracketlefta, c /angbracketright}
+l(∧(a,→(b, c)) = {/angbracketlefta, b, c /angbracketright,/angbracketleftb, a, c /angbracketright,
+/angbracketleftb, c, a /angbracketright}
+3.4 cancelation process trees
+we extend the process tree representation to support cancelation behavior. we
+add two new tree operators to represent a cancelation region, and a new treeleaf to denote a cancelation trigger.
+deﬁnition 4 (cancelation process tree). we formally deﬁne cancelation
+process trees recursively. we assume a ﬁnite alphabet aof activities to be given.
+– any process tree is also a cancelation process tree;
+–l e t p
+1,...,p nwithn≥2 be cancelation process trees, then:
+–⋆→(p1,...,p n) denotes the sequence-cancel of cancelation body p1and
+mutually exclusive error alternative paths p2,...,p n;
+–⋆/anticlockwise(p1,...,p n) denotes the loop-cancel of cancelation body p1and mutu-
+ally exclusive error loop back paths p2,...,p n;
+–⋆e
+awitha∈a,e⊆adenotes the cancelation trigger. combined with a can-
+celation operator⋆→,⋆/anticlockwise, this leaf denotes the point where we execute activity
+a, and have the option to trigger an error e∈e, ﬁring a corresponding
+cancelation region. this concept is explained and deﬁned in detail below. /rightanglese
+the intuition behind the cancelation operators is described below. we refer-
+ence to table 2for a concrete example tree with a step by step construction of
+its language. observe that the new operators enable the modeling of semi-blockstructured behavior (see the semi-structured loop modeling activity r).
+assume a tree⋆⊗(p1,...,p n),⋆⊗∈{⋆→,⋆/anticlockwise}with a leaf ⋆e
+asomewhere in
+the subtree p1. when we want to “execute” this tree (i.e., generate a trace in
+its language), we start with the subtree p1.a ta n y ⋆e
+apoint, we do activity a
+as normal (happy ﬂow), and have the option to trigger any error e∈e.f o r
+example, in table 2, the leaf ⋆{e,r }
+ccan trigger either error eorr.
+in case an error e∈eis triggered, we need to ﬁnd a matching cancelation
+region. a cancelation region⋆⊗(p1,...,p n) matches an error e∈eiﬀeis the
+start activity for a trace in t∈l(p2,...,p n). when we trigger the error e∈e
+at⋆e
+a, we perform the activity a, but ignore the rest of the subtree p1. i.e., we
+take the preﬁx up to and including a, and ﬁre the cancelation region. we follow100 m. leemans and w.m.p. van der aalst
+table 2. example cancelation process tree (left) with its language (right) and cor-
+responding reset wf net (bottom). shown are the traces in the language and the
+corresponding errors that are triggered to generate the trace. the grey arrows in thecancelation process tree indicate the possible error trigger “jumps”.
+→
+⋆→
+→
+a⋆/anticlockwise
+→
+b ⋆{e,r}
+c drgeherrors trace
+−/angbracketleft a, b, c, d, g, h /angbracketright
+e /angbracketlefta, b, c, e, h /angbracketright
+r /angbracketlefta, b, c, r, b, c, d, g, h /angbracketright
+r, e /angbracketlefta, b, c, r, b, c, e, h /angbracketright
+r, r /angbracketlefta, b, c, r, b, c, r, b, c, d, g, h /angbracketright
+r, r, e /angbracketlefta, b, c, r, b, c, r, b, c, e, h /angbracketright
+...
+a b c d
+e rg h
+with a trace t∈l(p2,...,p n) such that eis the start activity of t. i.e., we make
+a “jump” and execute a matching trace from one of the non-ﬁrst subtrees. in
+table 2, the node⋆→matches with error e, and the node⋆/anticlockwisematches with error r.
+the diﬀerence between⋆→and⋆/anticlockwiseis as follows: in case of⋆→, we have sequential
+behavior, i.e., after a happy ﬂow or error path, we continue with the rest of the
+process tree. in case of⋆/anticlockwise, we have looping behavior, i.e., after an error path, we
+loop back and try executing p1again. for instance, in the example of table 2
+at the leaf ⋆{e,r }
+c, we can either continue as normal (happy ﬂow), or jump to r
+(repetitively) or e(only once).
+deﬁnition 5 (cancelation process tree semantics). we deﬁne the seman-
+tics of cancelation process trees in multiple steps, and provide an adaptation for
+the existing process tree semantics.
+first, we deﬁne the language of the cancelation trigger leaf ⋆e
+a.a tt h i sl e a f ,w e
+can either execute activity aas normal, or execute it and trigger an error e∈e.
+l(⋆e
+a)= {/angbracketleftbig
+⋆e
+a/angbracketrightbig
+,/angbracketlefta/angbracketright}fora∈a,e ⊆a
+next, we deﬁne the language for the cancelation operators⋆→,⋆/anticlockwise. there are
+two common cases for these operators: (1) no error is triggered, and (2) an error
+is not caught by this operator. we deﬁne⋆⊗l
+to represent these common cases.modeling and discovering cancelation behavior 101
+⋆⊗l
+(l1,...,l n)= {t1|t1∈l1,end (t1)/negationslash=⋆e
+a}∪{t1·/angbracketleftbig
+⋆e\s
+a/angbracketrightbig
+|t1·/angbracketleftbig
+⋆e
+a/angbracketrightbig
+∈l1,
+s={head (t)|t∈/uniontext
+2≤j≤nlj},e \s/negationslash=∅}
+for the sequence-cancel operator⋆→, we extend upon the language of⋆⊗l
+by
+allowing a matching error path, after which we continue with the rest of theprocess tree.
+⋆→l(l1,...,l n)= {t1·/angbracketlefta/angbracketright·te|t1·/angbracketleftbig
+⋆e
+a/angbracketrightbig
+∈l1,head (te)∈e,t e∈/uniontext
+2≤j≤nlj}
+∪⋆⊗l
+(l1,...,l n)
+for the loop-cancel operator⋆/anticlockwise, we extend upon the language of⋆⊗l
+by allow-
+ing a matching error path, after which we loop back and try executing p1again.
+⋆/anticlockwisel
+(l1,...,l n)= {t1·/angbracketlefta1/angbracketright·t/prime
+1·t2·/angbracketlefta2/angbracketright·t/prime
+2·... ·tm−1·/angbracketleftam−1/angbracketright·t/prime
+m−1·tm
+|tm∈⋆⊗l
+(l1,...,l n),∀i<m :ti·/angbracketleftbig
+⋆eiai/angbracketrightbig
+∈l1,head (t/prime
+i)∈ei,
+t/prime
+i∈/uniontext
+2≤j≤nlj}∪⋆⊗l
+(l1,...,l n)
+the existing process tree semantics can easily be adapted for these can-
+celation semantics by applying a preﬁx function φto all traces in ⊗l(for
+⊗l∈/braceleftbig
+→l,×l,/anticlockwisel,∧l/bracerightbig
+). the idea is to remove any activity after a ⋆e
+asymbol.
+for instance φ(/angbracketlefta,b,c/angbracketright)=/angbracketlefta,b,c/angbracketright, butφ(/angbracketleftbig
+a,⋆e
+b,c/angbracketrightbig
+)=/angbracketleftbig
+a,⋆e
+b/angbracketrightbig
+. /rightanglese
+below are some simple models and their corresponding language:
+l(→(a, ⋆{e}
+b,c)) = {/angbracketlefta, b, c /angbracketright,/angbracketlefta, ⋆{e}
+b /angbracketright}
+l(⋆→(→(a, ⋆{e}
+b,c),e)= {/angbracketlefta, b, c /angbracketright,/angbracketlefta, b, e /angbracketright}l(⋆/anticlockwise(→(a, ⋆{r}
+b,c),r)
+={/angbracketlefta, b, c /angbracketright,/angbracketlefta, b, r, a, b, c /angbracketright,
+/angbracketlefta, b, r, a, b, r, a, b, c /angbracketright,... }
+4 heuristics for error oracle
+we rely on explicitly modeling cancelation triggers and error activities (see
+deﬁnition 4). for the algorithm in sect. 5, we assume that the error activities
+are also explicit in the input. however, for any given event log, this is usually
+not the case (see deﬁnition 1). to make error activities explicit in the input, we
+will assume a so-called error oracle function as an additional input.102 m. leemans and w.m.p. van der aalst
+deﬁnition 6 (error oracle). letabe a set of activities. let iserror :a/mapsto→
+{true,false}be an error oracle function, yielding trueiﬀ an activity a∈ais
+an error activity. /rightanglese
+there are numerous ways to instantiate such an error oracle function. a
+simple heuristics is to rely on domain knowledge or keywords in the activity
+names. for example, a negative activity name like “cancelled” or “declined”
+is often a good candidate. in addition, one can also check activities that breakthe normal ﬂow: timed triggers, (external) events or asynchronous activities.
+alternatively, exception or error data attributes may prove useful.
+when none of these heuristics are an option, one can always fall back to an
+optimization strategy. the intuition is that, if cancelation behavior is present,
+modeling this behavior with cancelation operators will yield a more ﬁtting and
+possibly more precise process tree. this is easy to see considering the fact thatprocess trees traditionally capture only block-structured behavior, and cancela-
+tion behavior breaks this block-structuredness. such an optimization strategy
+would feed several candidate error oracle functions to the discovery algorithm,compute the ﬁtness and precision of the resulting model, and return the best
+scoring candidate.
+future work should look into more behavioral oriented error oracle heuristics.
+5 model discovery
+in this section, we will detail our discovery approach. we start by introducing
+the directly follows abstraction over an event log in subsect. 5.1. next, we brieﬂy
+cover the framework our technique is based on in subsect. 5.2. after that, we
+detail our proposed approach in subsect. 5.3.
+5.1 directly follows graph and cuts
+the directly follows relation describes when two activities directly follow each
+other in a process. this relation can be expressed in the directly follows graph
+of a log l, written g(l). nodes in g(l) are the activities of l. an edge ( a,b)
+is present in g(l) iﬀ some trace /angbracketleft...,a,b,... /angbracketright∈l. we deﬁne the start and
+end nodes of g,start(g)a n d end(g) respectively, based on the start and end
+activities in l.a nn-ary cut ofg(l) is a partition of the nodes of the graph
+into disjoint sets σ1,...,σ n.
+consider a directly follows graph g(l) and error oracle function iserror :
+a/mapsto→{ true,false}. if an edge ( a,b)h a s iserror (b), then we call ( a,b)a n error
+edge. in any subgraph g/prime⊆g,an o d e acan only be an end node of g/primeiﬀ it
+would be an end node without error edges.modeling and discovering cancelation behavior 103
+5.2 discovery framework
+our technique is based on the inductive miner (im) framework for discovering
+process tree models, as described in [ 14]. given a set/circlemultiplytextof process tree oper-
+ators, [ 14] deﬁnes a framework to discover models using a divide and conquer
+approach. given a log l, the framework searches for possible splits of linto
+sublogs l1,...,l n, such that these logs combined with an operator ⊗∈/circlemultiplytextcan
+(at least) reproduce lagain. the split search is based on ﬁnding cuts in the
+directly follows graph g(l) of the log l. for each operator, a diﬀerent cut is
+characterized based on the edges between the nodes in g(l). the framework
+then recurses on the corresponding sublogs and returns the discovered submod-
+els. logs with empty traces or traces with a single activity form the base cases
+for this framework. note that, by design, each activity only appears once in theproduced process tree, and this tree can be a generalization of the original event
+log.
+we use this framework as a basis because of its extensibility (it works inde-
+pendently of the chosen process tree operators), as well as the following proper-
+ties: the log ﬁts the resulting model, and there exists an implementation with a
+polynomial run time complexity [ 14].
+5.3 cancelation discovery
+we generalize the above approach to also support the discovery of cancela-
+tion behavior by including the error oracle function iserror as an additional
+input, and tracking cancelation triggers during discovery. note that we main-
+tain the rediscoverability and ﬁtness guarantees of the original framework [ 14]. in
+algorithm 1, an overview of the discovery approach is given. in table 3, an exam-
+ple run is given.
+we will ﬁrst discuss cancelation triggers in more detail. the three extension
+points labelled in algorithm 1are discussed next: (1) the cancelation trigger base
+case (line 5), (2) the cut ﬁnding extensions (line 10), and (3) the log splitting
+for cancelation (line 11).
+cancelation triggers. a key observation is that we can track cancelation trig-
+gers during discovery. whenever we observe an error activity ewith iserror (e)
+in the log, it had to be triggered by the last activity before e. this naturally
+follows from the preﬁx cancelation semantics and the fact that each activity onlyappears once in the produced process tree. we keep track of these predecessors
+via the triggers mapping deﬁned below.
+deﬁnition 7 (cancelation triggers). let triggers :a/mapsto→p(a) be a cance-
+lation triggers mapping, mapping an activity to the set of error activities such
+that∀e∈rng(triggers ),e∈e:iserror (e). /rightanglese104 m. leemans and w.m.p. van der aalst
+algorithm 1: cancelation discovery
+input: an event log land error oracle function iserror :a/mapsto→{ true,false }
+output: a cancelation process tree psuch that lfitsp
+description: extended framework that takes into account cancelation operators.
+discover (l,iserror )
+(1) if∀σ∈l:σ=ε
+(2) // the log is empty or only contains empty traces
+(3) return τ
+(4) else if ∃x∈a:∀σ∈l:σ=/angbracketleftx/angbracketright
+(5) // the log only has a single activity ––––––––––––––––––––– ( 1 )
+(6) iftriggers (x)/negationslash=∅then return ⋆triggers (x)
+x // cancelation trigger case
+(7) else return x // normal base case
+(8) else
+(9) // the normal framework cases
+(10) ( ⊗,(σ1,...,σ n)) = ﬁndcut/prime(g(l),iserror ) –––––––––––––– ( 2 )
+(11) (( l1,...,l n),triggers )= splitlog/prime(l,(σ1,...,σ n),iserror ,triggers )–( 3 )
+(12) return ⊗(m1,...,m n)where mi=discover (li,iserror )
+(1) base case. in the case the sublog consists of only a single activity, we have
+two options. to discover a cancelation trigger ⋆e
+afor an activity a, we simply
+check the triggers mapping. if this is mapping empty, we have a normal activity
+leafa, else we have a cancelation trigger leaf with e=triggers (a).
+(2) finding cuts. we include support for our cancelation tree operators by
+adding new cuts, and only slightly adapting existing cut deﬁnitions from [ 14]. in
+fig.3, all the graph cuts are depicted informally.
+in our cancelation discovery, any non-cancelation cut cannot have an error
+edge between two partitions. in contrast, a cancelation cut is characterized by
+having error edges from its ﬁrst partition to all non-ﬁrst partitions. that is, ina cancelation cut, the ﬁrst partition is the normal (happy ﬂow) behavior inside
+the cancelation region. the non-ﬁrst partitions are the mutually exclusive error
+paths after triggering the cancelation. the sequence and loop cancelation cutsare formally deﬁned below.
+deﬁnition 8 (sequence cancel cut). a sequence cancel (
+⋆→) cut is a par-
+tially ordered cut σ1,...,σ n, with n≥2, of a directly-follows graph gsuch
+that:
+1. all start activities are in the
+body σ1:
+start (g)⊆σ1
+2. every partition σihas some
+end activities:
+∀i≥1:end (g)∩σi/negationslash=∅3. there are only error edges from σ1to
+σi>1:
+∀i> 1,ai∈σi,a1∈σ1:
+(a1,ai)∈g⇒iserror (ai)
+4. there are no edges from σi>1toσj≥1:
+∀i> 1,j≥1,i/negationslash=j, ai∈σi,aj∈σj:
+(ai,aj)/∈g
+/rightanglesemodeling and discovering cancelation behavior 105
+fig. 3. cuts of the directly-follows graph for all operators. the grey areas indicate
+partitions; the arrows indicate required and disallowed edges characterizing the cut.
+deﬁnition 9 (loop cancel cut). a loop cancel (⋆/anticlockwise) cut is a partially ordered
+cutς1,...,σ n, with n≥2, of a directly-follows graph gsuch that:
+1. all start and end activities are
+in the body σ1:
+start (g)∪end(g)⊆σ1
+2. there are only error edges from
+σ1toσi>1:
+∀i>1,ai∈σi,a1∈σ1:
+(a1,ai)∈g⇒iserror (ai)
+3. there are only edges from σi
+to start nodes in σ1:∀i>1,ai∈σi,a1∈σ1:
+(ai,a1)∈g⇒a1∈start (g)
+4. there are no edges from σi>1toσj>1:
+∀i>1,j > 1,i/negationslash=j, ai∈σi,aj∈σj:(ai,aj)/∈g
+5. if σihas an edge to σ1, it connects to all start
+activities:
+∀i>1,ai∈σi,a1∈start (g):
+(∃a/prime
+1∈σ1:(ai,a/prime
+1)∈g)⇔(ai,a1)∈g /rightanglese
+(3) splitting logs. once a cut σ1,...,σ nhas been found for an operator ⊗,
+we need to split the log linto sublogs l1,...,l n, such that these logs com-
+bined with operator ⊗can (at least) reproduce lagain. for the new cancelation
+operators, we deﬁne the log splits and cancelation trigger update below.
+deﬁnition 10 (sequence cancel split). given a sequence cancelation cut
+σ1,...,σ n:
+1. sublog l1consists of all maximal preﬁx subtraces with activities in σ1:
+l1={t1|t1·t2∈l, σ (t1)⊆σ1,(t2=ε∨(t2=/angbracketlefte ,... /angbracketright∧e/∈σ1))}
+2. sublog li>1consists of all maximal postﬁx subtraces with activities in σi:
+li>1={t2|t1·t2∈l, σ (t2)⊆σi,(t1=ε∨(t1=/angbracketleft...,a 1/angbracketright∧a1∈σ1))}
+3. update the triggers mapping such that any activity a∈aending a trace in l1is
+mapped to all error activities following it in l:
+triggers (a)= triggers (a)∪{e|t1·t2∈l, σ (t1)⊆σ1,e /∈σ1,
+t1=/angbracketleft...,a /angbracketright,t2=/angbracketlefte ,... /angbracketright} /rightanglese106 m. leemans and w.m.p. van der aalst
+for example, consider a log l=[/angbracketleftb,c,d/angbracketright,/angbracketleftc,b,d/angbracketright,/angbracketleftc,e,f /angbracketright] (taken from step 2
+in table 3) and sequence cancelation cut σ1={b,c,d},σ2={e,f}.t h e
+resulting log splits are l1=[/angbracketleftb,c,d/angbracketright,/angbracketleftc,b,d/angbracketright,/angbracketleftc/angbracketright],l2=[/angbracketlefte,f/angbracketright], and the
+resulting triggers mapping is triggers ={c/mapsto→{e}}.
+deﬁnition 11 (loop cancel split). given a loop cancelation cut σ1,...,σ n:
+1. sublog liconsists of all maximal subtraces with activities in σi:
+li={t2|t1·t2·t3∈l, σ (t2)⊆σi,(t1=ε∨(t1=/angbracketleft...,a 1/angbracketright∧a1/∈σi)),
+(t3=ε∨(t3=/angbracketlefta3,... /angbracketright∧a3/∈σi))}
+2. update the triggers mapping such that any activity a∈aending a trace in l1is
+mapped to all error activities following it in l:
+triggers (a)= triggers (a)∪{e|t1·t2·t3∈l, σ (t2)⊆σ1,e /∈σ1,
+t2=/angbracketleft...,a /angbracketright,t3=/angbracketlefte ,... /angbracketright} /rightanglese
+for example, consider a log l=[/angbracketleftb,c,r,b,c,d /angbracketright] (a small snippet from table 2)
+and loop cancel cuts σ1={b,c,d},σ2={r}. the resulting log splits are l1=
+[/angbracketleftb,c/angbracketright,/angbracketleftb,c,d/angbracketright],l2=[/angbracketleftr/angbracketright], and the resulting triggers mapping is triggers =
+{c/mapsto→{r}}.
+6 evaluation
+in this section, we compare our technique against related, implemented tech-
+niques. the proposed algorithm is implemented in the statechart plugin for the
+process mining framework prom [ 12]. in the remainder of this section, we will
+refer to algorithm 1ascancelation . we end the evaluation by showing example
+results obtained using our tool.
+6.1 input and methodology for comparative evaluation
+in this comparative evaluation, we focus on the quantitative aspects. that is, the
+models discovered are precise and ﬁt the actual system. we compare a number
+of techniques and input event logs on: (1) the running time of the technique, (2)
+the model quality (ﬁtness and precision), and (3) the model simplicity .
+for the running time, we measure the average running time and associated
+95% conﬁdence interval over 30 micro-benchmark executions, after 10 warmuprounds for the java jvm. each technique is allowed at most 30 seconds for
+completing a single model discovery. fitness and precision are calculated using
+the technique described in [ 1]. in short, ﬁtness expresses the part of the log that
+is represented by the model; precision expresses the behavior in the model thatmodeling and discovering cancelation behavior 107
+table 3. example cancelation discovery on the log [ /angbracketlefta, b, c, d, g /angbracketright,/angbracketlefta, c, b, d, g /angbracketright,
+/angbracketlefta, c, e, f, g /angbracketright] and error oracle iserror with iserror (e)= true and false otherwise.
+the rows illustrate how the discovery progresses. the highlights indicate the parts ofthe log and directly follows graph used, and relate them to the corresponding partial
+model that is discovered. the dashed arrow is an error edge, and the dashed lines
+indicate the cuts. the resulting reset wf net is shown at the bottom.
+step discovered model event log directly follows graph
+1→
+a ? ga b c d g
+a c b d g
+a c e f gab
+cd g
+e f
+2→
+a⋆→
+? ?ga b c d g
+a c b d g
+a c e f gab
+cd g
+e f
+3→
+a⋆→
+? →
+e fga b c d g
+a c b d g
+a c e f gab
+cd g
+e f
+4/5→
+a⋆→
+→
+∧
+b⋆{e}
+cd→
+e fga b c d g
+a c b d g
+a c e f gab
+cd g
+e f
+ab
+cd
+e fg
+is present in the log. for these experiments we used a laptop with an i7-4700mq
+cpu @ 2.40 ghz, windows 8.1 and java se 1.7.0 (64 bit) with 8 gb of ram.
+we selected several real-life event logs as experiment input, covering a range
+of input problem sizes and complexities. the input problem size is typically
+measured in terms of four metrics: number of traces, number of events, number
+of activities (size of the alphabet), and average trace length. the event logs and
+their sizes are shown in table 4.108 m. leemans and w.m.p. van der aalst
+table 4. the event logs used in the evaluation, with input sizes and applied ﬁlters
+table 5. the error oracles used for the event logs in the evaluation.
+the nasa cev [13] event log describes two executions of a software process
+with errors. this small log was obtained from two existing nasa cev softwaretests. the wabo [3] event log describes the receipt phase of an environmental
+permit application process (‘wabo’) at a dutch municipality. the bpic12 [22]
+event log is a bpi challenge log that describes three subprocesses of a loanapplication process. in this evaluation, we only focus on the “a
+” subprocess.
+the road ﬁne [8] event log was obtained from an information system managing
+road traﬃc ﬁnes. we use two variants of this large event log. the road ﬁne,
+avariant is the largest, most complex event log in our experimental setup. in
+variant road ﬁne, f , we ﬁltered out two asynchronous activities to decrease the
+(directly-follows) complexity.
+we compare our discovery algorithm against most of the techniques men-
+tioned in sect. 2. unfortunately, we could not compare against the work of [ 5–
+7,9,10,15,16] due to invalid input assumptions, absence of semantics, or the
+lack of a reference implementation. the inductive miner (im) [ 14] is our base-
+line comparison algorithm, since our approach builds upon the im framework.
+for the inductive miner and our derived techniques, we also consider the paths
+setting. this is the frequency cutoﬀ for discovering an 80/20 model: 1.0 means
+all behavior, 0.8 means 80% of the behavior. in table 5, we have listed the error
+oracles we used for our cancelation discovery techniques.
+6.2 comparative evaluation results and discussion
+runtime analysis. in table 6, the results for the runtime benchmark are
+given.modeling and discovering cancelation behavior 109
+fig. 4. models mined from the bpic12 log with the path ﬁlter at 0.8, both produced by
+our prom plugin [ 12], and visualized in the statechart language. legend: (s) a submitted,
+(ps) a partlysubmitted, (pa) a preaccepted, (a) a accepted, (f) a finalized, (c) a cancelled,
+(d) a declined, (r) a registered, (ap) a approved, (ac) a activated
+the ﬁrst thing we notice is that, in contrast to the ts cancel technique,
+our cancelation algorithm always discovers a model within the allotted time.
+when compared to the baseline inductive miner, there seems to be a small over-
+head in running time. there are two explanations for this small overhead. onebeing the fact that more tree operator cuts have to be checked at each recur-
+sive call of the algorithm. but more importantly, the new cancelation operators
+potentially uncover more structures in the directly follows graph. in cases wherethe original inductive miner might give up and falls back to loops with skips
+and/or ﬂower models, we can ﬁnd a cancelation pattern, and recurse on a more
+structured subproblem. the end result is that we have more recursive calls touncover all the structures/tree operators, and hence have a larger running time.
+nevertheless, our technique successfully scales to larger logs and consistently
+yields results within seconds.
+model quality analysis. in table 7, the results of the model quality mea-
+surements are given. note that in order to compute model quality scores, the
+model should be sound.
+observe that, compared to the original inductive miner, our cancelation
+algorithm always yields an equal or more ﬁtting model. moreover, we preserve
+the perfect ﬁtness guarantee of the original inductive miner (for path1.0). in
+addition, in most cases, the resulting model is also more precise.110 m. leemans and w.m.p. van der aalst
+table 6. runtime for the diﬀerent algorithms, paths ﬁlter settings, and event logs.
+table 7. fitness (fit.) and precision (prec.) scores for the diﬀerent algorithms, paths
+ﬁlter settings, and event logs. scores range from 0.0 to 1.0, higher is better.
+nase cev wabo bpic12, a road ﬁne, a road ﬁne, f
+algorithm path fit. prec. fit. prec. fit. prec. fit. prec. fit. prec.
+[20] alpha miner - 0.89 0.08 −u−u−u−u−u−u−u−u
+[24] heuristics - −u−u0.61 0 .98 −u−u−u−u0.74 1 .00
+[21] ilp - 1.00 0 .33 1 .00 0 .12 1 .00 0 .22 1 .00 0 .50 1 .00 0 .53
+[23] ilp, ﬁltering - 1.00 0 .33 1 .00 0 .35 1 .00 0 .28 0 .78 1 .00 0 .81 1 .00
+[18] genetic miner - −u−u−u−u−u−u−n−n−u−u
+[4] etmd miner - 0.74 1 .00 0 .83 1 .00 1 .00 0 .86 0 .79 1 .00 0 .75 1 .00
+[11] ts cancel - −n−n−n−n0.91 0 .78 −n−n−n−n
+[19] ts regions - 0.27 0 .61 −n−n0.93 0 .88 0 .86 0 .76 0 .76 0 .82
+[14] im (baseline) 1.0 1.00 0 .69 1 .00 0 .43 1 .00 0 .89 1 .00 0 .69 1 .00 0 .83
+[14] im (baseline) 0.8 0.74 0 .73 0 .94 0 .64 1 .00 0 .92 0 .99 0 .48 1 .00 0 .82
+[14] im (baseline) 0.5 0.62 0 .75 0 .94 0 .63 0 .82 1 .00 0 .76 0 .48 0 .74 0 .77ourscancelation 1.0 1.00 0 .70 1 .00 0 .62 1 .00 1 .00 1 .00 0 .66 1 .00 0 .76
+cancelation 0.8 0.76 0 .58 0 .94 0 .67 1 .00 1 .00 1 .00 0 .35 1 .00 0 .68
+cancelation 0.5 0.64 0 .67 0 .94 0 .66 1 .00 1 .00 0 .90 0 .39 0 .81 0 .73
+uunsound modelnno model (see table 6)
+in all cases, we can see that we outperform the ilp algorithms on precision,
+and we outperform the etmd miner and ts based miners on ﬁtness. overall, we
+can conclude that the added expressiveness of modeling the cancelation region
+have a positive impact on the model quality.
+on the simplicity of models. we compared the discovered models both using
+a simplicity metric [ 4] and manually. in most cases, the discovered models are
+comparably complex, with the cancelation models usually being slightly simpler.modeling and discovering cancelation behavior 111
+in fig. 4, two discovered models for the bpic12 log at paths 0.8 are shown. note
+that in the cancelation model (fig. 4(b)), we see that the main, happy ﬂow
+behavior is neatly discovered inside the cancelation region, and the “negative”
+behavior is modeled separately after triggering the cancelation region. in the im
+model (fig. 4(a)), skips obfuscate the normal happy ﬂow behavior.
+overall, we can conclude that the added expressiveness of modeling the can-
+celation region has, in most cases, a positive impact on the model simplicity.
+7 conclusion
+in this paper, we presented a novel extension to the process tree model to sup-
+port cancelation behavior, and proposed a novel process discovery technique todiscover sound, ﬁtting models with cancelation features. the proposed discov-
+ery technique relies on a generic error oracle function, and allows us to discover
+complex combinations of multiple, possibly nested cancelation regions based onobserved behavior. an implementation of the proposed algorithm has been tested
+and made available via the statechart plugin for the prom framework [ 12]. our
+experimental results, based on real-life event logs, demonstrate the feasibilityand usefulness of the approach.
+future work aims to further aid the user in selecting an error oracle, and (par-
+tially) automate the error oracle instantiation. in addition, we aim to support
+reliability analysis around cancelation features, using additional event log data.
+lastly, enabling the proposed techniques in a streaming context could providevaluable real-time insights into (business) processes in their natural environ-
+ment. techniques able to operate in a streaming context need less memory and
+are therefore also valuable for other types of analysis.
+references
+1. adriansyah, a.: aligning observed and modeled behavior. ph.d. thesis, eindhoven
+university of technology (2014)
+2. augusto, a., conforti, r., dumas, m., la rosa, m., bruno, g.: automated dis-
+covery of structured process models: discover structured vs. discover and struc-
+ture. in: comyn-wattiau, i., tanaka, k., song, i.-y., yamamoto, s., saeki, m.(eds.) er 2016. lncs, vol. 9974, pp. 313–329. springer, cham (2016). doi: 10.
+1007/978-3-319-46397-1
+25
+3. buijs, j.c.a.m.: receipt phase of an environmental permit application
+process (‘w abo’), coselog project (2014). https://doi.org/10.4121/uuid:
+a07386a5-7be3-4367-9535-70bc9e77dbe6
+4. buijs, j.c.a.m., van dongen, b.f., van der aalst, w.m.p.: on the role of ﬁtness,
+precision, generalization and simplicity in process discovery. in: meersman, r.,
+panetto, h., dillon, t., rinderle-ma, s., dadam, p., zhou, x., pearson, s., ferscha,a., bergamaschi, s., cruz, i.f. (eds.) otm 2012. lncs, vol. 7565, pp. 305–322.
+springer, heidelberg (2012). doi: 10.1007/978-3-642-33606-5
+19112 m. leemans and w.m.p. van der aalst
+5. carmona, j., cortadella, j., kishinevsky, m.: a region-based algorithm for discov-
+ering petri nets from event logs. in: dumas, m., reichert, m., shan, m.-c. (eds.)
+bpm 2008. lncs, vol. 5240, pp. 358–373. springer, heidelberg (2008). doi: 10.
+1007/978-3-540-85758-7 26
+6. celonis gmbh: celonis process mining. https://www.celonis.com . accessed 06
+july 2017
+7. conforti, r., dumas, m., garc ´ ıa-banuelos, l., la rosa, m.: bpmn miner: auto-
+mated discovery of bpmn process models with hierarchical structure. inf. syst.
+56, 284–303 (2016)
+8. de leoni, m., mannhardt, f.: road traﬃc ﬁne management process (2015).
+https://doi.org/10.4121/uuid:270fd440-1057-4fb9-89a9-b699b47990f5
+9. gradient ecm: minit. https://www.minit.io/ . accessed 06 july 2017
+10. g¨ unther, c.w., rozinat, a.: disco: discover your processes. in: lohmann, n.,
+moser, s. (eds.) proceedings of the demonstration track of the 10th internationalconference on business process management (bpm 2012), vol. 940, pp. 40–44.
+ceur workshop proceedings (2012)
+11. kalenkova, a.a., lomazova, i.a.: discovery of cancellation regions within process
+mining techniques. fundamenta informaticae 133 (2–3), 197–209 (2014)
+12. leemans, m.: statechart plugin for prom 6. https://svn.win.tue.nl/repos/prom/
+packages/statechart/ . accessed 24 may 2017
+13. leemans, m.: nasa crew exploration vehicle (cev) software event log (2017).
+http://doi.org/10.4121/uuid:60383406-ﬀcd-441f-aa5e-4ec763426b76
+14. leemans, s.j.j.: robust process mining with guarantees. ph.d. thesis, eindhoven
+university of technology, may 2017
+15. redlich, d., molka, t., gilani, w., blair, g., rashid, a.: constructs competition
+miner: process control-ﬂow discovery of bp-domain constructs. in: sadiq, s., soﬀer,p., v¨ olzer, h. (eds.) bpm 2014. lncs, vol. 8659, pp. 134–150. springer, cham
+(2014). doi: 10.1007/978-3-319-10172-9
+9
+16. van der aalst, w.m.p.: discovery, veriﬁcation and conformance of workﬂows
+with cancellation. in: ehrig, h., heckel, r., rozenberg, g., taentzer, g. (eds.)
+icgt 2008. lncs, vol. 5214, pp. 18–37. springer, heidelberg (2008). doi: 10.1007/
+978-3-540-87405-8 2
+17. van der aalst, w.m.p.: process mining: data science in action. springer, heidel-
+berg (2016)
+18. van der aalst, w.m.p., de medeiros, a.k.a., weijters, a.j.m.m.: genetic process
+mining. in: ciardo, g., darondeau, p. (eds.) icatpn 2005. lncs, vol. 3536, pp.
+48–69. springer, heidelberg (2005). doi: 10.1007/11494744 5
+19. van der aalst, w.m.p., rubin, v., verbeek, h.m.w., van dongen, b.f., kindler,
+e., g¨ unther, c.w.: process mining: a two-step approach to balance between under-
+ﬁtting and overﬁtting. soft. syst. model. 9(1), 87–111 (2010)
+20. van der aalst, w.m.p., weijters, a.j.m.m., maruster, l.: workﬂow mining: dis-
+covering process models from event logs. ieee trans. knowl. data eng. 16(9),
+1128–1142 (2004)
+21. van der werf, j.m.e.m., van dongen, b.f., hurkens, c.a.j., serebrenik, a.:
+process discovery using integer linear programming. in: van hee, k.m., valk, r.
+(eds.) petri nets 2008. lncs, vol. 5062, pp. 368–387. springer, heidelberg(2008). doi: 10.1007/978-3-540-68746-7
+24
+22. van dongen, b.f.: bpi challenge 2012 (2012). http://dx.doi.org/10.4121/uuid:
+3926db30-f712-4394-aebc-75976070e91fmodeling and discovering cancelation behavior 113
+23. van zelst, s.j., van dongen, b.f., van der aalst, w.m.p.: avoiding over-ﬁtting in
+ilp-based process discovery. in: motahari-nezhad, h.r., recker, j., weidlich, m.
+(eds.) bpm 2015. lncs, vol. 9253, pp. 163–171. springer, cham (2015). doi: 10.
+1007/978-3-319-23063-4 10
+24. weijters, a.j.m.m., ribeiro, j.t.s.: flexible heuristics miner (fhm). in: 2011
+ieee symposium on computational intelligence and data mining (cidm), pp.310–317, april 2011

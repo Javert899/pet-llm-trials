@@ -1,0 +1,587 @@
+repairing outlier behaviour in event logs
+mohammadreza fani sani1, sebastiaan j. van zelst2, wil m.p. van der aalst1
+1process and data science chair, rwth aachen university
+ahornstraße 55, erweiterungsbau e2, 52056 aachen, germany
+2department of mathematics and computer science
+eindhoven university of technology
+p.o. box 513, 5600 mb eindhoven, the netherlands
+{fanisani,wvdaalst}@pads.rwth-aachen.de ,{s.j.v.zelst}@tue.nl
+summary. one of the main challenges in applying process mining on real event
+data, is the presence of noise and rare behaviour. applying process mining algo-
+rithms directly on raw event data typically results in complex, incomprehensible,
+and, in some cases, even inaccurate analyses. as a result, correct and/or impor-
+tant behaviour may be concealed. in this paper, we propose an event data repair
+method, that tries to detect and repair outlier behaviour within the given event
+data. we propose a probabilistic method that is based on the occurrence frequency
+of activities in speciﬁc contexts. our approach allows for removal of infrequent
+behaviour, which enables us to obtain a more global view of the process. the
+proposed method has been implemented in both the prom- and the rapidprom
+framework. using these implementations, we conduct a collection of experiments
+that show that we are able to detect and modify most types of outlier behaviour
+in the event data. our evaluation clearly demonstrates that we are able to help to
+improve process mining discovery results by repairing event logs upfront.
+key words: process mining data cleansing log repair event log prepro-
+cessing conditional probability outlier detection
+1 introduction
+process mining bridges the gap between traditional data analysis techniques like data
+mining and business process management analysis [1]. it aims to discover, monitor,
+and enhance processes by extracting knowledge from event data, also referred to as
+event logs , readily available in most modern information systems [2]. in general, we
+identify three main branches of process mining being process discovery ,conformance
+checking , and process enhancement . in process discovery, we try to discover a process
+model that accurately describes the underlying process captured within the event data.
+in conformance checking we try to assess to what degree a given process model (possi-
+bly the result of a process discovery algorithm) and event data conform to one another.
+finally, process enhancement aims at improving the view on a process by improving its
+corresponding model based on the related event data.
+most process mining algorithms, in any of these branches, work under the assump-
+tion that behaviour related to the execution of the underlying process is stored correctly
+within the event log. moreover, completeness of the behaviour, i.e., each instance of the2 mohammadreza fani sani et al.
+process as stored in the event log is already ﬁnished, is assumed as well. however, real
+event data often contains noise, i.e., behaviour that is/should not be part of the process.
+furthermore, it often contains data related to infrequent behaviour, i.e., behaviour that
+is rather rare due to the handling of exceptional cases. the presence of such behaviour,
+which we subsequently refer to as outlier , makes most process mining algorithms return
+complex, incomprehensible or even inaccurate results. to reduce these negative effects,
+process mining projects often comprise of a pre-processing phase in which one tries to
+detect and remove traces that contain such undesired behaviour. this cleaning phase is
+usually performed manually and is therefore rather costly and time consuming.
+despite the negative impacts of the presence of noisy, incomplete and infrequent
+behaviour, little research has been done towards automated data cleansing techniques
+that improve process mining results. recently, research has been performed aiming at
+ﬁltering out traces that contain outlier behaviour from an event log [3, 4]. even though
+both techniques show improvements in process mining results, in particular w.r.t. pro-
+cess discovery, only a little fragment of outlier behaviour within a trace of event data
+leads to ignoring the trace as a whole. this potentially leads to a distortion of the gen-
+eral distribution of common behaviour of the process, yielding potentially inaccurate or
+even wrong process mining results.
+therefore, we propose a general purpose event log repairing technique that, given
+event potentially containing outlier behaviour, identiﬁes and modiﬁes such behaviour
+in order to obtain a more reliable input for all possible process mining algorithms. in
+particular, we use a probabilistic method to detect outlier behaviour according to the
+context of a process i.e., fragments of activity sequences that occur before and after the
+potential outlier behaviour. after outlier identiﬁcation, the corresponding behaviour is
+replaced with another fragment of behaviour that is more probable to occur according
+to the context in which the outlier behaviour occurs.
+using the prom [5] based extension of rapidminer , i.e., rapidprom [6], we
+study the effectiveness of our approach, using both synthetic and real event data. the
+obtained results show that our approach adequately identiﬁes and repairs outlier be-
+haviour and as a consequence increases the overall quality of process model discovery
+results. additionally, we show that our method achieves better results compared to one
+of the best performing existing ﬁltering techniques in the process mining domain.
+the remainder of this paper is structured as follows. section 2 motivates the need for
+data cleansing and repair methods in context of process mining. in section 3, we discuss
+related work. we present our proposed outlier repair method in section 4. evaluation
+details and corresponding results are given in section 5. finally, section 6 concludes
+the paper and presents directions for future work.
+2 motivation
+real event logs often contain noise/anomalous behaviour. the presence of such be-
+haviour causes many problems for process mining algorithms. in particular, most pro-
+cess discovery algorithms incorporate all behaviour in event logs as much as possible.
+as a result, most outlier behaviour is incorporated as well which decreases the overall
+accuracy of the discovered model. therefore, it is essential to accurately pre-processrepairing event logs 3
+table 1: event log with 11traces and 10different trace-variants.
+variant frequency
+ha;b;c;d;e;f;hi 2
+ha;b;d;c;e;f;hi 1
+ha;b;c;d;e;g;hi 1
+ha;b;d;c;e;gi 1
+hb;d;c;e;g;hi 1
+ha;b;c;d;ei 1
+ha;b;c;d;g;hi 1
+ha;b;b;c;d;e;f;hi 1
+ha;b;c;d;g;hi 1
+ha;b;d;c;a;e;g;f;h i 1
+event data. in fact, according to the process mining manifesto [7], cleaning event logs
+is one of the main challenges in the process mining ﬁeld.
+it is possible to deﬁne outlier behaviour in a variety of ways. for example, in [2],
+infrequent behaviour is considered as outlier behaviour. in turn, infrequent behaviour
+relates to rare behaviour that is supposed to be part of the process, yet severely hampers
+the feasibility of process mining results. in practice, behaviour that is not part of the
+process, i.e. caused by logging exceptions, faulty execution of the process, is infrequent
+by its sheer nature. so, in this paper we deﬁne both infrequent behaviour that is part of
+the process and (infrequent) faulty execution behaviour, i.e. noise, as outlier behaviour.
+an example event log with some outlier behaviour is shown in table 1. in this
+event log there are 74events belong to 11traces. except for the ﬁrst variant (unique
+behaviour of a process instance) each variant has just one corresponding trace, note
+that this is customary in some application domains, e.g. medical treatment process [8].
+the ﬁrst three traces contain no outlier behaviour. however, the next seven variants
+have different types of outlier behaviour. for example, in the fourth and ﬁfth rows the
+activities ” h” and ” a” are missing. some process discovery algorithms like the alpha
+miner [9] are sensitive to such outlier behaviour and yield inferior process discovery
+results when applied directly to such event logs. other process discovery algorithms
+like the inductive miner [10], have embedded ﬁltering mechanisms to deal with some
+types of outliers. the results of applying various process discovery algorithms on this
+event log are shown in figure 1. if we apply ﬁltering method of [4] on this event log,
+variants 1 5are retained. a resulting process model using these traces combined with
+the inductive miner is shown in figure 1e. as it is shown in this ﬁgure, all mentioned
+process discovery algorithms have problem to discover an accurate model from the
+given event log. however, if we ﬁrst repair the event log and then apply the alpha miner
+(or any other mentioned process discovery methods), we obtain an accurate process
+model, i.e. as presented in figure 1f. it is because there is no outlier behaviour in the
+repaired event log and the resulted process model is more accurate and understandable.
+so, it seems that we need an approach to overcome outlier behaviour in event data.
+a naive approach to solve data quality related issues is to remove traces that seem to
+contain outlier behaviour [3, 4]. however, for many businesses, all process instances in
+an event log are valuable and ignoring them potentially jeopardizes the trustworthiness
+of the analysis performed. for example, in a patient treatment in a hospital, recorded
+over several years, it is undesirable to remove all process related records of a patient just4 mohammadreza fani sani et al.
+(a) result of the alpha miner on event log of table 1
+(b) result of the inductive miner on event log of table 1
+(c) result of the inductive miner with integrated ﬁltering (imi) on event log of table 1
+(d) result of the ilp miner on event log of table 1
+(e) result of the inductive miner on the ﬁltered event log by [4]
+(f) applying alpha miner on the even log of table 1 after repairing outlier behaviour in it.
+fig. 1: resulting process models of applying different process discovery techniques
+(with and without ﬁltering/repair) on the event log that is presented in table 1
+because there exists a small portion of wrongly logged behaviour. in such scenarios,
+after detecting outlier, it is more desirable to repair that behaviour. note that, if there
+is no noise in an event log, by repairing infrequent behaviour in it and removing too
+detailed patterns, we are able to alter infrequent behaviour into more frequent behaviour
+which allows us to discover more general views on the process. therefore, by repairing,
+rather than removing outlier behaviour we believe that quality of discovered process
+models improves.
+3 related work
+some process mining algorithms are designed to/have been extended to be able to han-
+dle outliers as well [11–14]. however, these ﬁltering techniques are tailored towards therepairing event logs 5
+internal working of the corresponding algorithms and cannot be used for general pur-
+pose event log cleansing. additionally, they typically focus on a speciﬁc type of noise,
+e.g. incompleteness.
+most of ﬁltering techniques present in commercial tools are based on just the fre-
+quency of activities and variants. however, the presence of parallelism and loops often
+hampers the applicability of such ﬁltering techniques. there are also some basic ﬁlter-
+ing plug-ins developed in prom [5] based on activity frequencies and users inputs.
+outlier detection for general temporal data is addressed in some research, e.g. in
+[15] a survey on different methods of detecting outliers in sequential data is presented.
+also, there are some related techniques that speciﬁcally proposed for process mining
+domain. in [16, 17] the authors propose ﬁltering techniques that use additional infor-
+mation such as training event data or a reference process model. in reality, providing
+a sufﬁciently complete set of training traces or having a reference process model is
+impractical. recently, some general purpose ﬁltering techniques are proposed in the
+process mining domain. in [3] by constructing an anomaly free automaton (afa)
+based on the whole event log and a given threshold, all non-ﬁtting behaviour, w.r.t. the
+afa, is removed from the event log. in [4], we propose a ﬁltering method that detects
+outliers based on conditional probabilities of subsequences and their possible following
+activities. in [18],an adjustable on-line ﬁltering method is proposed that detect outlier
+behaviour for streaming event logs that also works based on conditional probabilities.
+all aforementioned methods, after detecting outlier behaviour, try to remove such
+behaviour. as motivated in section 2, modifying outlier behaviour or repairing it is
+more valuable than just removing it. there is some research [19, 20] that tries to repair
+process models based on event logs. moreover, [21] uses process model to repair event
+logs. however, as we aim to design a general purpose repairing method, we assume
+there does not exist a process model as an input of our proposed algorithm.
+4 repairing outliers in event data
+in this section we present our outlier repair method. prior to this, we brieﬂy introduce
+basic process mining terminology and notations that ease readability of the paper.
+4.1 terminology and notation
+given a setx, a multisetmoverxis a function m:x!n0, i.e. it allows certain
+elements ofxto appear multiple times. we write a multiset as m= [ek1
+1;ek2
+2;:::;eknn],
+where for 1inwe havem(ei) =kiwithki2n>0. ifki= 1, we omit its
+superscript, and if for some e2xwe havem(e) = 0 , we omit it from the multiset
+notation. also, m= [ ] denotes an empty multiset, i.e. 8e2x,m(e) = 0 . we let
+m=fe2xjm(e)>0g, i.e.mx. the set of all possible multisets over a set x
+is written asm(x).
+letxdenote the set of all possible sequences over a set x. a ﬁnite sequence 
+of lengthnoverxis a function :f1;2;:::;ng!x, alternatively written as =
+hx1;x2;:::;xniwherexi=(i)for1in. the empty sequence is written as6 mohammadreza fani sani et al.
+table 2: fragment of a ﬁctional event log (each line corresponds to an event).
+case-id activity resource time-stamp
+... ... ... ...
+1 register request ( a) sara 2017-04-08:08.10
+1 examine thoroughly ( b) ali 2017-04-08:09.17
+2 register request ( a) sara 2017-04-08:10.14
+1 check resources ( c) william 2017-04-08:10.23
+1 check ticket (d) william 2017-04-08:10.53
+2 check resources ( b) ali 2017-04-08:11.13
+1 send to manager( e) ava 2017-04-08:13.09
+1 accept request ( f) fatima 2017-04-08:16.05
+1 mail decision( h) anna 2017-04-08:16.18
+... ... ... ...
+. concatenation of sequences and0is written as 0. we let function hd:x
+n09x, represents the “head” of a sequence, i.e., given a sequence 2xandk
+jj,hd(;k) =hx1;x2;::;xki, i.e., the sequence of the ﬁrst kelements of . in case
+k= 0we havehd(;0) =. symmetrically, tl:xn09xrepresents the “tail”
+of a sequence and is deﬁned as tl(;k) =hxn k+1;xn k+2;:::;xni, i.e., the sequence
+of the lastkelements of , with, again, tl(;0) =. sequence0is a subsequence of
+sequence, which we denote as 02, if and only if91;22x(=102).
+let;02x. we deﬁne the frequency of occurrence of 0inbyfreq:xx!
+n0wherefreq(0;) =jf1ijjj0
+1=i;:::;0
+j0j=i+j0jgj. given an
+example event log that presented in table 1, freq(hbi;ha;b;b;c;d;e;f;hi) = 2 and
+freq(hb;di;ha;b;d;c;e;gi) = 1 , etc.
+event logs describe sequences of executed business process activities, typically in
+context of some cases (or process instances), e.g., a customer or an order-id. the execu-
+tion of an activity in context of a case is referred to an event . a sequence of events for a
+speciﬁc case is also referred to a trace . thus, it is possible that multiple traces describe
+the same sequence of activities, yet, since events are unique, each trace itself contains
+different events. an example event log, adopted from [2], is presented in table 2.
+consider the events related to case-id value 1. sara registers a request , after which
+aliexamines it thoroughly . william checks the ticket andchecks resources . ava sends
+the request to manager and fatima accept the request . finally, anna emails the decision
+to the client. the example trace is written as ha;b;c;d;e;f;hi(using short-hand activity
+names). in the context of this paper, we formally deﬁne event logs as a multiset of
+sequences of activities (e.g., table 1).
+deﬁnition 1 (event log). letabe a set of activities. an event log is a multiset of
+sequences overa, i.e.l2m(a).
+observe that each 2ldescribes a trace-variant whereasl()describes how many
+traces of the form are present within the event log.
+4.2 repairing event logs using control-flow oriented contexts
+here, we present our methodology to identify and repair outlier behaviour in an event
+log. we ﬁrst present our repair method by means of an example after which we for-repairing event logs 7
+malize and discuss it in more detail. we ﬁrst present two central control-ﬂow oriented
+concepts which form the basis of the repair method. given a trace, a context is deﬁned
+as the surrounding behaviour of a certain sequence of activities. for example, in trace
+ha;b;c;d;e;f;hi,ha;biandheiare surroundinghc;di, hence, the pair (ha;bi;hei)is a
+context ofhc;di.
+deﬁnition 2 (context, covering). let;02x. we deﬁne the context of 0w.r.t.
+as a function con:xxn0n0!p(xx)wherecon(0;;l;r ) =
+f(1;2)2xxj1022^j1j=l^j2j=rg.
+furthermore, let 0
+1;0
+22x,cov:xxx:! p (x)is a func-
+tion that returns all subsequences in a trace that occur within a given context, i.e.
+cov(;0
+1;0
+2) =f02xj(0
+1;0
+2)2con(0;;j0
+1j;j0
+2j)g.
+a context describes, given a subsequence, its two neighbouring subsequences of
+lengthlandrrespectively, i.e. 0
+1is the left neighbour with length land0
+2is
+the right neighbor with length r. for example, if =ha;b;c;d;e;f;hi, we have
+con(hci;;1;2) = (hbi;hd;ei). note thatlandrmay differ, and, may even have value
+equal to 0which implies a neighboring subsequence . furthermore, cov(;ha;bi;he;fi) =
+fhc;digandcov(;hbi;hdi) =fhcig.
+we aim to detect and replace outlier behaviour based on the occurrence probability
+of a subsequence among a speciﬁc context. if this probability is lower than a given
+threshold, we consider that behaviour as outlier. to obtain these probabilities we deﬁne
+covering probability as follows.
+deﬁnition 3 (covering probability). given0;0
+1;0
+22x, maximum subsequences’
+lengthkand a multiset of sequences l2m(x). we deﬁnecp:xxx
+n>0m (x)![0;1]as the empirical conditional probability of 0being covered
+by1and2in event log l, i.e.
+cp(0;0
+1;0
+2;k;l ) =8
+>>><
+>>>:p
+2l 
+l()freq (0
+100
+2;)
+p
+2l 
+l()p
+j00jkfreq (0
+1000
+2;)if92l(cov(0;0
+1;0
+2)6=;)
+0 otherwise
+the numerator computes how many times 0is covered by the context (0
+1;0
+2)in
+whole event log. the denominator computes how many times context (0
+1;0
+2)covers
+different substrings with length lower or equal than k. clearly, the resulting value is a
+real number in [0;1]. a higher value implies that it is more probable that subsequence 0
+occurs among context (0
+1;0
+2). so,cp(0;0
+1;0
+2;1;l) = 1 , indicates that if context
+(0
+1;0
+2)occurs, subsequence 0always happens among it. according to the event log
+that is presented in table 1, cp(;hbi;hci;1;l) =7
+12andcp(hbi;hbi;hci;1;l) =
+1
+12.
+the main idea of our approach is that if the covering probability of a subsequence
+among a signiﬁcant context is lower than the given threshold, the covered subsequence
+is considered as outlier. a signiﬁcant context is simply a context that occurs signif-
+icantly often, where the signiﬁcance of occurrence is a user-deﬁned threshold. sub-
+sequently, we substitute the outlier subsequence with another subsequence that has a
+higher covering probability among the given context.8 mohammadreza fani sani et al.
+fig. 2: a simple example of repairing an event log l with our proposed method. sig-
+niﬁcant contexts and their probable subsequences are shown in the table for k= 1.
+in context of our example, in the trace ha;b;b;c;d;e;f;hi, if we consider (hbi;hci)
+as a frequent context, by replacing subsequence hbiwith, which is more probable to
+happen among this context, we obtain ha;b;c;d;e;f;hi, which is not an outlier any
+more. as another example, consider trace =ha;d;b;d;c;f;hi. by having a sig-
+niﬁcant context (hai;hbi), according to the whole event log, we expect that occurs
+among it rather than hdi. therefore, by this replacement we will have ha;b;d;c;f;hi.
+similarly, forha;b;c;d;g;hiby considering context (d;g)and considering covering
+probabilities, we will replace byheiand we obtainha;b;c;d;e;g;hiwhich is not
+outlier any more.
+the user decides which contexts are signiﬁcant by setting a corresponding signiﬁ-
+cance threshold. contexts with a frequency of at least the number of traces in the event
+log times the given threshold are considered as signiﬁcant contexts. also, the maximum
+length of covered subsequence ( k) and context’s subsequences ( cl) respectively are
+speciﬁed by the user. note that cldescribes two values, i.e. a maximal length for 0
+1
+and0
+2.
+the input of our proposed method is an event log l, a context frequency threshold
+tc, a context’s subsequence lengths cl(l;r)and an upper bound for length of covered
+subsequence k. at ﬁrst, all traces are scanned to compute covering probabilities of
+all contexts and their possible covered subsequences. next, for each trace and each
+subsequence in it (with length k), we check its context frequency and covering
+probability (according to tc). if the context is signiﬁcant and the covering probability is
+low, we replace the subsequence with a better one according to that context. otherwise,
+if a context is insigniﬁcant it is not able to be used for repairing outlier behaviour.
+a simple visual example of how the proposed method works is given in figure 2.
+in this example, we consider k= 1 as a maximum subsequence length and also
+context lengths are equal to 1to repair an event log with 100traces. first, by scan-
+ning the event log, signiﬁcant contexts and their probable subsequences are speciﬁed.
+if the corresponding context is signiﬁcant and the subsequence is not probable for that
+context, we detect a noisy/infrequent behaviour. for example, the occurrence of hbiis
+improbable among signiﬁcant context (hai;hbi).repairing event logs 9
+after detecting outlier behaviour, we try to replace improbable subsequences with
+more probable ones. for substitution, we are searching for a subsequence with a length
+as close as possible to the outlier subsequence. among all candidate subsequences we
+are interested in the subsequence with the highest probability. for example, if the outlier
+subsequence has length 2we ﬁrst search for a subsequence with the same length. if
+there is not any signiﬁcant subsequence with length 2for that context, we try to ﬁnd
+a subsequence 00with length 1or3. then, among the candidate subsequences we
+choose one that has the highest probability among that context. according to figure 2
+there are two possible subsequences to substitute with hbi, i.e.andhci. because the
+length ofhciis similar to the outlier subsequence we choose it and the trace is changed
+intoha;c;bi. for the other outlier trace in this example, among the context (;hbi), it is
+more probable that haioccurs. so, by replacing withhai, it changes toha;b;ci.
+to avoid having inﬁnitive loops, after each replacement, the starting point of the
+next scanned subsequence will be the ﬁrst point of the right subsequence of the previous
+context. for example, after replacement of haiwithand havingha;b;ci, we will not
+checkhaiagain as a subsequence as we consider hbias the next subsequence.
+5 evaluation
+to evaluate our proposed method we conducted several experiments with both artiﬁcial
+and real event data. to simplify the evaluation, in all the experiments we just consider
+contexts’ subsequences length equal to 1.
+to apply the proposed repairing method, we implemented the repair log plug-in
+(rl) in the prom framework1. the plugin takes an event log as an input and outputs a
+repaired event log. also, the user is able to specify threshold tc, the maximum subse-
+quence length k, and the length of left and right sequences of context cl.
+in addition, to apply our proposed method on various event logs with different
+thresholds and applying different process mining algorithms with various parameters,
+we ported the repair log plugin to rapidprom .rapidprom is an extension of
+rapidminer that combines scientiﬁc workﬂows [22] with a range of ( prom -based)
+process mining algorithms.
+to evaluate discovered process models, we use ﬁtness and precision. fitness com-
+putes how much behaviour in the event log is also described by the process model.
+however, precision measures how much of behaviour described by the model is also
+presented in the event log. low precision means that the process model allows for
+much more behaviour compared to the event log. note that, there is a trade off between
+these measures [23]. sometimes, putting aside a small amount of behaviour causes a
+slight decrease in ﬁtness, whereas precision increases much more. therefore, to evalu-
+ate discovered process models, we use the f-measures metric that combines ﬁtness and
+precision:2precisionfitness
+precision +fitness. note that, in many applications, ﬁtness has more im-
+portance. we therefore also use the notion of conditional precession, in which we only
+consider precision values of those process models that have fitness0:95. further-
+more, as shown in [4], matrix filter has a good performance on event logs with outlier
+1repair log plugin svn.win.tue.nl/repos/prom/packages/logfiltering10 mohammadreza fani sani et al.
+behaviour. hence, we compare the results of the proposed repairing method with this
+ﬁltering method.
+table 3: details of real event logs that are used in the experiment
+event log activities count traces count events count variants counts
+bpic 2017 offer 8 42995 193849 16
+bpic 2013 13 7554 65533 2278
+bpic 2012 application 10 13087 60849 17
+bpic 2012 workﬂow 6 9658 72413 2263
+bpic 2012 offer 7 5015 31244 168
+road fines 11 150370 561470 231
+hospital billing 18 100000 451359 1020
+sepsis cases 16 1050 15224 846
+credit 15 10035 150525 1
+in the ﬁrst experiment, we try to investigate the effect of using the proposed method
+on real event logs. basic information of these event logs is presented in table 3. we also
+add different percentages of noise to these event logs. as noise we consider addition of
+random activities at random positions in traces, random removal of activities, and swap-
+ping of activities within traces. for example, we added 5%of all these three mentioned
+types of noise to road fines and refer to it as road fines 05. note that, in all
+experiments, we just used the modiﬁed (ﬁltered or repaired) event logs for discover-
+ing process models. for conformance checking and quality assessment of discovered
+process models we used original event logs (without added noise).
+we try to discover the best process models according to the f-measure for these
+event logs using four different methods. in the ﬁrst method, we apply imi[11] with 51
+different noise ﬁltering thresholds (that is embedded in the inductive miner) from 0to
+1and we call it n&imi (nmeans that event logs are not ﬁltered beforehand). in the
+second method, we apply the basic inductive miner (without its embedded ﬁltering) on
+an event log that is previously ﬁltered with matrix filter method and call it as m&im
+(mmeans event logs are ﬁltered with matrix filter beforehand). we also apply the
+basic inductive miner on event logs that are repaired beforehand and name it as r&im
+(rmeans event logs are repaired with the proposed method beforehand). in the last
+method, the inductive miner with four different noise ﬁltering thresholds (from 0:1to
+0:4) is applied on repaired event logs ( r&imi ).
+the results of applying these methods to aforementioned event logs and their best
+f-measure values are given in figure 3 and figure 4. these ﬁgures show that when
+there is outlier behaviour in the event log, just using the inductive miner ( n&imi ) does
+not yield a proper process model. however, in some event logs that do not contain
+outlier behaviour, the inductive miner discovers a process model with a suitable f-
+measure. it is also notable that for most event logs, r&im outperforms m&im and
+allows us to obtain better results. but, for the hospital billing event log, the result
+ofm&im is slightly better in the previous experiments. this is because there are lots
+of variants in this event log, but 94% of traces are placed in just 1%of variants and in
+this type of event logs, ﬁltering works perfect. the best results are achieved when we
+apply inductive miner on cleaned event logs or r&imi . moreover, in most of cases,
+m&im and the inductive miner (here n&imi ) are achieving their best possible processrepairing event logs 11
+model according to f-measure, by sacriﬁcing a lot in term of ﬁtness. in figure 5 and
+figure 6, we see the result of different methods according to their conditional precision.
+according to these ﬁgures, the r&im method helps the inductive miner to discover
+process models with high precision without sacriﬁcing the ﬁtness. however, we see
+that for event logs with lots of outlier behaviour the inductive miner does not able to
+discover a process model with high ﬁtness and precision at the same time.
+fig. 3: best f-measure of applying different methods on bpic event logs.
+fig. 4: best f-measure of applying different methods on other real event logs.
+fig. 5: best conditional precision of applying different methods on bpic event logs.
+fig. 6: best conditional precision of applying different methods on other real event logs.12 mohammadreza fani sani et al.
+(a) results of applying r&im
+(b) results of applying m&im
+(c) results of applying n&imi
+fig. 7: the best discovered process models on bpic 2017 offer 05using rl,mf
+andnfmethods.
+fig. 8: best f-measure of applying different methods on synthetic event logs.
+fig. 9: best conditional precision of applying different methods on synthetic event logs.
+note that for some event logs like the sepsis cases neither m&im norr&im al-
+low us to discover an outstanding process model, i.e, having high conditional precision.
+the reason is for this is related to the fact that the discovered process model of thisrepairing event logs 13
+event log is not precise and there is some behaviour that possible to happen anywhere
+during execution of the process. we have shown the best discovered process model for
+this event log to a business expert which indicated that the process model is acceptable
+(but not perfect).
+in figure 7, the best process model of each methods for the bpic 2017 offer 05
+are shown. it is obvious that figure 7a that is discovered on the repaired event log is the
+best process model among them.
+note that, in the previous experiments, the original event log that is used to compute
+f-measures (our ground truth) potentially also contains noisy and infrequent behaviour.
+therefore, in another experiment, we create six artiﬁcial process models with different
+behaviour. these process models consequently describe different types of behaviour,
+i.e. one model just contains sequence constructs ( sequence ), one contains sequence and
+choice constructs ( xor), one contains sequence and parallel constructs ( parallel ), one
+contains sequence and loop constructs ( loop ), one contains all possible behavioural
+constructs ( all) and we use a process model with locally structured subprocesses that
+has lots of variants ( high variants ). based on these reference process models, we gen-
+erated six event logs that each contains 5000 traces. similar to the previous experiment,
+5%,10%,20% and50% of noise inserted to these original event logs. note that, an event
+log with 10% inserted noise not necessary has 90% original traces. similarly, we apply
+n&imi ,m&im ,r&im andr&imi to these event logs. results of this experiment are
+given in figure 8 and figure 9.
+as shown in these ﬁgures, for all event logs if we insert some noisy behaviour (even
+just5%), the inductive miner has problems to discover a process model with a high f-
+measure. this means the embedded noise ﬁltering method mechanism in this algorithm
+is not able to deal with all types of outlier. furthermore, matrix filter always works
+better than the embedded noise ﬁltering method in the inductive miner. compared to
+these ﬁltering methods, the proposed repaired method performs better especially when
+there probability of noise is low. only for the parallel event log, results of applying
+m&im slightly outperforms our proposed method. like the previous experiment, the
+best results are achieved when we apply the inductive miner with its ﬁltering method
+to the repaired event logs ( r&imi ). except for the parallel event logs, for all others
+this method ﬁnds the underlying process models, i.e. almost equal to the reference pro-
+cess models. for the high variants event log that has local structured subprocesses,
+our proposed repair method works perfectly and accurately detects and repairs outlier
+behaviour. the reason for this is related ot the fact that our method is able to detect and
+repair outlier behaviour locally.
+table 4: the percentage of remaining traces in event logs for the best process model
+event lognoise percentage05102050
+sequence 195908152
+xor 195904252
+parallel 152484123
+loop 19590800,51
+all 83959095
+high variants 19590812014 mohammadreza fani sani et al.
+finally, note that ﬁltering methods achieve the best results by removing a lot of
+behaviour in event logs. the percentages of remaining traces in each event log for the
+best model in m&im are given in table 4. in some cases the best process model is
+discovered just with 5%of the traces. this means that we need to remove a lot of
+behaviour from the event log. however, in the repair method all the traces remain in the
+event log but they may be modiﬁed.
+note, for all methods we use a grid search on different parameters and show the best
+results obtained. however, in reality like other state-of-the-art process mining speciﬁc
+data cleansing methods, adjusting these thresholds is a challenging task for users.
+6 conclusion
+process mining provides insights into the actual execution of business processes, by
+exploiting available event data. unfortunately, most process mining algorithms are de-
+signed to work under the assumption that the input data is outlier free. however, real
+event logs contain outlier (noise and infrequent) behaviour that typically leads to in-
+accurate/unusable process mining results. detecting such behaviour in event logs and
+correcting it helps to improve process mining results, e.g. discovered process models.
+to address this problem, we propose a method that takes an event log and returns a
+repaired event log. it uses the occurrence frequency of a control-ﬂow oriented context
+pattern and the probabilities of different subsequences appearing in middle of it to detect
+outlier behaviour. if such probability be lower than a given threshold, the subsequence
+is substituted with a more probable one according to the context.
+to evaluate the proposed repairing method we developed a plug-in in the prom plat-
+form and also offer it through rapidprom. as presented, we have applied this method
+on several real event logs, and compared it with other state-of-the-art process min-
+ing speciﬁc data cleansing methods. additionally, we applied the proposed method on
+synthetic event logs. the results indicate that the proposed repair approach is able to
+detect and modify outlier behaviour and consequently is able to help process discovery
+algorithms to return models that better balance between different behavioural quality
+measures. furthermore, using these experiments we show that our repair method out-
+performs one of the best state-of-the-art process mining ﬁltering techniques as well as
+the inductive miner algorithm with its embedded ﬁltering mechanism.
+as future work, we want to evaluate the proposed method on other process mining
+results and also other process discovery algorithms. we also plan to develop techniques
+to automatically set adjustable ﬁltering and repairing parameters based on characteris-
+tics of the input event log to guide users and speed-up analysis.
+references
+1. van der aalst, w.m.p.: using process mining to bridge the gap between bi and bpm. ieee
+computer 44(12) (2011) 77–80
+2. van der aalst, w.m.p.: process mining - data science in action, second edition. springer
+berlin heidelberg (2016)repairing event logs 15
+3. conforti, r., la rosa, m., ter hofstede, a.h.m.: filtering out infrequent behavior from
+business process event logs. ieee trans. knowl. data eng. 29(2) (2017) 300–314
+4. fani sani, m., van zelst, s.j., van der aalst, w.m.: improving process discovery results by
+filtering outliers using conditional behavioural probabilities. in: international conference
+on business process management, springer (2017) 216–229
+5. van der aalst, w., van dongen, b.f., g ¨unther, c.w., rozinat, a., verbeek, e., weijters, t.:
+prom: the process mining toolkit. bpm (demos) 489(31) (2009)
+6. van der aalst, w.m.p., bolt, a., van zelst, s.j.: rapidprom: mine your processes and not
+just your data. corr abs/1703.03740 (2017)
+7. van der aalst, w., et al.: process mining manifesto. in: international conference on business
+process management, springer (2011) 169–194
+8. rebuge, ´a., ferreira, d.r.: business process analysis in healthcare environments: a
+methodology based on process mining. information systems 37(2) (2012) 99–116
+9. van der aalst, w.m.p., weijters, t., maruster, l.: workﬂow mining: discovering process
+models from event logs. ieee trans. knowl. data eng. 16(9) (2004) 1128–1142
+10. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured process
+models from event logs - a constructive approach. in: application and theory of petri
+nets and concurrency. springer berlin heidelberg (2013) 311–329
+11. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured process
+models from event logs containing infrequent behaviour. in: business process manage-
+ment workshops. springer international publishing (2014) 66–78
+12. van zelst, s.j., van dongen, b.f., van der aalst, w.m.p., verbeek, h.m.w.: discovering
+workﬂow nets using integer linear programming. computing (nov 2017)
+13. weijters, a.j.m.m., ribeiro, j.t.s.: flexible heuristics miner (fhm). in: cidm. (2011)
+14. g ¨unther, c.w., van der aalst, w.m.p.: fuzzy mining –adaptive process simpliﬁcation
+based on multi-perspective metrics. in: lecture notes in computer science. springer
+berlin heidelberg (2007) 328–343
+15. chandola, v ., banerjee, a., kumar, v .: anomaly detection for discrete sequences: a sur-
+vey. ieee transactions on knowledge and data engineering 24(5) (2012) 823–839
+16. wang, j., song, s., lin, x., zhu, x., pei, j.: cleaning structured event logs: a graph repair
+approach. in: icde 2015. (2015) 30–41
+17. cheng, h.j., kumar, a.: process mining on noisy logs —can log sanitization help to
+improve performance? decision support systems 79(2015) 138–149
+18. van zelst, s.j., fani sani, m., ostovar, a., conforti, r., la rosa, m.: filtering spurious
+events from event streams of business processes. in: proceedings of the caise. (2018)
+19. fahland, d., van der aalst, w.: model repair—aligning process models to reality. infor-
+mation systems 47(2015) 220–243
+20. armas-cervantes, a., van beest, n., la rosa, m., dumas, m., raboczi, s.: incremental and
+interactive business process model repair in apromore. proceedings of the bpm demos.
+crc press (2017, to appear) (2017)
+21. rogge-solti, a., mans, r.s., van der aalst, w.m.p., weske, m.: improving documenta-
+tion by repairing event logs. in: ifip working conference on the practice of enterprise
+modeling, springer (2013) 129–144
+22. bolt, a., de leoni, m., van der aalst, w.m.p.: scientiﬁc workﬂows for process mining:
+building blocks, scenarios, and implementation. sttt 18(6) (2016) 607–628
+23. weerdt, j.d., backer, m.d., vanthienen, j., baesens, b.: a robust f-measure for evaluating
+discovered process models. in: proceedings of the cidm, pages = 148–155, year = 2011,

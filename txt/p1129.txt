@@ -1,0 +1,980 @@
+repairing event logs with missing events to support
+performance analysis of systems with shared resources
+vadim denisov1;3, dirk fahland1, and wil m.p. van der aalst1;2
+1eindhoven university of technology, eindhoven, the netherlands,
+2process and data science (informatik 9), rwth aachen university, aachen, germany,
+3vanderlande industries, veghel, the netherlands,
+v.denisov@tue.nl ,d.fahland@tue.nl ,wvdaalst@pads.rwth-aachen.de
+abstract. to identify the causes of performance problems or to predict process
+behavior, it is essential to have correct and complete event data. this is particularly
+important for distributed systems with shared resources, e.g., one case can block
+another case competing for the same machine, leading to inter-case dependencies
+in performance. however, due to a variety of reasons, real-life systems often
+record only a subset of all events taking place. for example, to reduce costs, the
+number of sensors is minimized or parts of the system are not connected. to
+understand and analyze the behavior of processes with shared resources, we aim to
+reconstruct bounds for timestamps of events that must have happened but were not
+recorded. we present a novel approach that decomposes system runs into token
+trajectories of cases and resources that may need to synchronize in the presence of
+many-to-many relationships. such relationships occur, for example, in warehouses
+where packages for n incoming orders are not handled in a single delivery but in
+m dierent deliveries. we use linear programming over token trajectories to derive
+the timestamps of unobserved events in an e cient manner. this helps to complete
+the event logs and facilitates analysis. we focus on material handling systems
+like baggage handling systems in airports to illustrate our approach. however,
+the approach can be applied to other settings where recording is incomplete. the
+ideas have been implemented in prom and were evaluated using both synthetic
+and real-life event logs.
+keywords: log repairprocess miningperformance analysis modeling
+material handling systems
+1 introduction
+precise knowledge about actual process behavior and performance is required for identi-
+fying causes of performance issues [ 16], as well as for predictive process monitoring of
+important process performance indicators [ 14]. for material handling systems (mhs),
+such as baggage handling systems (bhs) of airports, performance incidents are usually
+investigated o ine, using recorded event data for ﬁnding root causes of problems [ 10],
+while online event streams are used as input for predictive performance models [ 4]. both
+analysis and monitoring heavily rely on the completeness and accuracy of input data.
+for example, events may not be recorded and, as a result, we do not know when they
+happened even though we can derive that they must have happened. yet, when di erent2 vadim denisov, dirk fahland, and wil m.p. van der aalst
+m3s
+d1s
+d2sm4sm3s
+m3c
+m4s
+m4c
+d1s
+m3’s
+pid=51pid=50
+d1c
+d2s
+d1’c m4’s(b)
+observed(c)
+variant 1(d)
+variant 2
+d2’c(a)
+t1
+load
+load
+observed event unobserved evente3e1
+e7e5
+e11
+timee3 e5 e5
+e9
+e9 e7e7e1 e1
+e11 e11
+t0 t2t3
+t1t1 time timepartial log
+id,activity,time
+50,m3,      t0
+50,d1,      t2
+51,m4,      t1
+51,d2,      t3
+fig. 1. an mhs model example (a), observed imprecise behavior for two cases 50 and 51 (b),
+possible actual behaviors (c,d).
+cases are competing for shared resources, it is important to reconstruct the ordering of
+events and provide bounds for non-observed timestamps.
+however, in most real-life systems, items are not continuously tracked and not all
+events are stored for cost-e ciency, leading to incomplete performance information
+which impedes precise analysis. for example, an mhs tracks the location of an item, e.g.,
+a bag or box, via hardware sensors placed throughout the system, generating tracking
+events for system control, monitoring, analysis, and prediction. historically, to reduce
+costs, a tracking sensor is only installed when it is strictly necessary for the correct
+execution of a particular operation, e.g., only for the precise positioning immediately
+before shifting a bag from one conveyor onto another. moreover, even when a sensor is
+installed, an event still can be discarded to save storage space. as a result, the recorded
+event data of an mhs are typically incomplete, hampering analysis based on such
+incomplete data. therefore, it is essential to repair the event data before analysis. fig. 1
+shows a simple mhs where events are not always recorded. the process model is given
+and for two cases the recorded incomplete sets of events are depicted using the so-called
+performance spectrum [10].
+fig. 1(b) shows item pid =50 entering the system via m3 at time t0(event e1) and
+leaving the system via d1 at time t2(e7), and item pid =51 entering the system via m4 at
+time t1(e5) and leaving the system via d2 at time t3(e11). as only these four events are
+recorded, the event data do not provide information in which order both cases traversed
+thesegment m4!d1. naively interpolating the movement of both items, as shown in
+fig. 1(b), suggests that item pid =51 overtakes item pid =50. this contradicts that all
+items are moved from m4 tod1 via a conveyor belt, i.e., a fifo queue: item 51 cannot
+have overtaken item 50. in contrast, fig. 1(c) and fig. 1(d) show two possible behaviors
+that are consistent with our knowledge of the system. we know that a conveyor beltrepairing event logs of systems with shared resources 3
+(fifo queue) is a shared resource between m4 and d1. both variants di er in the order
+in which items 50 and 51 enter and leave the shared resource, the speed with which the
+resource operated, and the load and free capacity the resource had during this time. in
+general, the longer the duration of naively interpolated segment occurrences, the larger
+the potential error. errors in load, for example, make performance outlier analysis [ 10] or
+short-term performance prediction [ 9] rather di cult. errors in order impede root-cause
+analysis of performance outliers, e.g., ﬁnding the cases that caused or were a ected by
+outlier behavior.
+problem. in this paper, we address a novel type of problem as illustrated in fig. 1 and
+explained above. the behavior and performance of the system cannot be determined by
+the properties of each case in isolation, but depends on the behavior of other cases and the
+behavior of the shared resources involved in the cases. crucially, each case is handled by
+multiple resources and each resource handles multiple cases, resulting in many-to-many
+relations between them. the concrete problem we address is to reconstruct unobserved
+behavior and performance information of each case and each shared resource in the
+system that is consistent with both observed and reconstructed unobserved behavior and
+performance of all other cases and shared resources. more speciﬁcally, we consider the
+following information as given: (1) an event log l1containing the case identiﬁer, activity
+and time for recorded events where intermediate steps are not recorded (i.e., the event
+log may be incomplete), (2) a model of the process (i.e., possible paths for handling
+each individual case), and (3) a description (model) of the resources involved in each
+step (e.g., queues, single server resources and their performance parameters such as
+processing and waiting time). based on the above input, we want to provide a complete
+event log l2that describes (1) for each case the exact sequence of process steps, (2)
+and for each unobserved event a time-window of earliest and latest occurrence of the
+event so that (3) either all earliest or all latest timestamps altogether describe a consistent
+execution of the entire process over all shared resources.
+contribution. we propose a solution to this problem for a limited class of systems.
+we focus on processes where each step is served by one single-server resource and
+resources are connected by strict fifo queues only. these assumptions are reasonable
+for a large class of mhss. our current solution formulation assumes the process to be
+acyclic which su ces for many real-life problem instances. sect. 2 presents related
+work while elaborating on the problem. speciﬁcally, prior work either only considers
+the case or the resource perspective explicitly, making implicit assumptions about their
+complex interplay. to overcome this limitation, we use synchronous proclets [11] in
+sect. 3 to conceptually decompose a run of a system into individual token trajectories of
+cases, resources, and queues. token trajectories synchronize when a resource or queue
+is involved in a case, allowing to explicitly describe their many-to-many relations in
+the run. sect. 4 then formally captures token trajectories in terms of partial orders of
+events and deﬁnes the general problem. we solve the problem in sect. 5 by formulating
+a linear programming (lp) problem [ 19] in terms of timestamps along the di erent
+token trajectories. to evaluate the approach, we compare the restored event logs with the
+ground truth for synthetic logs and estimate errors for real-life event logs for which the
+ground truth is unavailable (sect. 6). we discuss our ﬁndings and future work in sect. 7.4 vadim denisov, dirk fahland, and wil m.p. van der aalst
+2 related work
+in all operational processes (logistics, manufacturing, healthcare, education and so on)
+complete and precise event data, including information about workload and resource
+utilization, is highly valuable since it allows for process mining techniques uncovering
+compliance and performance problems. event data can be used to replay processes on top
+of process models [ 2], to predict process behavior [ 5,9], or to visualize detailed process
+behavior using performance spectra [ 10]. all of these techniques rely on complete and
+correct event data. since this is often not the case, we aim to transform incomplete event
+data into complete event data.
+various approaches exist for dealing with incomplete data of processes with non-
+isolated cases that compete for scarce resources. in call-center processes, thoroughly
+studied in [ 12], queueing theory models can be used for load predictions under as-
+sumptions about distributions of unobserved parameters, such as customer patience
+duration [ 6], while assuming high load snapshot principle predictors show better accu-
+racy [ 21]. for time predictions in congested systems, the required features are extracted
+using congestion graphs [20] mined using queuing theory.
+techniques to repair, clean, and restore event data before analysis have been sug-
+gested in other works. an extensive taxonomy of quality issue patterns in event logs
+is presented in [ 22]. the taxonomy also lists approaches to repair inadvertent time
+intervals [ 22] in [ 8]. in [ 15] resource availability calendars are retrieved from event logs
+without the use of a process model, but assuming start andcomplete life-cycle transi-
+tions as well as a case arrival time present in a log. using a process model, classical trace
+alignment algorithms [ 7] restore missing events but do not restore their timestamps. the
+authors conclude (see [ 7], p. 262) that incorporating other dimensions, e.g., resources, for
+multi-perspective trace alignment and conformance checking is an important challenge
+for the near future. recently, also techniques for process discovery and conformance
+checking over uncertain event data were presented [ 17,18]. the output of our approach
+can provide the input needed for these techniques.
+our work contributes to the problem of reconstructing behavior of cases and limited
+shared resources for which the cases compete. we use the notion of proclets ﬁrst
+introduced in [ 1] and adapted for process mining in [ 11] to approach the problem
+from control-ﬂow and resource perspectives at once. we assume a system model given
+as a composition of a control-ﬂow proclet (process) and resource /queue proclets. we
+restore missing events through classical trace alignments over control-ﬂow proclets. the
+dynamic synchronization of proclets [ 11] allows us to infer how and when resource
+tokens must have traversed over the control-ﬂow steps, which we express as a linear
+programming problem to compute timestamp intervals for the restored events. event
+logs repaired in this way enable the use of analysis assuming complete event logs.
+3 modeling inter-case behavior via shared resources
+prior work (cf. sect. 2) approaches the problem of analyzing the performance of systems
+with shared resources primarily either from the control-ﬂow perspective [ 15,17,18,5,9]
+or the resource /queuing perspective [ 12,6,21,20], leading to information loss about therepairing event logs of systems with shared resources 5
+                            
+        
+             
+            
+                
+  id=51c2 m2
+s1c1
+d1c2c1
+m2’
+s1
+d1m2
+p(a) (b)
+id=50m3’m3
+m4’m4c3
+c4c3 m3
+c4 m4
+d2s2 s2 d2(c)
+event,id,activity,time
+e0, 50,c3,01.01.20 9:00:15
+e1, 50,m3,01.01.20 9:00:30
+e3, 50,m4,01.01.20 9:00:45
+e7, 50,d1,01.01.20 9:01:00
+e18,50,s1,01.01.20 9:01:15(d)
+event,id,activity,time
+e17,51,c4,01.01.20 9:00:35
+e5, 51,m4,01.01.20 9:00:50
+e9, 51,d1,01.01.20 9:00:05
+e11,51,d2,01.01.20 9:01:20
+e19,51,s2,01.01.20 9:01:35partial log 1
+fig. 2. a baggage handling system fragment (a) and its material ﬂow diagram (b). conveyor belts
+of check-in counters c1 c4 merge at points m2 m4, further downstream bags can divert at
+d1 and d2 to x-ray security scanners s1 and s2. red arrows show sensor (logging) locations.
+conveyor c1 :m2 is modeled as a coloured petri net model (c). an example of an incomplete
+event log of the system in (a) is shown in (d), where missing events are shown in the grey color.
+other perspective. in the following, we show how to conceptualize the problem from both
+perspectives at once using synchronous proclets [11]. this way we are able to capture
+both control-ﬂow and resource dynamics and their interaction as synchronizing token
+trajectories. we introduce the model in sect 3.1 and use it to illustrate how incomplete
+logging incurs information loss for performance analysis in sect. 3.2.
+3.1 processes-aware systems with shared resources
+we explain the dynamics of process-aware systems over shared resources using a bhs
+handling luggage. the process control-ﬂow takes a bag from a source (e.g., check-
+in or transfer from another ﬂight), to a destination (e.g., the airplane, transfer) along
+intermediate process steps (e.g., baggage scanning, storage). bhs resources are primarily
+single-server machines (e.g., baggage scanners) connected via conveyor belts, i.e., fifo
+queues. fig. 2(a) shows a typical system design pattern involving the control-ﬂow and
+resource perspective: four parallel check-in desks (c1-c4) merge into one linear conveyor
+through merge points (m2-m4). divert points (d1 and d2) can route bags from the linear
+conveyor to scanners (s1 and s2). each merge point and scanner is preceded by a fifo
+queue for bu ering incoming cases (bags) in case the corresponding resource is busy.
+fig. 2(b) shows the plain control-ﬂow of this bhs (also called material flow diagram
+(mfd)). a real-life bhs may contain hundreds of process steps and resources, and
+conveyors may also form loops.
+modeling with coloured petri nets. fig. 2(c) shows a coloured petri net (cpn)
+model for the segment c1!m2. in the model, transitions c1sandc1cdescribe start and
+completion of the check-in step c1. at the occurrence of c1sa new bag (id) represented
+by a token with an idis inserted. step c1 is served by a single resource (place capacityc1)
+which has service-time tsrc1to complete the step and waiting time trw c1until the next
+bag can go through c1. all resources in a bhs may require a waiting time to ensure
+sucient “operating space” between two subsequent cases. after completion of c1, the6 vadim denisov, dirk fahland, and wil m.p. van der aalst
+bag enters a fifo queue (modeling a conveyor belt) to the start of the merge step m2s.
+time annotation twq c1m2models the minimum time it takes for a bag to travel from c1 to
+m2. only then a bag may leave the queue at m2s. the cpn model in fig. 2(c) describes
+the impact of limited resource capacity and queues on the progress of a case, but does not
+model the resource itself as its own entity. the absence of the resource in the described
+behavior makes it impossible to reason about its behavior explicitly.
+modeling with synchronous proclets. the synchronous proclet system in fig. 3 de-
+scribes the entire bhs of fig. 2(a) by using three types of proclets.
+1.theprocess proclet (red border) is a petri net describing the control-ﬂow perspective
+of how bags may move through the system. it directly corresponds to the mfd of
+fig. 2(b). it is transition-bordered and each occurrence of one of its initial transitions
+creates a new case identiﬁer, see [11] for details.
+2.each resource proclet (green border) models a resource as its own entity with a
+cyclic behavior. for example, the passengertosystemhandover proclet (top left)
+identiﬁes a concrete resource by token id c1; its life-cycle models that starting a
+task ( c1s) makes the resource busy and takes service time tsrc1, after completing the
+task ( c1c) the resource has waiting time twr c1before being idleagain in the same
+way as fig. 2(c). all other resource proclets follow the same pattern, though some
+resources such as mergingunit-m2 anddivertingunit-d1 may have two transitions
+to become busy oridle, respectively.
+3.each queue proclet (blue border) describes a fifo queue as in fig. 2(c). however,
+the queue state (the list) is accompanied by a queue identiﬁer in place q. items
+entering the queue are remembered by their number (generated from the count
+place).
+the proclet system synchronizes process, resources, and queues via synchronous chan-
+nelsbetween transitions. transitions linked via synchronous channels may only occur
+when all linked transitions are enabled; when they occur, they occur in a single syn-
+chronized event. for example, transition c1sis always enabled in process , generating
+a new bag id, e.g., id =49, but it may only occur together with c1sinpassengertosys-
+temhandover , i.e., when resource c1 isidle, thereby synchronizing the process case for
+bagid=49 with the resource with identiﬁer c1. by annotation init c1,1:1 c1 is now
+correlated to id=49. the subsequent correlation annotation =c1, 1:1 on the channel of
+thecomplete transition c1censures that resource c1 only synchronizes with the process
+case on which it started the step, i.e., id=49; the next occurrence of c1swill create a new
+correlation to another process case, see [ 11] for details. in the example, each resource
+is statically linked to one process step, but the model also allows for one resource to
+participate in multiple di erent process steps, and multiple resources to be required for
+one process step. in the following, we call a proclet system that deﬁnes proclets for
+processes, queues, and resource that are linked via synchronous channels as described
+above, a pqr system .
+proclets describe synchronizing token trajectories. we now highlight how the partial-
+order semantics of synchronous proclets [ 11] preserves the identities of process, re-
+sources, and queues as “token trajectories”. figure 4(b) shows a partially-ordered run of
+the pqr system of fig. 3 for two bags id=50 and id=51. the run in fig. 4(b) canrepairing event logs of systems with shared resources 7
+fig. 3. the synchronous proclet model of the system shown in fig. 2(a) consists of three types
+of proclets: process for modeling a system layout and process control ﬂow (red), resource
+for modeling connector and sensor resources (services), and queue for modeling conveyors
+transporting bags in the fifo order. only ﬁlled transitions can be observed in an event log.8 vadim denisov, dirk fahland, and wil m.p. van der aalst
+fig. 4. synchronization of multiple sub-runs of the synchronous proclet system in fig. 3 over
+shared resources and queues (a), and a global partial order obtained by the union of partial orders
+of each sub-run (b) for synchronized events, shown by red, green and blue arrows for partial orders
+<pid,<ridand<qidrespectively.repairing event logs of systems with shared resources 9
+be understood as a synchronization of multiple runs of the process, resource, and queue
+proclets, one for each case, resource, or queue involved as shown in fig. 4(a).
+bag 50 gets inserted via input transition c3c(event e
+0in fig. 4(b)). this event is a
+synchronization of events e0 (c3coccurs for bag 50 in the process proclet) and e00(c3c
+occurs for the c3:m3 queue) in fig. 4(a). the minimal waiting time twq c3m3must pass
+before bag 50 reaches the end of the queue and process step m3 can start. the process
+step m3 merges bag 50 from the check-in conveyor c3 onto the main linear conveyor
+and may only start via transition m3swhen mergingunit-m3 isidle. as this is the case,
+bag 50 leaves the queue ( e100inc3:m3 ),m3 starts merging ( e10inm3), the bag starts the
+merging step (event e1 inprocess ), resulting in the synchronized event e1in fig. 4(b).
+bye0
+1, resource m3switches from idletobusy and takes time tsrm3before it can
+complete the merge step with m3c(event e20) on bag 50 (event e2); this merge step also
+inserts bag 50 into queue m3:m4 (e200) resulting in synchronized event e2. subsequently,
+bag50leaves queue m3:m4 (e3) is pushed by merge unit m4into queue m4:d1 (e4).
+concurrently, bag 51 is inserted via input transition c4c(event e17), moves via
+queue c4:m4 also to merge unit m4to enter queue m4:d1 , i.e., both bags 50 and 51 now
+compete for merge unit m4and the order of entering m4:d1 . in the run in fig. 4, m4
+executes m4sandm4cfor bag 51 ( e5ande6)after completing this step for bag 50 ( e3
+ande4). thus, 51 enters the queue ( e6) after 50 entered the queue ( e5) but before 50
+leaves the queue e7. consequently, divert unit d1ﬁrst serves 50 ( e7ande8) to reach
+scanner s1(e18) before serving 51 ( e9ande10) to reach scanner s2(e19).
+fig. 4(b) shows how the process tokens of bag 50 and 51 synchronized with
+the resources and queue tokens along the run, forming sequences or trajectories of
+events where this token was involved. for example, bag 50 followed the trajectory
+e0;e1;:::; e8;e18and queue m4:d1 followed trajectory e4;e6;e7;e9thereby
+synchronizing with both bag 50 and bag 51.
+3.2 information loss because of incomplete logging
+although event data on objects that are tracked can be used for various kinds of data
+analysis [ 4,9], in practice sensors are placed only where it is absolutely necessary for
+correct operation of the system, e.g., for merge and divert operations, without considering
+data analysis needs. applied to our example, only the transitions that are shaded in fig. 3
+would be logged, i.e., c1s;m20
+s;m30
+s;m40
+s;d1s;d2s;s1s;s22would be logged from the
+control-ﬂow perspective only. the run of fig. 4 would result in a “typical” but highly
+incomplete event log as shown in fig. 2(d).
+according to this incomplete log, bag 50 silently passes m4and is tracked again
+only at d1(e7) and ﬁnally at s1(e18) whereas 51 silently passes d1(as it moves further
+on the main conveyor) and is tracked again only at d2(e11). based on this incomplete
+information the bags 50 and 51 may have traversed m4:d1 in dierent orders and at
+dierent speeds resulting also in di erent loads as illustrated in fig. 1. as a result, in
+case of congestion, we cannot determine the ordering of cases [ 10], cannot compute the
+exact load on each conveyor part for (predictive) process monitoring [ 9,5]. the longer
+an unobserved path (e.g., c1!d2), the higher the uncertainty about the actual behavior
+and the less accurate performance analysis outcome.10 vadim denisov, dirk fahland, and wil m.p. van der aalst
+although minimal (or even average) service and waiting times on conveyor belts and
+resource are known, we need to determine the exact timestamps of all missing events
+and their order to reconstruct for how long resources were occupied by particular cases
+and in which order cases were handled, e.g., did 50 precede 51 on m4:d1 or vice versa?
+the objective of this paper is to reconstruct from a subset of events logged from the
+control-ﬂow perspective only the remaining events (including time information), so that
+the time order is consistent with a partially ordered run of the entire system, including
+resource and queue proclets. for example, from the recorded events of the event log in
+fig. 2(d) we reconstruct the remaining events (fig. 4(a)) with time information so that
+the resulting order (by time) is consistent with the partially ordered run in fig. 4(b).
+4 system runs and partial event logs
+in sect. 3, we showed how the behavior of resource and queue-aware processes can
+be modeled as a pqr system, a particular type of a synchronous proclet system. the
+partially-ordered run of a pqr system decomposes into token trajectories for process
+cases, resources, and queues. in this section, we ﬁrst formalize this relation between a
+partially ordered run of a system and its token trajectories through projection on partially
+ordered sets. we then formalize partial andcomplete event logs of a system run within
+this model and state the formal problem we address.
+we use the following notion. let abe a set of event classiﬁers ;ais usually the set
+of activity names or the set of locations in case of an mhs. let tbe the set of time
+durations and timestamps, e.g., the rational or real numbers. let ebe the universe of
+unique events with attributes , letanbe a set of attribute names. for any e2e;n2an,
+#n(e) is the value of attribute nfor event e(#n(e)=?if attribute nis undeﬁned for e).
+each event has a mandatory attribute act, #act(e)2a, a mandatory attribute ltfor a
+life-cycle transition, # lt(e)2fstart;completegand an optional attribute time, #time(e)2t.
+finally, we allow events to be related to multiple case notions. let zbe the universe
+of case identiﬁers andidanbe a setofcase notions . if # id(e)=z, then event eis
+related to case zunder case notion id2id.
+from partial orders to token trajectories. a run of a proclet system [ 11] can be
+observed in terms of a strict partially ordered set (sposet) =(e;<) of events
+ee. as usual, we write e1<e2if event e1precedes event e2and we write e1le2i
+e1directly precedes e2, i.e., e1<e2and there is no other event e3with e1<e3<e2. in
+a pqr system we can distinguish three case notions id=fpid;rid;qidgto distinguish
+cases of the process, resources, and queues. each event e2 e in a run of a pqr
+system has one or more case notions from id. for example, in fig. 4, # pid(e5)=51,
+#rid(e5)=m4, # qid(e5)=c4:m4 .
+restricting <of a system run to events of the same case notion id2idresults in a
+case notion-speciﬁc partial order e1<ide2ie1<e2and # id(e1)=#id(e2),?. only
+events which share the same case notion and case identiﬁer are ordered by <id– events
+of dierent cases are unordered. for example, in fig. 4(b) e4<ride5bute4pide5.
+consequently, <pidorders all events wrt. the process perspective whereas <ridand<qid
+order all events wrt. the resource and queue perspective, respectively. for a given case
+notion id2idand case identiﬁer z2z, the events ez
+id=fe2ej#id(e)=zgof case zandrepairing event logs of systems with shared resources 11
+strict partial order (spo) <z
+idjez
+idez
+id, restricted to the events of the same case, deﬁne a
+sub-runz
+id=(ez
+id;<z
+id). each such sub-run formalizes one token trajectory in the system
+run. for example, fig. 4(a) shows the sub-runs, viz. token trajectories, of all cases of the
+run of fig. 4(b), i.e., 50
+pidand51
+pidfrom the perspective of the process, m3
+rid;m4
+rid;d1
+rid;d2
+rid
+from the perspective of the resources, and c3:m3
+qid;m3:m4
+qid;c4:m4
+qid;m4:d1
+qid;d1:d2
+qid;d1:s1
+qid;d2:s2
+qid
+from the perspective of the queues. in this way, our model shows that events of di erent
+process cases ( pid=50 and pid=51) are independent under the classical control-ﬂow
+perspective <pid, e.g., e4pide5pide7, but mutually depend on each other under
+<ridand<qid, e.g., e4<ride5<ride6ande6<qide7. each sub-run z
+idis a “proper”
+run of case zin the corresponding proclet (lemma 2 in [11]).
+event logs and token trajectories. starting point for our analysis is the notion of a
+classical control-ﬂow event log, which we express in our model of sposets using pid
+as case notion. an event log l=(e;<) is a ﬁnite set of events ewhere each event e
+has an activity # act(e), a process case id # pid(e). note that emay have additional case
+identiﬁers # rid(e) and # qid(e) as attributes.
+adopting [ 13] to our setting, the optional timestamps # time(e) induce the log’s partial
+order, i.e., two events e1ande2are ordered if e1time-wise precedes e2and both are
+related in some case (for any id2id), i.e., e1<e2i?,#time(e1)<#time(e2),?and
+there exists id2idwith # id(e1)=#id(e2). if all events are only related to idcases, then
+<and<idare identical. further, each sub-run lz
+id(projection onto events with # id(e)=z)
+is atrace for case zunder case notion id.
+event logs and token trajectories. given a model mof a pqr system, i.e., a system
+deﬁning proclets for pid;rid;qid, we call log lcomplete wrt. events and ordering i 
+there is a run ofmsuch that landmare isomorphic wrt. attributes act;pid;qid;rid.
+note that the ordering in lis induced by event timestamps only, thus a complete log
+deﬁnes the “right” timestamps. further note that in a complete log l, each trace lz
+id
+is also complete and describes a token trajectory, i.e., a sub-run z
+idofthat ﬁts the
+corresponding proclet. further, all traces of process cases ( pid) are ordered relative to
+each other via the shared resources and queues as described in m.
+in reality often only a subset of activities baand the control-ﬂow case notion pid
+have been recorded in a log, making it partial . in this paper, we call a log l0partial if
+there exists a complete log l=(e;<) ofm(viz. system run ) such that l0=(e0;<0) is
+the projection of lonto activities in b,ljb=(eb;<jebeb);eb=fe2ej#act(e)2bg
+such that additionally
+1. each e2e0has only case notion pid, i.e., # pid(e),?;#rid(e)=#qid(e)=?,
+2. # time(e) is deﬁned, and
+3.for each process case zoccurring in l,l0contains at least the ﬁrst and last event of
+the complete trace.
+thus, l0contains for each case zat least one partial trace l0z
+pidrecording the entry and
+exit of the case and preserving the order of observed events, i.e., it can be completed to
+ﬁt the model. an mhs typically records a partial log as deﬁned above. fig. 2(d) shows a
+partial event log of the run on fig. 4. in a partial event log, events of di erent process
+cases are less ordered, e.g., observed events e1ande5in fig. 4 are unordered wrt. any12 vadim denisov, dirk fahland, and wil m.p. van der aalst
+a)
+event,id,activity,time
+f1, 53, c1, 8:00:00
+f3, 53, m2, 8:00:15
+f5, 53, m3, 8:00:30
+f6, 53, m4, 8:00:45
+f9, 53, d1, 8:01:00
+f0, 54, c3, 8:01:20
+f12,54, m3, 8:00:35
+f14,54, m4, 8:00:50
+f16,54, d1, 8:01:05
+fig. 5. another partial event log of the system in fig. 3 for bags 53 and 54 (a), partially complete
+traces of the process (b), resource (c) and queue (d) proclets, restored by oracles o1;o2. only
+observed events are ordered, e.g., f9<d1
+ridf16, while the other events are isolated.
+resource or queue whereas they are ordered in the complete run. in the following, we
+investigate how to restore this lost ordering.
+problem formulation. reconstructing a complete log from a partial log as deﬁned
+above requires to reconstruct all missing events, all missing case notion attributes, and
+their timestamp. restoring the exact timestamp is generally infeasible and for most use
+cases also not required. we, therefore, formulate the problem as restoring time-windows
+providing minimal and maximal timestamps for each unobserved event.
+letmbe a model of a pqr system deﬁning life-cycles of process, resource, and
+queue proclets, which resources and queues synchronize on which process step, and for
+each resource the minimum service time tsrand waiting time twrand for each queue the
+minimum waiting time twq. given mand a partial log l1=(e1;<1) ofm, we want to (1)
+reconstruct unobserved events eufor all process cases in l1and their relations to queues
+and resources, and (2) for each unobserved event e2eua time-window of earliest and
+latest occurrence of the event # tmin(e);#tmax(e)2tso that (3) l2=(e1[eu;<2) is a
+complete log of mwhen<2is inferred from # tmin(e) or from # tmax(e).
+5 inferring timestamps along token trajectories
+in sect. 4, we presented the problem of restoring missing events and time-windows for
+their timestamps from a partial event log l1such that the resulting log is consistent with
+resource and queueing behavior. in this section, we solve the problem for pqr systems
+with acyclic process proclets by casting it into a constraint satisfaction problem, that
+can be solved using linear programming (lp) [ 19]. in sect. 5.1, we show how to infer
+unobserved events (from m) and how to infer resource and queue identiﬁers from mto
+construct an intermediate spo ( e2;<2). all unobserved events e2ne1have no timestamp,
+i.e., they are unordered in <2. in sect. 5.2 we then show how to determine minimal and
+maximal timestamps for each unobserved event (through a linear program) that preserves
+the already known ordering <2. inferring<3from the minimal (or maximal) timestamps
+reﬁnes<2and results in an spo l3=(e2;<3) which is a complete log of mand has l1
+as a partial log. we explain our approach using another (more compact running) example
+shown in fig. 5(a) for two bags 53 and 54 processed in the system of fig 3. the events
+in grey italic (i.e., f3, f5, f6, f14) are unobserved.repairing event logs of systems with shared resources 13
+5.1 infer potential complete runs from a partial run
+we ﬁrst derive for the partial log l1=(e1;<1) an intermediate log l2=(e2;<2) so that
+each trace lz
+2;pidof a process case zis complete (i.e., ﬁts the process proclet in m). in
+a second step, we relate each unobserved event e2eu=e2ne1to a corresponding
+resource and /or queue case identiﬁer which orders observed events wrt. <ridand<qid,
+resulting in an spo =(e;<) (with e=e2). all unobserved events e2eulack
+a timestamp and hence are left unordered wrt. <ridand<qidin; we later reﬁne <in
+sect 5.2.
+we specify how to solve each of the steps in terms of two oracles o1ando2and
+describe concrete implementations for either. oracle o1has to return l2=(e2;<2)=
+o1(e1;<1;m) by completing each partial trace lz
+1;pidof some process case zinto a
+complete trace lz
+2;pidthat ﬁts the process proclet m. the restored unobserved events
+eu=e1ne1only have attributes act;pidandlt(life-cycle transition) and events are
+totally ordered along pid, i.e., <2=<pidis a total order. o1can be implemented using
+well-known trace alignment [ 3]. for example, applying o1on the partial log of fig. 5(a)
+results in the complete process traces of fig. 5(b). note that, slightly deviating from our
+model, o1constructs<2explicitly (not based on timestamps).
+oracle o2has to enrich events in l2with information about queues and resources
+so that for each e2e2if resource ris involved in the step # act(e), then # rid(e)=rand
+if queue qwas involved, then # qid(e)=q. moreover, in order to formulate the linear
+program to derive timestamps in a uniform way, each event ehas to be annotated with
+the performance information of the involved resource and /or queue. that is, if eis a
+start event and # rid(e)=r,?, then # tsr(e) and # twr(e) hold the minimum service and
+waiting time of r, and if # qid(e)=q,?, then # twq(e) hold the minimum waiting time of
+q. for the concrete pqr systems considered in this paper, we set # rid(e)=rbased on
+the model mifris the case id of the resource proclet that synchronizes with transition
+t=#act(e) via a channel (there is at most one). attributes # tsr(e), # twr(e), can be set from
+the model as they are parameters of the resource proclet. to ease the lp formulation, if e
+is unrelated to a resource, we set # rid(e)=rto fresh identiﬁer and # tsr(e)=#twr(e)=0;
+#qid(e) and # twq(e) are set correspondingly. by annotating the events in e2, we obtain
+spo=(e;<);e=e2that also contains sub-runs for each queue and resource
+containing all events to be complete wrt. mbut only observed events are ordered (due
+to their timestamps). for example, fig. 5(d) shows the sub-run m4:d1
+qidcontaining events
+f8;f9;f16;f15with only f9<qidf16. next, we deﬁne constraints based on the information
+in this intermediate log to infer timestamps for all unobserved events.
+5.2 restoring timestamps of unobserved events by linear programming
+the spo=(e;<) obtained in sect. 5.1 from partial log l1=(e1;<1) includes all
+unobserved events eu=ene1of the complete log, but lacks timestamps for each
+e2eu;#time(e)=?. each observed e2e1has a timestamp # time(e) and we also added
+minimum service time # tsr, waiting time # twr(e) of the resource # rid(e) involved in eand
+minimum waiting time # twq(e) of the queue involved in e. we now deﬁne a constraint
+satisfaction problem that speciﬁes the earliest # tmin(e) and latest # tmax(e) timestamps
+for each e2euso that all earliest (latest) timestamps yield a consistent ordering of14 vadim denisov, dirk fahland, and wil m.p. van der aalst
+all events in ewrt.<pid(events follow the process), <rid(events follow resource life-
+cycle), and<qid(events satisfy queueing behavior). the problem formulation propagates
+the known # time(e) values along with the di erent case notions <pid,<rid,<qid, using
+tsr;twr;twq. for that, we introduce variables xtmin
+e,xtmax
+e0 for representing event
+attributes tmin;tmax of each e2eu. for all observed events e2e1, we set xtmin
+e=
+xtmax
+e=#time(e) as here the correct timestamp is known. we now deﬁne two groups of
+constraints to constrain the xtmin
+eandxtmax
+evalues for the unobserved events further. in
+the following, we assume for the sake of simpler constraints presented in this paper,
+that all observed events are start events (which is in line with logging in an mhs). the
+constraints can easily be reformulated to assume only complete events were observed
+(as in most business process event logs) or a mix (requiring further case distinctions).
+the ﬁrst group propagates constraints for # time(e) along<pid, i.e., for each token
+trajectory (viz. trace) z
+pidofpidin. by the steps in sect. 5.1, events in z
+pidare totally
+ordered and we write z
+pid=he1:::emias a sequence of events. each process step has a
+start and a complete event in z
+pid, i.e., m=2y;y2n, odd events are start events and
+even events are complete events. for each process step 1 iy, the time between start
+event e2i 1and complete event e2iis at least the service time of the resource involved
+(which we stored as # tsr(e2i 1) in sect. 5.1). thus the following constraints must hold for
+the earliest and latest time of e2i 1ande2i.
+xtmin
+e2i=xtmin
+e2i 1+#tsr(e2i 1); (1)
+xtmax
+e2i=xtmax
+e2i 1+#tsr(e2i 1): (2)
+for the remainder, it su ces to formulate constraints only for start events. we make
+sure that tmin andtmax deﬁne a proper interval for each start event:
+xtmin
+e2i 1xtmax
+e2i 1: (3)
+we write es
+i=e2i 1for the start event of the i-th process step in z
+pidandz
+pid=hes
+1;:::;es
+mi
+for the sub-trace of start events of z
+pid. any event es
+i2z
+pidthat was observed in l1,
+i.e.,es
+i2e1, has # time(es
+i),?deﬁned. by the assumption in sect. 4, z
+pidas well asz
+pid
+always start and end with observed events, i.e., es
+1;es
+y2e1and # time(es
+1);#time(es
+y),?.
+an unobserved event es
+ihas no timestamp # time(es
+i)=?yet, but # time(es
+i) is bounded by
+#time(es
+1) (minimally) and # time(es
+y) (maximally). furthermore, any two succeeding start
+events inz
+pid=h:::;es
+i 1;es
+i;:::iare separated by the service time # tsr(es
+i 1) of step es
+i 1
+and the waiting time # twq(ei) of the queue from ei 1toei. similar to eq. 1 and 2, we
+formulate this constraint for both xtmin
+eandxtmax
+evariables:
+xtmin
+es
+kxtmin
+es
+k 1+(#tsr(es
+k 1)+#twq(es
+k)); (4)
+xtmax
+es
+kxtmax
+es
+k+1 (#tsr(es
+k)+#twq(es
+k+1)): (5)
+fig. 6 uses the performance spectrum [10] to illustrate the e ect of applying our approach
+step by step to the partially complete traces of fig. 5 obtained in the steps of sect. 5.1.
+the straight lines in fig. 6(a) from f1tof9(for pid =53) and from f12tof16(for pid =54)repairing event logs of systems with shared resources 15
+(a)
+pid=53
+pid=54c1
+m2
+m4
+d1m3(b)
+timeeq.5
+observed events
+segment 
+occurrenceresulted regionstsr+twq#time(f1)
+tmin(f3)
+#tmin(f5)
+#tmin(f7)
+#time(f9)#tmax(f3)
+#tmax(f5)
+#tmax(f7)r1
+timestamp intervalseq.7#tmax(f3)
+#tmax(f5)
+#time(f16)#tmax(f14)#time(f12)
+#tmin(f12)(c)
+r2
+sum of min. resource service 
+and queue waiting time tsr+twq#time(f9)#time(f16)twreq.4
+fig. 6. equations 1-5 deﬁne time intervals for unobserved events (a), deﬁning regions for the
+possible traces (b). equations 6-7 propagate orders of cases observed on one resource to other
+resources (b), resulting in tighter regions (c).
+illustrate that l2(after applying o1) contains all intermediate steps that both process
+cases passed through but not their timestamps. further (after applying o2), we know for
+each process step the resources (i.e., c1, m2, m3, m4, d1) and the queues (c1:m2, m2:m3
+etc.), and their minimum service and waiting times tsr;twr;twq. the sum tsr+twqis
+visualized as bars on the time axis in fig. 6(a), the duration of twris shown in fig. 6(b).
+we now explain the e ect of applying eq. 4 on pid =53 for f3,f5andf7. we have53
+pid=
+hf1;f3;f5;f7;f9iwith f1andf9observed, thus xtmin
+fi=xtmax
+fi=#time(fi) for i2f1;9g. by
+eq. 4, we obtain the lower-bound for the time for f3byxtmin
+f3xtmin
+f1+#tsr(f1)+#twq(f3)
+with # tsr(f1) and # twq(f3) the service time of resource c1 and waiting time of queue
+c1:m2. similarly, eq. 4 gives the lower bound for f5from the lower bound from f3etc.
+conversely, the upper bounds xtmax
+fiare derived from f9“downwards” by eq. 5. this
+way, we obtain for each fi253
+pidan initial interval for the time of fibetween the bounds
+xtmin
+fixtmax
+fias shown by the intervals in fig. 6(a). as xtmin
+f1=xtmax
+f1=#time(f1) and
+xtmin
+f1=xtmax
+f1=#time(f9), the lower and upper bounds for the unobserved events in 53
+pid
+form a polygon as shown in fig. 6(b). case 53 must have passed over the process steps
+and resources as a path inside this polygon, i.e., the polygon contains all admissible
+solutions for the timestamps of the unobserved events of 53
+pid; we call this polygon the
+region of case 53. the region for case 54 overlays with the region for case 53.
+we now introduce a second group of constraints by which we infer more tight
+bounds for xtmin
+eiand xtmax
+eibased on the overlap with other regions. while the ﬁrst
+group of constraints traversed token trajectories along pid(i.e., process traces), the
+second group of constraints traverses token trajectories for resources along rid. each
+resource trace r
+rid=(er
+rid;<r
+rid) in, contains all events er
+ridresource rwas involved16 vadim denisov, dirk fahland, and wil m.p. van der aalst
+in - across multiple di erent process traces. the spo <r
+ridorders observed events of
+this resource trace due to their known timestamps; e.g. in fig. 6(b) f9<m1
+ridf16with
+f9from pid =53 and f16from pid =54. the order of the two events es
+p1<r
+rides
+p2for the
+same step # act(es
+p1)=#act(es
+p2)=t1in dierent cases # pid(es
+p1)=p1,#pid(es
+p2)=p2
+propagates “upwards” and “downwards” the process traces p1
+pidandp2
+pidas follows. let
+events fs
+p12ep1
+pidand fp22ep2
+pidbe events in process traces p1
+pidandp2
+pidof the same
+step # act(fs
+p1)=#act(fs
+p2)=tn. we say t1andtnarein fifo relation ithere is a unique
+pathht1:::tnibetween t1andtnin the process proclet (i.e., no loops, splits, parallelism) so
+that between any two consecutive transitions tk,tk+1only synchronize with single-server
+resources or fifo queues. if t1andtnare in fifo relation, then also fs
+p1<r2
+ridfs
+p2on the
+resource r2 involved in tn(as the case cannot overtake the case along this path). thus
+xtmin
+fs
+p1xtmin
+fs
+p2must hold. more speciﬁcally, xtmin
+fs
+p1+#tsr(fs
+p1)+#twr(fs
+p1)xtmin
+fs
+p2must hold
+as the service time and waiting time of the resource involved in fs
+p1must elapse.
+for any pair es
+p1;es
+p22er
+ridwith es
+p1<r
+rides
+p2and any other trace r2
+ridfor resource
+r2 and any pair fs
+p1;fs
+p22er2
+ridsuch that # pid(es
+p1)=#pid(fs
+p1);#pid(es
+p2)=#pid(fs
+p2) and
+transition # actes
+p1is in fifo relation with # act(fs
+p1), we generate the following constraint
+fortmin:
+xtmin
+fs
+p1xtmin
+fs
+p2 (#tsr(fs
+p1)+#twr(fs
+p1)); (6)
+and the following constraint for tmax :
+xtmax
+fs
+p1xtmax
+fs
+p2 (#tsr(fs
+p1)+#twr(fs
+p1)); (7)
+in the example of fig. 6(b), we observe f9<d1
+ridf16(both of transition d1s) along resource
+d1 at the bottom of fig. 6(b). by fig. 3, d1sandm3sare in fifo-relation. applying eq. 7
+yields xtmax
+f5#time(f12) (#tsr(f5)+#twr(f5)), i.e., f5occurs at latest before f12minus
+the service and waiting time of m3. this operation signiﬁcantly reduces the initial region
+r1. by eq. 5, the tighter upper bound for f5also propagates along the trace pid =53 to f3,
+i.e.,xtmax
+f3xtmax
+f5 (#tsr(f3)+#twq(f5)), resulting in a tighter region as shown in fig. 6(c).
+if another tracehm3s;d1siwere present before trace 53, then this would cause reducing
+thetmin attributes of the events of trace 53 by eq. 4,6 in a similar way. in general, the
+more cases interact through shared resources, the more accurate timestamp intervals can
+be restored by eq. 1-7 as we will show in sect. 6.
+to construct the linear program, we generate equations 1 to 5 by iteration of each
+process trace in l2. further, iterate over each resource trace and for each pair of events
+ep1<r
+ridep2we generate equations 6,7 for each other pair of events fp1<r2
+ridfp2that
+is in fifo relation. the objective function to maximize is the sum of all intervalsp
+e2e2(xtmax
+e xtmin
+e) to maximize the coverage of possible timestamp values by those
+intervals.
+6 evaluation
+to evaluate our approach, we formulated the following questions. (q1) can timestamps
+be estimated in real-life settings and used to estimate performance reliably? (q2) howrepairing event logs of systems with shared resources 17
+to airplanesto early bag store
+x-ray 
+screening a c1c2c3c4 d1d2 f
+s
+fig. 7. in the bhs bags come from check-in counters c1 4and another terminals d1 2;f, go through
+mandatory screening and continue to other locations.
+accurately can the load (items per minute) be estimated for di erent system parts,
+using restored timestamps? (q3) what is the impact of sudden deviations from the
+minimum service /waiting times, e.g., the unavailability of resource or stop /restart of an
+mhs conveyor, on the accuracy of restored timestamps and the computed load? for
+that, we extended the interactive prom plug-in “performance spectrum miner” with
+an implementation of our approach that solves the constraints using heuristics4. as
+input we considered the process of a part of real-life bhs shown in fig. 7 and used
+synthetic logs (sl) (simulated from a model to obtain ground-truth timestamps) and
+real-life logs (rl) from a major european airport. regarding q3, we generated sl
+with regular performance and with blockages of belts (i.e., a temporary stand-still); the
+rl contained both performance characteristics. all logs were partial as described in
+sect. 4. we selected the acyclic fragment highlighted in fig. 7 for restoring timestamps
+of steps c1 4;d1 2;f;s.
+we evaluated our technique against the ground truth known for sl as follows. for
+each event we measured the error of the estimated timestamp intervals [ tmin;tmax] against
+the actual time tasmaxfjtmax tj;jtmin tjgnormalized over the sum of minimal service
+and waiting times of all involved steps (to make errors comparable). we report the mean
+absolute error (mae) and root mean square error (rmse) of these errors. applying
+our technique to sl with regular behavior, we observed very narrow time intervals for
+the estimated timestamps, shown in fig. 8(a), and a mae of <5%. the mae of the
+estimated load (computed on estimated timestamps), shown in fig. 8(e), was <2%.
+for sl with blockage behavior, the intervals grew proportionally with the duration of
+blockages (fig. 8(b)), leading to a proportional growth of the mae for the timestamps.
+however, the mae of the estimated load (fig. 8(f)) was at most 4%. the load mae
+for di erent processing steps for both scenarios are shown in table 1. notably, both
+observed and reconstructed load showed load peaks each time the conveyor belt starts
+moving again.
+when evaluating on the real-life event log, we measured errors of timestamps
+estimation as the length of the estimated intervals (normalized over the sum of minimal
+service and waiting times of all involved steps). performance spectra built using the
+restored rl logs are shown in fig. 8(c,d), and the load computed using these logs is
+shown in fig. 8(g,h). the observed mae was <5% in regular behavior and increased
+proportionally as observed on sl. the load error could not be measured, but similarly to
+synthetic data, it showed peaks after assumed conveyor stops.
+4the simulation model, simulation logs, prom plugin, and high-resolution ﬁgures are available
+on https: //github.com /processmining-in-logistics /psm/tree/rel.18 vadim denisov, dirk fahland, and wil m.p. van der aalst
+a:c1c1:c2c2:c3c3:c4c4:d1d1:d2d2:f
+f:s
+a:c1c1:c2c2:c3c3:c4c4:d1d1:d2d2:f
+f:s(a) (b) (c) (d)
+(e) (f) (g) (h)
+fig. 8. restored performance spectrum for synthetic (a,b) and real-life (c,d) logs. the estimated
+load (computed on estimated timestamps) for synthetic (e,f) and real-life (g,h) logs. for the
+synthetic logs, the load error is measured and shown in red (e,f).
+the obtained results on sl show that the timestamps can be always estimated, and
+the actual timestamps are always within the timestamp intervals (q1). when the system
+resources and queues operate close to the known performance parameters tsr;twr;twq,
+our approach restores accurate timestamps resulting in reliable load estimates in sl
+(q2). during deviations in resource performance, the errors increase proportionally with
+performance deviation while the estimated load remains reliable (error <4% in sl) and
+shows known characteristics from real-life systems on sl and rl (q3).
+scenario mae, c4:d1rmse, c4:d1mae, d1:d2rmse, d1:d2mae, f:srmse, f:s
+no blockages 0.16 1.01 0.22 1.66 0.17 0.89
+blockages 1.67 4.8 3.19 7.17 0.15 0.75
+table 1. the estimated load (computed on estimated timestamps) root mean squared error
+(rmse) and mean absolute error (mae) are shown in % of max. load.
+7 conclusion
+in this paper, we studied the problem of repairing a partial event log with missing
+events for the performance analysis of systems where case interact and compete for
+shared limited resources. we addressed the problem of repairing partial event logs that
+contain only a subset of events which impede the performance analysis of systems
+with shared limited resources and queues. to study and solve the problem, we used
+synchronous proclets [ 11] to model processes served by resources and queues (a pqr
+system). the model allows to decompose the interactions of resources and queues over
+multiple process cases into token trajectories for process cases, resources and queues
+that synchronize on shared events. we exploit the decomposition when restoring missing
+events along the process token trajectories using trace alignment [ 7]. we exploit the
+synchronization when formulating linear programming constraints over timestamps of
+restored events along, both, the process and the resource token trajectories. as a result,
+we obtain timestamps which are consistent for all events along the process, resource, and
+queue dimensions. the evaluation of our implementation in synthetic and real-life datarepairing event logs of systems with shared resources 19
+shows errors of the estimated timestamps and of derived performance characteristics (i.e.,
+load) of<5% under regular performance, while correctly restoring real-life dynamics
+(i.e. load peaks) after irregular performance behavior.
+limitations. the work made several limiting assumptions. (1) although the proclet for-
+malism allows for arbitrary, dynamic synchronizations between process steps, resources,
+and queues, we limited ourselves in this work to a static known resource /queue id per
+process step. the limitation is not severe for some use cases such as analyzing mhs, but
+generalizing oracle o2to a dynamic setting is an open problem. (2) the lp constraints to
+restore timestamps assume an acyclic process proclet without concurrency. further, the
+lp constraints assume 1:1 interactions (at most one resource and /or queue per process
+step). both assumptions do not hold in business processes in general; formulating the
+constraints for a more general setting is an open problem. (3) our approach ensures
+consistency of either all earliest or all latest timestamps with the given model, it does not
+suggest how to select timestamps between the latest and earliest such that the consistency
+holds. (4) when the system performance signiﬁcantly changes, e.g., due to sudden
+unavailability of resources, the error of restored timestamps is growing proportionally
+the duration of deviations. points (3) and (4) require attention to further improve event
+log quality for performance analysis.
+acknowledgements the research leading to these results has received funding from
+vanderlande industries in the project “process mining in logistics”. we also thank
+mitchel brunings for his comments that greatly improved our approach.
+references
+1.van der aalst, w.m.p., barthelmess, p., ellis, c.a., wainer, j.: proclets: a framework for
+lightweight interacting workﬂow processes. international journal of cooperative information
+systems 10(04), 443–481 (2001). https: //doi.org /10.1142 /s0218843001000412
+2.van der aalst, w.m.p.: process mining - data science in action, second edition. springer
+(2016)
+3.aalst, w.m.p., adriansyah, a., dongen, b.: replaying history on process models for confor-
+mance checking and performance analysis. wires data mining and knowledge discovery 2,
+182–192 (03 2012). https: //doi.org /10.1002 /widm.1045
+4.ahmed, t., pedersen, t.b., calders, t., lu, h.: online risk prediction for indoor moving
+objects. in: 2016 17th ieee international conference on mobile data management (mdm).
+vol. 1, pp. 102–111 (june 2016). https: //doi.org /10.1109 /mdm.2016.27
+5.a.senderovich, c.d.francescomarino, f.m.maggi: from knowledge-driven to data-driven
+inter-case feature encoding in predictive process monitoring. information systems (2019),
+https: //doi.org /10.1016 /j.is.2019.01.007
+6.brown, l., gans, n., mandelbaum, a., sakov, a., shen, h., zeltyn, s., zhao, l.: statis-
+tical analysis of a telephone call center. journal of the american statistical association
+100(469), 36–50 (2005). https: //doi.org /10.1198 /016214504000001808, https: //doi.org /10.
+1198/016214504000001808
+7.carmona, j., van dongen, b., solti, a., weidlich, m.: conformance checking - relating
+processes and models. springer (2018)
+8.conforti, r., la rosa, m., ter hofstede, a.: timestamp repair for business process event logs.
+tech. rep. (2018 /04/05 2018), http: //hdl.handle.net /11343 /20901120 vadim denisov, dirk fahland, and wil m.p. van der aalst
+9.denisov, v ., fahland, d., van der aalst, w.m.p.: predictive performance monitoring of mate-
+rial handling systems using the performance spectrum. in: 2019 international conference on
+process mining (icpm). pp. 137–144 (june 2019). https: //doi.org /10.1109 /icpm.2019.00029
+10.denisov, v ., fahland, d., van der aalst, w.m.p.: unbiased, ﬁne-grained description of pro-
+cesses performance from event data. in: weske, m., montali, m., weber, i., vom brocke, j.
+(eds.) business process management. pp. 139–157. springer international publishing, cham
+(2018)
+11.fahland, d.: describing behavior of processes with many-to-many interactions. in: donatelli,
+s., haar, s. (eds.) application and theory of petri nets and concurrency. pp. 3–24. springer
+international publishing, cham (2019)
+12.gans, n., koole, g., mandelbaum, a.: telephone call centers: tutorial, review, and research
+prospects. manufacturing & service operations management 5, 79–141 (03 2003)
+13.lu, x., fahland, d., van der aalst, w.m.p.: conformance checking based on partially or-
+dered event data. in: bpm’14 workshops. lnbip, vol. 202, pp. 75–88. springer (2014).
+https: //doi.org /10.1007 /978-3-319-15895-2 7, https: //doi.org /10.1007 /978-3-319-15895-2 7
+14.m´arquez-chamorro, a.e., resinas, m., ruiz-cort ´es, a.: predictive monitoring of business
+processes: a survey. ieee transactions on services computing 11(6), 962–977 (nov 2018).
+https: //doi.org /10.1109 /tsc.2017.2772256
+15.martin, n., depaire, b., caris, a., schepers, d.: retrieving the resource availabil-
+ity calendars of a process from an event log. information systems 88, 101463
+(2020). https: //doi.org /https: //doi.org /10.1016 /j.is.2019.101463, http: //www.sciencedirect.
+com/science /article /pii/s0306437919305150
+16.maruster, l., van beest, n.r.t.p.: redesigning business processes: a methodology based on
+simulation and process mining techniques. knowl. inf. syst. 21(3), 267–297 (2009)
+17.pegoraro, m., aalst, w.: mining uncertain event data in process mining. pp. 89–96 (06 2019).
+https: //doi.org /10.1109 /icpm.2019.00023
+18.pegoraro, m., uysal, m.s., van der aalst, w.m.p.: discovering process models from uncertain
+event data. in: di francescomarino, c., dijkman, r., zdun, u. (eds.) business process
+management workshops. pp. 238–249. springer international publishing, cham (2019)
+19.schrijver, a.: theory of linear and integer programming. john wiley & sons, chichester
+(1986)
+20.senderovich, a., beck, j., gal, a., weidlich, m.: congestion graphs for automated time
+predictions. proceedings of the aaai conference on artiﬁcial intelligence 33, 4854–4861
+(07 2019). https: //doi.org /10.1609 /aaai.v33i01.33014854
+21. senderovich, a., weidlich, m., gal, a., mandelbaum, a.: queue mining - predicting delays
+in service processes. in: caise (2014)
+22.suriadi, s., andrews, r., ter hofstede, a., wynn, m.: event log imperfection patterns for
+process mining: towards a systematic approach to cleaning event logs. information systems
+64, 132 – 150 (2017). https: //doi.org /https: //doi.org /10.1016 /j.is.2016.07.011, http: //www.
+sciencedirect.com /science /article /pii/s0306437915301344

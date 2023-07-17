@@ -1,0 +1,1187 @@
+distributed process discovery and conformance
+checking
+wil m.p. van der aalst1;2
+1eindhoven university of technology, eindhoven, the netherlands
+2queensland university of technology, brisbane, australia
+www.vdaalst.com
+abstract. process mining techniques have matured over the last decade
+and more and more organization started to use this new technology. the
+two most important types of process mining are process discovery (i.e.,
+learning a process model from example behavior recorded in an event
+log) and conformance checking (i.e., comparing modeled behavior with
+observed behavior). process mining is motivated by the availability of
+event data. however, as event logs become larger (say terabytes), per-
+formance becomes a concern. the only way to handle larger applications
+while ensuring acceptable response times, is to distribute analysis over a
+network of computers (e.g., multicore systems, grids, and clouds). this
+paper provides an overview of the dierent ways in which process min-
+ing problems can be distributed. we identify three types of distribution:
+replication , ahorizontal partitioning of the event log, and a vertical par-
+titioning of the event log. these types are discussed in the context of
+both procedural (e.g., petri nets) and declarative process models. most
+challenging is the horizontal partitioning of event logs in the context of
+procedural models. therefore, a new approach to decompose petri nets
+and associated event logs is presented. this approach illustrates that
+process mining problems can be distributed in various ways.
+keywords: process mining, distributed computing, grid computing, pro-
+cess discovery, conformance checking, business process management
+1 introduction
+digital data is everywhere { in every sector, in every economy, in every organi-
+zation, and in every home { and will continue to grow exponentially [22]. some
+claim that all of the world's music can be stored on a $600 disk drive. however,
+despite moore's law, storage space and computing power cannot keep up with
+the growth of event data. therefore, analysis techniques dealing with \big data"
+[22] need to resort to distributed computing.
+this paper focuses on process mining , i.e., the analysis of processes based on
+event data [3]. process mining techniques aim to discover, monitor, and improve
+processes using event logs . process mining is a relatively young research discipline
+that sits between machine learning and data mining on the one hand, and processanalysis and formal methods on the other hand. the idea of process mining is
+to discover, monitor and improve real processes (i.e., not assumed processes) by
+extracting knowledge from event logs readily available in today's (information)
+systems. process mining includes (automated) process discovery (i.e., extract-
+ing process models from an event log), conformance checking (i.e., monitoring
+deviations by comparing model and log), social network/organizational mining,
+automated construction of simulation models, model extension, model repair,
+case prediction, and history-based recommendations.
+book carc
+add extra 
+insurancedchange 
+booking
+e
+confirm initiate 
+check-inj
+check driver’s 
+license
+k
+charge credit 
+cardi
+select carg
+supply 
+carinab
+skip extra
+insurance
+fhadd extra 
+insurance
+skip extra 
+insurance
+l
+outc1 c2
+c3c4
+c5
+c6
+c7c8
+c9
+c10
+c11acefgijkl
+acddefhkjil
+abdefjkgil
+acdddefkhijl
+acefgijkl
+abefgjikl
+...process
+discoveryconformance 
+checking
+fig. 1. example illustrating two types of process mining: process discovery and con-
+formance checking.
+figure 1 illustrates the two most important types of process mining: process
+discovery and conformance checking. starting point for process mining is an
+event log. each event in such a log refers to an activity (i.e., a well-dened step
+in some process) and is related to a particular case (i.e., a process instance ). the
+events belonging to a case are ordered and can be seen as one \run" of the process.
+for example, the rst case in the event log shown in fig. 1 can be described by
+the traceha;c;e;f;g;i;j;k;l i. this is the scenario where a car is booked (activity
+a), extra insurance is added (activity c), the booking is conrmed (activity e),
+the check-in process is initiated (activity f), more insurance is added (activity
+g), a car is selected (activity i), the license is checked (activity j), the credit
+card is charged (activity k), and the car is supplied (activity l). the second case
+is described by the trace ha;c;d;d;e;f;h;k;j;i;l i. in this scenario, the booking
+was changed two times (activity d) and no extra insurance was taken at check-in
+(activityh). it is important to note that an event log contains only examplebehavior, i.e., we cannot assume that all possible runs have been observed. in
+fact, an event log often contains only a fraction of the possible behavior [3].
+process discovery techniques automatically create a model based on the ex-
+ample behavior seen in the event log. for example, based on the event log shown
+in fig. 1 the corresponding petri net is created. note that the petri net shown in
+fig. 1 is indeed able to generate the behavior in the event log. the model allows
+for more behavior, but this is often desirable as the model should generalize the
+observed behavior.
+whereas process discovery constructs a model without any a priori informa-
+tion (other than the event log), conformance checking uses a model and an event
+log as input. the model may have been made by hand or discovered through
+process discovery. for conformance checking, the modeled behavior and the ob-
+served behavior (i.e., event log) are compared. there are various approaches to
+diagnose and quantify conformance. for example, one can measure the fraction
+of cases in the log that can be generated by the model. in fig. 1, all cases t
+the model perfectly. however, if there would have been a case following trace
+ha;c;f;h;k;j;i;li, then conformance checking techniques would identify that in
+this trace activity e(the conrmation) is missing.
+given a small event log, like the one shown in fig. 1, analysis is simple.
+however, in reality, process models may have hundreds of dierent activities and
+there may be millions of events and thousands of unique cases. in such cases,
+process mining techniques may have problems to produce meaningful results in a
+reasonable time. this is why we are interested in distributed process mining , i.e.,
+decomposing challenging process discovery and conformance checking problems
+into smaller problems that can be distributed over a network of computers.
+today, there are many dierent types of distributed systems, i.e., systems
+composed of multiple autonomous computational entities communicating through
+a network. multicore computing, cluster computing, grid computing, cloud com-
+puting, etc. all refer to systems where dierent resources are used concurrently
+to improve performance and scalability. most data mining techniques can be
+distributed [16], e.g., there are various techniques for distributed classication,
+distributed clustering, and distributed association rule mining [13]. however,
+in the context of process mining only distributed genetic algorithms have been
+examined in detail [15]. yet, there is an obvious need for distributed process
+mining. this paper explores the dierent ways in which process discovery and
+conformance checking problems can be distributed. we will not focus on the tech-
+nical aspects (e.g., the type of distributed system to use) nor on specic mining
+algorithms. instead, we systematically explore the dierent ways in which event
+logs and models can be partitioned.
+the remainder of this paper is organized as follows. first, in section 2, we
+discuss the dierent ways in which process mining techniques can be distributed.
+besides replication , we dene two types of distribution: vertical distribution and
+horizontal distribution . in section 3 we elaborate on the representation of event
+logs and process models. here, we also discuss the dierences between procedural
+models and declarative models. we use petri nets as typical representatives ofconventional procedural models. to illustrate the use of declarative models in
+the context of distributed process mining, we elaborate on the declare language
+[8]. section 4 discusses dierent ways of measuring conformance while zooming
+in on the notion of tness. the horizontal distribution of process mining tasks
+is promising, but also particularly challenging for procedural models. therefore,
+we elaborate on a particular technique to decompose event logs and processes
+(section 5). here we use the notion of passages for petri nets which enables us to
+split event logs and process models horizontally. section 6 concludes the paper.
+2 distributed process mining: an overview
+this section introduces some basic process mining concepts (section 2.1) and
+based on these concepts it is shown that event logs and process models can be
+distributed in various ways (section 2.2).
+2.1 process discovery and conformance checking
+as explained in the introduction there are two basic types of process mining:
+process discovery and conformance checking .3figure 2 shows both types.
+abcd
+acbd
+abd
+process 
+discoveryconformance 
+checkingacd
+acbd
+abcd
+event log
+process model diagnosticsab
+cd  
+   
+fig. 2. positioning process mining techniques.
+process discovery techniques take an event log and produce a process model
+in some notation. figure 1 already illustrated the basic idea of discovery: learn
+a process model from example traces.
+conformance checking techniques take an event log and a process model and
+compare the observed behavior with the modeled behavior. as fig. 2 shows
+3as described in [3], process mining is not limited to process discovery and confor-
+mance checking and also includes enhancement (e.g., extending or repairing models
+based on event data) and operational support (on-the-y conformance checking,
+prediction, and recommendation). these are out-of-scope for this paper.the process model may be the result of process discovery or made by hand.
+basically, three types of conformance-related diagnostics can be generated. first
+of all, there may be overall metrics describing the degree of conformance, e.g.,
+80% of all cases can be replayed by the model from begin to end. second, the
+non-conforming behavior may be highlighted in the event log. third, the non-
+conforming behavior may be revealed by annotating the process model. note that
+conformance can be viewed from two angles: (a) the model does not capture the
+real behavior (\the model is wrong") and (b) reality deviates from the desired
+model (\the event log is wrong"). the rst viewpoint is taken when the model is
+supposed to be descriptive, i.e., capture or predict reality. the second viewpoint
+is taken when the model is normative, i.e., used to inuence or control reality.
+abcdeg
+abdcefbcdeg
+abdceg
+abcdefbcdeg
+abdcefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbdcefbdceg
+abcdeg
+abcdefbcdefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbcdeg
+abcdega bc
+de
+c1 inc2
+c3c4
+c5g
+out c6f
+fig. 3. example illustrating process discovery.
+to further illustrate the notion of process discovery consider the example
+shown in fig. 3. based on the event log shown, a petri net is learned. note
+that all traces in the event log start with activity aand end with activity g.
+this is also the case in the petri net (consider all full ring sequences starting
+with a token in place inand ending with a token in out). aftera, activityb
+can be executed. transition bin the petri net is a so-called and-split, i.e.,
+after executing b, bothcanddcan be executed concurrently. transition eis
+a so-called and-join. after executing ea choice is made: either goccurs and
+the case completes or fis executed and the state with a token in place c1 is
+revisited. many process discovery algorithms have been proposed in literature
+[9, 10, 12, 17{19, 23, 28{30]. most of these algorithms have no problems dealing
+with this small example.
+figure 4 illustrates conformance checking using the same example. now the
+event log contains some traces that are not possible according to the process
+model shown in fig. 4. as discussed in the context of fig. 2, there are three
+types of diagnostics possible. first of all, we can use metrics to describe the
+degree of conformance. for example, 10 of the 16 cases (i.e., 62.5 percent) inabcdeg
+adcefbcfdeg
+abdceg
+abcdefbcdeg
+abdfcefdceg
+acdefbdceg
+abcdeg
+abdceg
+abdcefbdcefbdceg
+abcdeg
+abcdefbcdefbdceg
+abcdefbdceg
+acdefg
+adcfeg
+abdcefcdfeg
+abcdega bc
+de
+c1 inc2
+c3c4
+c5g
+out c6f
+abcdeg
+abdceg
+abcdefbcdeg
+abcdeg
+abdceg
+abdcefbdcefbdceg
+abcdeg
+abcdefbcdefbdceg
+abcdefbdceg
+abcdeg
+a bc
+de
+c1 inc2
+c3c4
+c5g
+out c6f
+adcefbcfdeg
+abdfcefdceg
+acdefbdceg
+acdefg
+adcfeg
+abdcefcdfegb is often 
+skippedf occurs 
+too oftenfig. 4. example illustrating conformance checking.
+fig. 4 are perfectly tting. second, we can split the log into two smaller event
+logs: one consisting of conforming cases and one consisting of non-conforming
+cases. these logs can be used for further analysis, e.g., discover commonalities
+among non-conforming cases using process discovery. third, we can highlight
+problems in the model. as fig. 4 shows, there is a problem with activity b:
+according to the model bshould be executed before canddbut in the event log
+this is not always the case. there is also a problem with activity f: it should
+only be executed after e, but in the log it also appears at other places.
+figures 3 and 4 show the basic idea of process mining. note that the example
+is oversimplied. for example, most event logs contain much more information.
+in the example log an event is fully described by an activity name. however,
+often there is additional information about an event such as the resource (i.e.,
+person or device) executing or initiating the activity, the timestamp of the event,
+ordata elements recorded with the event (e.g., the size of an order).
+the process models shown thus far are all petri nets (wf-nets [1, 6] to be
+precise). dierent process mining algorithms may use dierent representations.moreover, the notation used to visualize the result may be very dierent from the
+representation used during the actual discovery process. all mainstream bpm
+notations (petri nets, epcs, bpmn, yawl, uml activity diagrams, etc.) can
+be used to show discovered processes [3, 31]. in fact, later we will also elaborate
+on so-called declarative process models. however, to explain the concept of dis-
+tributed process mining, such dierences are less relevant. therefore, we defer a
+discussion on the dierence between procedural models and declarative models
+to section 3.4.
+2.2 distributing event logs and process models
+new computing paradigms such as cloud computing, grid computing, cluster
+computing, etc. have emerged to perform resource-intensive it tasks. modern
+computers (even lower-end laptops and high-end phones) have multiple proces-
+sor cores. therefore, the distribution of computing-intensive tasks, like process
+mining on \big data", is becoming more important.
+at the same time, there is an exponentially growing torrent of event data.
+mgi estimates that enterprises globally stored more than 7 exabytes of new data
+on disk drives in 2010, while consumers stored more than 6 exabytes of new data
+on devices such as pcs and notebooks [22]. a recent study in science suggests
+that the total global storage capacity increased from 2.6 exabytes in 1986 to 295
+exabytes in 2007 [20]. these studies illustrate the growing potential of process
+mining.
+given these observations, it is interesting to develop techniques for distributed
+process mining . in recent years, distributed data mining techniques have been
+developed and corresponding infrastructures have been realized [16]. these tech-
+niques typically partition the input data over multiple computing nodes. each
+of the nodes computes a local model and these local models are aggregated into
+an overall model.
+in [15], we showed that it is fairly easy to distribute genetic process mining al-
+gorithms. in this paper (i.e., [15]), we replicate the entire log such that each node
+has a copy of all input data. each node runs the same genetic algorithm, uses the
+whole event log, but, due to randomization, works with dierent individuals (i.e.,
+process models). periodically, the best individuals are exchanged between nodes.
+it is also possible to partition the input data (i.e., the event log) over all nodes.
+experimental results show that distributed genetic process mining signicantly
+speeds-up the discovery process. this makes sense because the tness test is
+most time-consuming. however, individual tness tests are completely indepen-
+dent. although genetic process mining algorithms can be distributed easily, they
+are not usable for large and complex data sets. other process mining algorithms
+tend to outperform genetic algorithms [3]. therefore, we also need to consider
+the distribution of other process mining techniques.
+to discuss the dierent ways of distributing process mining techniques we
+approach the problem from the viewpoint of the event log. we consider three
+basic types of distribution:{replication. if the process mining algorithm is non-deterministic, then the
+same task can be executed on all nodes and in the end the best result can
+be taken. in this case, the event log can be simply replicated, i.e., all nodes
+have a copy of the whole event log.
+{vertical partitioning. event logs are composed of cases. there may be thou-
+sands or even millions of cases. these can be distributed over the nodes in
+the network, i.e., each case is assigned to one computing node. all nodes
+work on a subset of the whole log and in the end the results need to be
+merged.
+{horizontal partitioning. cases are composed of multiple events. therefore,
+we can also partition cases, i.e., part of a case is analyzed on one node whereas
+another part of the same case is analyzed on another node. in principle, each
+node needs to consider all cases. however, the attention of one computing
+node is limited to a particular subset of events per case.
+of course it is possible to combine the three types of distribution.
+abcdeg
+abdcefbcdeg
+abdceg
+abcdefbcdeg
+abdcefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbdcefbdceg
+abcdeg
+abcdefbcdefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbcdeg
+abcdegabcdeg
+abdcefbcdeg
+abdceg
+abcdefbcdeg
+abdcefbdceg
+abcdefbdceg
+abcdeg
+abdcegabdcefbdcefbdceg
+abcdeg
+abcdefbcdefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbcdeg
+abcdeg
+fig. 5. partitioning the event log vertically : cases are distributed arbitrarily.
+figure 5 illustrates the vertical partitioning of an event log using our running
+example. the original event log contained 16 cases. assuming that there are two
+computing nodes, we can partition the cases over these two nodes. each case
+resides in exactly one location, i.e., the nodes operate on disjoint sublogs. each
+node computes a process mining result for a sublog and in the end the results are
+merged. depending on the type of process mining result, merging may be simple
+or complex. for example, it we are interested in the percentage of tting cases it
+is easy to compute the overall percentage. suppose there are nnodes and each
+nodei2f1:::ngreports on the number of tting cases ( xi) and non-tting
+cases (yi) in the sublog. the fraction of tting cases can be computed easily:
+(p
+ixi)=(p
+ixi+yi). when each node produces a process model, it is more
+dicult to produce an overall result. however, by using lower-level output suchas the dependency matrices used by mining algorithms like the heuristic miner
+and fuzzy miner [3], one can merge the results.
+abcdeg
+abdcefbcdeg
+abdceg
+abcdefbcdeg
+abdcefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbdcefbdceg
+abcdeg
+abcdefbcdefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbcdeg
+abcdegabcdeg
+abdceg
+abcdeg
+abdceg
+abcdeg
+abcdeg
+abdceg
+abcdegabdcefbcdeg
+abcdefbcdeg
+abdcefbdceg
+abcdefbdceg
+abcdefbdceg
+abdcefbcdeg
+abdcefbdcefbdceg
+abcdefbcdefbdceg
+fig. 6. partitioning the event log vertically: cases are distributed based on a particular
+feature (in this case the length of the case).
+in fig. 5 the cases are partitioned over the logs without considering partic-
+ular features, i.e., the rst eight cases are assigned to the rst node and the
+remaining eight cases are assigned to the second node. as fig. 6 shows, one can
+also distribute cases based on a particular feature. in this case all cases of length
+6 are moved to the rst node, cases of length 11 are moved to the second node,
+and cases of length 16 are moved to the third node. various features can be used,
+e.g., the type of customer (one node analyzes the process for gold customers, one
+for silver customers, etc.), the ow time of the case, the start time of the case,
+the monetary value of the case, etc. such a vertical partitioning may provide
+additional insights. an example is the use of the start time of cases when dis-
+tributing the event log. now it is interesting to see whether there are signicant
+dierences between the results. the term concept drift refers to the situation
+in which the process is changing while being analyzed [14]. for instance, in the
+beginning of the event log two activities may be concurrent whereas later in
+the log these activities become sequential. processes may change due to peri-
+odic/seasonal changes (e.g., \in december there is more demand" or \on friday
+afternoon there are fewer employees available") or due to changing conditions
+(e.g., \the market is getting more competitive"). a vertical partitioning based
+on the start time of cases may reveal concept drift or the identication of periods
+with severe conformance problems.
+figure 7 illustrates the horizontal partitioning of event logs. the rst sublog
+contains all events that correspond to activities a,b,e,f, andg. the second
+sublog contains all events that correspond to activities b,c,d, ande. note that
+each case appears in each of the sublogs. however, each sublog contains only a
+selection of events per case. in other words, events are partitioned \horizontally"abcdeg
+abdcefbcdeg
+abdceg
+abcdefbcdeg
+abdcefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbdcefbdceg
+abcdeg
+abcdefbcdefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbcdeg
+abcdegabeg
+abefbeg
+abeg
+abefbeg
+abefbeg
+abefbeg
+abeg
+abeg
+abefbefbeg
+abeg
+abefbefbeg
+abefbeg
+abeg
+abeg
+abefbeg
+abegbcde
+bdcebcde
+bdce
+bcdebcde
+bdcebdce
+bcdebdce
+bcde
+bdce
+bdcebdcebdce
+bcde
+bcdebcdebdce
+bcdebdce
+bcde
+bdce
+bdcebcde
+bcdefig. 7. partitioning the event log horizontally .
+instead of \vertically". each node computes results for a particular sublog. in the
+end, all results are merged. figure 8 shows an example of two process fragments
+discovered by two dierent nodes. the process fragments are glued together
+using the common events. in section 5 we will further elaborate on this.
+abeg
+abefbeg
+abeg
+abefbeg
+abefbeg
+abefbeg
+abeg
+abeg
+abefbefbeg
+abeg
+abefbefbeg
+abefbeg
+abeg
+abeg
+abefbeg
+abegbcde
+bdcebcde
+bdce
+bcdebcde
+bdcebdce
+bcdebdce
+bcde
+bdce
+bdcebdcebdce
+bcde
+bcdebcdebdce
+bcdebdce
+bcde
+bdce
+bdcebcde
+bcdea b e
+c1 ing
+out c6f
+bc
+de c2
+c3c4
+c5
+fig. 8. horizontally partitioned event logs are used to discover process fragments that
+can be merged into a complete model.
+3 representation of event logs and process models
+thus far, we have only discussed things informally. in this section, we formalize
+some of the notions introduced before. for example, we formalize the notion of
+an event log and provide some petri net basics. moreover, we show an example
+of a declarative language ( declare [8]) grounded in ltl.3.1 multisets
+multisets are used to represent the state of a petri net and to describe event
+logs where the same trace may appear multiple times.
+b(a) is the set of all multisets over some set a. for some multiset b2b(a),
+b(a) denotes the number of times element a2aappears in b. some examples:
+b1= [ ],b2= [x;x;y ],b3= [x;y;z ],b4= [x;x;y;x;y;z ],b5= [x3;y2;z] are
+multisets over a=fx;y;zg.b1is the empty multiset, b2andb3both consist
+of three elements, and b4=b5, i.e., the ordering of elements is irrelevant and a
+more compact notation may be used for repeating elements.
+the standard set operators can be extended to multisets, e.g., x2b2,b2]b3=
+b4,b5nb2=b3,jb5j= 6, etc.fa2bgdenotes the set with all elements afor
+whichb(a)1. [f(a)ja2b] denotes the multiset where element f(a) appearsp
+x2bjf(x)=f(a)b(x) times.
+3.2 event logs
+as indicated earlier, event logs serve as the starting point for process mining. an
+event log is a multiset of traces . each trace describes the life-cycle of a particular
+case (i.e., a process instance ) in terms of the activities executed.
+denition 1 (trace, event log). letabe a set of activities. a trace 2a
+is a sequence of activities. l2b(a)is an event log, i.e., a multiset of traces.
+an event log is a multiset of traces because there can be multiple cases having
+the same trace. in this simple denition of an event log, an event refers to just
+anactivity . often event logs may store additional information about events.
+for example, many process mining techniques use extra information such as the
+resource (i.e., person or device) executing or initiating the activity, the timestamp
+of the event, or data elements recorded with the event. in this paper, we abstract
+from such information. however, the results presented in this paper can easily
+be extended to event logs with more information.
+an example log is l1= [ha;b;c;d;e;gi30;ha;b;d;c;e;gi20;ha;b;c;d;e;f;b;c;
+d;e;gi5;ha;b;d;c;e;f;b;c;d;e;g i3;ha;b;c;d;e;f;b;d;c;e;g i2].l1contains infor-
+mation about 60 cases, e.g., 30 cases followed trace ha;b;c;d;e;gi.
+denition 2 (projection). letabe a set and xaa subset.x2a!x
+is a projection function and is dened recursively: (a) hix=hiand (b) for
+2aanda2a:(;hai)x=xifa62xand(;hai)x=x;haiifa2x.
+the projection function is generalized to event logs, i.e., for some event log
+l2b(a) and setxa:lx= [xj2l]. for event log l1dene earlier:
+l1fa;f;gg= [ha;gi50;ha;f;gi10].3.3 procedural models
+a wide variety of process modeling languages are used in the context of process
+mining, e.g., petri nets, epcs, c-nets, bpmn, yawl, and uml activity di-
+agrams [3, 31]. most of these languages are procedural languages (also referred
+to as imperative languages). in this paper, we use petri nets as a typical rep-
+resentative of such languages. however, the ideas can easily be adapted to t
+other languages. later we will formalize selected distribution concepts in terms
+of petri nets. therefore, we introduce some standard notations.
+denition 3 (petri net). a petri net is tuple pn = (p;t;f )withpthe set
+of places,tthe set of transitions, and f(pt)[(tp)the ow relation.
+figure 9 shows an example petri net. the state of a petri net, called marking ,
+is a multiset of places indicating how many tokens each place contains. [ in] is
+the initial marking shown in fig. 9. another potential marking is [ c210;c35;c55].
+this is the state with ten tokens in c2, ve tokens in c3, and ve tokens in c5.
+a bc
+de
+c1 inc2
+c3c4
+c5g
+out c6f
+fig. 9. a petri net pn = (p; t; f ) with p=fin; c1; c2; c3; c4; c5; c6;outg,t=
+fa; b; c; d; e; f; gg, and f=f(in; a);(a; c1);(c1; b); : : : ; (g;out)g.
+denition 4 (marking). let pn = (p;t;f )be petri net. a marking mis a
+multiset of places, i.e., m2b(p).
+as usual we dene the preset and postset of a node (place or transition) in
+the petri net graph. for any x2p[t,x=fyj(y;x)2fg(input nodes) and
+x=fyj(x;y)2fg(output nodes).
+a transition t2tisenabled in marking m, denoted as m[ti, if each of its
+input placestcontains at least one token. consider the petri net in fig. 9 with
+m= [c3;c4]:m[eibecause both input places are marked.
+an enabled transition tmay re, i.e., one token is removed from each of
+the input places tand one token is produced for each of the output places
+t. formally: m0= (mnt)]tis the marking resulting from ring enabled
+transitiontin marking m.m[tim0denotes that tis enabled in mand ringt
+results in marking m0. for example, [ in][ai[c1] and [c1][bi[c2;c3] for the net in
+fig. 9.let=ht1;t2;:::;tni2tbe a sequence of transitions. m[im0denotes
+that there is a set of markings m0;m1;:::;mnsuch thatm0=m,mn=m0,
+andmi[ti+1imi+1for 0i < n . a marking m0isreachable frommif there
+exists asuch thatm[im0. for example, [ in][i[out] for=ha;b;c;d;e;gi.
+denition 5 (labeled petri net). a labeled petri net pn = (p;t;f;tv)is
+a petri net (p;t;f )with visible labels tvt. letv=ht1;t2;:::;tni2t
+vbe a
+sequence of visible transitions. m[vbm0if and only if there is a sequence 2t
+such thatm[im0and the projection of ontvyieldsv(i.e.,v=tv).
+if we assume tv=fa;e;f;ggfor the petri net in fig. 9, then [ in][vb[out]
+forv=ha;e;f;e;f;e;gi(i.e.,b,c, anddare invisible).
+in the context of process mining, we always consider processes that start in
+an initial state and end in a well-dened end state. for example, given the net
+in fig. 9 we are interested in ring sequences starting in mi= [in] and ending
+inmo= [out]. therefore, we dene the notion of a system net .
+denition 6 (system net). a system net is a triplet sn = (pn;mi;mo)
+where pn = (p;t;f;tv)is a petri net with visible labels tv,mi2b(p)is the
+initial marking, and mo2b(p)is the nal marking.
+given a system net, (sn) is the set of all possible visible full traces, i.e.,
+ring sequences starting in miand ending in moprojected onto the set of visible
+transitions.
+denition 7 (traces). let sn = (pn;mi;mo)be a system net. (sn) =
+fvjmi[vbmogis the set of visible traces starting in miand ending in mo.
+if we assume tv=fa;e;ggfor the petri net in fig. 9, then (sn) =fha;e;gi;
+ha;e;e;gi;ha;e;e;e;gi;:::g.
+the petri net in fig. 9 has a designated source place ( in), a designated source
+place ( out), and all nodes are on a path from intoout. such nets are called
+wf-nets [1, 6].
+denition 8 (wf-net). wf = (pn;in;ti;out;to)is a workow net (wf-
+net) if
+{pn= (p;t;f;tv)is a labeled petri net,
+{in2pis a source place such that in=;and in=ti,
+{out2pis a sink place such that out =;andout=to,
+{titvis the set of initial transitions and ti=fing,
+{totvis the set of nal transitions and to=foutg, and
+{all nodes are on some path from source place in to sink place out.
+wf-nets are often used in the context of business process modeling and
+process mining. compared to the standard denition of wf-nets [1, 6] we added
+the requirement that the initial and nal transitions need to be visible.
+a wf-net wf= (pn;in;ti;out;to) denes the system sn= (pn;mi;mo)
+withmi= [in] andmo= [out]. ideally wf-nets are also sound , i.e., free ofdeadlocks, livelocks, and other anomalies [1, 6]. formally, this means that it is
+possible to reach mofrom any state reachable from mi.
+process models discovered using existing process mining techniques may be
+unsound. therefore, we cannot assume/require all wf-nets to be sound.
+3.4 declarative models
+procedural process models (like petri nets) take an \inside-to-outside" approach,
+i.e., all execution alternatives need to be specied explicitly and new alternatives
+must be explicitly added to the model. declarative models use an \outside-to-
+inside" approach: anything is possible unless explicitly forbidden. declarative
+models are particularly useful for conformance checking. therefore, we elaborate
+ondeclare . declare is both a language (in fact a family of languages) and a fully
+functional wfm system [8, 24].
+b
+ca enon co-existence: activities 
+b and c cannot happen both
+response: every occurrence of c 
+should be eventually followed by h g
+h
+precedence: every occurrence 
+of c needs to be preceded by aresponse
+non co-existenceprecedence
+book car
+add extra 
+insuranceconfirmskip extra
+insuranceadd extra 
+insurance
+skip extra 
+insurance
+fig. 10. example of a declare model consisting of six activities and eight constraints.
+declare uses a graphical notation and its semantics are based on ltl (lin-
+ear temporal logic) [8]. figure 10 shows a declare specication consisting of
+eight constraints. the construct connecting activities bandcis a so-called non-
+coexistence constraint . in terms of ltl this constraint means \ :((b)^(c))";
+bandccannot both be true, i.e., it cannot be the case that both bandc
+happen for the same case. there is also a non-coexistence constraint preventing
+the execution of both gandhfor the same case. there are three precedence con-
+straints . the semantics of the precedence constraint connecting atobcan also
+be expressed in terms of ltl: \( :b)w a", i.e.,bshould not happen before ahas
+happened. since the weak until ( w) is used in \(:b)w a", traces without any
+aandbevents also satisfy the constraint. similarly, gshould not happen before
+bhas happened: \( :g)w b". there are three response constraints . the ltl
+formalization of the precedence constraint connecting btoeis \(b)(e))",i.e., every occurrence of bshould eventually be followed by e. note that the be-
+havior generated by the wf-net in fig. 1 satises all constraints specied in the
+declare model, i.e., none of the eight constraints is violated by any of the traces.
+however, the declare model shown in figure 10 allows for all kinds of behaviors
+not possible in fig. 1. for example, trace ha;a;b;e;e;g;giis allowed. whereas in
+a procedural model, everything is forbidden unless explicitly enabled, a declara-
+tive model allows for anything unless explicitly forbidden. for processes with a
+lot of exibility, declarative models are more appropriate [8, 24].
+in [5] it is described how declare/ltl constraints can be checked for a given
+log. this can also be extended to the on-the-y conformance checking. consider
+some running case having a partial trace p2alisting the events that have
+happened thus far. each constraint cis in one of the following states for p:
+{satised : the ltl formula corresponding to cevaluates to true for the partial
+tracep.
+{temporarily violated : the ltl formula corresponding to cevaluates to false
+forp, however, there is a longer trace 0
+pthat haspas a prex and for
+which the ltl formula corresponding to cevaluates to true.
+{permanently violated : the ltl formula corresponding to cevaluates to false
+forpand all its extensions, i.e., there is no 0
+pthat haspas a prex and
+for which the ltl formula evaluates to true.
+these three notions can be lifted from the level of a single constraint to the
+level of a complete declare specication , e.g., a declare specication is satis-
+edfor a case if all of its constraints are satised. this way it is possible to
+check conformance on-the-y and generate warnings the moment constraints are
+permanently/temporarily violated [3].
+c
+hp
+0..1curse
+pray
+become holycpcpccpph
+pppphcp
+hpp
+ppph
+ppp
+ccccp
+...non co-existence constraint is 
+violated by the first two cases
+(cpcpccpph and pppphcp)
+precedence constraint is 
+violated by the third case (hpp)
+fig. 11. conformance checking using a declarative model.
+we use the smaller example shown in fig. 11 to illustrate conformance check-
+ing in the context of declare. the process model shows four constraints: the
+same person cannot \curse" and \become holy" (non-coexistence constraint),
+after one \curses" one should eventually \pray" (response constraint), one canonly \become holy" after having \prayed" at least once (precedence constraint),
+and activity h(\become holy") can be executed at most once (cardinality con-
+straint).
+two of the four constraints are violated by the event log shown in fig. 11.
+the rst two traces/persons cursed and became holy at the same time. the third
+trace/person became holy without having prayed before.
+conformance checking can be distributed easily for declarative models. one
+can partition the log vertically and simply check per computing node all con-
+straints on the corresponding sublog. one can also partition the set of con-
+straints. each node of the computer network is responsible for a subset of the
+constraints and uses a log projected onto the relevant activities, i.e., the event
+log is distributed horizontally . in both cases, it is easy to aggregate the results
+into overall diagnostics.
+c
+hp
+0..1curse
+pray
+become holycpcpccppp
+pppph
+pcccp
+ppph
+ppp
+ccccp
+...
+fig. 12. discovering a declarative model.
+figure 12 illustrates the discovery of declare constraints from event logs
+[21]. a primitive discovery approach is to simply investigate a large collection
+of candidate constraints using conformance checking. this can be distributed
+vertically or horizontally as just described. it is also possible to use smarter
+approaches using the \interestingness" of potential constraints. here ideas from
+distributed association rule mining [13] can be employed.
+4 measuring conformance
+conformance checking techniques can be used to investigate how well an event
+logl2b(a) and the behavior allowed by a model t together. figure 4 shows
+an example where deviations between an event log and petri net are diagnosed.
+figure 11 shows a similar example but now using a declare model. both examples
+focus on a particular conformance notion: tness . a model with good tness
+allows for most of the behavior seen in the event log. a model has a perfect
+tness if all traces in the log can be replayed by the model from beginning to
+end. this notion can be formalized as follows.denition 9 (perfectly fitting log). letl2b(a)be an event log and
+let sn = (pn;mi;mo)be a system net. lis perfectly tting sn if and only if
+f2lg(sn).
+the above denition assumes a petri net as process model. however, the
+same idea can be operationalized for declare models [5], i.e., for each constraint
+and every case the corresponding ltl formula should hold.
+consider two event logs l1= [ha;c;d;gi30;ha;d;c;gi20;ha;c;d;f;c;d;gi5;
+ha;d;c;f;c;d;gi3;ha;c;d;f;d;c;gi2] andl2= [ha;c;d;gi8;ha;c;gi6;ha;c;f;d;gi5]
+and the system net snof the wf-net depicted in fig. 9 with tv=fa;c;d;f;gg.
+clearly,l1is perfectly tting snwhereasl2is not. there are various ways to
+quantify tness [3, 4, 11, 19, 23, 25{27], typically on a scale from 0 to 1 where 1
+means perfect tness. to measure tness, one needs to align traces in the event
+log to traces of the process model. some example alignments for l2and sn:
+1=acdg
+acdg2=acg
+acdg3=acfdg
+acdg4=acfdg
+acdfdcg
+the top row of each alignment corresponds to \moves in the log" and the bottom
+row corresponds to \moves in the model". if a move in the log cannot be mim-
+icked by a move in the model, then a \ " (\no move") appears in the bottom
+row. for example, in 3the model is unable to do fin-between candd. if a
+move in the model cannot be mimicked by a move in the log, then a \ " (\no
+move") appears in the top row. for example, in 2the log did not do a dmove
+whereas the model has to make this move to enable gand reach the end. given
+a trace in the event log, there may be many possible alignments. the goal is to
+nd the alignment with the least number of elements, e.g., 3seems better
+than4. finding a optimal alignment can be viewed as an optimization problem
+[4, 11]. after selecting an optimal alignment, the number of elements can be
+used to quantify tness.
+fitness is just one of the four basic conformance dimensions dened in [3].
+other quality dimensions for comparing model and log are simplicity ,precision ,
+and generalization .
+the simplest model that can explain the behavior seen in the log is the best
+model. this principle is known as occam's razor. there are various metrics to
+quantify the complexity of a model (e.g., size, density, etc.).
+the precision dimension is related to the desire to avoid \undertting". it
+is very easy to construct an extremely simple petri net (\ower model") that is
+able to replay all traces in an event log (but also any other event log referring to
+the same set of activities). see [4, 25{27] for metrics quantifying this dimension.
+the generalization dimension is related to the desire to avoid \overtting". in
+general it is undesirable to have a model that only allows for the exact behavior
+seen in the event log. remember that the log contains only example behavior
+and that many traces that are possible may not have been seen yet.
+conformance checking can be done for various reasons. first of all, it may
+be used to audit processes to see whether reality conforms to some normative of
+descriptive model [7]. deviations may point to fraud, ineciencies, and poorlydesigned or outdated procedures. second, conformance checking can be used
+to evaluate the performance of a process discovery technique. in fact, genetic
+process mining algorithms use conformance checking to select the candidate
+models used to create the next generation of models [23].
+5 example: horizontal distribution using passages
+the vertical distribution of process mining tasks is often fairly straightforward;
+just partition the event log and run the usual algorithms on each sublog residing
+at a particular node in the computer network. the horizontal partitioning of
+event logs is more challenging, but potentially very attractive as the focus of
+analysis can be limited to a few activities per node. therefore, we describe a
+generic distribution approach based on the notion of passages .
+5.1 passages in graphs
+agraph is a pairg= (n;e ) comprising a set nofnodes and a setenn
+ofedges . a petri net ( p;t;f ) can be seen as a particular graph with nodes
+n=p[tand edgese=f. like for petri nets, we dene preset n=fn02
+nj(n0;n)2eg(direct predecessors) and postset n=fn02nj(n;n0)2eg
+(direct successors). this can be generalized to sets, i.e., for xn:x=
+[n2xnandx=[n2xn.
+to decompose process mining problems into smaller problems, we partition
+process models using the notion passages . a passage is a pair of non-empty sets
+of nodes (x;y ) such that the set of direct successors of xisyand the set of
+direct predecessors of yisx.
+denition 10 (passage). letg= (n;e )be a graph. p= (x;y )is a passage
+if and only if;6=xn,;6=yn,x=y, andx=y. pas (g)is the
+set of all passages of g.
+consider the sets x=fa;b;c;e;f;ggandy=fc;d;g;h;igin the graph
+fragment shown in fig. 13. ( x;y ) is a passage. as indicated, there may be no
+edges leaving from xto nodes outside yand there may be no edges into yfrom
+nodes outside x.
+denition 11 (operations on passages). letp1= (x1;y1)andp2=
+(x2;y2)be two passages.
+{p1p2if and only if x1x2andy1y2,
+{p1<p 2if and only if p1p2andp16=p2,
+{p1[p2= (x1[x2;y1[y2),
+{p1np2= (x1nx2;y1ny2).
+the union of two passages p1[p2is again a passage. the dierence of two
+passagesp1np2is a passage if p2<p 1. since the union of two passages is again
+a passage, it is interesting to consider minimal passages . a passage is minimal
+if it does not \contain" a smaller passage.a b
+dx
+yf e
+hc g
+ifig. 13. (x; y ) is a passage because x=fa; b; c; e; f; gg=fc; d; g; h; ig=yand
+x=fa; b; c; e; f; gg=fc; d; g; h; ig=y.
+denition 12 (minimal passage). letg= (n;e )be a graph with passages
+pas(g).p2pas(g)isminimal if there is no p02pas(g)such thatp0< p .
+pasmin(g)is the set of minimal passages.
+the passage in figure 13 is not minimal. it can be split into the passages
+(fa;b;cg;fc;dg) and (fe;f;gg;fg;h;ig). an edge uniquely determines one min-
+imal passage.
+lemma 1. letg= (n;e )be a graph and (x;y)2e. there is precisely one
+minimal passage p(x;y)= (x;y )2pasmin(g)such thatx2xandy2y.
+passages dene an equivalence relation on the edges in a graph: ( x1;y1)
+(x2;y2) if and only if p(x1;y1)=p(x2;y2). for anyf(x;y);(x0;y);(x;y0)ge:
+p(x;y)=p(x0;y)=p(x;y0), i.e.,p(x;y)is uniquely determined by xandp(x;y)is
+also uniquely determined by y. moreover, pasmin(g) =fp(x;y)j(x;y)2eg.
+5.2 distributed conformance checking using passages
+now we show that it is possible to decompose and distribute conformance check-
+ing problems using the notion of passages . in order to do this we focus on the
+visible transitions and create the so-called skeleton of the process model. to de-
+ne skeletons, we introduce the notation x:e#q ywhich states that there is a
+non-empty path from nodexto nodeywhere the set of intermediate nodes
+visited by path does not include any nodes in q.
+denition 13 (path). letg= (n;e )be a graph with x;y2nandqn.
+x:e#q yif and only if there is a sequence =hn1;n2;:::nkiwithk>1such
+thatx=n1,y=nk, for all 1i < k :(ni;ni+1)2e, and for all 1< i < k :
+ni62q. derived notations:
+{xe#q yif and only if there exists a path such thatx:e#q y,
+{nodes (xe#q y) =fn2j92nx:e#q yg, and{forx;yn: nodes (xe#q y) =[(x;y)2xynodes (xe#q y).
+denition 14 (skeleton). let pn = (p;t;f;tv)be a labeled petri net. the
+skeleton of pn is the graph skel (pn) = (n;e )withn=tvande=f(x;y)2
+tvtvjxf#tv yg.
+figure 14 shows the skeleton of the wf-net in fig. 1 assuming that tv=
+fa;b;c;d;e;f;lg. the resulting graph has four minimal passages.
+book carc
+add extra 
+insurancedchange 
+booking
+e
+confirminitiate 
+check-insupply 
+carabskip extra
+insurance
+f l
+fig. 14. the skeleton of the labeled petri net in fig. 1 (assuming that tv=
+fa; b; c; d; e; f; lg). there are four minimal passages: ( fag;fb; cg), (fb; c; dg;fd; eg),
+(feg;ffg), and (ffg;flg).
+note that only the visible transitions tvappear in the skeleton. for example,
+if we assume that tv=fa;f;lgin fig. 1, then the skeleton is ( fa;f;lg;f(a;f);
+(f;l)g) with only two passages ( fag;ffg) and (ffg;flg).
+if there are multiple minimal passages in the skeleton, we can decompose con-
+formance checking problems into smaller problems by partitioning the petri net
+into net fragments and the event log into sublogs . each passage ( x;y ) denes one
+net fragment pn(x;y )and one sublog lx[y. we will show that conformance
+can be checked per passage.
+consider event log l= [ha;b;e;f;li20;ha;c;e;f;li15;ha;b;d;e;f;li5;ha;c;d;e;
+f;li3;ha;b;d;d;e;f;li2], the wf-net pnshown in fig. 1 with tv=fa;b;c;d;e;
+f;lg, and the skeleton shown in fig. 14. based on the four passages, we dene
+four net fragments pn 1,pn 2,pn 3and pn 4as shown in fig. 15. moreover,
+we dene four sublogs: l1= [ha;bi27;ha;ci18],l2= [hb;ei20;hc;ei15;hb;d;ei5;
+hc;d;ei3;hb;d;d;ei2],l3= [he;fi45], andl4= [hf;li45]. to check the confor-
+mance of the overall event log on the overall model, we check the conformance
+oflionpnifori2f1;2;3;4g. sinceliis perfectly tting pnifor alli, we can
+conclude that lis perfectly tting pn. this illustrates that conformance check-
+ing can indeed be decomposed. to formalize this result, we dene the notion of
+a net fragment corresponding to a passage.
+denition 15 (net fragment). let pn = (p;t;f;tv)be a labeled petri
+net. for any two sets of transitions x;ytv, we dene the net fragment
+pn(x;y )= (p0;t0;f0;t0
+v)with:book carc
+add extra 
+insuranceab
+skip extra
+insurance
+c1
+c
+add extra 
+insurancedchange 
+booking
+e
+confirmb
+skip extra
+insurance
+c2
+e
+confirm initiate 
+check-inf
+c3(a)
+initiate 
+check-inj
+check driver’s 
+license
+k
+charge credit 
+cardi
+select carg
+supply 
+carfhadd extra 
+insurance
+skip extra 
+insurance
+lc4
+c5
+c6
+c7c8
+c9
+c10
+c11(b)
+(c)(d)fig. 15. four net fragments corresponding to the four passages of the skeleton in
+fig. 14: (a) pn 1=pn(fag;fb;cg), (b) pn 2=pn(fb;c;d g;fd;eg), (c) pn 3=pn(feg;ffg),
+and (c) pn 4=pn(ffg;flg). the invisible transitions, i.e., the transitions in tntv, are
+shaded.
+{z=nodes (xf#tv y)n(x[y)are the internal nodes of the fragment,
+{p0=p\z,
+{t0= (t\z)[x[y,
+{f0=f\((p0t0)[(t0p0)), and
+{t0
+v=x[y.
+a process model can be decomposed into net fragments corresponding to
+minimal passages and an event log can be decomposed by projecting the traces
+on the activities in these minimal passages. the following theorem shows that
+conformance checking can be done per passage.
+theorem 1 (distributed conformance checking). letl2b(a)be an
+event log and let wf = (pn;in;ti;out;to)be a wf-net with pn = (p;t;f;tv).
+lis perfectly tting system net sn = (pn;[in];[out])if and only if
+{for anyha1;a2;:::aki2l:a12tiandak2to, and
+{for any (x;y )2pasmin(skel(pn)):lx[yis perfectly tting sn(x;y )=
+(pn(x;y );[ ];[ ]).
+for a formal proof, we refer to [2]. although the theorem only addresses the
+notion of perfect tness, other conformance notions can be decomposed in asimilar manner. metrics can be computed per passage and then aggregated into
+an overall metric.
+assuming a process model with many passages, the time needed for con-
+formance checking can be reduced signicantly. there are two reasons for this.
+first of all, as theorem 1 shows, larger problems can be decomposed into a
+set of independent smaller problems. therefore, conformance checking can be
+distributed over multiple computers. second, due to the exponential nature of
+most conformance checking techniques, the time needed to solve \many smaller
+problems" is less than the time needed to solve \one big problem". existing
+approaches use state-space analysis (e.g., in [27] the shortest path enabling a
+transition is computed) or optimization over all possible alignments (e.g., in [11]
+theaalgorithm is used to nd the best alignment). these techniques do not
+scale linearly in the number of activities. therefore, decomposition is useful even
+if the checks per passage are done on a single computer.
+abcdeg
+abdcefbcdeg
+abdceg
+abcdefbcdeg
+abdcefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbdcefbdceg
+abcdeg
+abcdefbcdefbdceg
+abcdefbdceg
+abcdeg
+abdceg
+abdcefbcdeg
+abcdega bc
+de gf
+ab
+abfb
+ab
+...bcd
+bdcbcd
+bdc
+...cde
+dcecde
+dce
+...eg
+efeg
+eg
+...
+a
+ing
+out
+bf
+a
+bc
+dc
+def
+e
+g
+a bc
+de
+c1 inc2
+c3c4
+c5g
+out c6f
+fig. 16. distributed discovery based on four minimal passages: ( fa; fg;fbg),
+(fbg;fc; dg), (fc; dg;feg), and (feg;ff; gg). a process fragment is discovered for each
+passage. subsequently, the fragments are merged into one overall process.5.3 distributed process discovery using passages
+as explained before, conformance checking and process discovery are closely
+related. therefore, we can exploit the approach used in theorem 1 for process
+discovery provided that some coarse causal structure (comparable to the skeleton
+in section 5.2) is known. there are various techniques to extract such a causal
+structure, see for example the dependency relations used by the heuristic miner
+[29]. the causal structure denes a collection of passages and the detailed dis-
+covery can be done per passage. hence, the discovery process can be distributed.
+the idea is illustrated in fig. 16.
+the approach is independent of the discovery algorithm used. the only as-
+sumption is that the casual structure can be determined upfront. see [2] for more
+details.
+by decomposing the overall discovery problem into a collection of smaller
+discovery problems, it is possible to do a more rened analysis and achieve sig-
+nicant speed-ups. the discovery algorithm is applied to an event log consisting
+of just the activities involved in the passage under investigation. hence, process
+discovery tasks can be distributed over a network of computers (assuming there
+are multiple passages). moreover, most discovery algorithms are exponential in
+the number of activities. therefore, the sequential discovery of all individual
+passages is still faster than solving one big discovery problem.
+6 conclusion
+this paper provides an overview of the dierent mechanisms to distribute pro-
+cess mining tasks over a set of computing nodes. event logs can be decomposed
+vertically and horizontally. in a vertically distributed event log, each case is an-
+alyzed by a designated computing node in the network and each node considers
+the whole process model (all activities). in a horizontally distributed event log,
+the cases themselves are partitioned and each node considers only a part of the
+overall process model. these distribution approaches are fairly independent of
+the mining algorithm and apply to both procedural and declarative languages.
+most challenging is the horizontal distribution of event logs while using a proce-
+dural language. however, as shown in this paper, it is still possible to horizontally
+distribute process discovery and conformance checking tasks using the notion of
+passages.
+acknowledgments. the author would like to thank all that contributed to
+the prom toolset. many of their contributions are referred to in this paper.
+special thanks go to boudewijn van dongen and eric verbeek (for their work on
+the prom infrastructure), carmen bratosin (for her work on distributed genetic
+mining), arya adriansyah and anne rozinat (for their work on conformance
+checking), and maja pesic, fabrizio maggi, and michael westergaard (for their
+work on declare).references
+1. w.m.p. van der aalst. the application of petri nets to workow management.
+the journal of circuits, systems and computers , 8(1):21{66, 1998.
+2. w.m.p. van der aalst. decomposing process mining problems using passages.
+bpm center report bpm-11-19, bpmcenter.org, 2011.
+3. w.m.p. van der aalst. process mining: discovery, conformance and enhancement
+of business processes . springer-verlag, berlin, 2011.
+4. w.m.p. van der aalst, a. adriansyah, and b. van dongen. replaying history
+on process models for conformance checking and performance analysis. wires
+data mining and knowledge discovery , 2012.
+5. w.m.p. van der aalst, h.t. de beer, and b.f. van dongen. process mining and
+verication of properties: an approach based on temporal logic. in r. meersman
+and z. tari et al., editors, on the move to meaningful internet systems (coopis
+2005) , volume 3760 of lecture notes in computer science , pages 130{147. springer-
+verlag, berlin, 2005.
+6. w.m.p. van der aalst, k.m. van hee, a.h.m. ter hofstede, n. sidorova, h.m.w.
+verbeek, m. voorhoeve, and m.t. wynn. soundness of workow nets: classi-
+cation, decidability, and analysis. formal aspects of computing , 23(3):333{363,
+2011.
+7. w.m.p. van der aalst, k.m. van hee, j.m. van der werf, and m. verdonk. audit-
+ing 2.0: using process mining to support tomorrow's auditor. ieee computer ,
+43(3):90{93, 2010.
+8. w.m.p. van der aalst, m. pesic, and h. schonenberg. declarative workows:
+balancing between flexibility and support. computer science - research and
+development , 23(2):99{113, 2009.
+9. w.m.p. van der aalst, v. rubin, h.m.w. verbeek, b.f. van dongen, e. kindler,
+and c.w. g unther. process mining: a two-step approach to balance between
+undertting and overtting. software and systems modeling , 9(1):87{111, 2010.
+10. w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. workow mining:
+discovering process models from event logs. ieee transactions on knowledge
+and data engineering , 16(9):1128{1142, 2004.
+11. a. adriansyah, b. van dongen, and w.m.p. van der aalst. conformance checking
+using cost-based fitness analysis. in c.h. chi and p. johnson, editors, ieee
+international enterprise computing conference (edoc 2011) , pages 55{64. ieee
+computer society, 2011.
+12. r. agrawal, d. gunopulos, and f. leymann. mining process models from work-
+ow logs. in sixth international conference on extending database technology ,
+volume 1377 of lecture notes in computer science , pages 469{483. springer-
+verlag, berlin, 1998.
+13. r. agrawal and j.c. shafer. parallel mining of association rules. ieee trans-
+actions on knowledge and data engineering , 8(6):962{969, 1996.
+14. r.p. jagadeesh chandra bose, w.m.p. van der aalst, i. zliobaite, and m. pech-
+enizkiy. handling concept drift in process mining. in h. mouratidis and c. rol-
+land, editors, international conference on advanced information systems engi-
+neering (caise 2011) , volume 6741 of lecture notes in computer science , pages
+391{405. springer-verlag, berlin, 2011.
+15. c. bratosin, n. sidorova, and w.m.p. van der aalst. distributed genetic process
+mining. in h. ishibuchi, editor, ieee world congress on computational intelli-
+gence (wcci 2010) , pages 1951{1958, barcelona, spain, july 2010. ieee.16. m. cannataro, a. congiusta, a. pugliese, d. talia, and p. truno. distributed
+data mining on grids: services, tools, and applications. ieee transactions on
+systems, man, and cybernetics, part b , 34(6):2451{2465, 2004.
+17. j. carmona, j. cortadella, and m. kishinevsky. a region-based algorithm
+for discovering petri nets from event logs. in business process management
+(bpm2008) , pages 358{373, 2008.
+18. j.e. cook and a.l. wolf. discovering models of software processes from event-
+based data. acm transactions on software engineering and methodology ,
+7(3):215{249, 1998.
+19. s. goedertier, d. martens, j. vanthienen, and b. baesens. robust process dis-
+covery with articial negative events. journal of machine learning research ,
+10:1305{1340, 2009.
+20. m. hilbert and p. lopez. the world's technological capacity to store, commu-
+nicate, and compute information. science , 332(60), 2011.
+21. f.m. maggi, a.j. mooij, and w.m.p. van der aalst. user-guided discovery of
+declarative process models. in n. chawla, i. king, and a. sperduti, editors,
+ieee symposium on computational intelligence and data mining (cidm 2011) ,
+pages 192{199, paris, france, april 2011. ieee.
+22. j. manyika, m. chui, b. brown, j. bughin, r. dobbs, c. roxburgh, and a. by-
+ers. big data: the next frontier for innovation, competition, and productivity.
+mckinsey global institute, 2011.
+23. a.k. alves de medeiros, a.j.m.m. weijters, and w.m.p. van der aalst. genetic
+process mining: an experimental evaluation. data mining and knowledge dis-
+covery , 14(2):245{304, 2007.
+24. m. montali, m. pesic, w.m.p. van der aalst, f. chesani, p. mello, and s. storari.
+declarative specication and verication of service choreographies. acm trans-
+actions on the web , 4(1):1{62, 2010.
+25. j. munoz-gama and j. carmona. a fresh look at precision in process confor-
+mance. in r. hull, j. mendling, and s. tai, editors, business process management
+(bpm 2010) , volume 6336 of lecture notes in computer science , pages 211{226.
+springer-verlag, berlin, 2010.
+26. j. munoz-gama and j. carmona. enhancing precision in process conformance:
+stability, condence and severity. in n. chawla, i. king, and a. sperduti, editors,
+ieee symposium on computational intelligence and data mining (cidm 2011) ,
+paris, france, april 2011. ieee.
+27. a. rozinat and w.m.p. van der aalst. conformance checking of processes based
+on monitoring real behavior. information systems , 33(1):64{95, 2008.
+28. m. sole and j. carmona. process mining from a basis of regions. in j. lilius and
+w. penczek, editors, applications and theory of petri nets 2010 , volume 6128 of
+lecture notes in computer science , pages 226{245. springer-verlag, berlin, 2010.
+29. a.j.m.m. weijters and w.m.p. van der aalst. rediscovering workow models
+from event-based data using little thumb. integrated computer-aided engi-
+neering , 10(2):151{162, 2003.
+30. j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, and a. serebrenik.
+process discovery using integer linear programming. fundamenta informaticae ,
+94:387{412, 2010.
+31. m. weske. business process management: concepts, languages, architectures .
+springer-verlag, berlin, 2007.

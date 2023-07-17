@@ -1,0 +1,982 @@
+process discovery using localized events?
+wil m.p. van der aalst1;2, anna kalenkova2, vladimir rubin2, and eric verbeek1
+1eindhoven university of technology, p.o. box 513, 5600 mb, eindhoven, the netherlands.
+w.m.p.v.d.aalst@tue.nl,h.m.w.verbeek@tue.nl
+2national research university higher school of economics, moscow, 101000, russia,
+akalenkova@hse.ru
+abstract. process mining techniques aim to analyze and improve conformance
+and performance of processes using event data. process discovery is the most
+prominent process-mining task: a process model is derived based on an event
+log. the process model should be able to capture causalities, choices, concur-
+rency, and loops. process discovery is very challenging because of trade-offs
+between ﬁtness, simplicity, precision, and generalization. note that event logs
+typically only hold example behavior and cannot be assumed to be complete (to
+avoid overﬁtting). dozens of process discovery techniques have been proposed.
+these use a wide range of approaches, e.g., language- or state-based regions,
+genetic mining, heuristics, expectation maximization, iterative log-splitting, etc.
+when models or logs become too large for analysis, the event log may be au-
+tomatically decomposed or traces may be clustered before discovery. clustering
+and decomposition are done automatically, i.e., no additional information is used.
+this paper proposes a different approach where a localized event log is assumed.
+events are localized by assigning a non-empty set of regions to each event. it is
+assumed that regions can only interact through shared events. consider for exam-
+ple the mining of software systems. the events recorded typically explicitly refer
+to parts of the system (components, services, etc.). currently, such information is
+ignored during discovery. however, references to system parts may be used to lo-
+calize events. also in other application domains, it is possible to localize events,
+e.g., communication events in an organization may refer to multiple departments
+(that may be seen as regions). this paper proposes a generic process discovery
+approach based on localized event logs. the approach has been implemented in
+prom and experimental results show that location information indeed helps to
+improve the quality of the discovered models.
+1 introduction
+today’s systems record all kinds of events, e.g., social interaction, ﬁnancial transac-
+tions, user-interface activities, and the use of (mobile) devices. as more and more event
+data become available, the practical relevance of process mining further increases. pro-
+cess mining techniques aim to discover, monitor and improve real processes by extract-
+ing knowledge from event logs [1]. the three most prominent process-mining tasks
+are: (i) process discovery : learning a process model from example behavior recorded in
+?this work is supported by the basic research program of the national research university
+higher school of economics.an event log, (ii) conformance checking : diagnosing and quantifying discrepancies be-
+tween observed behavior and modeled behavior, and (iii) performance analysis : iden-
+tifying bottlenecks, delays, and inefﬁciencies using the timestamps of events. starting
+point for analysis is often an automatically discovered process model. in this paper, we
+focus on this ﬁrst step, i.e., learning a process model from event data .
+input for process discovery is an event log . each event in such a log refers to an
+activity (i.e., a well-deﬁned step in some process) and is related to a particular case (i.e.,
+aprocess instance ). the events are partially ordered. events related to a case describe
+one “run” of the process. such a run is often referred to as a trace . it is important to
+note that an event log contains only example behavior.
+process discovery is challenging for a variety of reasons. typically, only a frac-
+tion of the behavior possible can be observed and there is no explicit information on
+behaviors that are impossible, i.e., a sequence of activities that never occurred, may
+still happen in the future, but may also be impossible. moreover, mixtures of choice,
+concurrency, and iteration may be difﬁcult to uncover using merely an event log.
+in this paper we propose to use “location information” present in most data sources.
+we assume that each event belongs to one or more regions . a region may be a soft-
+ware/hardware component, a service, a department, a team, or a geographic location.
+regions can only interact through shared events just like communication involves mul-
+tiple parties. we assume that events with non-overlapping sets of regions cannot inﬂu-
+ence each other directly. this is comparable to the independence assumption often used
+in statistical analysis.
+localized event logs combined with the independence assumption allow for a new
+decomposition approach. a sublog of the overall event log is created for every region.
+then a submodel is created for each sublog. these submodels are merged into an overall
+model . whereas traces at the global level are often unique showing only a fraction
+of the possible behavior, traces in the sublogs may have more repetitive behavior and
+easily cover all possible local behaviors. therefore, location information may provide
+valuable information guiding decomposed discovery. this speeds up analysis and, most
+likely results in models better describing reality.
+the idea to partition event logs is not new, see for example decomposition ap-
+proaches [3, 4] and trace clustering approaches [16, 9, 27]. however, unlike existing
+approaches we do not try to partition cases or activities through mining. instead, we
+propose to exploit location information explicitly attached to events. such information
+is often available or derivable.
+the approach has been implemented in prom and experiments using synthetic and
+real-life event logs demonstrate the value of location information.
+the remainder of the paper is organized as follows. section 2 discusses related
+work. section 3 introduces preliminaries, including process models. process mining,
+in particular control-ﬂow discovery, is introduced in section 4. localized event logs,
+i.e., logs were events have one or more associated regions, are presented in section 5.
+such logs may be used for decomposed process discovery, as shown in section 6. the
+experiments presented in section 7 (using synthetic data and data from two real-life
+software systems) show that localized event logs allow for signiﬁcantly better models.
+section 8 concludes the paper.2 related work
+for an introduction to process mining, we refer to [1].
+process discovery, i.e., discovering a process model from a multiset of example
+traces, is a very challenging problem and various discovery techniques have been pro-
+posed [5, 6, 7, 8, 10, 11, 13, 15, 18, 19, 21, 25, 28, 29]. many of these techniques use
+petri nets during the discovery process. it is impossible to provide a complete overview
+of all techniques here. very different approaches are used, e.g., heuristics [13, 28], in-
+ductive logic programming [15], state-based regions [5, 11, 25], language-based regions
+[8, 29], and genetic algorithms [21]. classical synthesis techniques based on regions
+[14] cannot be applied directly because the event log contains only example behav-
+ior. for state-based regions one ﬁrst needs to create an automaton as described in [5].
+moreover, when constructing the regions, one should avoid overﬁtting. language-based
+regions seem good candidates for discovering transition-bordered petri nets for subnets
+[8, 29]. recently, a family of inductive mining approaches has been proposed by lee-
+mans et al. [18, 19]. these techniques can deal with incompleteness and infrequent
+behavior, but still provide formal guarantees (e.g., perfect ﬁtness and rediscoverability
+for speciﬁc parameter settings). the approach presented in this paper can be used in
+conjunction with all existing process discovery approaches.
+also related is the work on decomposed process mining. in [2] two types of log
+decomposition are identiﬁed: vertical decomposition and horizontal decomposition .
+in a vertical partitioning complete cases are assigned to a group and end-to-end pro-
+cess models are discovered or checked. traditional trace clustering techniques may be
+viewed as vertical decomposition techniques (not for scalability but for obtaining sim-
+pler models). several authors have proposed such trace clustering techniques [16, 9, 27].
+here traces are grouped and simpliﬁed models are created per group. the approach
+in this paper is based on a horizontal decomposition (traces are split into subtraces)
+rather than a vertical decomposition. in a horizontal partitioning activities are assigned
+to (possibly overlapping) groups [2, 3, 4]. cases are projected on subsets of activities,
+thus resulting in a sublog per group. a process fragment is discovered or checked per
+subgroup. the principles presented in [3, 4] are used to prove the correctness of the
+approach proposed in this paper.
+different divide and conquer approaches are possible [12, 3, 4]. for example, one
+may decompose event logs and process models based on the reﬁned process structure
+tree identifying single-entry single-exit (sese) fragments [24, 22]. this can only be
+done for conformance checking. here, explicit location information is exploited to de-
+compose discovery into relatively independent parts.
+3 process models
+the results presented in this paper do not depend on a particular representation. how-
+ever, we use labeled petri nets with designated initial andﬁnal markings to illustrate
+the approach. this section introduces the preliminaries needed in the remainder.
+b(a)is the set of all multisets over some set a. for some multiset b2 b(a),
+b(a)denotes the number of times element a2aappears inb.b= [x3;y2;z]is amultiset having 6 elements: three xelements (i.e., b(x) = 3 ), twoyelements (i.e.,
+b(y) = 2 ), and onezelement (i.e., b(z) = 1 ). operators are deﬁned as usual, e.g.
+[x2;y]][x;y;z ] = [x3;y2;z]is the union of two multisets.
+=ha1;a2;:::;ani2xdenotes a sequence over xof lengthn.hiis the empty
+sequence and 12is the concatenation of two sequences. qis the projection of 
+onq, e.g.,ha;b;c;a;b;cifa;cg=ha;c;a;ci.
+deﬁnition 1 (sequence projection). letxbe a set and qxone of its subsets.
+q2x!qis a projection function and is deﬁned recursively: (1) hiq=hiand
+(2) for2xandx2x:(hxi)q=qifx62q, and (hxi)q=hxiqif
+x2q.
+deﬁnition 2 (applying functions to sequences). letf2x6!ybe a partial func-
+tion.3fmay be applied to sequences of xusing the following recursive deﬁnition (1)
+f(hi) =hiand (2) for2xandx2x:
+f(hxi) =(
+f() ifx62dom(f)
+hf(x)if()ifx2dom(f)
+figure 1 shows a labeled petri net composed of places p=fp1;p2;:::;p 21gand
+transitionst=ft1;t2;:::;t 18g. the ﬂow relation f=f(p1;t1);(t1;p2);(t1;p8);
+:::gspeciﬁes the connections between places and transitions. a transition may have a
+label, e.g., transition t1has labela. the label refers to the activity associated with the
+transition. two transitions may have the same label, e.g., t13andt15correspond to
+the same activity. note that transition t4has no label, i.e., it does not correspond to a
+transition and is sometimes called “invisible”.
+deﬁnition 3 (labeled petri net). alabeled petri net is a tuplen= (p;t;f;l )deﬁn-
+ing a ﬁnite set of places p, a ﬁnite set of transitions t(such thatp\t=;), a ﬂow
+relationf(pt)[(tp), and a labeling function l2t6!uawhereuais some
+universe of activity names. a marking ofnis a multiset of places m, i.e.,m2b(p).
+a labeled petri net n= (p;t;f;l )deﬁnes a directed graph with nodes p[t
+and edgesf. a transition t2dom(l)has a labell(t)that refers to some activity.
+an invisible transition t2tndom(l)has no label and does not correspond to some
+observable activity. the state of a petri net, called marking , is a multiset of places
+indicating how many tokens each place contains. the initial marking shown in figure 1
+is[p1]. another marking of this petri net is [p3;p5;p15;p19].
+a transition t2tisenabled in markingmof netn, denoted as (n;m )[ti, if
+each of its input places tcontains at least one token. an enabled transition tmay ﬁre,
+i.e., one token is removed from each of the input places tand one token is produced
+for each of the output places t. transitiont1in figure 1 is enabled in the initial mark-
+ing. firingt1results in [p2;p8;p16]. in marking [p3;p5;p15;p19]ﬁve transitions are
+enabled:t3,t4,t5,t14,t17. firingt4results in marking [p4;p6;p15;p19].
+3a partial function f2x6!yhas a domain dom(f)xand a range rng(f) =ff(x)j
+x2dom(f)gy.a f hg
+ij p
+p1
+ t1 p8 p11p9
+p13t7t8
+t9
+t10p10
+t11 p12
+p14p15 t18bc
+de
+p2p3
+p5t2t3
+t4
+t5p4
+t6
+p6p7
+k nl
+lo
+p16 p17 t12t13
+t14
+t15t17 p19 p20
+mp21
+t16 p18r1
+r2
+r3
+r4
+r5fig. 1. labeled petri net with initial marking [p1]and ﬁnal marking [p21]. the dashed lines refer
+to regions and will be explained later.
+(n;m )[ti(n;m0)denotes that tis enabled in mand ﬁringtresults in marking m0.
+let=ht1;t2;:::;tni2tbe a sequence of transitions. (n;m )[i(n;m0)denotes
+that there is a set of markings m0;m 1;:::;mnsuch thatm0=m,mn=m0, and
+(n;mi)[ti+1i(n;mi+1)for0i < n . a marking m0isreachable frommif there
+exists a sequence such that (n;m )[i(n;m0).
+in this paper we consider petri nets with a designated initial and ﬁnal markings. the
+behavior considered are all complete ﬁring sequences from the initial marking minitto
+the ﬁnal marking mnal.
+deﬁnition 4 (system net). a system net is a triplet sn= (n;m init;mnal)where
+n= (p;t;f;l )is a labeled petri net, minit2 b(p)is the initial marking, and
+mnal2b(p)is the ﬁnal marking. usnis the universe of system nets .
+given a system net sn,(sn)is the set of all possible visible traces, i.e., com-
+plete ﬁring sequences starting in minitand ending in mnal projected onto the set of
+observable activities using function l.
+deﬁnition 5 (visible traces). letsn= (n;m init;mnal)2u snbe a system net
+withn= (p;t;f;l ).(sn) =fl()j(n;m init)[i(n;m nal)gis the set of visi-
+bletraces starting in minitand ending in mnal.4
+given a universe of activities ua,ut=uais the universe of visible traces.
+(sn)utdeﬁnes the set of visible traces that can be generated by sn. note that
+transitions may be invisible and that there may be multiple transitions having the same
+label. however, (sn)abstracts from such internals.
+4note thatl()maps a ﬁring sequence onto a trace of visible activities (see deﬁnition 2).in this paper, we use petri nets to illustrate the approach. however, the results do
+not depend on the modeling language selected. therefore, we deﬁne the more neutral
+notion of a process model. a system net sndeﬁnes a process model pm=(sn)if
+there is at least one ﬁring sequence from the initial to the ﬁnal marking.5
+deﬁnition 6 (process model). a process model pm is a non-empty set of visible
+traces, i.e., pmutandpm6=;.upmis the universe of process models.
+in the remainder we use the following shorthand to refer to the activities appearing
+in a model:(pm) =faj92pma2g.
+4 process mining
+starting point for any process mining technique is an event log with partially ordered
+events referring to cases and activities. to introduce events logs formally, we need to
+introduce some notations. next to the universe of activities ua, the universe of vis-
+ible tracesut, and the universe of process models upm, we assume four additional
+universes:
+–ueis the set of all possible event identiﬁers,
+–ucis the set of all possible case identiﬁers,
+–uattris the set of all possible attribute names, and
+–uvalis the set of all possible attribute values.
+deﬁnition 7 (event log). l= (e;c; act;case;attr;)is an event log if:
+–eueis a set of events,
+–cucis a set of cases,
+–act2e!uamaps events onto activities,
+–case2e!cmaps events onto a set of cases,
+–attr2e!(uattr6!u val)maps each event onto a partial function assigning
+values to some attributes, and
+–eedeﬁnes a partial order on events.6
+ulis the set of all possible event logs.
+anye2euniquely identiﬁes an event. act(e)is the activity executed for case
+case(e). there may be cases without events, but every event refers to precisely one
+case. event may have any number of attributes, e.g., attr(e)(timestamp ) = 2015-
+01-19t22:51:30.700+01:00 denotes the time event eoccurred. deﬁnition 7 assumes a
+partial order on events. in literature often a total order is assumed within a case, i.e.,
+a case corresponds to a sequence of events. however, sometimes one is not sure about
+the ordering of events, e.g., multiple events have happened on the same day without
+5note that the labeled petri net may deadlock or livelock before reaching mnal. such traces
+are not considered because they cannot be related to cases in the event log. it is up to the
+discovery approach to ensure some notion of soundness.
+6a partial order is a binary relation that is (1) irreﬂexive, i.e. x6x, (2) antisymmetric, i.e.
+xyimpliesy6x, and (3) transitive, i.e. if xyandyz, thenxz.an explicit order. moreover, we may know the actual causal dependencies based on
+analyzing dataﬂow dependencies. in both cases, a partial order is more appropriate.
+in the remainder we use the following shorthand to refer to the activities appearing
+in an event log: (l) =fact(e)je2eg.
+deﬁnition 8 (process discovery technique). a process discovery technique disc2
+ul!u pmmaps event logs onto process models such that for any l2ul:(l) =
+(disc(l)).
+a process discovery technique produces a process model for an event log. here we
+only require that the set of activities in the event log (l)matches the set of activities
+in the model (disc(l)). as discussed in section 2, many discovery techniques have
+been proposed in literature. these may be viewed as speciﬁc instances of disc.
+process discovery is challenging because event logs are often far from complete
+and there are at least four competing quality dimensions: (1) ﬁtness , (2) simplicity ,
+(3)precision , and (4) generalization [1]. a model with good ﬁtness allows for most
+of the behavior seen in the event log. a model has a perfect ﬁtness if all traces in
+the log can be replayed by the model from beginning to end. the simplest model that
+may explain the behavior seen in the log is the best model. this principle is known
+as occam’s razor. fitness and simplicity alone are not sufﬁcient to judge the quality
+of a discovered process model. for example, it is very easy to construct an extremely
+simple petri net that is able to replay all traces in an event log (but also any other event
+log referring to the same set of activities).7similarly, it is undesirable to have a model
+that only allows for the exact behavior seen in the event log. remember that the log
+contains only example behavior and that many traces that are possible may not have
+been observed yet. a model is precise if it does not allow for “too much” behavior.
+a model that is not precise is “underﬁtting”, i.e., the model allows for behaviors very
+different from what was seen in the log. at the same time, the model should generalize
+and not restrict behavior to just the examples seen in the log. a model that does not
+generalize is “overﬁtting”. overﬁtting means that an overly speciﬁc model is generated
+whereas it is obvious that the log only holds example behavior (i.e., the model explains
+the particular sample log, but there is a high probability that the model is unable to
+explain the next batch of cases).
+here we do not quantify the four quality dimensions and restrict ourselves to simple
+ﬁtness notions such as perfect ﬁtness and the fraction of perfectly ﬁtting cases.
+deﬁnition 9 (fitness). letl= (e;c; act;case;attr;)2ulbe an event log and
+pm2upma process model.
+–a casec2cis perfectly ﬁtting pm (notation pm c) if and only if there exists
+a trace=ha1;a2;:::;ani2pm and a bijection f2f1;2;:::ng!fe2ej
+case(e) =cgsuch thatai=act(f(i))for1inandf(j)6f(i)for any
+1ijn.8
+7system net sn= ((p;t;f;l );minit;mnal)withp=;,t=(l),f=;,lthe identity
+function,minit= [ ] , andmnal= [ ] can replay any case in l.
+8a functionf2x!yis bijective if there is a one-to-one correspondence between the
+elements ofxandy, i.e., function fis total, surjective and injective.–t(l;pm) =fc2cjpm cgis the set of perfectly ﬁtting cases.
+–not(l;pm) =cnt(l;pm)is the set of non-ﬁtting cases,
+–tness (l;pm) =jt(l;pm)j
+jcjis the fraction of traces in the event log perfectly
+ﬁtting the model, and
+–lis perfectly ﬁtting pm ifnot(l;pm) =;.
+note that we use interleaving semantics for process models while events are par-
+tially ordered (to capture uncertainty or causalities). event log lis perfectly ﬁtting
+model pm if for any observed case cthere is model trace that could explain the set
+of events observed for c. when making a trade-off between ﬁtness, simplicity, preci-
+sion, and generalization, we may end up with a model not ensuring perfect ﬁtness (e.g.,
+deliberately leaving out exceptional behavior).
+5 localized event logs
+as mentioned in the introduction, we assume localized event logs, i.e., each event ehas
+a non-empty set of regions loc(e). if eventeoccurs exclusively inside region r(i.e.,
+no interaction between regions), then loc(e) =frg. if eventedescribes some form of
+interaction between two regions r1andr2, then loc(e) =fr1;r2g. any form of inter-
+action (from communicating humans to function calls and service invocations) involves
+multiple entities (e.g., components, services, or departments), here called regions .
+deﬁnition 10 (localized event log). a localized event log ll= (l;r; loc)is com-
+posed of an event log l= (e;c; act;case;attr;)2ul, a set of locations (called
+regions)r, and a location function loc2e!p ne(r).9
+given an event e,loc(e)deﬁnes the set of regions involved. as mentioned before, re-
+gions can only interact through shared events.
+a
+b
+cfg
+hk c1:r1
+r2
+a d f i k c2:r1
+r2a f k c3:r1
+r2e j
+e1e2
+e3 e4e5
+e6e7
+e8 e9 e10 e11 e12e13 e14 e15 e16 e17
+a f k c4:r1
+r2e
+e18 e19 e20 e23g
+he21
+e22
+fig. 2. localized event log with 4 cases and 23 events.
+figure 2 visualizes a small event log with e=fe1;e2;:::;e 23g(23 events), c=
+fc1;c2;c3;c4g(4 cases), and r=fr1;r2g(2 regions). functions actandcase are
+9pne(x) =fyxjy6=;g, i.e., all non-empty subsets of x.also depicted in figure 2: act(e1) =a,case(e1) =c1,act(e2) =b,case(e2) =c1,
+act(e8) =a,case(e8) =c2, etc.is only partially shown in figure 2. ordering
+relations of events in different cases are not depicted and only the transitive reduction
+of the ordering relations within a case is shown. consider for example case c1. first
+activityais executed (event e1) followed by both b(evente2) andc(evente3), thenf
+(evente4) is executed followed by both g(evente5) andh(evente6). casec1concludes
+with the execution of activity k(evente7). we abstract from attributes here (i.e., attr is
+not shown), e.g., each event emay have an associated timestamp attr(e)(timestamp )
+and resource attr(e)(resource ). the location function locis depicted using the shaded
+rectangles: loc(e1) =fr1g,loc(e2) =fr1g,loc(e4) =fr1;r2g,loc(e5) =fr2g,
+loc(e20) =fr1;r2g,loc(e23) =fr2g, etc. note that all fevents belong to both
+regions.
+ab
+cfd
+eg
+hki
+j
+fig. 3. process model represented by a system net (the initial marking is shown; the ﬁnal marking
+only marks the sink place).
+classical discovery approaches consider all events to be potentially related. how-
+ever, based on the regions involved we may conclude that events are unrelated thus
+signiﬁcantly simplifying process discovery. consider again the localized event log of
+figure 2. based on the four cases, one could conclude that dis always followed by i
+and thatjis always preceded by e. however, we have seen only four cases and the
+next case may reveal new behavior. process discovery should be able to deal with in-
+completeness. for non-trivial processes, typically most traces are globally unique, i.e.,
+there is no other case following exactly the same path from start to ﬁnish. if there are
+many unique traces, one cannot assume global completeness. however, we may assume
+events to be unrelated unless they are in the same region. interaction between regions
+is possible only through shared events. using this assumption, we could discover the
+process shown in figure 3 using only the four cases of figure 2. without using such
+an assumption, we may end up with the process model shown in figure 4. this model
+allows for the behavior exhibited by the four cases in figure 2 and nothing more. in this
+overﬁtting model, emay be followed by gandh, oremay be followed by j, butemay
+not be followed by i. however, using the notion of regions in the localized event log,
+we know that the choice made in region r1is unrelated to the choice made in region r2.
+to illustrate the value of localized events consider the system net shown in figure 5
+(the ﬁnal marking just marks place end). there are nconcurrent parts each composedab
+cfd
+eg
+hki
+jfig. 4. overﬁtting process model not taking into account the regions. due to incompleteness,
+dependencies between fb;c;d;egandfg;h;i;jgare derived that do not exist.
+ofkparallel activities. the model allows for:
+pstall=(n(k+ 2))!
+((k+ 2)!)n(k!)n
+possible (sequential) traces.10note that we only consider sequential traces here. we
+may also consider the number of “directly follows” relations:
+dfall=n+n(k+ 1)(k+ (n 1)(k+ 2)) +n(1 + (n 1)(k+ 2))
+where a directly follows relation is a pair of activities such that one activity is directly
+followed in a sequential trace.11the directly follows relation is interesting because it is
+used by many process discovery algorithms to uncover causal relationships.
+let us now consider one of the concurrent parts (say riwithi2f1;:::;ng). the
+submodel allows for psti=k!possible (sequential) traces of length k+ 4(including
+as,ais,aieandae). the corresponding number of directly follows relations is dfi=
+k2+k+ 2.12
+table 1 shows the effects of parameters nandk(there arenconcurrent parts each
+composed of kparallel activities). if n= 10 andk= 10 , then there are 4:1710177
+10each of thenconcurrent parts allows for k! =k(k 1):::1sequential traces of length
+k+ 2(abstracting from the ﬁxed ﬁrst activity asand the last activity aewhich are invariable,
+but including aisandaie)). thesentraces of length k+ 2 can be interleaved in(n(k+2))!
+((k+2)!)n
+ways and there are (k!)nunique collections of such ntraces.
+11activity ascan be directly followed by nactivities ( a1s:::ans). each aisactivity (with
+i2f1;:::;ng) can be directly followed by k+ (n 1)(k+ 2) activities. each aijactivity
+(withi2f1;:::;ngandj2f1;:::;kg) can also be directly followed by k+(n 1)(k+2)
+activities. each aieactivity (with i2f1;:::;ng) can be directly followed by 1+(n 1)(k+2)
+activities. activity aeis never followed by another activity.
+12activity ascan only be directly followed by aisin the submodel corresponding to ri. activity
+aiscan be directly followed by kactivities. each aijactivity (with j2f1;:::;kg) can be
+followed bykactivities ( aieandaij0withj06=j). activity aiecan only be directly followed
+byae.as
+start
+ tsa2sp1s
+t2srs
+p21sa21
+t21 p21e
+a22
+t22 p22e
+a2k
+t2k p2kep22s
+p2ksa2e
+t2e p2e
+...p2sa1s
+t1sp11sa11
+t11 p11e
+a12
+t12 p12e
+a1k
+t1k p1kep12s
+p1ksa1e
+t1e p1e
+...
+ans
+tnspn1san1
+tn1 pn1e
+an2
+tn2 pn2e
+ank
+tnk pnkepn2s
+pnksane
+tne pne
+...pnsae
+end
+ ter1
+r2
+rnre
+...fig. 5. a process composed of n+ 2subprocesses marked rs;r1;r2;:::;rn;re . each of the n
+subprocesses in the middle has kparallel activities. for larger values of nandkthis process is
+difﬁcult to discover due to the many possible interleavings.
+unique traces. clearly, it is highly unlikely (understatement) to see all of these possibil-
+ities. per concurrent part, there are 3628800 unique traces, still a lot but nevertheless a
+spectacular reduction (factor 1:1510171). process discovery algorithms do not rely
+on seeing all possible traces to avoid overﬁtting. for example, if there are loops there
+may be inﬁnitely many possible behaviors (see for example the lower part of figure 1).
+therefore, many discovery algorithms use notions such as the directly follows relation.
+ifn= 10 andk= 10 , then the directly follows relation has 14080 elements. this
+reduces to 1120 if it sufﬁces to see only the local directly follows relationships, i.e.,
+less than 8percent of the overall direct successions need to be observed to discover the
+“correct” model!
+figure 5 is a rather extreme example. however, it nicely shows that the same model
+can be discovered using smaller, less complete event logs by exploiting localizationtable 1. effects ofnandkvalues in figure 5 on the number of traces or direct successions that
+need to be observed for complete coverage.
+parameters n 1 1 5 5 1 10 10
+k 1 5 1 5 10 1 10
+overall process number of unique traces 1120 1.68e+8 7.91e+31 3628800 4.39e+24 4.17e+177
+number of directly follows
+relationships432 200 1140 112 850 14080
+single frag-
+mentnumber of unique traces 1120 1 120 3628800 1 3628800
+number of directly follows
+relationships432 4 32 112 4 112
+combined frag-
+mentsminimal number of global
+traces needed to cover all lo-
+cally unique traces1120 1 120 3628800 1 3628800
+total number of local di-
+rectly follows relationships432 20 160 112 40 1120
+information in event logs. compare this to statistics where assumptions about indepen-
+dence are used in predictions or when computing conﬁdence intervals.
+deﬁnition 10 allows for two events that refer to the same activity but different re-
+gions. for process discovery, we would like to relate activities to a ﬁxed number of
+regions. hence, we aim at event logs that are stable .
+deﬁnition 11 (stable). a localized event log ll= (l;r; loc)withl= (e;c; act;
+case;attr;)is stable if for all e1;e22ewith act(e1) =act(e2):loc(e1) =loc(e2).
+the localized event log of figure 2 is stable, e.g., fevents always refer to r1and
+r2. a localized event log that is not stable can be “stabilized” by reﬁning function
+act2e!ua. for example, function actcan be replaced by act0where act0(e) =
+(act(e);loc(e))fore2e. the new function distinguishes activities having distinct
+sets of regions involved.
+6 decomposed process discovery
+a localized event log can be transformed into a collection of sublogs, i.e., one event log
+per region. the sublogs are used to discover submodels. finally, the submodels can be
+merged into a single overall process model. to create sublogs, we deﬁne a projection
+operator.
+deﬁnition 12 (projection). letl= (e;c; act;case;attr;)be an event log and
+xea subset of events. lx= (x;c; actx;casex;attrx;0)with0= (
+\(xx)).13
+deﬁnition 13 (decomposed discovery). letll= (l;r; loc)be a localized event log
+withl= (e;c; act;case;attr;)anda=(l), and let disc2ul!u pmbe a
+process discovery technique. for any region r2r, we deﬁne the following shorthands:
+–er=fe2ejr2loc(e)gare the events of region r,
+–lr=leris the sublog of region r,
+13fxis functionfwith the domain restricted to x, i.e., dom(fx) =x\dom(f).–ar=fact(e)je2ergare the activities of region r, and
+–pmr=disc(lr)is the process model discovered for region r.
+pmr=f2aj8r2rar2pmrgis the overall process model constructed by
+merging the individual models.
+note that the smaller process models are merged by weaving the region-based sub-
+sequences.
+a
+b
+cf c1:
+a d f c2:
+a f c3: e
+e1e2
+e3 e4
+e8 e9 e10
+e13 e14 e15
+a f c4:r1 r2
+e
+e18 e19 e20fg
+hk c1:
+f i k c2:
+f k c3: je4e5
+e6e7
+e10 e11 e12
+e15 e16 e17
+f k c4:
+e20 e23g
+he21
+e22
+fig. 6. two projected event logs based on the overall event
+log of figure 2: one sublog for each region.figure 6 illustrates how
+event logs can be projected onto
+the different regions. now a
+model can be discovered for
+each region and the models can
+be merged as deﬁned next.
+pmrmerges the subpro-
+cesses discovered for the jrj
+sublogs. activity sequence is
+a visible trace of pmrif and
+only ifar2pmr(i.e., the
+projected sequence is a visible
+trace of the corresponding sub-
+model) for each region r2r.
+like the rest of the paper, def-
+inition 13 is not petri net spe-
+ciﬁc. however, the merging of
+the submodels into one overall
+model corresponds to the fol-
+lowing union operator for system nets.
+deﬁnition 14 (union of nets). letsn1= (n1;m1
+init;m1
+nal)2u snwithn1=
+(p1;t1;f1;l1)andsn2= (n2;m2
+init;m2
+nal)2usnwithn2= (p2;t2;f2;l2)
+be two system nets with p1\p2=;.
+–p3=p1[p2is the resulting set of places,
+–as=rng(l1)\rng(l2)is the set of shared activities (appearing in both regions),
+–t1
+s=ft2dom(l1)jl1(t)2asgandt2
+s=ft2dom(l2)jl2(t)2asgare the
+transitions corresponding to shared activities,
+–t3=f(t1;t2)2t1
+st2
+sjl1(t1) =l2(t2)g[f(t1;)jt12t1nt1
+sg[f(
+;t2)jt22t2nt2
+sgis the resulting set of transitions,14
+–dom(l3) =f(t1;t2)2t3jt12dom(l1)_t22dom(l2)g,l3((t1;t2)) =l1(t1)
+ift12dom(l1)andl3((t1;t2)) =l2(t2)ift22dom(l2),
+–f3=f(p;(t1;x))2p1t3j(p;t1)2f1g[f((t1;x);p)2t3p1j(t1;p)2
+f1g[f(p;(x;t2))2p2t3j(p;t2)2f2g[f((x;t2);p)2t3p2j(t2;p)2
+f2g,
+–n1[n2= (p3;t3;f3;l3)is the union of n1andn2, and
+14next to synchronizing transitions of the form (t1;t2), there are transitions of the form (t1;)
+or(;t2)that do no synchronize as these are local to one of the nets.–sn1[sn2= (n1[n2;m1
+init]m2
+init;m1
+nal]m2
+nal)is the union of system
+netssn1andsn2.
+the above deﬁnition takes the union of two system nets, but this can be extended
+to any number of system nets. the following lemma shows that such union based on
+merging transitions indeed implements the composition used in deﬁnition 13.
+lemma 1. letsn1;sn2;:::; snnbensystem nets with non-overlapping sets of
+places.(s
+1insni) =f2aj 8 1inrng(li)2(sni)gwitha=s
+1inrng(li)as the set of activities.
+proof. assumen= 2,sn1[sn2= (n1[n2;m1
+init]m2
+init;m1
+nal]m2
+nal),
+n1= (p1;t1;f1;l1),n2= (p2;t2;f2;l2), andn1[n2= (p3;t3;f3;l3). the
+proof can be generalized for any number of system nets n1.
+let2(sn1[sn2), we need to show that rng(l1)2(sn1)andrng(l2)2
+(sn2).sn1can be seen as a projection of sn1[sn2, i.e., places in p2are removed,
+places inp1are kept, transitions of the type (;t2)are removed, and transitions of the
+type(t1;t2)or(t1;)renamed tot1. the ﬁring sequence corresponding to insn1[
+sn2corresponds to a ﬁring sequence in sn1after renaming and removing transitions
+of the type (;t2)from the sequence. this ﬁring sequence is indeed possible because
+removing places from p2can never lead to blocking transitions. hence, rng(l1)2
+(sn1). similarly:rng(l2)2(sn2).
+let2abe such that rng(l1)2(sn1)andrng(l2)2(sn2), we need
+to show that 2(sn1[sn2).rng(l1)2(sn1)deﬁnes a full ﬁring sequence
+12(t1)withl1(1) =rng(l1), i.e., a sequence of transitions starting in m1
+init
+and ending in m1
+nal. similarly,rng(l2)2(sn2)deﬁnes a full ﬁring sequence 22
+(t2)withl2(2) =rng(l2). note thatl1(1)as=l2(2)as=as.
+there exists a 32(t3)such thatl3(3) =,f1(3) =1andf2(3) =2with
+dom(f1) =f(t1;t2)2t3jt16=g,f1(t1;t2) =t1, and dom(f2) =f(t1;t2)2t3j
+t26=g,f2(t1;t2) =t2. such a sequence exists because in both system nets agree on
+shared activities asand for anyt1andt2withl1(t1) =l2(t2)2as:(t1;t2)2t3(i.e.,
+all combinations have been included). now, it is easy to see that 3is indeed a ﬁring
+sequence possible in sn1[sn2: it starts inm1
+init]m2
+initand ends inm1
+nal]m2
+nal.
+sincel3(3) =,2(sn1[sn2). u t
+the lemma is related to classical results on net composition [20]. also see [3, 4] for
+other properties preserved by the union of two system nets in relation to an event log.
+theorem 1 (decomposed discovery). letll= (l;r; loc)be a stable localized
+event log and let disc2ul!u pmbe a process discovery technique. let pmr,
+pmr, andlrbe as deﬁned in deﬁnition 13.
+–t(l;pmr)t
+r2rt(lr;pmr),
+–tness (l;pmr)jt
+r2rt(lr;pmr)j
+jcj,
+–t(l;pmr) =t
+r2rt(lr;pmr)ifdeﬁnes a strict total order,15
+15a strict order is a partial order that is also trichotomous (exactly one of xy,yxorx=y
+holds).–tness (l;pmr) =jt
+r2rt(lr;pmr)j
+jcjifdeﬁnes a strict total order.
+proof. the second and fourth statement follow directly from the ﬁrst and third state-
+ment respectively. to prove the ﬁrst statement we need to show that for any c2
+t(l;pmr)andr2r:c2t(lr;pmr). because pm cthere is a trace r=
+ha1;a2;:::;ani2pmrand a bijection f2f1;2;:::ng!fe2ejcase(e) =cg
+such thatai=act(f(i))for1inandf(j)6f(i)for any 1ijn. let
+r=rar. clearly,r2pmrdue to the construction of pmr(see deﬁnition 13).
+cis not just an case in lbut also a case in lr(see deﬁnition 12). due to stability, the
+set ofcevents projected away matches the elements projected away in r=rar.
+hence, a smaller bijection can be created relating rto thearevents inc. therefore,
+c2t(lr;pmr).
+the reverse does not necessarily hold if is just a partial order and not a total
+order. the partial order could be linearized differently in the region-based submodels.
+to prove the third statement we additionally need to show that for any c2lsuch that
+c2t(lr;pmr)for allr2r:c2t(l;pmr). sinceis now a strict total order,
+there is one =ha1;a2;:::;anidescribing the sequence of activities (not events) in
+casec. letr=ar. for allr2r:r2pmrbecausec2t(lr;pmr)andll
+is stable. since pmr=f2aj8r2rar2pmrg, we conclude that 2pmr
+andc2t(l;pmr). u t
+a f hg
+ij
+p11
+ t11 p13 p33p32
+p34t13t32
+t33
+t34p35
+t35 p36
+p37bc
+de
+p12p22
+p23t12t22
+t23
+t24p24
+t25
+p25
+k
+nl
+lo p14
+p42t14t42
+t43
+t44t46 p44
+m
+t45 p43r1
+p15
+p16
+p17j p
+t52 p54 t54e
+t51 p52
+o
+t53 p56p57r5
+p51
+p53
+p55b
+t21
+f
+t31
+k
+t41p21
+p31
+p41p26
+p38
+p45r2
+r3
+r4
+fig. 7. five discovered system nets: one for each region. the initial markings are indicated. the
+ﬁnal markings are the states with all sink places marked with one token (not indicated explicitly).
+figure 7 shows the basic idea. suppose that we take an event log created by simu-
+lating figure 1 such that the event log is locally complete with respect to the directly
+follows relation. now project the overall event log onto the ﬁve regions and discover
+a process model per region. in this case, discovery techniques may discover the ﬁve
+system nets shown in figure 7. it is easy to see that these submodels indeed describethe corresponding sublogs well. the ﬁve system nets in figure 7 may be merged using
+deﬁnition 14. in this case we do not get figure 7 immediately. however, after removing
+some of the redundant places (i.e., hanging places whose removal does not change the
+behavior), we get the original system net (modulo renaming of places).
+the composition of an overall model from submodels used in deﬁnition 13 (and
+the speciﬁc petri-net realization in deﬁnition 14), assumes synchronous communica-
+tion. asynchronous communication can be supported by introducing special “channel
+regions”, these are regions with a send andreceive activity. this corresponds to the sys-
+tem net sna= ((fpbuerg;ftsend;treceiveg;f(tsend;pbuer );(pbuer;treceive )g;l);
+[ ];[ ])withl(tsend) =asend andl(treceive ) =areceive . the corresponding process
+pma=(sna)is a simple buffer and may be viewed as a region. hence, results like
+the property expressed in theorem 1 can also be applied in the asynchronous setting.
+7 experimental results
+the decomposition discovery approach was implemented as a plugin for prom (www.
+processmining.org ) – an open source framework aimed to develop and test pro-
+cess mining algorithms. the plugin takes a localized event log as input (in localized
+event logs regions are speciﬁed as additional event attributes) and produces a system
+net as a result. this plugin was added to the package called localizedlogs available in
+thenightly build ofprom . the divideandconquer package [26] is used to handle the
+sublogs and to merge the resulting models.
+7.1 synthetic event data
+consider the reference model of a booking process depicted in figure 8. figure 9 shows
+an event log, generated by this model. this event log is not complete with respect to
+the directly follows relation, e.g., in the small event log the select hotel activity never
+directly followed the register activity.
+register cancel
+p1 t1select 
+flight
+p2 t2
+select 
+hotel
+p3 t3p4
+p5book 
+flight
+pay
+book 
+hotelt4
+t5
+t6p6
+p7t7 p8
+fig. 8. a system net of a booking process with the initial and ﬁnal markings [p1]and[p8]respec-
+tively.
+all the known discovery methods, including those that deal with incomplete logs,
+will not rediscover the initial model, because they cannot exploit localization informa-
+tion and demand some form of global completeness. the inductive mining approach [19],register
+c1:
+r1r2
+c2:c3:
+e1 e4
+select flight
+e2select hotel
+cancel
+e3
+r1r2
+e5 e10
+select flight
+e6select hotel
+pay
+e9
+register
+book flight
+e7
+e8book hotelr1r2
+e11 e16
+select flight
+e12select hotel
+pay
+e15
+register
+book flight
+e14
+e13book hotel
+c4:
+r1r2
+e17 e22
+select flight
+e18select hotel
+pay
+e20
+register
+book flight
+e21
+e19book hotelfig. 9. a localized event log generated by the system net presented in figure 8. there are two
+regions: one concerned with ﬂights ( r1) and one concerned with hotels ( r2).
+which is able to mine models from incomplete event logs, will discover the process
+model presented in figure 10. the model is overﬁtting the event log with respect to the
+accidental ordering of two selection activities. moreover, two loops are created. how-
+ever, if we apply the approach proposed in this paper, we discover the initial system
+net (figure 8) using the same discovery technique (after removing redundant hanging
+places, as described). this is possible because the event log in figure 9 is complete per
+region.
+register
+cancelselect 
+flight
+select 
+hotelpay
+book 
+hotelbook
+flight
+ 
+fig. 10. the process model discovered by the inductive miner without exploiting localization
+information. note that causalities between unrelated parts are inferred due to the incomplete
+event log.
+7.2 real-life event data from software
+using the approach proposed we have analyzed event logs of two real-life software
+systems: a booking ﬂight system and a banking system .
+the user of a booking ﬂight system ﬁlls three different web forms to insert personal,
+insurance and payment information. the user may complete the web forms in any or-
+der. thus, due to the event log complexity and incompleteness the direct application of
+the well-known discovery algorithms quickly results incomprehensible process models
+that contain misleading cycles and non-existing dependencies between activities. theoverall event log was enriched with three regions corresponding to the web forms, i.e.,
+an attribute was added for this purpose. these regions naturally follow from the system
+design. hence, it was easy to produce a localized event log. shared activity labels cor-
+respond to common window operations, such as load and unload, and data veriﬁcation.
+by applying the approach presented in this paper, we could obtain the model depicted
+in figure 11.
+fig. 11. a model of a booking ﬂight system. shared activities are highlighted in white, although
+it is not explicitly shown, they belong to all the regions.
+the inductive mining approach was utilized as an underlying algorithm. the model
+obtained by directly applying the inductive miner contains 1809 connections between
+transitions, because of a global cycle, connecting almost all the transitions with each
+other, while the model constructed using regions contains only 177 connections.16re-
+lations derived between different regions other than through overlapping activities are
+artifacts of the incompleteness of the event log.
+the other software system under consideration is a banking system. this banking
+system handles requests and provides the user with the information about customer
+services. the banking system has a hierarchical structure and is represented by differ-
+ent program layers. namely, it includes facade, services, data and common data access
+layers. each request is received on the facade layer and then redirected to the next
+layer of the hierarchy. to treat layers as regions the event log was enriched with addi-
+tional events, denoting request/response communications between layers and belong-
+ing to both communicating regions. the localized event log can be used to create the
+model. again, the resulting model is simpler and our approach succeeds in handling in-
+completeness better than traditional approaches: the model contains 1986 connections
+between transitions instead of 19115, presented in the model obtained by applying the
+inductive miner directly on the event log. this multilayer model was represented as
+a model of interacting processes (or layers). a plugin for prom , which constructs a
+bpmn [23] model of interacting processes from a set of system nets and a correspond-
+16a pair (t1;t2)is a “connection” between visible transitions t1andt2(i.e.,t1;t22dom(l)) if
+and only if there exists a non-trivial path from t1tot2, which does not go through other visible
+transitions.ing event log, was developed as well. this plugin is based on the bpmn-supporting
+plugins, described in [17]. it converts each system net to a bpmn process within a
+pool, each request or response activity is converted to a message event, and each pair
+of corresponding message events is connected by a message ﬂow. note that for this
+plugin each shared event should have an additional attribute to determine its type (send
+or receive event). the automatically generated bpmn model of the multilayer banking
+system is presented in figure 12.
+fig. 12. a bpmn model discovered for a multi-
+layer banking system.thus, the decomposition discovery
+approach allows not only to improve the
+quality of the models discovered, but also
+assists in creating hierarchical models
+exploiting higher-level process notations
+like bpmn.
+for models constructed from the real-
+life event logs using various discovery
+approaches: heuristic [13, 28], inductive
+[18, 19], and ilp (language-based re-
+gions) [8, 29] miners, quality metrics,
+such as ﬁtness ,precision and general-
+ization were obtained. table 2 contains
+quality characteristics17of process mod-
+els constructed directly from the event
+log, using the discovery approach spec-
+iﬁed, and the characteristics of corre-
+sponding process models constructed us-
+ing localization information. table 2
+shows that the models constructed from the localized logs allow for more traces to
+ﬁt and are more general, while the models constructed directly from the event logs tend
+to be more precise, but less ﬁtting.
+table 2. quality of process models discovered from the real-life event logs
+event logs discovery algorithms fitness trace ﬁtness precision generalization
+booking system heuristic miner 0.00 / 0.13 0.64 / 0.75 0.55 / 0.32 0.89 / 0.90
+inductive miner 0.23 / 1.00 0.85/ 1.00 0.22 / 0.16 0.98 / 1.00
+ilp miner 1.00 / 1.00 1.00/ 1.00 0.36 / 0.25 1.00 / 1.00
+banking system17inductive miner 0.25 / 1.00 0.84 / 1.00 0.14/ 0.06 0.97 / 1.00
+ilp miner 0.54 / 1.00 0.64 / 1.00 0.44 / 0.16 0.68 / 1.00
+17fitness is the fraction of perfectly ﬁtting cases. trace ﬁtness is the measure of discrepancy
+between a log and a model. precision is the fraction of additional cases, obtained during replay,
+which are not represented in the log. generalization is the fraction of states visited during
+replay, which are covered by the model.
+17characteristics for the models constructed by the heuristic miner cannot be obtained in a rea-
+sonable amount of time.8 conclusion
+in this paper we presented a novel process discovery approach exploiting localization
+information, i.e., events refer to one or more regions. such information is available
+in most application domains. in this paper, we illustrated this using event data from
+software systems. such systems have an explicit architecture and events may be related
+to this architecture. hence, it is easy to create localized event logs. experiments show
+that such reasonably chosen information can be used to produce much better process
+models. whereas conventional approaches require some global form of completeness,
+our approach only needs local completeness (within a region). therefore, the resulting
+models are simpler, more general and allow more cases to ﬁt. moreover, localization
+information may be exploited to create hierarchical models.
+references
+[1] w.m.p. van der aalst. process mining: discovery, conformance and enhancement of
+business processes . springer-verlag, berlin, 2011.
+[2] w.m.p. van der aalst. distributed process discovery and conformance checking. in inter-
+national conference on fundamental approaches to software engineering 2012 , volume
+7212 of lecture notes in computer science , pages 1–25. springer-verlag, berlin, 2012.
+[3] w.m.p. van der aalst. a general divide and conquer approach for process mining.
+infederated conference on computer science and information systems (fedcsis 2013) ,
+pages 1–10. ieee computer society, 2013.
+[4] w.m.p. van der aalst. decomposing petri nets for process mining: a generic approach.
+distributed and parallel databases , 31(4):471–507, 2013.
+[5] w.m.p. van der aalst, v . rubin, h.m.w. verbeek, b.f. van dongen, e. kindler, and c.w.
+g¨unther. process mining: a two-step approach to balance between underﬁtting and
+overﬁtting. software and systems modeling , 9(1):87–111, 2010.
+[6] w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. workﬂow mining: discovering
+process models from event logs. ieee transactions on knowledge and data engineer-
+ing, 16(9):1128–1142, 2004.
+[7] r. agrawal, d. gunopulos, and f. leymann. mining process models from workﬂow logs.
+insixth international conference on extending database technology , volume 1377 of
+lecture notes in computer science , pages 469–483. springer-verlag, berlin, 1998.
+[8] r. bergenthum, j. desel, r. lorenz, and s. mauser. process mining based on regions of
+languages. in g. alonso, p. dadam, and m. rosemann, editors, international conference
+on business process management (bpm 2007) , volume 4714 of lecture notes in computer
+science , pages 375–383. springer-verlag, berlin, 2007.
+[9] r.p. j. c. bose and w.m.p. van der aalst. trace clustering based on conserved patterns:
+towards achieving better process models. in bpm 2009 workshops, proceedings of the
+fifth workshop on business process intelligence (bpi’09) , volume 43 of lecture notes in
+business information processing , pages 170–181. springer-verlag, berlin, 2010.
+[10] j. carmona and j. cortadella. process mining meets abstract interpretation. in j.l. bal-
+cazar, editor, ecml/pkdd 210 , volume 6321 of lecture notes in artiﬁcial intelligence ,
+pages 184–199. springer-verlag, berlin, 2010.
+[11] j. carmona, j. cortadella, and m. kishinevsky. a region-based algorithm for discovering
+petri nets from event logs. in business process management 2008 , pages 358–373, 2008.[12] j. carmona, j. cortadella, and m. kishinevsky. divide-and-conquer strategies for process
+mining. in business process management (bpm 2009) , volume 5701 of lecture notes in
+computer science , pages 327–343. springer-verlag, berlin, 2009.
+[13] j.e. cook and a.l. wolf. discovering models of software processes from event-based
+data. acm transactions on software engineering and methodology , 7(3):215–249, 1998.
+[14] p. darondeau. unbounded petri net synthesis. in lectures on concurrency and petri
+nets, volume 3098 of lecture notes in computer science , pages 413–438. springer-verlag,
+berlin, 2004.
+[15] s. goedertier, d. martens, j. vanthienen, and b. baesens. robust process discovery with
+artiﬁcial negative events. journal of machine learning research , 10:1305–1340, 2009.
+[16] g. greco, a. guzzo, l. pontieri, and d. sacc `a. discovering expressive process mod-
+els by clustering log traces. ieee transaction on knowledge and data engineering ,
+18(8):1010–1027, 2006.
+[17] a. kalenkova, m. de leoni, and w.m.p. van der aalst. discovering, analyzing and en-
+hancing bpmn models using prom. in business process management demo sessions
+(bpmd 2014) , volume 1295 of ceur workshop proceedings , pages 36–40, 2014.
+[18] s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-structured pro-
+cess models from event logs containing infrequent behaviour. in international workshop
+on business process intelligence (bpi 2014) , volume 171 of lecture notes in business in-
+formation processing , pages 66–78. springer-verlag, berlin, 2014.
+[19] s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-structured
+process models from incomplete event logs. in applications and theory of petri nets
+2014 , volume 8489 of lecture notes in computer science , pages 91–110. springer-verlag,
+berlin, 2014.
+[20] a. mazurkiewicz. semantics of concurrent systems: a modular fixed-point trace ap-
+proach. in g. rozenberg, editor, advances in petri nets 1984 , volume 188 of lecture notes
+in computer science , pages 353–375. springer-verlag, berlin, 1984.
+[21] a.k. alves de medeiros, a.j.m.m. weijters, and w.m.p. van der aalst. genetic process
+mining: an experimental evaluation. data mining and knowledge discovery , 14(2):245–
+304, 2007.
+[22] j. munoz-gama, j. carmona, and w.m.p. van der aalst. single-entry single-exit decom-
+posed conformance checking. information systems , 46:102–122, december 2014.
+[23] omg. business process model and notation (bpmn). object management group,
+formal/2011-01-03, 2011.
+[24] a. polyvyanyy, j. vanhatalo, and h. v ¨olzer. simpliﬁed computation and generalization
+of the reﬁned process structure tree. in ws-fm 2010 , volume 6551 of lecture notes in
+computer science , pages 25–41. springer-verlag, berlin, 2011.
+[25] m. sole and j. carmona. process mining from a basis of regions. in applications and
+theory of petri nets 2010 , volume 6128 of lecture notes in computer science , pages 226–
+245. springer-verlag, berlin, 2010.
+[26] e. verbeek. decomposed process mining with divideandconquer. in proceedings of the
+bpm demo sessions 2014 , pages 1–5, 2014.
+[27] j. de weerdt, m. de backer, j. vanthienen, and b. baesens. leveraging process discovery
+with trace clustering and text mining for intelligent analysis of incident management
+processes. in ieee congress on evolutionary computation (cec 2012) , pages 1–8, 2012.
+[28] a.j.m.m. weijters and w.m.p. van der aalst. rediscovering workﬂow models from event-
+based data using little thumb. integrated computer-aided engineering , 10(2):151–162,
+2003.
+[29] j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, and a. serebrenik. process
+discovery using integer linear programming. fundamenta informaticae , 94:387–412,
+2010.

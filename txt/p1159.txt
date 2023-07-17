@@ -1,0 +1,1140 @@
+algorithms
+article
+efﬁcient time and space representation of uncertain
+event data
+marco pegoraro *
+ , merih seran uysal
+ and wil m. p . van der aalst
+process and data science group (pads), department of computer science, rwth aachen university,
+52062 aachen, germany; uysal@pads.rwth-aachen.de (m.s.u.); wvdaalst@pads.rwth-aachen.de (w.m.p .v.d.a.)
+*correspondence: pegoraro@pads.rwth-aachen.de
+received: 30 september 2020; accepted: 6 november 2020; published: 9 november 2020
+/gid00030/gid00035/gid00032/gid00030/gid00038/gid00001/gid00033/gid00042/gid00045 /gid00001
+/gid00048/gid00043/gid00031/gid00028/gid00047/gid00032/gid00046
+abstract: process mining is a discipline which concerns the analysis of execution data of operational
+processes, the extraction of models from event data, the measurement of the conformance
+between event data and normative models, and the enhancement of all aspects of processes.
+most approaches assume that event data is accurately captured behavior. however, this is not
+realistic in many applications: data can contain uncertainty, generated from errors in recording,
+imprecise measurements, and other factors. recently, new methods have been developed to
+analyze event data containing uncertainty; these techniques prominently rely on representing
+uncertain event data by means of graph-based models explicitly capturing uncertainty. in this
+paper, we introduce a new approach to efﬁciently calculate a graph representation of the behavior
+contained in an uncertain process trace. we present our novel algorithm, prove its asymptotic
+time complexity, and show experimental results that highlight order-of-magnitude performance
+improvements for the behavior graph construction.
+keywords: process mining; uncertain data; partial order
+1. introduction
+the pervasive diffusion of digitization, which gained momentum thanks to advancements in
+electronics and computing at the end of the last century, has brought a wave of innovation in the tools
+supporting businesses and companies. recent decades have seen the rise of process-aware information
+systems (paiss)—useful to structurally support processes in a business—as well as research disciplines
+such as business process management (bpm) and process mining.
+process mining [ 1] is a ﬁeld of research that enables process analysis in a data-driven manner.
+process mining analyses are based on recordings of tasks and events in a process, memorize in
+an ensemble of information systems which support business operations. these recordings are exported
+and systematically collected in databases called event logs. using an event log as a starting point,
+process mining techniques can automatically obtain a process model illustrating the behavior of the
+real-life process (process discovery) and identify anomalies and deviations between the execution data
+of a process and a normative model (conformance checking). process mining is a subﬁeld of data science
+which is quickly growing in interest both in academia and industry. over 30 commercial software tools
+are available on the market for analyzing processes and their execution data. process mining tools are
+used by process experts to analyze processes in tens of thousands of organizations, e.g., within siemens,
+over 6000 employees actively use process mining to improve internal procedures.
+commercial process mining software can discover and build a process model from an event
+log. most of the process discovery algorithms implemented in these tools are based on tallying the
+number of directly-follows relationships between activities in the execution data of the process. the more
+frequently a speciﬁc activity immediately follows another one in the execution log of a process,
+algorithms 2020, 13, 285; doi:10.3390/a13110285 www.mdpi.com/journal/algorithmsalgorithms 2020, 13, 285 2 of 27
+the stronger a causality and/or precedence implication between the two activities is understood
+to be. such directly-follows relationships are also the basis for the identiﬁcation of more complex
+and abstract constructs in the workﬂow of a process, such as interleaving or parallelism of activities.
+these relationships between activities are often represented in a labeled directed graph called the
+directly-follows graph (dfg).
+in recent times, a new type of event logs has gained research interest: uncertain event logs [2].
+such execution logs contain, rather than precise values, an indication of the possible values that event
+attributes can acquire. in this paper, we will consider the setting where uncertainty is represented by
+either an interval or a set of possible values for an event attribute. moreover, we will consider the case
+in which an event has been recorded in the event log albeit it did not happen in reality.
+uncertainty in event logs is best illustrated with a real-life example of a process that can generate
+uncertain data in an information system. let us consider the following process instance, a simpliﬁed
+version of anomalies that are actually occurring in processes of the healthcare domain. an elderly
+patient enrolls in a clinical trial for an experimental treatment against myeloproliferative neoplasms,
+a class of blood cancers. the enrollment in this trial includes a lab exam and a visit with a specialist;
+then, the treatment can begin. the lab exam, performed on the 8th of july, ﬁnds a low level of platelets
+in the blood of the patient, a condition known as thrombocytopenia (tp). at the visit, on the 10th of
+may, the patient self-reports an episode of night sweats on the night of the 5th of july, prior the lab
+exam: the medic notes this, but also hypothesized that it might not be a symptom, since it can be caused
+not by the condition but by external factors (such as very warm weather). the medic also reads the
+medical records of the patient and sees that shortly prior to the lab exam, the patient was undergoing
+a heparine treatment (a blood-thinning medication) to prevent blood clots. the thrombocytopenia
+found with the lab exam can then be primary (caused by the blood cancer) or secondary (caused by
+other factors, such as a drug). finally, the medic ﬁnds an enlargement of the spleen in the patient
+(splenomegaly). it is unclear when this condition has developed: it might have appeared in any
+moment prior to that point. the medic decides to admit the patient in the clinical trial, starting 12th
+of july.
+these events generate the trace of table 1in the information system of the hospital. for clarity,
+the timestamp ﬁeld only reports the day of the month.
+table 1. the uncertain trace of an instance of healthcare process used as running example. the “case
+id” is a unique identiﬁer for all events in a single process case; the “event id” is a unique identiﬁer
+for the events in the trace. the “timestamp” ﬁeld indicates either the moment in time in which the
+event has happened, or the interval of time in which the event may have happened. the “activity”
+ﬁeld indicates the possible choices for the activity instantiated by the event. lastly, the “indeterminate
+event” ﬁeld contains a “!” if the corresponding event has surely occurred, and a “?” if it might have
+been recorded despite not occurring in reality. for the sake of readability, in the timestamps column
+only reports the day of the month.
+case id event id timestamp activity indet. event
+id327 e1 5 nightsweats ?
+id327 e2 8 {prtp, sectp} !
+id327 e3 [4, 10] splenomeg !
+id327 e4 12 adm !
+event e2has been recorded with two possible activity labels (prtp orsectp). this is an example
+of uncertainty on activities. some events, e.g., e3, do not have a precise timestamp but a time interval
+in which the event could have happened has been recorded: in some cases, this causes the loss of
+a precise ordering of events (e.g., e2and e3). this is an instance of uncertainty on the time dimension,
+i.e., on timestamps. as evident by the “?” symbol, e1is an indeterminate event: it has been recorded,
+but it is not guaranteed to have actually happened. conversely, the “!” symbol indicates that thealgorithms 2020, 13, 285 3 of 27
+event has been recorded while certainly occurring in reality, i.e., it has been recorded correctly in the
+information system (e.g., the event e4).
+quality problems and imprecision in data recording such as the ones described in the running
+example as source of uncertainty are not uncommon; in some settings, they are a frequent occurrence.
+healthcare processes are speciﬁcally know to be afﬂicted by these sorts of data anomalies, especially if
+parts of the process rely on recording information on paper [ 3,4]. existing process mining software
+cannot manage such uncertain event data. when mining the processes where uncertainty in execution
+data is prominent, a natural ﬁrst approach is to ﬁlter the event log eliminating cases where uncertainty
+appear. unfortunately, in processes with a large portion of cases are affected by such data anomalies,
+ﬁltering without losing essential information about the process is not feasible.
+consequently, new process mining methods to inspect and analyze it must be developed.
+uncertain timestamps are the most prominent and critical source of uncertain behavior in a process
+trace. for example, if nevents have uncertain timestamps such that their order is unknown, the possible
+conﬁgurations that the control-ﬂow of the trace can assume are all the n!permutations of the events,
+in the case where all events in a case have timestamps deﬁned by mutually overlapping intervals.
+this is the worst possible scenario in terms of amount of uncertain behavior introduced by uncertainty
+on the timestamps of the events ins a trace. thus, it is important to capture the time relationships
+between events in a compact and effective way. this is accomplished by the construction of a behavior
+graph, a directed acyclic graph that expresses precedence between events. figure 1shows the
+behavior graph of the process trace in table 1; every known precedence relationship between events is
+represented by the edges of the graph, while the pairs of event for which the order is unknown remain
+unconnected. effectively, this creates a representation of the partial order where the arcs are deﬁned by
+the possible values of the timestamps contained in the trace, and where the nodes may refer to sets
+of possible activities. as we will see, this construct is central to effectively implement both process
+discovery and conformance checking applied to uncertain event data.
+nightsweats
+e1fprtp , sectpg
+e2
+splenomeg
+e3adm
+e4
+figure 1. the behavior graph of the trace in table 1. every node represents an event; the labels in
+the nodes represent the activity, or set of activities, associated with the event. the arcs represent the
+partial order relationship between events as deﬁned by their timestamps. the indeterminate event,
+which might not have occurred, is represented by a dashed node.
+in a previous paper [ 5], we presented a time-effective algorithm for the construction of the
+behavior graph of an uncertain process trace, attaining quadratic time complexity on the number of
+events in the trace.
+this paper elaborates on this previous result, by providing the proof of the correctness of the
+new algorithm. additionally, we will show the improvement in performance both theoretically,
+via asymptotic complexity analysis, and in practice, with experiments on various uncertain event
+logs comparing computation times of the baseline method against the novel construction algorithm.
+furthermore, the version of the algorithms presented in this paper is reﬁned so to preprocess uncertain
+traces in linear time, individuating the variants—which share the same behavior graph–, and proceed
+to perform the construction of the behavior graph only once per variant. this slightly improves
+performance, and more importantly, enables the representation of an uncertain event log as a multiset ofalgorithms 2020, 13, 285 4 of 27
+behavior graphs, greatly reducing the memory requirements to store the log. this enables a streamlined
+application of process mining techniques on event data where uncertainty is present.
+the algorithms have been implemented within the proved (process mining over uncertain
+data) library (https://github.com/proved-py/proved-core/tree/efﬁcient_time_and_memory_
+representation_for_uncertain_event_data), based on the pm4py process mining framework [6].
+the reminder of the paper is structured as follows: section 2motivates the study of uncertainty
+in process mining by illustrating an example of conformance checking over uncertain event data.
+section 3strengthens the motivation showing the discovery of process models of uncertain event logs.
+section 4provides formal deﬁnitions, describes the baseline technique for our research, and shows
+a new and more efﬁcient method to obtain a behavior graph of an uncertain trace. section 5presents
+the analysis of asymptotic complexity for both the baseline and the novel method. section 6shows
+results of experiments on both synthetic and real-life uncertain event logs comparing the efﬁciency of
+both methods to compute behavior graphs. section 7explores recent related works in the context of
+uncertain event data and the management of alterations of data in process mining. finally, section 8
+discusses the output of the experiments and concludes the paper.
+2. conformance checking over uncertain data
+conformance checking is one of the main tasks in process mining, and consists of measuring the
+deviation between process execution data (usually in the form of a trace) and a reference model. this is
+particularly useful for organization, since it enables them to compare historical process data against
+a normative model created by process experts to identify anomalies and deviations in their operations.
+let us assume that we have access to a normative model for the disease of the patient in the
+running example, shown in figure 2.
+t1nightsweatst2
+t4
+splenomegt3prtpt5
+admt6
+figure 2. a normative model for the healthcare process case in the running example. the initial
+marking is displayed; the gray “token slot” represents the ﬁnal marking.
+this model essentially states that the disease is characterized by the occurrence of night sweats
+and splenomegaly on the patient, which can be veriﬁed concurrently, and then should be followed by
+primary thrombocytopenia. we would like to measure the conformance between the trace in table 1
+and this normative model. a very popular conformance checking technique works via the computation
+ofalignments [7]. through this technique, we are able to identify the deviations in the execution of
+a process, in the form of behavior happening in the model but not in the trace, and behavior happening
+in the trace but not in the model. these deviations are identiﬁed, and used as basis to compute
+a conformance score between the trace and the process model.
+the formulation of alignments in [ 7] is not applicable to an uncertain trace. in fact, depending
+on the instantiation of the uncertain attributes of events—like the timestamp of e3in the trace—the
+order of event may differ, and so may the conformance score. however, we can look at the best-
+and worst-case scenarios: the instantiation of attributes of the trace that entails the minimum and
+maximum number of deviations with respect to the reference model. in our example, two possible
+outcomes for the sample trace are hnightsweats ,splenomeg ,prtp ,admiandhsectp ,splenomeg ,admi;
+both represent the sequence of event that might have happened in reality, but their conformance score
+is very different. the alignment of the ﬁrst trace against the reference model can be seen in table 2,
+while the alignment of the second trace can be seen in table 3. these two outcomes of the uncertainalgorithms 2020, 13, 285 5 of 27
+trace in table 1represent, respectively, the minimum and maximum amount of deviation possible with
+respect to the reference model, and deﬁne then a lower and upper bound for conformance score.
+table 2. an optimal alignment for hnightsweats ,splenomeg ,prtp ,admi, one of the possible
+instantiations of the trace in table 1, against the model in figure 2. this alignment has a deviation cost
+equal to 0, and corresponds to the best-case scenario for conformance between the process model and
+the uncertain trace.
+ nightsweats splenomeg  prtp adm
+t nightsweats splenomeg t prtp adm
+t1 t2 t3 t4 t5 t6
+table 3. an optimal alignment for hsectp ,splenomeg ,admi, one of the possible instantiations of the
+trace in table 1, against the model in figure 2. this alignment has a deviation cost equal to 3, caused by
+2 moves on model and 1 move on log, and corresponds to the worst-case scenario for conformance
+between the process model and the uncertain trace.
+ sectp splenomeg  adm
+t nightsweats splenomeg t prtp adm
+t1 t2 t3 t4 t5 t6
+the minimum and maximum bounds for conformance score of an uncertain trace and a reference
+process model can be found with the uncertain version of the alignment technique that we ﬁrst
+described in [ 2]. to ﬁnd such bounds, it is necessary to build a petri net able to simulate all possible
+behaviors in the uncertain trace, called the behavior net. obtaining a behavior net is possible through a
+construction that uses behavior graphs as a starting point, using the structural information therein
+contained to connect places and transitions in the net. the behavior net of the trace in table 1is shown
+in figure 3.
+(start ,e1)nightsweats(e1,nightsweats )
+nightsweats(e1,t)(e1,e2)prtp(e2,prtp )
+sectp(e2,sectp )(e2,e4)
+(start ,e3)(e3,e4)
+splenomeg(e3,splenomeg )adm(e4,adm) (e4,end)
+figure 3. the behavior net representing the behavior of the uncertain trace in table 1and obtained
+thanks to its behavior graph. the initial marking is displayed; the gray “token slot” represents the ﬁnal
+marking. this artifact is necessary to perform conformance checking between uncertain traces and
+a reference model.
+the alignments in tables 2and 3show how we can get actionable insights from process mining
+over uncertain data. in some applications it is reasonable and appropriate to remove uncertain data
+from an event log via ﬁltering, and then compute log-level aggregate information—such as total
+number of deviations, or average deviations per trace—using the remaining certain data. even in
+processes where this is possible, doing so prevents the important process mining task of case diagnostic.
+conversely, uncertain alignments allow not only to have best- and worst-case scenarios for a trace,
+but also to individuate the speciﬁc deviations affecting both scenarios. for instance, the alignments ofalgorithms 2020, 13, 285 6 of 27
+the running example can be implemented in a system that warns the medics that the patient might have
+been affected by a secondary thrombocytopenia not explained by the model of the disease. since the
+model indicates that the disease should develop primary thrombocytopenia as a symptom, this patient
+is at risk of both types of platelets deﬁcit simultaneously, which is a serious situation. the medics can
+then intervene to avoid this complication, and performing more exams to ascertain the cause of the
+patient’s thrombocytopenia.
+3. process discovery over uncertain data
+process discovery is another main objective in process mining, and involves automatically
+creating a process model from event data. many process discovery algorithms rely on the concept of
+directly-follows relationships between activities to gather clues on how to structure the process model.
+uncertain directly-follows graphs (udfgs) enable the representation of directly-follows relationships in
+an event log under conditions of uncertainty in the event data; they consist of directed graphs where
+the activity labels appearing in an event log constitute the nodes, and the edges are decorated with
+information on the minimum and maximum frequency observable for the directly-follows relation
+between pair of activities.
+let us examine an example of udfg. to build a signiﬁcant example, we need to introduce an
+entire uncertain event log; since the full table notation for uncertain traces becomes cumbersome for
+entire logs, let us use a shorthand simpliﬁed notation. in a trace, we represent an uncertain event with
+multiple possible activity labels by listing all the associated labels between curly braces.
+when two events have mutually overlapping timestamps, we write their activity labels between
+square brackets, and we indicate indeterminate events by overlining them. notice that this notation
+does not allow for the representation of every possible uncertain trace: in the case of timestamp
+uncertainty, it can only express mutual overlapping of time intervals. however, this notation is
+adequate to illustrate an example for process discovery under uncertainty.
+for instance, the trace ha,fb,cg,[d,e]iis a trace containing 4 events, of which the ﬁrst is an
+indeterminate event with activity label a, the second is an uncertain event that can have either borc
+as activity label, and the last two events have an interval as timestamp (and the two ranges overlap).
+let us consider the following event log: ha,b,e,f,g,hi80,ha,fb,cg,[e,f],g,ii15,ha,fb,c,dg,[e,f],g,ji5.
+for each pair of activities, we can count the minimum and maximum occurrences of
+a directly-follows relationship that can be observed in the log. the resulting udfg is shown in
+figure 4.
+this graph can be then used to discover process models of uncertain logs via process discovery
+methods based on directly-follows relationships. in a previous work [ 8] we illustrated this principle
+by applying it to the inductive miner, a popular discovery algorithm [ 9]; the edges of the udfg can be
+ﬁltered via the information on the labels, in such a way that the ﬁnal model can represent all possible
+behavior in the uncertain log, or only a part. figure 5shows some process models obtained through
+inductive mining of the udfg, as well as a description regarding how the model relate to the original
+uncertain log.
+udfgs of uncertain event data are obtained on the basis of the behavior graphs of the traces
+in an uncertain event log, making their construction a necessary step to perform uncertain process
+discovery. in fact, the frequency information labeling the edges of udfgs are obtained through a search
+among the possible connections within the behavior graphs of all the traces in an uncertain log.algorithms 2020, 13, 285 7 of 27
+ab
+c
+de
+fgh
+i
+j[80, 100]
+[0, 20]
+[0, 5][80, 100]
+[0, 20][0, 20]
+[0, 20][0, 5]
+[0, 5][80, 100] [0, 20][0, 20]
+[80, 100][80, 80]
+[15, 15]
+[0, 5][100, 100][80, 80]
+[15, 15]
+[0, 5]
+figure 4. the uncertain directly-follows graph (udfg) computed based on the uncertain event
+logha,b,e,f,g,hi80,ha,fb,cg,[e,f],g,ii15,ha,fb,c,dg,[e,f],g,ji5. the arcs are labeled with the
+minimum and maximum number of directly-follows relationship observable between activities in the
+corresponding trace. notice the large amount of connections extracted from a single and rather short
+trace. uncertain directly-follows relationships are inferred from the behavior graphs of the traces in the
+log. the construction of this object is necessary to perform automatic process discovery over uncertain
+event data.
+a b e f gh
+i
+(a) a process model that can only replay the relationships appearing in the certain
+parts of the traces in the uncertain log. here, information from uncertainty has
+been excluded completely.
+ab
+ce
+fgh
+i
+(b) a process model that can replay some–but not all–the relationships
+appearing in the uncertain parts of the traces in the uncertain log.
+this process model mediates between representing only certain observation
+and representing all the possible behavior in the process.
+figure 5. cont.algorithms 2020, 13, 285 8 of 27
+ab
+dce
+fgi
+jh
+k
+(c) a process model that can replay all possible conﬁgurations of certain and
+uncertain traces in the uncertain log. this process model has the highest
+possible replay ﬁtness, but is also very likely to contain some noisy or otherwise
+unwanted behavior.
+figure 5. three different process models for the uncertain event log ha,b,e,f,g,hi80,
+ha,fb,cg,[e,f],g,ii15,ha,fb,c,dg,[e,f],g,ji5obtained through inductive mining over an uncertain
+directly-follows graph. the different ﬁltering parameters for the udfg yield models with
+distinct features.
+thus, the construction of behavior graphs for uncertain traces is the basis of both process discovery
+and conformance checking on uncertain event data, since the behavior graph is a necessary processing
+step to mine information from uncertain traces. it is then important to be able to build the behavior
+graph of any given uncertain trace quickly and efﬁciently, in order to enable performant process
+discovery and conformance checking.
+4. materials and methods
+4.1. preliminaries
+let us illustrate some basic concepts and notations, partially from [1]:
+deﬁnition 1 (power set) .the power set of a set ais the set of all possible subsets of a, and is denoted with
+p(a).pne(a)denotes the set of all the non-empty subsets of a: pne(a) =p(a)nfæg.
+deﬁnition 2 (multiset) .a multiset is an extension of the concept of set that keeps track of the cardinality
+of each element.b(a)is the set of all multisets over some set a. multisets are denoted with square brackets,
+e.g., b= [x,x,y], or with the cardinality of the elements as superscript, e.g., b= [x2,y]. we denote the empty
+multiset with [ ]. the operator ()retrieves the cardinality of an element of the multiset, e.g., b(x) =2,b(y) =1,
+b(z) =0. over multisets we deﬁne x2b,b(x)1, and set(b) =fx2bg. the multiset union b=b1]b2
+is the multiset b such that for all x we have b (x) =b1(x) +b2(x).
+deﬁnition 3 (sequence and permutation) .given a set x, a ﬁnite sequence over xof length nis a function
+s2x:f1,. . .,ng! x, and is written as s=hs1,s2,. . .,sni. for any sequence swe deﬁnejsj=n,
+s[i] = si,x2s,x2fs1,s2,. . .,sngand ss0=hs1,s2,. . .,sn,s0i. a permutation of the set xis
+a sequence xsthat contains all elements of xwithout duplicates: xs2x,x2xs, and for all 1ijxsjand
+for all 1jjxsj,xs[i] =xs[j]!i=j. we denote withsxall such permutations of set x. we overload
+the notation for sequences: given a sequence s =hs1,s2, . . . , sni, we will writessin place ofsfs1,s2,...,sng.
+deﬁnition 4 (transitive relation and correct evaluation order) .letxbe a set of objects and rbe a binary
+relation rxx.ris transitive if and only if for all x,x0,x002xwe have that (x,x0)2r^(x0,x00)2algorithms 2020, 13, 285 9 of 27
+r!(x,x00)2r. a correct evaluation order is a permutation s2s xof the elements of the set xsuch that for
+all1i<jjsjwe have that (s[i],s[j])2r.
+deﬁnition 5 (strict partial order) .letsbe a set of objects. let s,s02s. a strict partial order (,s)is
+a binary relation that have the following properties:
+• irreﬂexivity: s s is false.
+• transitivity: s s0and s0s00imply ss00.
+• antisymmetry: s s0implies that s0s is false. it is implied by irreﬂexivity and transitivity [10].
+deﬁnition 6 (directed graph) .a directed graph g2u gis a tuple (v,e)where vis the set of vertices and
+evvis the set of directed edges. the set ugis the graph universe. a path in a directed graph g= (v,e)
+is a sequence of vertices psuch that for all 1<i<jpj 1we have that (pi,pi+1)2e. we denote with pg
+the set of all such possible paths over the graph g. given two vertices v,v02v, we denote with pg(v,v0)the
+set of all paths beginning in vand ending in v0:pg(v,v0) =fp2pgjp[1] =v^p[jpj] =v0g.vandv0are
+connected (and v0is reachable from v), denoted by vg7!v0, if and only if there exists a path between them in g:
+pg(v,v0)6=æ. conversely, vg
+67!v0,pg(v,v0) =æ. we drop the superscript gif it is clear from the context.
+a directed graph g is acyclic if there exists no path p 2pgsatisfying p [1] =p[jpj].
+deﬁnition 7 (topological sorting) .letg= (v,e)be an acyclic directed graph. a topological sorting [ 11]
+og=hv1,v2,. . .,vjvji2s vis a permutation of the vertices of gsuch that for all 1i<jjvjwe have
+that v j67!vi. we denote withogs vall such possible topological sortings over g.
+deﬁnition 8 (transitive reduction) .a transitive reduction [ 12]r:g!g of a graph g= (v,e)is a graph
+r(g) = ( v,er)with erewhere every pair of vertices connected in r(g)is not connected by any other path:
+for all (v,v0)2er,pg(v,v0) =fhv,v0ig.r(g)is the graph with the minimal number of edges that maintain
+the reachability between edges of g. the transitive reduction of a directed acyclic graph always exists and is
+unique [12].
+this paper proposes an analysis technique on uncertain event logs. these execution logs contain
+information about uncertainty explicitly associated with event data. a taxonomy of different types of
+uncertain event logs and attribute uncertainty has been described in [ 2]; we will refer to the notion of
+simple uncertainty, which includes uncertainty without probabilistic information on the control-ﬂow
+perspective: activities, timestamps, and indeterminate events.
+deﬁnition 9 (universes) .letuibe the set of all the event identiﬁers. let ucbe the set of all case id
+identiﬁers. letuabe the set of all the activity identiﬁers. let utbe the totally ordered set of all the timestamp
+identiﬁers. letuo=f!,?g, where the “!” symbol denotes determinate events, and the “?” symbol denotes
+indeterminate events.
+deﬁnition 10 (simple uncertain events) .e= (ei,a,tmin,tmax,o)is a simple uncertain event, where
+ei2u eis its event identiﬁer, a2p ne(uais the set of possible activity labels for e,tminand tmaxare
+the lower and upper bounds for the value of its timestamp, and oindicates if it is an indeterminate event.
+letue= (uip ne(ua)u tu tu o)be the set of all simple uncertain events. over the uncertain
+event e= (ei,a,tmin,tmax,o)we deﬁne the projection functions pa(e) =a,ptmin(e) =tmin,ptmax(e) =tmax
+andpo(e) =o.
+deﬁnition 11 (simple uncertain traces and logs) .s u eis a simple uncertain trace if for any
+(ei,a,tmin,tmax,o)2s,tmin<tmaxand all the event identiﬁers are unique. tudenotes the universe of
+simple uncertain traces. l t uis asimple uncertain log if all the event identiﬁers in the log are unique.algorithms 2020, 13, 285 10 of 27
+deﬁnition 12 (strict partial order over simple uncertain events) .lete,e02es
+ube two simple uncertain
+events. (,es
+u)is an order deﬁned on the universe of strongly uncertain events es
+uas:
+ee0,ptmax(e)<ptmin(e0)
+deﬁnition 13 (order-realizations of simple uncertain traces) .lets2t ube a simple uncertain trace.
+an order-realization so=he1,e2,. . .,ejsji2s sis a permutation of the events in ssuch that for all 1i<
+jjsjwe have that ejei, i.e., sois a correct evaluation order for sover(,es
+u), and the (total) order in
+which events are sorted in sois a linear extension of the strict partial order (,es
+u). we denote withro(s)
+the set of all such order-realizations of the trace s.
+a necessary step to allow for analysis of simple uncertain traces is to obtain their behavior graph.
+a behavior graph is a directed acyclic graph that synthesizes the information regarding the uncertainty
+on timestamps contained in the trace.
+deﬁnition 14 (behavior graph) .lets2t ube a simple uncertain trace. let the identiﬁcation function
+id:s!f 1, 2, . . .,jsjgbe a bijection between the events in sand the ﬁrstjsjnatural numbers. a behavior
+graph b:tu!u gis the transitive reduction of a directed graph r(g), where g= (v,e)2u gis deﬁned as:
+• v =f(id(e),pa(e),po(e))je2sg
+• e =f(v,w)jv,w2v^ptmax(v)<ptmin(w)g
+the set of topological sortings of a behavior graph b(s)corresponds to the set of all the order-realizations of
+the trace s:
+a technical note: this deﬁnition for the nodes of the behavior graph is slightly different from the
+one in [2], to simplify the notation in algorithms. the two deﬁnitions are functionally identical.
+figures 6 and 7show the transitive reduction operation on the running example.
+nightsweats
+e1fprtp ,
+sectpg
+e2
+splenomeg
+e3adm
+e4
+figure 6. the behavior graph of the trace in table 1before applying the transitive reduction. all the
+nodes in the graph are pairwise connected based on precedence relationships; pairs of nodes for which
+the order is unknown are not connected.
+nightsweats
+e1fprtp ,
+sectpg
+e2
+splenomeg
+e3adm
+e4
+figure 7. the same behavior graph after the transitive reduction. the arc between e1and e4is removed,
+since they are reachable through e2. this graph has a minimal number of arcs while conserving the
+same reachability relationship between nodes.
+the semantics of a behavior graph can efﬁcaciously communicate time and order information
+concerning the time relationships among events in the corresponding uncertain trace in a compact
+manner. for a behavior graph b(s) = ( v,e)and two events e12s,e22s,(e1,e2)2eholds if and
+only if e1is immediately followed by e2for some possible values of the timestamps of the events in thealgorithms 2020, 13, 285 11 of 27
+trace. a consequence of this fact is that if a pair of events in the graph are unreachable, they might
+have occurred in any order.
+deﬁnition 14is meaningful and clear from a theoretical point of view. it rigorously deﬁnes
+a behavior graph and the semantics of its parts. although helpful to understand the function of
+behavior graphs, obtaining them from process traces following this deﬁnition—that is, using the
+transitive reduction—is inefﬁcient and slow. this hinders the analysis of logs with a large number of
+events, and with longer traces. it is nonetheless possible to build behavior graphs from process traces
+in a faster and more efﬁcient way.
+4.2. efﬁcient construction of behavior graphs
+the set of steps to efﬁciently create a behavior graph from an uncertain trace is separated into
+two distinct phases, described by algorithms 1and 2. an uncertain event eis associated with a time
+interval which is determined by two values: minimum and maximum timestamp of that event ptmin(e)
+andptmax(e). if an event ehas a certain timestamp, we have that ptmin(e) =ptmax(e).
+we will examine here the effect of algorithms 1and 2on a running example, the process
+trace shown in table 4. notice that in this running example, no uncertainty on activity labels nor
+indeterminate events are present: this is because of the fact that the topology of a behavior graph only
+depends on the (uncertain) timestamps in the events belonging to the corresponding trace.
+algorithm 1: timestamp list(s)
+input : an uncertain trace s.
+output : the list of timestamps lofs.
+l hi ; // support list
+l hi ; // list of event attributes
+e sort(s); // sorts uncertain events by minimum timestamp
+i 1
+while ijejdo
+l l(ptmin(e),i,e, ’min’ )
+l l(ptmax(e),i,e, ’max’ )
+i i+1
+end
+sort(l); // sorts the list based on timestamp value
+i 1
+while ijljdo
+(t,id,e,type) l[i]
+l l (id,pa(e),po(e),type)
+i i+1
+end
+returnl
+table 4. running example for the creation of the behavior graph.
+case id event id activity timestamp event type
+872 e1 a 5 december 2011 !
+872 e2 b [6 december 2011, 10 december 2011] !
+872 e3 c 7 december 2011 !
+872 e4 d [8 december 2011, 11 december 2011] !
+872 e5 e 9 december 2011 !
+872 e6 f [12 december 2011, 13 december 2011] !algorithms 2020, 13, 285 12 of 27
+algorithm 2: behavior graph (timestamp list(s))
+input : the listl=timestamp list(s)of an uncertain trace s.
+output : the behavior graph b(s) = ( v,e).
+v f(id,pa(e),po(e))j(id,pa(e),po(e),type)2lg
+e ?
+i 1
+while i<jljdo
+(id,a,o,type) l[i]
+iftype=’max’ then
+j i+1
+while jjlj do
+(id,a,o,type) l[j]
+iftype=’min’ then
+e e[f((id,a,o),(id,a,o))g
+else if ((id,a,o),(id,a,o))2ethen
+break
+end
+j j+1
+end
+end
+i i+1
+end
+return (v,e)
+the construction of the graph relies on a preprocessing step shown in algorithm 1,
+where a support listlis created (lines 4–8). every entry in this list is a tuple of four elements.
+for each event ein the trace, we insert two entries in the list—one for each timestamp ptminandptmax
+appearing in a trace. the four elements in each tuple contained in the list are:
+• anidentiﬁer, which in the list construction is an integer representing the rank of the uncertain
+event by minimum timestamp (computed in line 3);
+• the activity labels associated with the event pa(e);
+• the attribute po(e), which will carry the information regarding indeterminate events;
+• the type of timestamp that generated this entry—if it is a minimum or maximum of an interval.
+as we can see, the list is designed to contain all information about an uncertain event except the
+values of minimum and maximum timestamps, which we use to sort the list (line 9) and then discard
+prior to returning the list (lines 10–15).
+the events of the trace in table 4are represented in the list lby entries shown in table 5.
+these entries are then sorted by algorithm 1yielding the following list l:
+l=h(1,fag, !, ’min’ ),(1,fag, !, ’max’ ),(2,fbg, !, ’min’ ),(3,fcg, !, ’min’ ),
+(3,fcg, !, ’max’ ),(4,fdg, !, ’min’ ),(5,feg, !, ’min’ ),(5,feg, !, ’max’ ),
+(2,fbg, !, ’max’ ),(4,fdg, !, ’max’ ),(6,ffg, !, ’min’ ),(6,ffg, !, ’max’ )ialgorithms 2020, 13, 285 13 of 27
+table 5. entries for the list lgenerated by each event in the uncertain trace. every event ehas two
+associated entries, one marked as ’min’ and the other as ’max’ . each entry is a 4-uple containing
+an integer that acts as event identiﬁer, the set of possible activity labels πa(e)of the uncertain event,
+the indeterminate event attribute πo(e), and the type of timestamp (’min’ or ’max’).
+eventlistl∗entry
+(minimum timestamp)listl∗entry
+(maximum timestamp)
+e1 (5 december 2011, 1, {a}, !, ’min’) (5 december 2011, 1, {a}, !, ’max’)
+e2 (6 december 2011, 2, {b}, !, ’min’) (10 december 2011, 2, {b}, !, ’max’)
+e3 (7 december 2011, 3, {c}, !, ’min’) (7 december 2011, 3, {c}, !, ’max’)
+e4 (8 december 2011, 4, {d}, !, ’min’) (8 december 2011, 4, {d}, !, ’max’)
+e5 (9 december 2011, 5, {e}, !, ’min’) (9 december 2011, 5, {e}, !, ’max’)
+e6 (12 december 2011, 6, {f}, !, ’min’) (13 december 2011, 6, {f}, !, ’max’)
+one of the purposes the list lserves is gathering the structural information to create the behavior
+graph; in fact, visiting the list in order is equivalent of sweeping the events of the trace on the time
+dimension, encountering each timestamp (minimum or maximum) sorted through time. we can
+visualize this on the gantt diagram representation of the trace of table 4, visible in figure 8.
+figure 8. a gantt diagram visualizing the time perspective of the events in table 4. the horizontal
+blue bars represent the interval of possible timestamps of uncertain events: such interval is ample for
+the event with activity label “c”, which has an uncertain timestamp, and is narrow to indicate a precise
+point in time for the other events. this diagram can show the order relationship between events in a
+trace, as well as the dimensions of their interval of possible timestamps in scale.
+every segment representing an uncertain event in the diagram is translated by timestamp list
+into two entries in a sorted list, representing the two extremes of the segment. events without
+an uncertain timestamp collapse into a single point in the diagram, and their corresponding two entries
+in the list are characterized by the same timestamp.
+now, let us examine algorithm 2. the idea leading the algorithm is to analyze the time relationship
+among uncertain events in a more precise manner, as opposed to adding a large number of edgesto the graph and then removing them via transitive reduction. this is attained by searching all the
+viable successors of each event in the sorted timestamp list l. we scan the list lwith two nested loops,
+and we use the inner loop to look for successors of the entry selected by the outer loop. according to the
+semantics of behavior graphs, events with overlapping intervals as timestamps must not be connectedalgorithms 2020, 13, 285 14 of 27
+by a path; thus, we draw outgoing edges from an event only when, reading the list, we arrive at a point
+in time in which the event has certainly occurred. this is the reason outgoing edges are not drawn
+when inspecting minimum timestamps (line 6) and incoming edges are not drawn when inspecting
+maximum timestamps (line 10).
+first, we initialize the set of nodes with all the triples (id,pa(e),po(e))in the entries ofl, and we
+initialize the edges with an empty set (lines 1–2). for each maximum timestamp that we encounter in
+the list, we start searching for successors in the following entries (lines 3–9), so we proceed in looking
+for the successors of (id,a,o,type)only if type=’max’.
+if, while searching for successors of the entry (id,a,o,’max’ ), we encounter the entry
+(id,a,o,type)corresponding to a minimum timestamp ( type=’min’ ), we connect (id,a,o)and
+(id,a,o)in the graph, since their timestamps do not have any possible value in common. the search
+for successors must continue, since it is possible that other events took place before the maximum
+timestamp of the event corresponding to (id,a,o,type). this conﬁguration occurs for events e1and
+e3in table 4. as can be seen in figure 8,e3can indeed follow e1, but the still undiscovered event e2is
+another possible successor for e1.
+if the entry (id,a,o,type)corresponds to a maximum timestamp (line 12), so type=’max’ ,
+there are two separate situations to consider. case 1: (id,a,o)was not already connected to
+(id,a,o). then, the timestamps of the events corresponding to (id,a,o)and(id,a,o)overlap
+with each other—if they did not, the two nodes would have already been connected, since we would
+have encountered (id,a,o,’min’ )from (id,a,o,’max’ )before encountering (id,a,o,’max’ ).
+thus, (id,a,o)must not be connected to (id,a,o)and the search must continue. events e3and e4are
+an example: when the maximum timestamp of e4is encountered during the search for the successor of
+e3, the two are not connected, so the search for a viable successor of e3has to continue. case 2: (id,a,o)
+and(id,a,o)are already connected. this means that we had already encountered (id,a,o,’min’ )
+during the search for the successors of (id,a,o). since the entire time interval representing the possible
+timestamp of the event associated with (id,a,o)is detected after the occurrence of (id,a,o), there are
+no further events to consider as successors of (id,a,o)and the search stops (line 13). in the running
+example, this happens between e5and e6: when searching for the successors of e5, we ﬁrst connect it
+with e6when we encounter its minimum timestamp; we then encounter its maximum timestamp, so no
+other successive event can be a successor for e5. this concludes the walkthrough of the procedure,
+which shows why algorithms 1and 2can be used to correctly compute the behavior graph of a trace.
+the behavior graph of the trace in table 4obtained through this procedure is shown in figure 9.
+a
+e1c
+e3d
+e4
+e
+e5
+b
+e2f
+e6
+figure 9. the behavior graph of the trace in table 4.
+let us now prove, in more formal terms, the correctness of these algorithms. we will show that
+the procedures b ehavior graph and t imestamp listare able to construct a behavior graph with the
+semantics illustrated in deﬁnition 14.algorithms 2020, 13, 285 15 of 27
+theorem 1 (correctness of the behavior graph construction) .lets2t ube an uncertain trace. let bg=
+(v,e) =behavior graph (timestamp list(s))be the behavior graph of sobtained through algorithms 1
+and2. the graph bgfollows the behavior graph semantics: for all pairs of events e2sande02ssuch that
+id(e) =eid,pa(e) =ea,po(e) =eo,id(e0) =e0
+id,pa(e0) =e0
+a,po(e0) =e0
+o, we have that the node (eid,ea,eo)
+is connected to the node (e0
+id,e0
+a,e0
+o)if and only if ptmax(e)<ptmin(e0)and there exists no event e002ssuch
+thatptmax(e)<ptmin(e00)ptmax(e00)<ptmin(e0). thus, bg =b(s).
+proof. let us ﬁrst deﬁne a suitable idfunction for the behavior graph using the list ecreated in
+timestamp list(s). for all events e2sand for i2nsuch thate[i] = e, we deﬁne id(e) = i.
+since idis just an enumeration of the events in s, it is trivially bijective.
+(()assume ptmax(e)< ptmin(e0). by construction, we have that l =
+h. . .,(eid,ea,eo,’max’ ),. . .,(e0
+id,e0
+a,e0
+o,’min’ ),. . .i. the checks in line 6 and line 10 only allow
+for edges to be linked from entries of type ’max’ to entries of type ’min’ that only appear in a later
+position in the list l. thus, the conﬁguration ptmax(e)<ptmin(e0)is a strict prerequisite for (eid,ea,eo)
+and(e0
+id,e0
+a,e0
+o)to be connected: ((eid,ea,eo),(e0
+id,e0
+a,e0
+o))2e)ptmax(e)<ptmin(e0).
+())assume ptmax(e)<ptmin(e0), and that the algorithm is currently searching the successors
+for the entry (eid,ea,eo,’max’ ). eventually, the inner loop will consider as a successor the entry
+(e0
+id,e0
+a,e0
+o,’min’ ), and since it is of type ’min’ ,(eid,ea,eo)and(e0
+id,e0
+a,e0
+o)will necessarily be connected
+unless the algorithm executes the break at line 13. to execute it, the algorithm needs to ﬁnd a list entry
+(e00
+id,e00
+a,e00
+o,’max’ )such that there already exist an arc between (eid,ea,eo)and(e00
+id,e00
+a,e00
+o), and this is
+only possible if (e00
+id,e00
+a,e00
+o,’min’ )has been encountered while searching for successors of (eid,ea,eo).
+this implies that
+l=h. . . ,(eid,ea,eo, ’max’ ), . . . ,(e00
+id,e00
+a,e00
+o, ’min’ ), . . .
+. . . ,(e00
+id,e00
+a,e00
+o, ’max’ ), . . . ,(e0
+id,e0
+a,e0
+o, ’min’ ), . . .i
+which by construction of l, is only possible if there exist some e002ssuch that
+ptmax(e)<ptmin(e00)ptmax(e00)<ptmin(e0)
+as mentioned earlier, the procedure of constructing a behavior graph has been structured in two
+different algorithms speciﬁcally to enable further optimization in processing uncertain process trace.
+this becomes evident once we consider the problem of converting in behavior graphs all the traces in
+an event log, as opposed as one single uncertain trace.
+first, it is important to notice that different uncertain traces can have the same list l. similarly to
+directly-follows relationships in more classical process mining, which can ignore the amount of time in
+absolute terms elapsed between two consecutive events, speciﬁc values of timestamps in an uncertain
+trace are not necessarily meaningful with respect to the connection in the behavior graph; their order,
+conversely, is crucial.
+this fact enables further optimization at the log level. the construction of the list lin
+timestamp list(s)is engineered in a way that allows for computing the behavior graph without
+direct lookup to the events in the trace. this implies that it is possible to extract a multiset of lists l
+from the event log, and to compute the conversion to behavior graph only for the set of lists induced by
+this multiset. this allows the saving of computation time in converting an entire event log to behavior
+graphs; furthermore, it enables a more compact representation of the log in memory, since we only
+need to store a smaller number of graphs to represent the whole log.
+the procedure to efﬁciently convert an event log into graphs is detailed in algorithm 3.
+these considerations allow us to extend to the uncertain scenario some concepts that are essential
+in classical process mining. first, we can now derive the deﬁnition of variant, highly important for
+preexisting process mining techniques, to uncertain event data.algorithms 2020, 13, 285 16 of 27
+algorithm 3: process uncertain log
+input : an uncertain log l.
+output : a multiset of behavior graphs bg.
+ml [ ]
+vl [ ]
+fors2ldo
+ml ml][timestamp list(s)]
+end
+forl2 mldo
+vl v l][behavior graph (l)ml(l)]
+end
+return bg
+deﬁnition 15 (uncertain variants) .letl t ube a simple uncertain event log. the variants of l
+denoted byvl, are the multisets of behavior graphs for the uncertain traces in l, and are computed with
+process uncertain log(l).
+the computational advantage in representing a log through a multiset of behavior graphs is
+evident in the procedure described in algorithm 2. we see that all data necessary to the creation of
+a behavior graph is contained in the list l, fact that justiﬁes the log representation method illustrated
+in algorithm 3.
+lemma 1. two uncertain traces s12lands22lbelong to the same variant, and share the same behavior
+graph, if and only if they result in the same timestamp list l:timestamp list(s1) =timestamp list(s2).
+another central concept in process mining is the so-called control-ﬂow perspective of event data.
+in certain process traces, where timestamps have a total order, events have a single activity label
+and no event is indeterminate, the control-ﬂow information is represented by a sequence of activity
+labels sorted by timestamp. although there are many analysis approaches that also account for
+other perspectives (e.g., the performance perspective that considers the duration of events and
+their distance in time, or the resource perspective that accounts for the agents that execute the
+activities), a vast amount of process mining techniques, including most popular algorithms for
+process discovery and conformance checking, rely only on the control-ﬂow perspective of a process.
+analogously, behavior graphs carry over the control-ﬂow information of an uncertain trace: instead of
+describing the ﬂow of events like their certain counterpart, the behavior graph describes all possible
+ﬂows of events in the uncertain trace.
+5. asymptotic complexity
+in this section, we will provide some values for the asymptotic complexity of the algorithms seen
+in this paper.
+in a previous paper [ 2] we introduced the concept of behavior graph for the representation of
+uncertain event data, together with a method to obtain such graphs. deﬁnition 14describes such
+a baseline method for the creation of the behavior graph consisting of two main parts: the construction
+of the starting graph and the computation of its transitive reduction. let us consider an uncertain
+process trace s2t uwithjsj=nevents, and the graph g= (v,e)generated in deﬁnition 14before
+the transitive reduction.
+the starting graph is created by inspecting the time relationship between every pair of events;
+this corresponds to checking if an edge exists between each pair of vertices in g, which needs
+o(n2)time.
+the transitive reduction of graphs can be obtained through many methods. a simple and efﬁcient
+method to compute the transitive reduction on sparse graphs is to test reachability through a searchalgorithms 2020, 13, 285 17 of 27
+(either breadth-ﬁrst or depth-ﬁrst) from each edge. this method costs o(ve)time (here, for simplicity,
+we resort to a widely adopted abuse of notation in asymptotic complexity analysis: we indicate a set
+instead of its cardinality, e.g., we use o(v)in place ofo(jvj)). however, in the initial graph each
+event e2vhas an inbound arc from each event certainly preceding eand an outbound arc to each
+event certainly following e. fewer events with overlapping intervals as timestamps of uncertain events
+imply fewer arcs in g; the initial graph gof a trace with no uncertainty has jej=n(n 1)
+2=o(v2)
+edges. thus, except for rare, very uncertain cases, the graph gis dense.
+aho et al. [ 12] presented a technique to compute the transitive reduction in o(n3)time,
+more appropriate in the case of dense graphs, and proved that the transitive reduction has the same
+computational complexity of the matrix multiplication problem. the problem of matrix multiplication
+was generally regarded as having an optimal time complexity of o(n3), until volker strassen presented
+an algorithm [ 13] able to multiply matrices in o(n2.807355)time. subsequent improvements have
+followed, by coppersmith and winograd [ 14], stothers [ 15] and williams [ 16]. the asymptotically
+fastest algorithm known to date has been illustrated by le gall [ 17] and has an execution time
+ofo(n2.3728639). however, these faster algorithms are very seldomly used in practice, due to the
+existence of large constant factors in their computation time that are hidden by the asymptotic
+notation. moreover, they have vast memory requirements. the strassen algorithm is helpful in
+real-life applications only when applied on very large matrices [ 18], and the coppersmith-winograd
+algorithm and subsequent improvements are more efﬁcient only with inputs so large that they are
+effectively classiﬁed as galactic algorithms [19].
+bearing in mind these considerations, for the vast majority of event logs, the most efﬁcient way to
+implement the creation of the behavior graph via transitive reduction runs in o(n2) +o(n3) =o(n3)
+time in the worst-case scenario.
+it is straightforward to ﬁnd upper bounds for the complexity of algorithms 1and 2.
+line 3 of timestamp listrequireo(nlogn)to be executed. lines 5–8 require o(n)time. line 9
+requireso(2nlog(2n)) =o(nlogn)time to be run. lines 11–14 require 2 n=o(n)time to be run.
+lines 1–4 and 10 have a constant cost o(1). thus, timestamp listhas a total asymptotic cost of
+o(1) +2o(nlogn) +2o(n) =o(nlogn)in the worst-case scenario.
+let us now examine behavior graph . lines 1–3 and line 11 run in o(1)time. lines 11–30
+consist of two nested loops over the list l, and we havejlj=2n, resulting in an asymptotic cost of
+o((2n)2) =o(n2). the total running time for the novel construction method is then o(1) +o(n2) =
+o(n2)time in the worst-case scenario.
+we can also obtain a lower bound for the complexity in the worst-case scenario by analyzing the
+possible size of the output. the complete directed bipartite graph with nvertices, usually indicated
+with kn
+2,n
+2, is a dag that has (n
+4)2=o(n2)edges. it is easy to see that the complete bipartite graph
+fulﬁlls the requirements to be a behavior graph: it is in fact acyclic, and no edge can be removed
+without changing the reachability of the graph—speciﬁcally, it is equivalent to its transitive reduction.
+we can show that a behavior graph with such a shape exists employing a simple construction: a trace
+composed by nevents with timestamps such that the ﬁrstn
+2events all have overlapping timestamps,
+the lastn
+2also all have overlapping timestamps, and the maximum timestamp of each of the ﬁrstn
+2is
+smaller than the minimum timestamp of each of the lastn
+2events. the construction, together with
+an example, is illustrated in figure 10. since lines 11–30 of the algorithm build this graph with o(n2)
+edges, the algorithm runs in w(n2)time, and thus also in q(n2)time. this also proves the asymptotic
+optimality of the algorithm: no algorithm to build behavior graphs can run in less than q(n2)time in
+the worst-case scenario.algorithms 2020, 13, 285 18 of 27
+.[1, k]
+.[2, k+1]
+.[3, k+2]
+...
+.[k, 2k-1].[2k, 3k]
+.[2k+1, 3k+1]
+.[2k+2, 3k+2]
+...
+.[3k-1, 4k-1].[1, 4]
+.[2, 5]
+.[3, 6]
+.[4, 7].[8, 12]
+.[9, 13]
+.[10, 14]
+.[11, 15]
+figure 10. construction of the class of behavior graphs isomorphic to a complete bipartite graph and
+an instantiated example. for any n=2k, it is possible to have a behavior graph isomorphic to the
+graph kk,k, which thus has a number of edges quadratic in the number of vertices.
+6. experimental results
+the formal deﬁnition of our novel construction method for the behavior graph was used
+to show its asymptotic speedup with respect to the construction using the transitive reduction.
+to empirically conﬁrm this improvement, we built a set of experiments to measure the gain in speed
+and memory usage.
+6.1. performance of behavior graph construction
+in this section, we will show a comparison between the running time of the naïve behavior
+graph construction—which employs the transitive reduction—versus the improved method detailed
+throughout the paper. the experiments are set to investigate the difference in performance between
+the two algorithms, and most importantly how this difference scales when the size of the event log
+increases, as well as the amount of events in the log that have uncertain timestamps. in designing the
+experiments, we took into consideration the following research questions:
+• q1: how does the computation time of the two methods compare when run on logs with
+an increasing number of traces?
+• q2: how does the computation time of the two methods compare when run on logs with increasing
+trace lengths?
+• q3: how does the computation time of the two methods compare when run on logs with increasing
+percentages of events with uncertain timestamps?
+• q4: what degree of reduction in memory consumption for the representation of an uncertain log
+can we attain with the novel method?
+• q5: do the answers obtained for q3hold when simulating uncertainty on real-life event data?
+both the baseline algorithm based on transitive reduction [ 2] and the new algorithm for
+the construction of the behavior graph are implemented in python, within the proved project.
+the implementation of both methods is available online, as well as the full code for the experiments
+presented here (see the reference in section 1).
+for each series of experiments exploring q1through q4, we generate a synthetic event log
+with a number nof traces of length l(in number of events belonging to the trace). uncertainty on
+timestamps is then artiﬁcially added to the events in the log. a speciﬁc percentage pof the events
+in the event log will have an uncertain timestamp, causing it to overlap with an adjacent event.algorithms 2020, 13, 285 19 of 27
+finally, behavior graphs are built from all the traces in the event log with either algorithm, while the
+execution time is measured. all results in this section are presented as the mean of the measurements
+for 10 runs of the corresponding experiment. in the diagrams, we will label with “trred” the naïve
+method using the transitive reduction, and with “improved” the faster algorithm illustrated in this
+paper. additionally, the data series for the novel method are labeled with the relative variation in
+running time for each speciﬁc data point in the experiment, expressed in percentage.
+to answer q1, the ﬁrst experiment inspects how the efﬁciency of the two algorithms scales with
+log dimension in number of traces. we generate logs with a ﬁxed uncertainty percentage of p=0.5,
+and trace length of l=20. the number of traces in the uncertain log progressively scales from n=1000
+ton=10,000. as shown in figure 11, our proposed algorithm outperforms the baseline algorithm,
+showing a much smaller slope in computation time. as anticipated by the theoretical analysis,
+the computing time to build behavior graphs increases linearly with the number of traces in the event
+log for both methods; in the novel method, the constant factors are much smaller, thus producing
+the speedup that we can observe in the graph. please note that in this experiment the novel method
+requires between 18% and 26% of the time with respect to the baseline method.
+2,000 4,000 6,000 8,000 10,000
+log size (number of traces)0.02.55.07.510.012.515.017.5behavior graph building time (seconds)
+22.78%23.27%22.2%25.11% 22.37%23.34% 18.92%26.13%22.63%21.79%trred
+improved
+figure 11. time in seconds for the creation of the behavior graphs for synthetic logs with traces of
+length l=20 events and p=0.5 of uncertain events, with increasing number of traces n. the solid
+blue line indicates the time needed for the naïve construction; the dashed red line shows the building
+time of the improved algorithm, and is labeled with the relative time variation (in percentage).
+the second experiment is designed to answer q2. we analyze the effect of the trace length on
+the total time needed for behavior graph creation. therefore, we created logs with n=100 traces
+of increasing lengths in number of events, and added uncertain timestamps to events with p=0.5.
+the results, illustrated in figure 12, meet our expectations: the computation time of the baseline
+method scales much worse than the computation time required by our new technique, due to its
+cubic asymptotic time complexity. this conﬁrms the results of the analysis of the asymptotic timecomplexity analysis detailed in section 5. we can notice an order-of-magnitude increase in speed.
+at trace length l=600, the new algorithm computes the graphs in only 0.35% of the time required by
+the baseline algorithm.algorithms 2020, 13, 285 20 of 27
+100 200 300 400 500 600
+trace length (number of events)10−1100101102behavior graph building time (seconds)
+5.64%4.63%1.95%1.59%1.16%0.87%0.68%0.6%0.49%0.43% 0.38%0.35%trred
+improved
+figure 12. time in seconds for the creation of the behavior graphs for synthetic logs with n=100
+traces and p=0.5 of uncertain events, with increasing trace length l.
+the next experiment tackles q3, by inspecting the difference in execution time for the two
+algorithms in function of the percentage of events with an uncertain timestamp in the event log.
+keeping constant the values n=100 and l=100, we progressively increased the percentage pof
+events with an uncertain timestamp and measured computation time. as presented in figure 13,
+the time required for behavior graph construction remains almost constant for our proposed algorithm,
+while it is very slightly decreasing for the baseline algorithm. this behavior is expected, and is justiﬁed
+by the fact that the worst-case scenario for the baseline algorithm is a trace that has no uncertaintyon the timestamp: in that case, the behavior graph is simply a chain of nodes representing the totalorder in a sequence of events with certain timestamps, thus the transitive reduction needs to ﬁndand remove a higher number of edges from the directed graph. this worst-case scenario occurs at
+p=0, explaining why the computation time needed by the transitive reduction is at its highest. it is
+important to note, however, that for all values of pour new algorithm runs is signiﬁcantly more
+efﬁcient than the baseline algorithm: with p=0, the new algorithm takes 0.47% of the time needed by
+the naïve construction, while for p=1 this ﬁgure grows to 4.39%.
+an additional experiment is illustrated to provide an answer to q4. as with the ﬁrst experiment,
+we increase the number of traces nin the uncertain log, while keeping the other parameters ﬁxed:
+l=10 and p=0.5. we then perform the behavior graph construction with both methods, and we
+measure the memory consumption derived from the transitive reduction method (keeping in memory
+one behavior graph for each uncertain trace) versus the improved method (which generates a multiset
+of behavior graphs, one for each variant in the uncertain log).
+the results are summarized in figure 14. please note that when nincreases, more and more
+uncertain traces are characterized by the same behavior graph, and can then be grouped in the same
+variant. this allows the improved algorithm to store the uncertain log more effectively. at n=15,000,
+the space needed by the multiset of behavior graphs is 59.2%, a sizable improvement in memory
+requirements when analyzing uncertain event logs of substantial dimensions. this improvement in
+memory consumption is a consequence of the new technique used in this paper to obtain the timestamp
+list, which enables such reﬁnement with respect to the technique illustrated in [5].algorithms 2020, 13, 285 21 of 27
+0.0 0.2 0.4 0.6 0.8 1.0
+uncertainty (%)0123456behavior graph building time (seconds)
+0.47%2.59%4.0% 4.77%3.07%4.51%3.53% 4.08% 4.1% 4.33% 4.39%trred
+improved
+figure 13. time in seconds for the creation of the behavior graphs for synthetic logs with n=100
+traces of length l=100 events, with increasing percentages of timestamp uncertainty p.
+2,000 4,000 6,000 8,000 10,000 12,000 14,000
+log size (number of traces)0.51.01.52.0memory occupation (bytes)×108
+93.97%89.9%86.33%82.92%80.21%77.46%74.9%72.31%69.51%67.52%65.47%64.37%62.04%60.69%59.2%trred
+improved
+figure 14. memory consumption in bytes needed to store the behavior graphs for synthetic uncertain
+event logs with traces of length l=10 events and timestamp uncertainty of p=0.5, with an increasing
+number of traces n.
+finally, to elucidate research question q5we compared the computation time for behavior graphs
+creation on real-life event logs, where we artiﬁcially inserted timestamp uncertainty in progressively
+higher percentage of uncertain events pas described for the experiments above. we considered three
+event logs: an event log tracking the activities of the help desk process of an italian software company,algorithms 2020, 13, 285 22 of 27
+a log related to the management of road trafﬁc ﬁnes in an italian municipality, and a log from the bpi
+challenge 2012 related to a loan application process.
+the results, presented in figure 15, closely adhere to the ﬁndings of the experiments with
+synthetically generated uncertain event data: the novel method provides a substantial speedup that
+remains rather stable with respect to the percentage pof uncertain events added in the log.
+0.0 0.2 0.4
+uncertainty (%)1020304050behavior graph building time (seconds)bpic 2012
+0.0 0.2 0.4
+uncertainty (%)0.20.30.40.50.60.70.8helpdesk
+0.0 0.2 0.4
+uncertainty (%)2.55.07.510.012.515.017.520.0rtfm
+figure 15. execution times in seconds for real-life event logs with increasing percentages pof timestamp
+uncertainty.
+6.2. applications of the behavior graph construction
+in section 1we saw how building the behavior graph is a fundamental preprocessing step for
+both process discovery and conformance checking when dealing with uncertain event logs. in the
+previous section, we showed in practice how the novel algorithm presented in this paper impacts the
+computation time for the construction of behavior graphs. now, let us have a glance into the effect of
+the speedup when applied to process mining techniques.
+in this additional experiment we consider the conformance checking problem. in [ 2] we proposed
+an approach to compute upper and lower bounds for the conformance score of a trace against
+a reference petri net through the alignment technique, which yields alignments for the best- and
+worst-case scenarios of an uncertain trace as illustrated in section 1. the experiment is set up to assess
+the effect of the new behavior graph construction on the overall performance of conformance checking
+over uncertain data. we ﬁrst generate a petri net with ttransitions, simulate a log by playing out
+n=500 traces, and add timestamp uncertainty with p=0.1. we then compute the lower bound for
+conformance between the uncertain event log and the petri net used as a source, and compare the
+overall execution time for conformance using the two different methods for the creation of the behavior
+graph. in this speciﬁc experiment, we also considered the other types of uncertainty in process mining
+illustrated in the taxonomy of [2], as well as all types of uncertainty simulate on the same log.
+the results are shown in figure 16. we can see that on very small nets ( t=5), the alignment
+algorithm takes a short time to execute, so the speedup provided by the improved behavior graph
+construction has a larger impact on the total computation time (taking as little as 30.71% of the time to
+calculate alignments). with the increase of t, the computation time for conformance checking using the
+fast construction of the behavior graph appears to stabilize around 65% of the time needed if we employalgorithms 2020, 13, 285 23 of 27
+the naïve construction when considering only one type of uncertainty in isolation. this translates
+in a reduction of roughly 35% of computation time for the very common problem of calculating the
+conformance score between event data and a reference model, a signiﬁcant impact on performances
+of concrete applications of process mining over uncertain data. when compounding all types of
+uncertainty we see a similar effect, although for t=5 the improved method takes 52.22% of the time
+required by the baseline construction, a less dramatic effect than the other uncertainty settings. this is
+because even at such small scales, the high number of realizations of traces slow down the alignment
+phase in the computation.
+10 20 30 40
+number of transitions3040506070time variation (%) 30.34%58.84%65.22%71.08%
+67.33%65.85%66.69%
+64.19%activities
+10 20 30 40
+number of transitions204060time variation (%) 18.15%51.66%60.81%66.17% 66.95%65.53% 65.08%64.01%timestamps
+10 20 30 40
+number of transitions204060time variation (%) 14.43%48.93%59.28%64.93% 64.83% 64.84%63.75% 64.25%indeterminate events
+10 20 30 40
+number of transitions6070time variation (%) 52.22%71.58%77.18%
+75.21%74.23%
+70.87%
+69.54%
+67.42%all
+figure 16. relative variation in computation time obtained through the improved behavior graph
+construction when applied to the computation of conformance bounds between a synthetic uncertain
+log and a petri net with an increasing number of transitions. the synthetic uncertain logs have n=500
+traces and timestamp uncertainty has been introduced with p=0.1.
+in evaluating this result, it is important to consider that alignments are a notoriously time-intensive
+technique [ 20], since the technique is based on an a∗search on a state space that consists of pairs of the
+activities in the trace combined with the possible actions in the model. as a consequence, the impact
+of the algorithm presented in this paper is limited by the characteristics of the implementation of such
+alignment technique; combining it with more reﬁned alignment algorithms would further improve the
+gain in speed.
+in summary, the outcomes of the experiments show how our new algorithm hereby presented
+outperforms the previous method for creating the behavior graph on all the parameters in which the
+problem instance can scale in dimensions, in both the time and space dimensions. the experiment
+designed to answer q3shows that like the naïve algorithm, our novel method being is essentially
+insensitive to the percentage of events with uncertain timestamps contained in a trace. this fact is also
+veriﬁed by the experiment associated with q5on real-life data with added time uncertainty. while foralgorithms 2020, 13, 285 24 of 27
+every combination of parameters we benchmarked the novel algorithm runs in a fraction of time
+required by the baseline method, the experiments also conﬁrm the improvements in asymptotic time
+complexity demonstrated through theoretical complexity analysis.
+7. related work
+the topic of process mining analysis over uncertain event data is relatively new, and little research
+has been carried out. the work introducing the concept of uncertainty in process mining, together
+with a taxonomy of the various types of uncertainty, speciﬁcally illustrated that if a trace displays
+uncertain attributes, it contains behavior, which can be effectively represented through graphical
+models—speciﬁcally, behavior graphs and behavior nets [ 2]. differently to classic process mining,
+where we have a clearly deﬁned separation between data and model and between the static behavior
+of data and the dynamic behavior of models, the distinction between data and models becomes
+more unclear in the presence of uncertainty, because of the variety in behavior that affects the data.
+representing traces through process models is used in [ 2] for the computation of upper and lower
+bounds for conformance scores of uncertain process traces against classic reference models. another
+practical application of behavior graphs in the ﬁeld of process mining over uncertain event data is
+presented in [ 8]. behavior graphs of uncertain traces are employed to determine the number of possible
+directly-follows relationships between uncertain events, with the end goal of automatically discovering
+process models from uncertain event data.
+albeit, as said, the application of the concept of uncertainty in data to process mining is recent,
+the same idea has precedents in the older ﬁeld of data mining. aggarwal and philip [ 21] offer
+an overview of the topic of uncertain data and its analysis, with a strong focus on querying. such data
+is modeled based on probabilistic databases [ 22], a foundational concept in the setting of uncertain
+data mining. a branch of data mining particularly close to process mining is frequent itemsets mining:
+an efﬁcient algorithm to search for frequent itemsets over uncertain data, the u-apriori, have been
+described by chui et al. [23].
+behavior graphs are directed acyclic graphs (dags), which are widely used throughout many
+areas of science to represent with a graph-like model dependencies, precedence relationships, time
+information, or partial orders. they are effectively used in circular dependency analysis in software [ 24],
+probabilistic graphical models [ 25], dynamic graphs analytics [ 26], and compiler design [ 27]. in process
+mining, conditional partial order graphs (cpogs)—which consist of collections of dags—have been
+exploited by mokhov et al. [28] to aid the task of process discovery.
+we have seen throughout the paper that uncertainty on the timestamp dimension—speciﬁcally,
+representing at which time an event occurred with an interval of possible timestamps—generates,
+on the precedence relationships of events, a partial order. although uncertainty research in process
+mining provides a novel justiﬁcation of partial ordering that spawns from speciﬁc attribute values,
+the idea of having a partial order instead of a total order among events in a trace has precedents in
+process mining research. lu et al. [ 29,30] examined the problem of conformance checking through
+alignments in the case of partially ordered traces, and developed a construct to represent conformance
+called a p-alignment. genga et al. [ 31] devised a method to identify highly frequent anomalous patterns
+in partially ordered process traces. more recently, van der aa et al. [ 32] developed a probabilistic
+infrastructure that allows an inference of the most likely linear extension of a partial order between
+events in a trace, with the goal of “resolving” the partial order.
+an important aspect to notice is that conformance checking over uncertain event data is not
+to be confused with stochastic conformance checking, which concerns measuring conformance of
+certain event data against models enriched with probabilistic information. the probabilities decorating
+a stochastic model do not derive from uncertainties in event data, but rather from frequency of
+activities [33] or from performance indicators [34].algorithms 2020, 13, 285 25 of 27
+a review of related work on the topic of the asymptotic complexity of the transitive reduction
+and the equivalent problem of matrix multiplication is provided with the complexity analysis of the
+algorithms examined by this paper, in section 5.
+8. conclusions
+the creation of the behavior graphs—a graphical structure of paramount importance for the
+analysis of uncertain data in the domain of process mining—plays a key role as initial processing
+step for both conformance checking and process discovery of process traces containing events with
+timestamp uncertainty, the most critical type of uncertain behavior. it allows, in fact, to represent
+the time relationship between uncertain events, which can be in a partial order. the behavior graph
+also carries the information regarding other types of uncertainty, like uncertain activity labels and
+indeterminate events. such a representation is vital to establish which possible sequence of events
+in an uncertain trace most adhere to the behavior prescribed by a reference model, thereby enabling
+conformance checking; and to measure the number of possible occurrences of the directly-follows
+relationship between activities in an event log, making process discovery over uncertainty possible.
+extracting behavior graphs from uncertain event data is thus concomitantly crucial and time
+consuming. in this paper, we show an improvement for the performance of uncertainty analysis by
+proposing a new algorithm that enables the creation of behavior graphs in quadratic time in the number
+of events in the trace. this novel method additionally allows for the representation of an uncertain
+log as a multiset of behavior graphs, which relevance is two-fold: it allows the representation of the
+control-ﬂow information of an uncertain event log in a more compact manner by using less memory,
+and naturally extends the concept of variant—central throughout the discipline of process mining—to
+the uncertain domain. we proved the correctness of this novel algorithm, we showed asymptotic
+upper and lower bounds for its time complexity, and implemented performance experiments for this
+algorithm that effectively show the gain in computing speed it entails in real-world scenarios.
+author contributions: the conceptualization and methodology of this research was a collaborative effort shared
+among all authors. other tasks were divided as follows: software and experiment implementation, result analysis
+and draft preparation, m.p .; editing, critical reviewing, supervising, m.s.u. and w.m.p .v.d.a.; funding acquisition,
+w.m.p .v.d.a. all authors have read and agreed to the published version of the manuscript.
+funding: we thank the alexander von humboldt (avh) stiftung for supporting our research interactions.
+conﬂicts of interest: the authors declare no conﬂict of interest.
+references
+1. van der aalst, w.m.p . process mining: data science in action; springer: berlin/heidelberg, germany, 2016.
+2. pegoraro, m.; van der aalst, w.m.p . mining uncertain event data in process mining. in proceedings of the
+2019 international conference on process mining (icpm), aachen, germany, 24–26 june 2019; pp. 89–96.
+3. van der aalst, w.; adriansyah, a.; de medeiros, a.k.a.; arcieri, f.; baier, t.; blickle, t.; bose, j.c.;
+van den brand, p .; brandtjen, r.; buijs, j.; et al. process mining manifesto. in international conference
+on business process management; springer: berlin/heidelberg, germany, 2011; pp. 169–194.
+4. kurniati, a.p .; rojas, e.; hogg, d.; hall, g.; johnson, o.a. the assessment of data quality issues for process
+mining in healthcare using medical information mart for intensive care iii, a freely available e-health record
+database. health inform. j. 2019, 25, 1878–1893. [crossref] [pubmed]
+5. pegoraro, m.; uysal, m.s.; van der aalst, w.m.p . efﬁcient construction of behavior graphs for uncertain
+event data. in international conference on business information systems (bis); springer: berlin/heidelberg,
+germany, 2020.
+6. berti, a.; van zelst, s.j.; van der aalst, w.m.p . process mining for python (pm4py): bridging the gap
+between process- and data science. arxiv 2019, arxiv:1905.06169.
+7. adriansyah, a.; van dongen, b.f.; van der aalst, w.m.p . towards robust conformance checking.
+ininternational conference on business process management; springer: berlin/heidelberg, germany, 2010;
+pp. 122–133.algorithms 2020, 13, 285 26 of 27
+8. pegoraro, m.; uysal, m.s.; van der aalst, w.m.p . discovering process models from uncertain event data.
+ininternational conference on business process management; springer: berlin/heidelberg, germany, 2019;
+pp. 238–249.
+9. leemans, s.j.j.; fahland, d.; van der aalst, w.m.p . discovering block-structured process models from
+event logs-a constructive approach. in international conference on applications and theory of petri nets and
+concurrency; springer: berlin/heidelberg, germany, 2013; pp. 311–329.
+10. flaška, v .; ježek, j.; kepka, t.; kortelainen, j. transitive closures of binary relations. i. acta univ. carol.
+math. phys. 2007, 48, 55–69.
+11. kalvin, a.d.; varol, y.l. on the generation of all topological sortings. j. algorithms 1983 ,4, 150–162. [ crossref ]
+12. aho, a.v .; garey, m.r.; ullman, j.d. the transitive reduction of a directed graph. siam j. comput. 1972 ,
+1, 131–137. [crossref]
+13. strassen, v . gaussian elimination is not optimal. numer. math. 1969, 13, 354–356. [crossref]
+14. coppersmith, d.; winograd, s. matrix multiplication via arithmetic progressions. j. symb. comput. 1990 ,
+9, 251–280. [crossref]
+15. stothers, a.j. on the complexity of matrix multiplication. ph.d. thesis, university of edinburgh,
+edinburgh, uk, 2010.
+16. williams, v .v . multiplying matrices faster than coppersmith-winograd. in proceedings of the acm
+symposium on theory of computing (stoc), new york, ny, usa, 19–22 may 2012; volume 12, pp. 887–898.
+17. le gall, f. powers of tensors and fast matrix multiplication. in proceedings of the 39th international
+symposium on symbolic and algebraic computation, kobe, japan, 23–25 july 2014; pp. 296–303.
+18. d’alberto, p .; nicolau, a. using recursion to boost atlas’s performance. in high-performance computing;
+springer: berlin/heidelberg, germany, 2005; pp. 142–151.
+19. le gall, f. faster algorithms for rectangular matrix multiplication. in proceedings of the 53rd
+annual symposium on foundations of computer science, new brunswick, nj, usa, 20–23 october 2012;
+pp. 514–523.
+20. lee, w.l.j.; verbeek, h.m.w.; munoz-gama, j.; van der aalst, w.m.p .; sepúlveda, m. replay using
+recomposition: alignment-based conformance checking in the large. in proceedings of the bpm demo
+track and bpm dissertation award co-located with 15th international conference on business process
+management (bpm 2017), barcelona, spain, 13 september 2017.
+21. aggarwal, c.c.; philip, s.y. a survey of uncertain data algorithms and applications. ieee trans. knowl.
+data eng. 2008, 21, 609–623. [crossref]
+22. suciu, d.; olteanu, d.; ré, c.; koch, c. probabilistic databases. synth. lect. data manag. 2011 ,3, 1–180.
+[crossref]
+23. chui, c.k.; kao, b.; hung, e. mining frequent itemsets from uncertain data. in proceedings of the paciﬁc-asia
+conference on knowledge discovery and data mining, nanjing, china, 22–25 may 2007; pp. 47–58.
+24. al-mutawa, h.a.; dietrich, j.; marsland, s.; mccartin, c. on the shape of circular dependencies
+in java programs. in proceedings of the 2014 23rd australian software engineering conference,
+milsons point, australia, 7–10 april 2014; pp. 48–57.
+25. bayes, t. lii. an essay towards solving a problem in the doctrine of chances. by the late rev. mr. bayes,
+f.r.s. communicated by mr. price, in a letter to john canton, a.m.f.r.s. philos. trans. r. soc. lond. 1763 ,53,
+370–418.
+26. mariappan, m.; vora, k. graphbolt: dependency-driven synchronous processing of streaming graphs.
+in proceedings of the fourteenth eurosys conference 2019, dresden, germany, 25–28 march 2019; p. 25.
+27. aho, a.; lam, m.; sethi, r.; ullman, j.; cooper, k.; torczon, l.; muchnick, s. compilers: principles, techniques
+and tools; addison wesley: boston, ma, usa, 2007.
+28. mokhov, a.; carmona, j.; beaumont, j. mining conditional partial order graphs from event logs.
+intransactions on petri nets and other models of concurrency xi; springer: berlin/heidelberg, germany, 2016;
+pp. 114–136.
+29. lu, x.; fahland, d.; van der aalst, w.m.p . conformance checking based on partially ordered event data.
+ininternational conference on business process management; springer: berlin/heidelberg, germany, 2014;
+pp. 75–88.algorithms 2020, 13, 285 27 of 27
+30. lu, x.; mans, r.s.; fahland, d.; van der aalst, w.m.p . conformance checking in healthcare based on partially
+ordered event data. in proceedings of the 2014 ieee emerging technology and factory automation (etfa),
+barcelona, spain, 16–19 september 2014; pp. 1–8.
+31. genga, l.; alizadeh, m.; potena, d.; diamantini, c.; zannone, n. discovering anomalous frequent patterns
+from partially ordered event logs. j. intell. inf. syst. 2018, 51, 257–300. [crossref]
+32. van der aa, h.; leopold, h.; weidlich, m. partial order resolution of event logs for process conformance
+checking. decis. support syst. 2020, 136, 113347. [crossref]
+33. leemans, s.j.j.; polyvyanyy, a. stochastic-aware conformance checking: an entropy-based approach.
+ininternational conference on advanced information systems engineering; springer: berlin/heidelberg,
+germany, 2020; pp. 217–233.
+34. rogge-solti, a.; van der aalst, w.m.p .; weske, m. discovering stochastic petri nets with arbitrary
+delay distributions from event logs. in international conference on business process management; springer:
+berlin/heidelberg, germany, 2013; pp. 15–27.
+publisher’s note: mdpi stays neutral with regard to jurisdictional claims in published maps and institutional
+afﬁliations.
+©2020 by the authors. licensee mdpi, basel, switzerland. this article is an open access
+article distributed under the terms and conditions of the creative commons attribution
+(cc by) license (http://creativecommons.org/licenses/by/4.0/).

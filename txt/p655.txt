@@ -1,0 +1,703 @@
+towards improving the representational bias of
+process mining
+wil van der aalst, joos buijs, and boudewijn van dongen
+department of mathematics and computer science,
+technische universiteit eindhoven, the netherlands.
+{w.m.p.v.d.aalst,j.c.a.m.buijs,b.f.v.dongen}@tue.nl
+summary. process mining techniques are able to extract knowledge
+from event logs commonly available in today’s information s ystems.
+these techniques provide new means to discover,monitor, andim-
+prove processes in a variety of application domains. process discovery—
+discovering a process model from example behavior recorded in an event
+log—is one of the most challenging tasks in process mining. a variety
+of process discovery techniques have been proposed. most te chniques
+suﬀer from the problem that often the discovered model is internally
+inconsistent (i.e., the model has deadlocks, livelocks or other behav-
+ioral anomalies). this suggests that the search space should be limited
+to sound models. in this paper, we propose a tree representation that
+ensures soundness. we evaluate the impact of the search spac e reduction
+by implementing a simple genetic algorithm that discovers such process
+trees. although the result can be translated to conventional lang uages,
+we ensure the internal consistency of the resulting model wh ile mining,
+thus reducing the search space and allowing for more eﬃcient algorithms.
+1 introduction
+moreandmoreeventsarebeingrecorded.overthelastdecadewe havewitnessed
+an exponential growth of event data. information systems alrea dy record lots
+of transactional data. moreover, in the near future an increasin g number of
+devices will be connected to the internet and products will be monito red using
+sensors and rfid tags. at the same time, organizations are requir ed to improve
+their processes(reduce costs andresponsetimes) while ensuring compliancewith
+respect to a variety of rules. process mining techniques can help organizations
+facing such challenges by exploiting hidden knowledge in event logs. pr ocess
+mining is an emerging research discipline that provides techniques to discover,
+monitor and improve processes based on event data [4].
+starting point for process mining is an event log . all process mining tech-
+niques assume that it is possible to sequentially recordeventssuch that each
+event refers to an activity(i.e., a well-deﬁned step in the process) and is related
+to a particular case(i.e., a process instance). event logs may store additional
+information such as the resource (i.e., person or device) executing or initiating
+an activity, the timestamp of an event, or data elements recorded with an event2 wil van der aalst, joos buijs, and boudewijn van dongen
+(e.g., the size of an order). we often distinguish three main types of process
+mining:
+-discovery : take an event log and produce a model without using any other a-
+priori information. there are dozens of techniques to extract a p rocess model
+from raw event data. for example, the classical αalgorithm is able to discover
+a petri net by identifying basic process patterns in an event log [10]. for many
+organizations it is surprising to see that existing techniques are inde ed able to
+discover real processes based on merely example executions reco rded in event
+logs. process discovery is often used as a starting point for other types of
+analysis.
+-conformance : an existing process model is compared with an event log of the
+same process. the comparison shows where the real process dev iates from the
+modeled process. moreover, it is possible to quantify the level of co nformance
+and diﬀerences can be diagnosed. conformance checking can be us ed to check
+whether reality, as recorded in the log, conforms to the model and vice versa.
+there are various applications for this (compliance checking, auditin g, six-
+sigma, etc.) [30].
+-enhancement : take an event log and process model and extend or improve the
+model using the observed events. whereasconformance checkin gmeasures the
+alignment between model and reality,this third type of processminin g aims at
+changing or extending the a-priori model. for instance, by using tim estamps
+in the event log one can extend the model to show bottlenecks, ser vice levels,
+throughput times, and frequencies [4].
+in this paper we focus on process discovery . however, we would like to stress
+that process discovery is only the starting point for other types o f analysis.
+after linking events to process model elements it becomes possible t o check
+conformance, analyze bottlenecks, predict delays, and recomme nd actions to
+minimize the expected ﬂow time.
+to illustrate the notion of process discovery see fig. 1(a-b). base d on the
+eventlogshownin fig. 1(a),wecandiscoverthepetrinet showninf ig. 1(b). for
+simplicity we use a rather abstract description of the event log: pro cess instances
+are represented by sequences of activity names (traces). for e xample, there are
+42 cases that followed trace abce, 38 cases that followed trace acbe, and 20 cases
+that followed trace ade. this small eventlog consistsof380eventsdescribing100
+process instances. there are 80 events corresponding to the ex ecution of activity
+b. here we abstract from additional information such as the person executing or
+initiating an activity, the timestamp of an event, and associated dat a elements.
+the petri net shown in fig. 1(b) describes a process model able to e xplain the
+observed behavior.
+process discovery can be seen as a search process , i.e., given an event log
+search for the model that describes the observed behavior best . when using
+petri nets to describe process models, the search space consist s ofall possible
+petri nets . however, even when we discard the event log, we can identify petr i
+nets that are clearly undesirable. figure 1(c-d) shows two addition al candidate
+models. model n2has two potential deadlocks. after executing aandbwe reachtowards improving the representational bias of process min ing 3
+abce
+acbe
+ade3842
+20
+(a) event log
+(380 events, 100 cases)startab
+cd ep1
+p2p3
+p4end
+(b) correct process model n1
+startab
+cd ep2
+p3end
+(c) process model n2with two potential deadlocks
+startab
+cd ep1
+p2p3 end
+(d) process model n3that does not ensure proper completionp1
+a
+b ceseq
+xor
+and d
+(e) process treetrace #
+fig. 1.a small event log (a) and four process models (b-e).
+the state with just a token in place p2. transition eis not enabled because
+there have to be tokens in both input places ( p2andp3) in order for eto occur.
+hence,n2gets “stuck” after executing the partial trace ab. a similar deadlock is
+encountered after executing ac. only after executing partial trace ad, transition
+ebecomes enabled and the process can successfully terminate with a token in
+end.
+n3in fig. 1(d) has another problem. it is possible to execute trace abethat
+puts a token in place end. however, a token is left in p2. although the process
+seems to have completed (token in end), it is still possible to execute c. whereas
+n2was unable to replay the event log in fig. 1(a), n3is able to replay the event
+log but 80 of the 100 cases do not reach the desired ﬁnal state with just a token
+in placeend.
+the anomalies illustrated by n2andn3in fig. 1(c-d) are notspeciﬁc for
+petri nets. any of the main business process modeling languages (e pc, bpmn,
+uml, yawl, etc.) [34] allows for deadlocks, livelocks, and improper te rmina-
+tion. these anomalies exist independent of the event log, e.g., the ev ent log is
+not needed to see that n2has a deadlock. nevertheless, most process discovery4 wil van der aalst, joos buijs, and boudewijn van dongen
+techniques consider such incorrect models as possible candidates. this means
+that the search space is composed of both correct and incorrect models. it is
+not easy to limit the search space to only correct models. for commo n notations
+such as petri nets, epcs, bpmn, uml activity diagrams, and yawl m odels
+it is only possible to check correctness afterwards. note that dea dlocks and live-
+locks are non-local properties. hence, simple syntactical correc tness-preserving
+restrictions are not possible without severely crippling expressiven ess.
+in earlier work, we used genetic algorithms to discover process models [7,28].
+however,thesealgorithmssuﬀeredfromtheproblemthatthemaj orityofprocess
+models considered during the search process has anomalies such as deadlocks,
+livelocks, and improper termination. therefore, we propose to use process trees
+for process mining. process trees such as the one shown in fig. 1(e ) cannot have
+any of the anomalies mentioned before (deadlocks, livelocks, etc.) a s they are
+sound by design [27]. process trees are discussed in more detail in se ction 3.
+using process trees as a new representational bias , we propose a new generation
+of genetic process discovery algorithms. by limiting the search space to process
+trees, we can improve the quality of the discovered results a nd speed up the search
+process.
+the remainder of this paper is organized as follows. section 2 elabora tes on
+the importance of selecting the right representational bias. sect ion 3 formalizes
+the representational bias used in this paper and section 5 introduc es a new
+genetic algorithm. the ﬁrst experimental results are presented in section 6.
+section 7 concludes the paper.
+2 on the representational bias of process mining
+in this section we discuss challenges related to process discovery a nd explain
+why an appropriate representational bias [3] needs to be selected .
+2.1 process discovery as a search problem
+starting point for process mining is an event log composed of individua l events.
+each event refers to a case (process instance). events corres ponding to a case
+are ordered. therefore, a case can be described by a trace, i.e., a sequence of
+activity names. recall that in this paper we abstract from attribut es such as
+timestamps, resourcesand additional data elements, and focus o n activitynames
+only. diﬀerent cases may have the same trace. therefore, an eve nt log can be
+formalized as a multiset of traces (rather than a set). adenotes the set of
+activities that may be recorded in the log. σ∈a∗is atrace, i.e., a sequence of
+events.l∈ib(a∗)isanevent log,i.e.,amultisetoftraces.forexample,theevent
+log shown in fig. 1(a) can be formalized as follows: l= [abce42,acbe38,ade20].
+note that the trace abceappears 42 times in this event log.
+aprocessdiscoveryalgorithmcanbeseenasafunction fthat, givenanevent
+logl,producesamodel m,i.e.,f∈ib(a∗)→ mwheremistheclassofprocesstowards improving the representational bias of process min ing 5
+models considered. mis therepresentational bias , i.e., the set of possible candi-
+date models. for example, the αalgorithm can be seen a function that produces
+petri net n1shown in fig. 1(a) based on event log l= [abce42,acbe38,ade20].
+in this example, the representational bias mis the class of petri nets where all
+transitions have unique labels (there cannot be two transitions with the same
+label).
+since the mid-nineties several groups have been working on techniq ues for
+process mining [8,10,12,15,17,19,20,32], i.e., discovering proces s models based
+on observed events. in [5] an overview is given of the early work in th is domain.
+the idea to apply process mining in the context of workﬂow manageme nt sys-
+tems was introduced in [12]. in parallel, datta [17] looked at the discov ery of
+business process models. cook et al. investigated similar issues in the context
+of software engineering processes [15]. herbst [26] was one of the ﬁrst to tackle
+more complicated processes, e.g., processes containing duplicate t asks.
+most of the classical approaches have problems dealing with concur rency.
+theα-algorithm [10] is an example of a simple technique that takes concurr ency
+as a starting point. however, this simple algorithm has problems dealin g with
+complicated routing constructs and noise (like most of the other ap proaches
+described in literature). in [19,20] a more robust but less precise a pproach is
+presented.
+region-basedapproachesareabletoexpressmorecomplexcontr ol-ﬂowstruc-
+tures without underﬁtting. state-based regions were introduce d by ehrenfeucht
+and rozenberg [22] in 1989 and generalized by cortadella et al. [16]. in [9,21] it
+is shown how these state-based regions can be applied to process m ining. in par-
+allel, several authors applied language-based regions to process m ining [13,33].
+in [14] a related approach based on convex polyhedra is presented .
+for practical applications of process discovery it is essential that noiseand
+incompleteness are handled well. surprisingly, only few discovery algorithms
+focus on addressing these issues. notable exceptions are heurist ic mining [32],
+fuzzy mining [24], and genetic process mining [7,28].
+see [4] for a more elaborate introduction to the various process dis covery
+approaches described in literature.
+2.2 balancing between quality criteria such as fitness, sim plicity,
+precision, and generalization
+generally,weusefourqualitydimensionsforjudgingthequalityofth ediscovered
+process model: ﬁtness,simplicity ,precision , andgeneralization . as illustrated by
+fig. 2(a), the diﬀerent criteria may be competing.
+a model with good ﬁtnessallows for the behavior seen in the event log. a
+model has a perfect ﬁtness if all traces in the log can be replayed by the model
+from beginning to end. there are various ways of deﬁning ﬁtness [4]. it can be
+deﬁned at the case level, e.g., the fraction of traces in the log that c an be fully
+replayed. it can also be deﬁned at the event level, e.g., the fraction of events in
+the log that are indeed possible according to the model.6 wil van der aalst, joos buijs, and boudewijn van dongen
+fitness is not suﬃcient asit is easy to construct processmodels tha t allow for
+all imaginable behavior(“underﬁtting”) or simply encode the example behaviors
+stored in the event log (“overﬁtting”).
+a model is preciseif it does not allow for “too much” behavior. a model that
+is not precise is “underﬁtting”. underﬁtting is the problem that the model over-
+generalizes the example behavior in the log, i.e., the model allows for be haviors
+very diﬀerent from what was seen in the log. for example, a petri ne t without
+places and just transactions {a,b,c,d,e }is able to replay the example event log,
+but also any other event log referring to the same set of activities.
+a model should generalize and not restrict behavior to the examples seen
+in the log. a model that does not generalize is “overﬁtting”. overﬁt ting is the
+problem that a very speciﬁc model is generatedwhereas it is obvious that the log
+only holds example behavior, i.e., the model explains the particular sam ple log,
+but a next sample log of the same process may produce a completely d iﬀerent
+process model.
+thesimplicity dimension refers to occam’s razor ; the simplest model that
+can explain the behavior seen in the log, is the best model. the complex ity of
+the model can be deﬁned by the number of nodes and arcs in the und erlying
+graph. also more sophisticated metrics can be used, e.g., metrics th at take the
+“structuredness” or “entropy” of the model into account.
+fitness
+precision generalizationsimplicity“able to replay event log” “occam’s razor”
+“not overfitting the log” “not underfitting the log”process
+discovery
+(a) balancing between different quality dimensionssearchspace
+soundmodels
+ab
+cd eab
+cd eab
+cd e
+(b) the search space often allows for unsound models
+fig. 2.process discovery can be viewed as a search problem with poss ibly competing
+quality criteria in an enormous search space mostly populat ed by incorrect models.
+2.3 choosing the right representation bias
+the four main quality dimensions mentioned in fig. 2(a) illustrate that p rocess
+discovery is a non-trivial problem. for an event log there may be a sim ple model
+with a ﬁtness of 80% and a more complex model with a ﬁtness of 95%. b oth
+models can be useful. therefore, most process discovery algorith ms provide pa-
+rameters to guide the discovery process. however, the search p rocess is bounded
+by the representational bias m[3].
+it is important to separate the visualization of process mining result s from
+the representation used during the actual discovery process. t he selection of the
+representational bias mshould be a conscious choice and should not be (only)towards improving the representational bias of process min ing 7
+driven by the preferred graphical representation. to illustrate t he importance of
+this choice, we discuss implications related to correctness andexpressiveness .
+the three petri nets shown in fig. 1(b-d) are so-called wf-nets (workﬂow
+nets) [1]. a wf-net is a petri net with a designated source place ( start) and
+sink place ( end). all nodes in the net need to be on a path from starttoend.
+a commonly used correctness notion for wf-nets is soundness [6]. a wf-net
+is sound if from any reachable state it is possible to reach the desired ﬁnal
+state with just a token in end. moreover, there should be no dead parts that
+can never be executed. wf-net n1in fig. 1 is sound. wf-net n2is not sound
+because of the potential deadlocks: after executing borcit is no longer possible
+to reach the desired ﬁnal state. wf-net n3is not sound because only the trace
+aderesults in the desired ﬁnal state. the notion of soundness is not sp eciﬁc for
+wf-nets and similar notions can be deﬁned for all mainstream proces s modeling
+languages [1,6]. similar anomalies can be encountered in epcs, bpmn mo dels
+and the like [34].
+figure 2(b) shows the implications of having a representational bias mthat
+allows for unsound models. consider for example a genetic process m ining algo-
+rithm. initially, process models are generated randomly. obviously, most of such
+models will not be sound. in each generation of a genetic process min ing algo-
+rithm new models (called individuals) are created using mutation and cr ossover.
+when using conventional languages, such genetic operators are lik ely to create
+models with anomalies such as deadlocks and livelocks. as a result, the search
+process may take unnecessarily long because irrelevant models are considered
+(cf. fig. 2(b)).
+abce
+acbe
+ae3842
+20
+(a) event log (360 events, 100 cases)startab
+cτ ep1
+p2p3
+p4end
+(b) process model n 4with a silent steptrace #
+startab
+cep1
+p2p3
+p4end
+(d) process model n 6without silent/duplicate stepsp5
+startab
+ca ep1
+p2p3
+p4end
+(c) process model n 5with a duplicate step
+fig. 3.one event log (a) and three process models (b-d).
+the representational bias malso has implications on the expressiveness of
+theresultingmodel.toillustratethis,considereventlog l′= [abce42,acbe38,ae20]
+shown in fig. 3(a). note that this is original event log where activity dis ﬁltered
+out. wf-net n4in fig. 3(b) has a silent step τto model that after executing a8 wil van der aalst, joos buijs, and boudewijn van dongen
+it is possible to immediately enable e, i.e., the execution of τis invisible and not
+recorded in the event log. wf-net n5has twoalabeled transitions to model the
+three observed scenarios. both n4andn5are able to reproduce the behavior
+seen in event log l′. however, there is no wf-net with unique visible labels hav-
+ing the visible behavior reﬂected in l′. hence, any process discovery algorithm
+that has a representational bias limited to wf-nets with unique visible labels is
+destined to fail. the αalgorithm [10] uses such a representational bias. there-
+fore, it is unable to discover the underlying process properly. the αalgorithm
+produces wf-net n6shown in fig. 3(d). this model does not allow for trace ae.
+the example shows that the representational bias mmay exclude desirable
+models. it is important that msupports at least the basic workﬂow patterns.
+3 process trees
+in this paper, we choose to use a representational bias called process trees that
+satisfytwoimportantproperties:(i)allprocesstreescorrespo ndtosoundmodels,
+(ii) even the most basic process trees support the basic control ﬂ ow patterns.
+a process tree is a directed connected graph without cycles. a nod evin
+the graph is either a branch node or a leaf node. each leaf node repr esents an
+activity from the collection of activities a. each branch node, or operator node,
+has two children. these children can be either another operator no de or a leaf.
+the labeling function ℓassigns each operator node an operator from oand each
+leaf node an activity from a. currently, we have deﬁned basic operators for the
+sequence ( →), exclusive choice ( ×) and parallel ( ∧) constructs. furthermore,
+operators for loop ( /clockwise) and or ( ∨) are available. the order of the children mat-
+ters for the operators sequence and loop. the order of the childr en of a sequence
+operator specify the order in which they are executed (from left t o right). for a
+loop, the left child is the ‘do’ part of the loop. after the execution of this ‘do’
+part the right child, the ‘redo’ part, might be executed. after this execution the
+‘do’ part is again enabled. the loop in fig. 4 for instance is able to produ ce the
+traces/an}bracketle{ta/an}bracketri}ht,/an}bracketle{ta,b,a/an}bracketri}ht,/an}bracketle{ta,b,a,b,a /an}bracketri}htand so on. therefore, the children of an op-
+erator node are ordered using a sorting function s. all operator nodes represent
+both the split and the join construction in other process modeling lan guages.
+the sequence, exclusive choice and parallel operators together c over all ﬁve ba-
+sic control flow patterns [2] which is one of the requirements as disc ussed in
+section 2.3. furthermore, by adding the loop and or operators, pr ocess trees are
+able to express any event log.
+in contrast to petri nets, process trees always represent sou nd models [27]
+and a straightforwardtranslationfromprocesstrees to petrin ets exists. figure4
+shows how each of the operators can be translated to a petri net construct. the
+children of the sequential operator are ordered from left to right . in order to
+correctly translate the parallelism operator to a petri net, new tr ansitions need
+to be added. since these transitions do not represent an observa ble activity these
+are marked as invisible or τ-transitions (as is for example the case in the petri
+net of figure 3(b)).towards improving the representational bias of process min ing 9
+a
+b
+ba
+a
+ba
+bsequence 
+exclusive choice 
+loop parallellism 
+or choice a b
+a b
+a b
+a ba ba b
+fig. 4.translation of tree operators to petri net constructs
+unlike frequent pattern mining and episode mining [25], process tree d iscov-
+ery aims to discover end-to-end processes rather than frequen t patterns. the
+goal is to ﬁnd “complete process models” and not just process fra gments that
+are executed frequently. moreover, traditional data mining tech niques are not
+considering all four quality dimensions and tend to focus on just two dimensions
+(e.g., ﬁtness and simplicity).
+to determine the quality of a process tree, we need metrics to meas ure the
+four dimensions. while plenty of metrics exist [18,31] to measure the quality of a
+petrinet,wearenotawareofanymetricsforprocesstrees.th erefore,tomeasure
+thequalityofprocesstrees,wemeasurethequalityofthecorres pondingpetrinet
+translation, where we focus on ﬁtness and precision. for the ﬁtne ss dimension
+we use the cost-based ﬁtness as deﬁned by [11] and precision is cov ered by
+behavioral appropriateness metric which is currently under develo pment by the
+same authors.
+theoverallqualityofaprocesstreeiscomputedbytakingtheharm onicmean
+oftheﬁtnessandprecisionmetric.fortwoinputs( x1andx2)theharmonicmean
+his deﬁned as h=2x1x2
+x1+x2. the harmonic mean ensures a ‘pessimistic’ ﬁtness
+value when the two quality metrics are more apart. this ensures tha t if one
+metric scores very high but the other very low, the overall quality is relatively
+low since the two metrics should be more balanced.
+4 searching for process trees
+inthe introduction,westatedthat thegoalofselectingthe right representational
+bias was to limit the size of the search space. therefore, when comp aring process
+trees to petri nets, we should compare the size of the search spa ce for a given
+number of activities (i.e. a given number of transitions in a petri net, or a given
+number of leaf nodes in a process tree).10 wil van der aalst, joos buijs, and boudewijn van dongen
+since a place in a petri net can have any transition as input or as outp ut, or
+is not connected to that transition, there are 3ndiﬀerent places and a petri net
+contains any number of places (where we neglect the initial marking) .
+deﬁnition 1 (number of petri nets on nactivities). the number of dif-
+ferent petri nets on nactivities is deﬁned as:
+#pnets(n) = 23n
+the number of possible binary process trees having 5 types of oper ations
+(and,xor,seq,orandloop) andnleafs for the activities depends on
+the number of operator nodes ( n−1), the selection of the operator type of each
+node (5n−1) and the possible orderings of the leaf nodes ( n!), as well as the
+number of ordered rooted trees with nleaves:
+deﬁnition 2 (number of binary process trees). the number of binary
+process trees with three types of operator nodes can be deﬁne d as a function of
+the number of leaf nodes nas follows:
+#trees(n) = #structuralcombinations ·#operatorchoices ·#leaforders
+=c(n−1)·5(n−1)·n!
+=(2(n−1))!
+(n)!(n−1)!·5(n−1)·n!
+wherec(n): the catalan number sequence [29] which speciﬁes the number of
+ordered rooted trees with n operator nodes.
+table 1 shows the number of diﬀerent petri nets and process tree s for a
+number of activities ranging from 1 to 6. it shows the number of pro cess trees
+that are possible using three operators ( seq,xorandand) and when using
+all 5 operators. the table clearly shows that there are far less pos sible trees than
+there are petri nets, even when using all 5 operator types. furt hermore all of
+the process trees represent sound models, while of the petri net s, only a fraction
+is actually sound.
+table 1. size of the search space for varying number of activities.
+number of activities number of petri netsnumber of process trees
+3 operators 5 operators
+1 8 1 1
+2 512 6 10
+3 134,217,728 108 300
+4 2,41785·10243,240 15,000
+5 1,41347·1073136,080 1,050,000
+6 2,82401·102197,348,320 94,500,000
+since any process tree that can be generated represents a soun d model, a
+naive process mining algorithm could simply generate random trees, t est theirtowards improving the representational bias of process min ing 11
+quality and if the quality is not good enough, try again. to see how man y of
+such experiments would have to be conducted, we look at a simple exa mple
+with 6 activities and three diﬀerent logs. furthermore, we only cons ider the
+seq,xorandandoperators. the ﬁrst event log contains only one trace
+which describes a sequential process model, lseq= [abcdef]. the next event
+log describes 6 activities in an exclusive choice, lxor= [a,b,c,d,e,f ]. the
+third event log contains all 720 possible permutations of the 6 activit iesa−f
+and thus describes the process model where these 6 activities are executed in
+parallel.
+for the sequential log containing 6 activities we iterated over all 7 ,348,320
+possible trees and found there are 42 trees describing this behavio r with an
+overallqualityof1.thiscanbealsobecalculatedusingdeﬁnition 2byo bserving
+that there is only one correct order of the leaf nodes (namely a to f from left
+to right) and that all operator nodes should be of the type sequen ce. for both
+the exclusive choice and parallel event logs there are 30 ,240 trees that describe
+this behavior. this implies that for the sequential case one out of 17 4,960 trees
+is correct where for the exclusive choice and parallel case this is one out of 243
+trees.
+generating random trees until the ﬁrst tree is found with quality 1 c an be
+seen as the repetition of a bernoulli experiment until the ﬁrst succ ess, and hence
+this process follows a geometric distribution. table 2 shows how many trees we
+expect to generate, when doing such an experiment 100 times, i.e. in order to
+randomly ﬁnd a process tree with perfect quality for our sequentia l log, the
+number of trees that we expect to need to generate is 174 ,960 with a 99%
+conﬁdence interval of 4506 .66.
+table 2. results for process trees with 6 activities
+sequential exclusive choice parallel
+trees considered 174,960 243 243
+variance 306,108,266 5,881 5,881
+99% conﬁdence interval 4506.66 19.75 19.75
+clearly, just randomly searching for a process tree is not a good ide a when
+miningaprocessmodel. therefore,insection 5weinvestigatedthe u seofgenetic
+algorithms to more eﬃciently search for a process tree.
+5 genetic mining for process trees
+genetic process mining is a technique to discover process models fro m an event
+log of observed behavior. instead of using a deterministic approac h, as most
+discoveryalgorithmsdo,anevolutionaryalgorithmisapplied[23].thisa pproach
+has ﬁrst been applied to process mining in [7,28].
+the main idea of evolutionary algorithms is that one of the following is un -
+known [23]: the input to the problem, the model or algorithm, or the d esired12 wil van der aalst, joos buijs, and boudewijn van dongen
+output. in the case of genetic mining the input, the event log, is kno wn and
+provided. the desired output given the input is not known exactly, b ut we can
+determine which solutions are better or worse than others by prov iding a ﬁtness
+value for each candidate model. therefore the goal of the genetic mining algo-
+rithm is to provide a (process) model that describes the observed behavior in
+the event log ‘best’ given a certain ﬁtness. the ﬁtness function ca n be used to
+emphasize desired characteristics of the resulting process model.
+agenetic algorithm is a searchheuristic where a suitable solution need s to be
+found among possible candidates. the search space is searched by (semi-) ran-
+domly creating and changing candidates until certain stop criteria a re fulﬁlled.
+in general a genetic algorithm follows the ﬂow as shown in figure 5. th e initial
+population, or set of candidate solutions, can be created complete ly random or
+using some simple heuristics. in the next step the ﬁtness of each ca ndidate is
+calculated. if the algorithm should continue then the candidates ar e changed.
+in general there are two types of change operations: crossover mixes elements
+of two candidates creating two children; mutation changes one or more details
+of a candidate. these change operations are applied to a selection o f the ﬁtter
+candidates. furthermore, for a small group with the highest ﬁtne ss values a copy
+is created, which is not changed, to make sure that a copy of the ﬁt test candi-
+dates survive. each cycle of ﬁtness calculation and population chan ges is called
+a generation. when a speciﬁed minimum ﬁtness value is achieved, or wh en a
+speciﬁed maximum number of generations or execution time has been reached,
+the algorithm stops. the ﬁttest candidate is now returned as the o utput of the
+algorithm.
+(iv) return 
+fittest 
+individual yes no 
+(i) create initial 
+population (ii) calculate 
+fitness (iii) change 
+population 
+stop? 
+fig. 5.genetic algorithm ﬂow
+in [7,28], a genetic algorithm is presented to mine petri nets. this ge netic
+algorithm uses an internal matrix representation that can easily be translated
+to a petri net and vice versa. in essence the authors represent a petri net as a
+matrix which makes it easier to deﬁne correct mutation and crossov er functions.
+since the matrix representation is almost as expressive as petri ne ts and is able
+to describeunsound petrinets, the searchspaceis equivalentin s izeasthe search
+space of petri nets, shown in table 1.towards improving the representational bias of process min ing 13
+the ﬁtness function, which speciﬁes how ‘good’ a certain candidate is con-
+sidering the event log, is the second most important part of a genet ic algorithm.
+the ﬁtness function determines the main characteristicsof the ou tput. it can for
+instance consider all, or a selection of, the quality dimensions shown in figure 2.
+it is important however to correctly balance the diﬀerent quality dim ensions.
+if the ﬁtness function for instance only considered the ‘ﬁtness’ d imension, the
+resulting model is likely to have a very low ‘precision’ on the event log. f urther-
+more, if the event log contains a lot of noise, aiming for a perfect ‘ﬁtn ess’ might
+not result in the desired process model. for simplicity, our ﬁtness ca lculation
+directly uses the quality metrics discussed in section 3 which cover th e ﬁtness
+and precision dimensions.
+another important aspect of the genetic algorithm are the crosso verand mu-
+tation functions speciﬁed on the internal representation. the ma in purpose of
+the crossoverfunction istocombinetwogoodpartsfromtwocand idatestogether
+in a single candidate. the mutation function randomly modiﬁes a candid ate to
+introduce possibly new behavior that might be beneﬁcial for the ﬁtn ess. to-
+gether the crossover and mutation functions need to make sure t hat all possible
+candidates canbe discovered.
+in orderto change the process tree candidates we deﬁne 4 mutat ion functions
+on process trees. the single node mutation selects a single vertex a nd modiﬁes
+the labeling function ℓon that node. this means that an operator node gets
+a diﬀerent operator assigned and a leaf node represent a diﬀerent activity. the
+second mutation function adds a leaf node with a randomly selected a ctivity to
+a randomly selected operator node. in a similar way the third mutatio n function
+removesa randomlyselected vertex, which might be an operatorno de. the most
+complicated mutation function is the ‘internal crossover’ mutation which swaps
+subtrees within a single process tree.
+ourimplementationcurrentlydoesnotusecrossoversinceinitialex periments
+showed that this was not beneﬁcial for the performance. for the future we plan
+to add a guided crossover.
+the performanceof anygenetic algorithmis determined mainly by the size of
+the search space and the time needed to compute the ﬁtness of an individual. by
+usingprocesstreesasthe internalrepresentationwe drastically reducethe search
+space as we only consider sound models and therefore we improve pe rformance
+of the genetic algorithm. in this paper, we did not try to optimize the ﬁtness
+computations.
+6 experimental results
+inthis sectionwediscusstheﬁrstexperimentalresultsofthe initia lversionofthe
+genetic algorithm. for these experiments we ran the genetic mining a lgorithm
+100 times and recorded how many trees it created in order to ﬁnd a c andidate
+with an overall ﬁtness of 1. we used a small population of 10 candidat es in each
+generation. in each next generation the 2 ﬁttest candidates oft he last generation
+are copied without mutation. the 8 other candidates are created b y ﬁrst copying14 wil van der aalst, joos buijs, and boudewijn van dongen
+one of the candidates of the previous generation and then applying one of the
+mutation functions. initialization of the 10 trees in the ﬁrst genera tion was done
+completely random in order to test the mutation functions.
+we applied the genetic algorithm on the three event logs introduced b efore.
+we comparethe performance of our genetic algorithm to the case w here trees
+are created completely random until a suitable candidate has been f ound. all of
+our experiments are independent and identically distributed. there fore we can
+compare the random case, where we would create trees completely random, with
+ourexperiments. in the randomcase wewould on averageneed to c reate174 ,960
+process trees for the sequential or 243 process trees for the o ther 2 event logs.
+the 99% conﬁdence interval is +/- 4507 and +/- 19 .75, respectively, as shown
+in table 3 (note that we copied the results of table 2 for easy compar ison).
+table 3. results for process trees with 6 activities
+sequential exclusive choice parallel
+random genetic random genetic random genetic
+trees considered 174,960 459.84 243100.96 243100.88
+variance 306,108,266 95,042 5,881 8,454 5,88118,515
+standard dev 17,495.95 308.29 76.69 91.95 76.69136.07
+99% conﬁdence interval 4506.66 79.41 19.75 23.68 19.75 35.05
+the experimental results shown in table 3 clearly show an improvemen t over
+the random case. in all cases the number of trees that needed to be generated
+before ﬁnding a tree with perfect ﬁtness was far less than the ran dom case, even
+when considering the 99% conﬁdence intervals.
+this shows that by ﬁrst drastically reducing the search space, follo wed by
+an application of a simple genetic mining algorithm, provides perspectiv es for a
+new genetic mining algorithm. of course, performance can be furth er increased
+by initializing the trees in a smart way. another important future impr ovement
+is the deﬁnition of a custom ﬁtness function directly on process tre es. this could
+drastically reduce the time required for a ﬁtness calculation, which c urrently is
+the main performance issue. these initial results do conform our int uition that
+process trees are a good candidate for genetic mining.
+7 conclusion
+most process mining discovery algorithms suﬀer from the problem th at the dis-
+covered model is potentially unsound. considering unsound proces s models in
+a search space suggests that improvements are possible by eliminat ing these. in
+this paper, we propose an alternative representation for proces s models, process
+trees. process trees are inherently sound and can easily be translated t o other
+process modeling languages, such as petri nets, epcs or bpmn.
+process mining algorithms can be seen as search algorithms. by using pro-
+cess trees as a representation, the search space of all possible p rocess models istowards improving the representational bias of process min ing 15
+drastically reduced, compared to petri nets. in this paper we sho w that genetic
+algorithms can be deﬁned to search this reduced search space. on e of the main
+beneﬁts of genetic mining algorithms is the ﬂexibility. the desired char acteris-
+tics of the resulting process model can be deﬁned in the ﬁtness fun ction. this
+makes the genetic algorithm a versatile discovery algorithm that can be applied
+in many situations. in this paper we used existing petri net based me trics to
+calculate ﬁtness. as a result, our current approach is rather slow and not very
+suitable for real-life processes. however, it seems possible to deﬁn e quality met-
+rics directly on trees that make use of their unique characteristics . we expect
+that this will dramatically speed up the discovery process.
+references
+1. w.m.p. van der aalst. the application of petri nets to work ﬂow management.
+the journal of circuits, systems and computers , 8(1):21–66, 1998.
+2. w.m.p. van der aalst. workﬂow patterns. in l. liu and m. tam er¨ozsu, editors,
+encyclopedia of database systems , pages 3557–3558. springer-verlag, berlin, 2009.
+3. w.m.p. van der aalst. on the representational bias in proc ess mining (keynote
+paper). in s. reddy and s. tata, editors, proceedings of the 20th workshops
+on enabling technologies: infrastructure for collaborati ve enterprises (wetice
+2011), pages 2–7, paris, 2011. ieee computer society press.
+4. w.m.p. van der aalst. process mining: discovery, conformance and enhancement
+of business processes . springer-verlag, berlin, 2011.
+5. w.m.p. van der aalst, b.f. van dongen, j. herbst, l. marust er, g. schimm, and
+a.j.m.m. weijters. workﬂow mining: a survey of issues and ap proaches. data
+and knowledge engineering , 47(2):237–267, 2003.
+6. w.m.p. van der aalst, k.m. van hee, a.h.m. ter hofstede, n. sidorova, h.m.w.
+verbeek, m. voorhoeve, and m.t. wynn. soundness of workﬂow n ets: classiﬁ-
+cation, decidability, and analysis. formal aspects of computing , 23(3):333–363,
+2011.
+7. w.m.p. van der aalst, a.k. alves de medeiros, and a.j.m.m. weijters. genetic
+process mining. in g. ciardo and p. darondeau, editors, applications and theory
+of petri nets 2005 , volume 3536 of lecture notes in computer science , pages
+48–69. springer-verlag, berlin, 2005.
+8. w.m.p. van der aalst, h.a. reijers, a.j.m.m. weijters, b. f. van dongen, a.k.
+alves de medeiros, m. song, and h.m.w. verbeek. business pro cess mining: an
+industrial application. information systems , 32(5):713–732, 2007.
+9. w.m.p. van der aalst, v. rubin, h.m.w. verbeek, b.f. van do ngen, e. kindler,
+and c.w. g¨ unther. process mining: a two-step approach to ba lance between
+underﬁtting and overﬁtting. software and systems modeling , 9(1):87–111, 2010.
+10. w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster . workﬂow mining:
+discovering process models from event logs. ieee transactions on knowledge
+and data engineering , 16(9):1128–1142, 2004.
+11. a. adriansyah, b. van dongen, and w.m.p. van der aalst. co nformance checking
+using cost-based fitness analysis. in ieee international enterprise computing
+conference (edoc 2011) , 2011.
+12. r. agrawal, d. gunopulos, and f. leymann. mining process models from work-
+ﬂow logs. in sixth international conference on extending database tech nology,16 wil van der aalst, joos buijs, and boudewijn van dongen
+volume 1377 of lecture notes in computer science , pages 469–483. springer-
+verlag, berlin, 1998.
+13. r. bergenthum, j. desel, r. lorenz, and s. mauser. proces s mining based on
+regions of languages. in g. alonso, p. dadam, and m. rosemann , editors, inter-
+national conference on business process management (bpm 20 07), volume 4714
+oflecture notes in computer science , pages 375–383. springer-verlag, berlin,
+2007.
+14. j. carmona and j. cortadella. process mining meets abstr act interpretation. in
+j.l. balcazar, editor, ecml/pkdd 210 , volume6321 of lecture notes in artiﬁcial
+intelligence , pages 184–199. springer-verlag, berlin, 2010.
+15. j.e. cook and a.l. wolf. discovering models of software p rocesses from event-
+based data. acm transactions on software engineering and methodology ,
+7(3):215–249, 1998.
+16. j. cortadella, m. kishinevsky, l. lavagno, and a. yakovl ev. deriving petri nets
+from finite transition systems. ieee transactions on computers , 47(8):859–882,
+august 1998.
+17. a. datta. automating the discovery of as-is business pro cess models: proba-
+bilistic and algorithmic approaches. information systems research , 9(3):275–301,
+1998.
+18. j. de weerdt, m. de backer, j. vanthienen, and b. baesens. a critical evaluation
+study of model-log metrics in process discovery. in business process management
+workshops: bpm 2010 international workshops and education track, hoboken,
+nj, usa, september 13-15, 2010, revised selected papers , volume 66, page 158,
+2011.
+19. b.f. vandongen and w.m.p. vander aalst. multi-phase pro cess mining: building
+instance graphs. in p. atzeni, w. chu, h. lu, s. zhou, and t.w. ling, editors, in-
+ternational conference on conceptual modeling (er 2004) , volume 3288 of lecture
+notes in computer science , pages 362–376. springer-verlag, berlin, 2004.
+20. b.f. van dongen and w.m.p. van der aalst. multi-phase min ing: aggregating
+instancesgraphs intoepcs andpetri nets. ind.marinescu, e ditor,proceedings of
+the second international workshop on applications of petri nets to coordination,
+workﬂow and business process management , pages 35–58. florida international
+university, miami, florida, usa, 2005.
+21. b.f. van dongen, n. busi, g.m. pinna, and w.m.p. van der aa lst. an iterative
+algorithm for applying the theory of regions in process mini ng. in w. reisig, k.
+van hee, and k. wolf, editors, proceedings of the workshop on formal approaches
+to business processes and web services (fabpws’07) , pages 36–55. publishing
+house of university of podlasie, siedlce, poland, 2007.
+22. a. ehrenfeucht and g. rozenberg. partial (set) 2-struct ures - part 1 and part 2.
+acta informatica , 27(4):315–368, 1989.
+23. a.e. eiben and j.e. smith. introduction to evolutionary computing . natural
+computing. springer-verlag, berlin, 2003.
+24. c.w. g¨ unther and w.m.p. van der aalst. fuzzy mining: ada ptive process sim-
+pliﬁcation based on multi-perspective metrics. in g. alons o, p. dadam, and
+m. rosemann, editors, international conference on business process management
+(bpm 2007) , volume 4714 of lecture notes in computer science , pages 328–343.
+springer-verlag, berlin, 2007.
+25. j. han, h. cheng, d. xin, and x. yan. frequent pattern mini ng: current status
+and future directions. data mining and knowledge discovery , 15(1):55–86, 2007.towards improving the representational bias of process min ing 17
+26. j.herbst. amachinelearningapproachtoworkﬂowmanage ment. in proceedings
+11th european conference on machine learning , volume 1810 of lecture notes in
+computer science , pages 183–194. springer-verlag, berlin, 2000.
+27. oliver kopp, daniel martin, daniel wutke, and frank leym ann. the diﬀer-
+ence between graph-based and block-structured business pr ocess modelling lan-
+guages. enterprise modelling and information systems architectur e, 4(1):3–13,
+2009.
+28. a.k. alves de medeiros, a.j.m.m. weijters, and w.m.p. va n der aalst. genetic
+process mining: an experimental evaluation. data mining and knowledge dis-
+covery, 14(2):245–304, 2007.
+29. the on-line encyclopedia of integer sequences. sequenc e a000108. published
+electronically at http://oeis.org, accessed october 2011 .
+30. a. rozinat and w.m.p. van der aalst. conformance checkin g of processes based
+on monitoring real behavior. information systems , 33(1):64–95, 2008.
+31. m. weidlich, a. polyvyanyy, n. desai, and j. mendling. pr ocess compliance mea-
+surement based on behavioural proﬁles. in advanced information systems engi-
+neering, pages 499–514. springer, 2010.
+32. a.j.m.m. weijters and w.m.p. van der aalst. rediscoveri ng workﬂow models
+from event-based data using little thumb. integrated computer-aided engi-
+neering, 10(2):151–162, 2003.
+33. j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, a nd a. serebrenik.
+process discovery using integer linear programming. fundamenta informaticae ,
+94:387–412, 2010.
+34. m. weske. business process management: concepts, languages, archit ectures.
+springer-verlag, berlin, 2007.

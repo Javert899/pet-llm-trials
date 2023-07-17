@@ -1,0 +1,835 @@
+data-aware process mining: discovering decisions in
+processes using alignments
+massimiliano de leoni and wil m.p . van der aalst
+eindhoven university of technology eindhoven, the netherlands
+m.d.leoni@tue.nl, w.m.p.v.d.aalst@tue.nl
+abstract
+process discovery, i.e., learning process models from event
+logs, has attracted the attention of researchers and practi-
+tioners. today, there exists a wide variety of process mining
+techniques that are able to discover the control-ow of a
+process based on event data. these techniques are able to
+identify decision points , but do not analyze data ow to
+nd rules explaining why individual cases take a particular
+path. fortunately, recent advances in conformance checking
+can be used to align an event log with data and a process
+model with decision points. these alignments can be used
+to generate a well-dened classication problem per decision
+point. this way data ow and guards can be discovered and
+added to the process model.
+categories and subject descriptors
+c.3 [special-purpose and
+application-based systems ]: process control
+systems
+keywords
+process discovery, machine-learning techniques, business
+process data-ow pespective
+1. introduction
+despite the focus in process-orientation in most organi-
+zations, few processes are fully controlled by software (e.g.,
+a wfm or bpm system). it systems are still data-centric
+and people have a lot freedom when executing tasks. this
+allows for exibility, but also creates the need to analyze the
+processes as they are actually executed. thanks to advances
+in process mining [9,11] and the incredible growth of event
+data (cf. \big data" [5]), this is now possible. process min-
+ing aims to discover, monitor and improve real processes by
+extracting knowledge from event logs readily available in to-
+day's information systems [9]. the two main types of process
+mining are process discovery and conformance checking.
+permission to make digital or hard copies of all or part of this work for
+personal or classroom use is granted without fee provided that copies are
+not made or distributed for proﬁt or commercial advantage and that copies
+bear this notice and the full citation on the ﬁrst page. to copy otherwise, to
+republish, to post on servers or to redistribute to lists, requires prior speciﬁc
+permission and/or a fee.
+sac’13 march 18-22, 2013, coimbra, portugal.
+copyright 2013 acm 978-1-4503-1656-9/13/03 ...$10.00.given an event log consisting of a collection of traces (i.e.,
+sequences of events), process discovery constructs a process
+model that \adequately" describes the observed behavior.
+given an event log and a process model, conformance
+checking diagnosed the dierences between the observed
+behavior (i.e., traces in the event log) and the modeled
+behavior (i.e., execution sequences possible according to the
+model).
+lion's share of process mining research focuses on control-
+ow, i.e., the ordering of activities. in this paper we focus on
+data ow, e.g., we want to discover why particular cases take
+a particular path. in order to illustrate the importance of
+discovering the so-called data-ow perspective , let us consider
+the following example.
+example 1.a credit institute created a standardized pro-
+cess to deal with loans requested by clients. these loans can
+be used to buy small home appliances (e.g., fridges, tvs,
+high-quality digital sound systems). a customer can apply
+for a loan through a shop clerk. the clerk prepares the re-
+quest by lling out the form and attaching documents that
+prove the capability to pay o the loan. upon receiving a new
+request, the credit institute opens a new case. the initial
+step is to open the credit request by providing the informa-
+tion about the requester, i.e. the loan applicant, and the
+amount. afterwards, the credit institute veries the validity
+of the information provided. if the provided information is
+not valid, then the application is immediately rejected and
+stored in system along with informing the applicant. if the
+information is valid, a loan opening is made. requests for
+small amounts are assessed dierently than requests for large
+amounts ( simple assessment versus advanced assessment ),
+since, for large amounts, the loan assessment uses stricter
+constraints. if the decision is positive, then the application is
+accepted, stored in the system, and the applicant is informed.
+moreover, the loan is opened. if the decision is negative, the
+applicant is informed about the decision. in the latter case,
+the decision is preliminary, because the applicant is allowed
+to renegotiate the loan and ask for a smaller loan. if no
+request for renegotiation is received, the decision becomes
+denitive: the applicant is informed and the negative result
+is stored in the system.
+contemporary process mining techniques are able to discover
+models such as the petri net in figure 1 using only event
+data. such models only describe the control-ow perspective
+and ignore data associated with the cases which are handled.
+however, the dierent decisions in the model highly depend
+on characteristics of the loan request (e.g., the size of the
+loan). therefore, one also needs to analyze the data-owstartend
+credit request
+(crr)simple 
+assessment (sa)
+advanced 
+assessment (aa)inv1renegotiate
+(r)
+inv2
+open credit loan
+(ocl)verify (v)inv3notify preliminary 
+decision
+(n)
+close 
+request
+(clr)close 
+request
+(clr)register decision 
+and inform 
+customer m-z 
+(mz)
+register decision 
+and inform 
+customer a-l (al)figure 1: petri net representation of the control-ow of the running example. the grey boxes represent the
+transitions that are associated with process tasks. the black boxes identify invisible transitions, i.e. transitions
+that do not correspond to actual pieces of work but necessary for routing purposes, whose executions are
+never recorded in event logs. in brackets, there are the acronyms that are used to shorten the transition's names.
+circles are the so-called places, which may contain tokens. in order for a transition tto be executed, each
+input place (i.e., each place having outgoing arcs that enter t) needs to contain a token. when a transition
+res, one token is removed from each input place and one token is put into each output place. each petri net
+used to model processes is characterized by two special places, the start and the endplace (named start and
+endin gure). in the initial state, there exists only one token in start place. a process instance is considered
+as concluded when a token is produced in the end place.
+to discover the rules governing the choices in the process.
+to the best of our knowledge, the only approach that deals
+with the discovery of the data-ow is [7]. this approach was
+developed about 7 years ago and has several limitations.
+firstly, the decision mining approach in [7] can only partly
+deal with process models having invisible transitions. invisi-
+ble transitions do not correspond to actual pieces of work but
+are often necessary to model xor-splits/joins and certain
+types of loops. as a consequence, the technique cannot dis-
+cover conditions associated with xor-splits and many loops.
+secondly, the event log needs to fully conform to the mod-
+eled control-ow, i.e., the order according to which activities
+are executed can never dier from the idealized model. in
+fact, most control-ow discovery techniques treat the least
+frequent observed behaviors as noise and discard them. as
+result, even the discovered control-ow model does not fully
+conform to the event log. also hand-made models rarely
+fully explain all observed behavior: it is not uncommon to
+encounter event logs where a number of cases cannot be fully
+replayed by the model from begin to end.
+the approach in this paper addresses these problems . to
+do this, we use recent advances in conformance checking using
+alignments [1]. first, we discover the process control-ow,
+using one of the many process discovery techniques available
+today [9]. then, we align the event log and control-ow, thus
+mitigating the eects of non-conformance, i.e., the observed
+behavior is squeezed into the petri net without data. once
+the alignment is computed, the data-ow perspective can
+be discovered , i.e., the read and write operations as well as
+the transitions guards. when mining mine the data-owperspective, the most challenging task is to discover the
+guards. in this paper, we leverage on standard machine
+learning techniques to discover the guards. each decision
+point can be seen as a classication problem : according
+to the values assigned to variables, a particular path (i.e.,
+transition) is selected.
+the proposed solution has been implemented as a plug-
+in for prom that can be downloaded [10]. moreover, we
+conducted experiments using synthetic process models and
+event logs, as well as real-life event logs. the experiments
+show that the discovered data-ows are surprisingly accurate,
+even in presence of event logs with non-conforming traces.
+experiences using real-life logs show that this kind of data-
+aware process mining provides new and valuable insights.
+our data-aware process discovery technique is independent
+from the specic formalism used to describe the control-
+ow and data-ow perspectives. therefore, bpmn, epc
+or any other formalism can be employed to represent these
+perspectives. however, we use simple modeling language
+with clear semantics to explain our technique. in particular,
+we use a revisited version of petri nets with data introduced
+in [8].
+section 2 discusses the syntax and the operational seman-
+tics of petri nets with data. section 3 introduces the notion
+of control-ow alignment. our data-aware process discovery
+technique heavily relies on such alignments. section 4 details
+the technique, whereas section 5 reports the experimental
+results. finally, section 6 concludes the paper, delineating
+future research directions.2. petri nets with data
+before discussing syntax and semantics of petri nets with
+data, we introduce classical petri nets:
+definition 1 (petri net). a petri net is a triple
+(p;t;f )where
+pis a set of places;
+tis a set of transitions;
+f(pt)[(tp)is the ow relation describing
+the \arcs" between places and transitions (and between
+transitions and places).
+the preset of a transition tis the set of its input places:
+t=fs2pj(s;t)2fg. the postset of tis the set of its
+output places: t=fp2pj(t;p)2fg. denitions of pre-
+and postsets of places are analogous. a marking of a petri
+net is a multiset of its places, i.e., a mapping m:p!n.
+we say the marking assigns to each place a number of tokens.
+firing a transition tin a marking mconsumes a token from
+each of its input placest, and produces a token for each of
+its output places t. a transition tis enabled (it may re)
+inmif there are enough tokens in its input places, i.e. i
+mt.
+apetri net with data (dpn-net) is a petri net in which
+transitions (modeling activities) can read andwrite variables.
+a dpn-net may use a nite set of process variables vand a
+functionuthat determines the domain of each variable. a
+transition modeling an activity is allowed to write (or update)
+a predened subset of the process variables. a transition can
+have a data-dependent guard that blocks when it evaluates
+to false. only if the guard evaluates to true and all input
+places are marked, a transition can re. a guard can be any
+boolean expression over vusing logical operators such as
+conjunction (^), disjunction (_), and negation (:).
+definition 2 (dpn-net). a petri net with data (dpn-
+net)n= (p;t;f;v;u;r;w;g )consists of:
+a petri net (p;t;f );
+a setvof variables;
+a functionuthat denes the values admissible for each
+variablev2v, i.e. ifu(v) =dv,dvis the domain of
+variablev;
+a read function r2t!2vthat labels each transition
+with the set of variables that it must read;
+a write function w2t!2vthat labels each transition
+with the set of variables that it must write;
+a guard function g2t!gvthat associates a guard
+with each transition.1
+example 1 (cont.). figure 2 illustrates the data-ow per-
+spective of the working example. when dening guards, we
+assume that string values can be lexicographically ordered
+and, hence it is possible to also use inequality operators (i.e.,
+<and>) for strings.
+in order to provide an operational semantics, we introduce
+the concept of the state of a dpn-net:
+1the guard is dened over (a sub set of) variables in v. if a
+transitionthas no guard, we set g(t) = true.variable type
+amount non-negative number
+decision boolean
+requester string
+verication boolean
+(a) denition of variables
+transition variables written
+advanced assessment decision
+credit request requester ,amount
+simple assessment decision
+renegotiate amount
+verify verication
+(b) write/update operations
+transition guard
+inv1 verication = false
+inv2 decision = true
+notify preliminary
+decisiondecision = false
+simple assessment verication = true^amount>10000
+advanced
+assessmentverication = true^amount10000
+register deci-
+sion and inform
+customer m-zrequester\m"
+register deci-
+sion and inform
+customer a-lrequester\l"
+(c) transition guards
+figure 2: the data-ow perspective for the running
+example. for clarity, here we omit to list the read
+operations, assuming that transitions only read the
+variables on which the respective guards are dened.
+definition 3 (state of a petri net with data).
+given a dpn-net n= (p;t;f;v;u;r;w;g )and letd=s
+v2vu(v), the state of nis a pair (m;a )consisting of
+a marking mfor petri net (p;t;f )
+a function athat associates a value with each variable,
+i.e.a:v!d[f?g , witha(v)2u(v)[f?g . if
+a variablevis not given a value, we use the special
+symbol?, i.e.a(v) =?.
+in the initial state, there is only one token in a so-called start
+placep02p. a process instance is considered as concluded
+when a token is produced in a so-called end place pe2p.
+the initial state is(m0;a0)wherem0(p0) = 1 ,m0(p) = 0
+for any other place p, and for all v2v:a0(v) =?.
+in the remainder, dom(f)denotes the domain of some
+functionf. the operational semantics can be introduced in
+term of valid transition ring and state transition:
+definition 4 (valid firing and state transition).
+given a dpn-net n= (p;t;f;v;u;r;w;g ), a ring of a
+transition is denoted by a pair (t;r;w )wheret2t,rv
+is the set of variables that are read and w:v6!uis the
+set of variables that are written with the respective values.
+a transition ring (t;r;w )is valid in state (m;a )if the
+following conditions hold:1.each place in the preset of t contains at least one token,
+i.e. i8p2t:m(p)>0;
+2.the transition reads and writes all and only the variables
+that it is prescribed to, i.e. r=r(t)and dom(w) =
+w(t);
+3.the value assigned to each variable is valid, i.e. 8v2
+dom(w):w(v)2u(v);
+4.the guardg(t)evaluates true with respect to the assign-
+mentaof values to process' variables.
+a valid ring (t;r;w )in state (m;a )leads to state (m0;a0),
+where:
+m0(p) =8
+<
+:m(p) 1ifp2tnt;
+m(p) + 1 ifp2tnt;
+m(p) otherwise
+and
+a0(v) =
+a(v)ifv2vnw(t);
+w(v)ifv2w(t).
+3. aligning event logs and process
+models
+before discovering the data-ow, we need to align the
+event log and control-ow process model, i.e., events in the
+log need to be related to transition executions. please note
+that, before discovering the data-ow, the alignment can only
+consider the control-ow. adriansyah et al. have developed
+powerful techniques to align models and logs and showed
+how to use these alignments for conformance checking [1].
+nevertheless, these techniques only focus on the name of
+process activity to which the event log refers, ignoring other
+attributes. however, data attributes are of the utmost im-
+portance for discovering data ow. here, we discuss how the
+concept of alignment can be extended to incorporate data.
+first, we introduce the basic alignment concept.
+a petri net p= (t;p;f )that describes a process relies
+on constructs such as parallel split nodes, synchronization
+nodes, decision/choice nodes, conditions, merge nodes, etc.
+although we did not formalize this, we assume petri nets with
+a dened initial and nal state and consider all traces dt
+(i.e., ring sequences) that start in the initial marking and
+end in the nal marking. dtfully describes the behavior
+of the process model, i.e., m2dis a complete trace.
+an event log contains events associated with cases, i.e.,
+process instances. hence, a case can be described in terms of
+a tracel, i.e., a sequence of events. each event describes
+a log execution step and can be represented by a pair (a;)
+consisting of an activity aand a value assignment . here we
+assume that activities directly correspond to transitions, i.e.,
+a2t. however, this can be relaxed if needed, e.g., multiple
+transitions referring to the same activity or activities that
+are described by multiple transitions, e.g., to denote the start
+and completion of the activity. 2v6!uis a function that
+assigns a value to some of the variables in v. =v6!uis
+the set of all such functions. an event loglis a multiset of
+traces where each trace consists of events of the form (a;).
+in other words,l2b ((t)).2
+an alignment relates moves in log and to moves in model
+as explained in the following denition. here, we explicitly
+indicate no move with.
+2b(x) the set of all multisets over x.definition 5 (control-flow alignment). let us de-
+notesl= (t)[fg andsm=t[fg . a pair
+(sl;sm)2(slsm)nf(;)gis
+amove in log ifsl2(t)andsm=,
+amove in model ifsl=andsm2t,
+amove in both ifsl= (al;)2(t),sm2t, and
+al=am.
+ = (slsm)nf(;)gis the set of the legal moves .
+the alignment of a log trace l2(t)and a model
+tracem2tis a sequence 2such that the projection
+on the rst element (ignoring ) yieldsland the projection
+on the second element yields m(ignoring).
+ifis an alignment of log trace land model trace m, and
+ifm2d, it is called a complete control-ow alignment
+oflandd. an alignment of the event log land the process
+modeldis a multiseta2b ()of alignments such that,
+for each log trace l, there exists an alignment 2aofl
+andd.ais a multi-set because an event log may contain
+the same log trace lmultiple times, potentially resulting
+in multiple identical alignments.
+in order to quantify the severity of a deviation, end users
+need to congure a cost function on the legal moves 2
+!r+
+0. it may be dened dierently for individual pro-
+cesses, since, generally speaking, the costs depend on the
+specic characteristics of the process. in most of scenar-
+ios, a standard cost function is applicable:8(sl;sm)2
+: std(sl;sm) = 1 ifsl=orsm=; otherwise,
+std(sl;sm) = 0 . the cost of an alignment is dened as
+the sum of the costs of the individual moves in the alignment,
+i.e.,k() =p
+(sl;sm)2(sl;sm).
+given a log trace l2l, the techniques of adriansyah
+et al. [1] aim at nding a complete alignment of land a
+corresponding model trace m2dsuch that the alignment
+costs are minimal with respect to all 0
+m2d. in other words:
+there is no complete alignment of landdthat has lower
+costs. a chosen alignment with the lowest cost is referred to
+as an optimal alignment .
+definition 6 (optimal control-flow alignment).
+letl2l be a log trace and da process model. let  (l;d)
+be the set of the complete alignments of landd. a complete
+alignment2 (l;d)is an optimal alignment ofl2l
+anddi for all02 (l;d):k(0)k().
+example 1 (cont.). suppose we have a log trace:
+l=hcrrfa= 1000g;vfv=trueg;safd=trueg;
+aafd=trueg;ocl;clri
+where activity and attribute names are shortened with the
+acronyms in brackets in figure 1. if we use the standard cost
+function, an optimal control-ow alignment of lis:
+l:crrfa= 1000gvfv=truegsafd=trueg
+p: crr v sa
+l:aafd=truegoclclr
+p: inv2oclmzclr
+in order to nd the optimal alignments as dened above,
+we rst apply the technique described in [1] and already
+implemented in prom. then, we iterate over all log traces
+and enrich the log execution steps with the value assignments
+to attributes, as recorded in the attributes associated with
+events.(a)
+ (b)
+figure 3: two decision trees describing estimators
+for (a) function f1:nstring!ft1;t2gand (b)
+functionf2:nstring!ft2;t3g.
+4. discovery of the data-flow pro-
+cess perspective
+the data-ow discovery technique presented in this paper
+takes a petri net (p;t;f )without data and an event log
+las input, along with the multi-set of optimal control-ow
+alignments of(p;t;f )andl. the outcome is a petri net
+with datan= (p;t;f;v;u;r;w;g ), where our technique
+minesv;u;r;w andg. in the remainder, we say an event
+(t;)2l, if there exists a trace 2lsuch that (t;)2.
+we reasonably assume the set of variables of nare the set
+of variables dened in the event logs, i.e. v=fvj9(t;)2
+ls.t.v2dom()g. given a variable v2v, the values
+admissible for vare all those which have been observed in
+the log, i.e. u(v) =fuj9(t;)2l:(v) =ug. regarding
+the write operations, we assume that a transition twrites
+a variablevif, according to the log, at least x%of times,
+events fortcontain a value assignment to attribute v, where
+xcan be customized by the users.
+the most challenging task is to discover the guards of the
+transitions. generally speaking, given a transition t, the
+respective guard g(t) species the data-variables conditions
+that need to hold in order for tto be enabled to re. in order
+to discover the guard for each transition, we rst need to
+nd the decision points. in our setting, each place pthat has
+multiple outgoing transitions t1;:::;tnforms a decision point .
+indeed, these transitions are in \conict": only one out of
+t1;:::;tnis allowed to re. therefore, for each state (m;a )
+reachable from the initial state, g(t1)^:::^g(tn)evaluates
+to false using the value's assignment a, andg(t1)_:::_g(tn)
+evaluates to true.
+in this paper, we assume that a transition treads all the
+variables needed to evaluate g(t). obviously, if the event
+log contains additional information, we can use dierent
+approaches that allow for a more accurate discovery of the
+read operations. however, that is outside the scope of this
+paper.
+4.1 function estimators
+the discovery of the guards of the transitions associated
+with a decision point can be translated into the problem of
+nding the best estimator of a function.
+figure 4: a fragment of a petri net where a tran-
+sition, i.e. t2, consumes tokens from two decision-
+point places.
+definition 7 (function estimator). letf:x1
+x2:::xn!ybe a function having a nite domain
+y. an estimator of function fis a function  f:y!
+2x1x2:::xn, such that, for each y2y, f(y)returns all
+input domain tuples for which the expected output is y.
+the function estimator is trained through a set of ob-
+servations. an observation instance is a pair (  !x;y)where  !x2x1x2:::xnis the observed input and y2yis
+the observed output. given a set iof observation instances,
+for a practical use, the construction of a function estimator
+is abstracted as a function buildfunctionestimator (i), which
+returns a function  fsuch that, for each observed output
+y2y, f(y) =expr whereexpr is a expression that char-
+acterizes the input tuples  !xthat are expected to lead yas
+output, i.e. f(  !x) =y.
+the function estimator can be easily built using many ma-
+chine learning techniques. in this paper, we employ decision-
+tree building algorithms, specically the c4.5 algorithm [6].
+there are many reasons why to use decision-tree building
+algorithms to build a function estimator: the training data
+may contain missing attribute values and errors. moreover,
+an expression can potentially contain disjunctions. last but
+not least, the input domains are potentially dened over
+continuous domains.
+decision trees classify instances by sorting them down in
+a tree from the root to some leaf node. each non-leaf node
+species a test of some attribute x1;:::;xnand each branch
+descending from that node corresponds to a range of possible
+values for this attribute. in general, a decision tree represents
+a disjunction of conjunctions of expressions: each path from
+the tree root to a leaf corresponds to an expression that is,
+in fact, a conjunction of attribute tests. each leaf node is
+associated one of the possible output values: if an expression
+eis associated with a path to a leaf node y, every input
+tuple for which eevaluates to true is expected to return yas
+output. let us clarify through an example:
+example 2.let us suppose to have two functions: f1(x;s)
+=y1andf2(x;s) =y2, wherex2n,sis a string, y12
+ft1;t2gandy22ft2;t3g. let us suppose that we want to
+build the most accurate estimators  f1and f2off1andf2,
+respectively. to build such estimators, we construct decision
+trees forf1andf2. the two decision trees shown in fig-
+ure 3 were built using training sets for both f1andf2. the
+decision tree on the left-hand side describes estimator  f1:
+ f1(t1) =f(x;s)jx<50gand f1(t2) =f(x;s)jx50g.
+the decision tree on the right-hand side species  f2with
+ f2(t3) =f(x;s)js\l"^x < 10gand f2(t2) =
+f(x;s)js<\l"_(s\l"^x10)g.algorithm 1: generatetransitionguards
+data :n= (p;t;f ) { a petri net without data, a{ a
+multi-set of optimal control-ow alignments of nand an
+event log
+result : a guard function g:t!g
+1letibe a function whose domain is the set of places ps.t.
+jpj>1 and8p2ps.t.jpj>1:i(p) =;.
+2foreach alignmenth(s1
+l;s1
+m);:::; (sn
+l;sn
+m)i2a do
+3 setfunctionasuch that dom(a) =;
+4 fori 1tondo
+5 ifsi
+m6=then
+6 foreachp2si
+ms.t.jpj>1do
+7 i(p) i(p)[(a;si
+m)
+8 end
+9 end
+10 ifsi
+l6=^si
+m6=then
+11 letsi
+l= (ai
+l;i
+l)
+12 foreach variablev2dom(i
+l)do
+13 a(v) i
+l(v)
+14 end
+15 end
+16 end
+17end
+18foreach placep2ps.t.jpj>1do
+19 p buildfunctionestimator 
+i(p)
+20end
+21foreach transitiont2tdo
+22g(t) true
+23 foreach placep2ts.t.jpj>1do
+24 g(t) g(t)^ p(t)
+25 end
+26end
+27return g
+4.2 discovery of guards
+algorithm 1 illustrates the steps to discover the guards of
+transitions. the input parameters are a petri net without
+data (e.g. obtained by control-ow discovery algorithms) and
+a multi-set of optimal control-ow alignments. the output
+is the guard function gthat is mined. initially, in line 1, we
+initialize function iwhich is going to associate each decision-
+point place pwith the set of observation instances that refer
+to execution of transitions in the postset of p. from line 2
+to line 17, we replay all control-ow alignments to build the
+observation instances. while replaying, a function akeeps
+the current value's assignment to variables (line 3). in lines
+5-9, for each move in the alignment that is in model or both,
+i.e. such that si
+m6=, we create an observation instance
+whereaandsi
+mare the input and output, respectively. this
+instance is also added to the set of instances i(p)for placep.
+in fact, each move in log is a deviation and, thus, needs to
+be ignored. in lines 10-15, for each move in both, we update
+the current value's assignment, i.e. we rewrite function a.
+once all observation instances i(p)have been built for
+each decision-point place p, we build the function estimator
+ p(lines 18-20). now the guards can be mined (see lines
+21-26). for each transition t, the algorithm considers the
+function estimators  p1;:::; pnassociated with all decision-
+point places p1;:::;pn2t. the guards of transition tis
+g(t) = p1(t)^:::^ pn(t).
+example 2 (cont.). let us suppose to have a fragment of
+petri net as in figure 4. in fact, f1andf2are the functions
+that, given the current value's assignment as input, suppos-
+edly return the transition that consumes a token from p1
+andp2, respectively. let us suppose that, after replaying the
+control-ow alignments, we discover that  f1and f2are theremoved data-ow number of guards
+events conformance discovered
+10% 1 7
+20% 0.9999 - 1 7
+25% 0.90 - 0.95 6
+30% 0.80 - 0.90 6
+35% 1 4
+40% 1 2
+50% 1 2
+table 1: outcomes of the experiments to verify the
+level of robustness of the solution approach against
+event logs with deviations. the rst column shows
+dierent values of percentages of events that have
+been removed. the second column illustrates the av-
+erage data-ow conformance that has been observed
+during the experiments. the third column shows
+the number of guards that are discovered: the re-
+moval of more events cause the approach to discover
+a smaller number of guards.
+most accurate function estimators. therefore, the guards for
+t1andt3are f1(t1)and f1(t3), respectively. since t2
+consumes tokens from both places, the corresponding guard
+is f1(t2)^ f2(t2).
+5. implementation and experimen-
+tal evaluation
+the data-ow discovery plug-in implements the approach
+just described. the plug-in is part of prom, a generic open-
+source framework for process mining [10], and takes three
+objects as input: a petri net, a log and the multi-set of align-
+ments computed by the control-ow conformance checker
+plug-in [1]. it returns a petri net with data where the guards
+and the read and write operations are discovered by employ-
+ing the techniques described in section 4.
+to evaluate the approach, we performed experiments to
+answer three questions: (i)the accuracy of discovered data-
+ows; (ii)how the accuracy is inuenced by the number
+of control-ow deviations present in the event log; and (iii)
+whether the approach is applicable in real settings and which
+kind of insights can be gained.
+to answer to the rst two questions, we have employed
+example 1; for the third question, we have used a real-life
+event log, taken from a dutch financial institute, which is
+publicly available.
+5.1 experiments with a synthetic model and
+event log
+in order to measure the accuracy of a discovered data-
+ow, we used example 1 and generated an event log with
+3000 traces by modeling the process in cpn tools ( http:
+//cpntools.org ) and subsequently simulating the model.
+the event log complies the control-ow in figure 1 and
+the data-ow in figure 2. with a synthetic event log, the
+evaluation lends itself to verify the accuracy of a discovered
+process data-ow, since the discovered data-ow can be
+compared with the target data-ow according to which the
+event log has been generated. in prom, we employed the
+data-ow discovery plug-in, using the generated log and the
+same petri net as in figure 1. in less than 1 second, the
+plug-in discovered a dpn-net a with the same data-ow as
+figure 2. figure 5 shows how prom visualizes the petri netfigure 5: a screenshot of the data-ow discovery plug-in in prom: the output of the plug-in is a petri net
+with data. the white and black rectangles identify the visible and invisible transitions. the yellow \rounded
+rectangles" represent the variables dened in the process data-ow. the dotted arrows going in and out the
+yellow rectangles describe the write and read operations, respectively. when passing over a transition, a
+light-blue pop-up shows the possible guard. the transitions with red inscriptions or lled in red are those,
+visible or invisible, which are associated a guard.
+with data discovered by the data-ow discovery plug-in.
+next we investigate how accuracy is inuenced by event
+logs that are not fully conforming to the process control-ow.
+for this, we removed various percentages of events from the
+log and we used the resulting event log as input for the data-
+ow discovery plug-in. to nally check the accuracy of the
+discovered data-ow process model, we checked the data-ow
+conformance of the discovered process and the original log,
+i.e. the event log before removing the events. to measure
+the data-ow conformance, we used our implementation of a
+data-ow conformance checker, which extends [3] to deal
+with innite domains. in the same way as [3], the data-ow
+conformance of a trace is measured with a value between
+0 (none of the events is conforming) and 1 (all events are
+conforming).
+table 1 shows a summary of the results of the experiments
+after removing dierent percentages of events. for each value
+of percentage, we run the experiment 10 times, randomly
+removing an appropriate percentage of events. up to 20%,
+removing events from the traces does not cause signicant
+dierences in the discovered guards. indeed, in most of the
+runs of the experiments, the data-ow conformance is still
+1 for each trace. only in few cases, when removing 20% of
+the events, the average data-ow conformance of all traces is
+0.9999. when removing 20-35% of events performance start
+to degrade gradually. as result, the function estimators are
+no longer completely accurate, and, hence, the discovered
+guards may contain some mistakes. indeed, in a few exper-
+iment runs, the average value of data-ow conformance of
+each trace even reduces to 0.8. when removing 35%, 40%
+or 50% of events, the event log starts containing too little
+information and, hence, fewer guards are discovered, even
+though they are exactly as they would be expected. as
+result, the data-ow conformance is again 1. nonetheless,
+the data-ow model is undertting: since the guards are not
+discovered, too much behavior is allowed.
+in conclusion, the solution approach that we propose isvaluable, since it allows for discovering correct data-ows.
+and it can adequately deal with event logs with deviations,
+as well.
+5.2 validation using a real-life event log
+next, we evaluate the approach using a real-life log from a
+dutch financial institute. the log is publicly available and
+can be downloaded using the following doi doi:10.4121/
+uuid:3926db30-f712-4394-aebc-75976070e91f . the orig-
+inal event log contains 13087 cases and 262200 events dis-
+tributed over 36 activities ranging over a period from 1-oct-
+2011 to 14-mar-2012. the process represented in the event
+log is an application process for a personal loan or overdraft
+within a global nancing organization. the application can
+be declined if it does not pass any checks. applicants may
+be contacted for further information. the application is
+subjected to a nal assessment upon which the application is
+either approved and activated, declined, or cancelled. each
+case in the event log has an attribute amount req , which
+species the amount of loan/overdraft requested by a cus-
+tomer, and regdate , which is the date when the request
+was submitted.
+using the insights reported in [2], we designed a model
+of the process control-ow, in form of petri net (without
+data). using the control-ow conformance checking plug-in
+available in prom [1], we veried that this petri net is a
+good representation of the control-ow, according to the real
+behaviors observed in the event log.
+the control-ow model was used as input for our data-ow
+discovery plug-in. to have a more accurate validation, we
+split the event log in two sets. we randomly chose 6500 traces
+(i.e., 50% of traces the original log) to discover a dpn-net.
+afterwards, we compute the data-ow conformance of the
+discovered dpn-net against the remaining traces to check
+the accuracy of the discovered model. from a performance
+viewpoint, the data-ow discovery was computed in few
+seconds, using 500 mbof memory, which shows that theapproach scales very well and is also applicable for quite
+large event logs. the average data-ow conformance was
+0.85, from which we can derive the discovered dpn-net model
+is a good reection of the reality.
+the discovered data-ow allowed us to nd recurring pat-
+terns in the management of the requests. the guard asso-
+ciated with activity accept request isamount req
+3000^amount req < 49000 . it means that, usually,
+when a request is accepted, the amount requested is be-
+tween 3000 and 49000 euros. similarly, activity cancel
+request is associated a guard amount req < 3000_
+amount req49000 , which means, when a request
+is cancelled, the amount requested is usually either small
+(<3000) or large (49000). no guard has been discovered
+for activity decline request , which means that declining a
+request has nothing to do with the amount that is requested.
+from the analysis of the guards of other transitions in the
+model, we could only derive is that, when a request is provi-
+sionally accepted and, later, declined, the amount is generally
+less than 5350 euros. note that regdate appears in no
+guards, which means that, to handle a request and determine
+the outcome, the procedure has not changed over time (i.e.
+no concept drift in the data-ow conditions).
+to sum up, although the event log contains only two
+data attributes, we could derive an insightful process data-
+ow and, hence, interesting information about recurring
+behaviors. it is clear that the availability of more data
+attributes would have allowed for discovering a more detailed
+data ow. therefore, we aim to make further investigations
+with richer logs.
+6. conclusion
+in paper, we presented a novel technique for data-aware
+process mining. this is a neglected topic in literature as most
+process mining approaches focus on control-ow only. to the
+best of our knowledge, only the decision mining approach
+presented in [7] focuses on data-ow discovery. however, this
+approach has many limitations. for example, it cannot deal
+with event logs with deviating behavior and more complex
+control-ow constructs. to address these problems we rst
+align log and model and only then apply decision-tree learning
+algorithms.
+the proposed solution has been implemented in prom and
+evaluated using both synthetic and real-life event logs. for
+example, this paper reports on experiences with an event log
+originating from dutch nancial institute. the experimental
+results show that the discovered data ows are accurate, even
+in presence of event logs with non-conforming traces (which
+is the case in most real-life event logs). moreover, from a
+performance viewpoint, the data-ow can typically be mined
+in few seconds even for large event logs. only if there are
+many dierent event attributes (say hundreds), the \curse
+of dimensionality" for traditional data mining approaches
+kicks in. experiences with real-life logs have shown that
+the data-ow perspective can be discovered quickly and the
+results provide useful additional insights.
+nevertheless, there is still room for further improvements
+and extensions. in our current implementation, we can only
+discover guards that are conjunctions/disjunctions of expres-
+sions of the form variable-operator-constant (e.g. x > 4).
+moreover, we only deal with the activity preconditions. it
+is also important to mine the post-conditions as they char-
+acterize the usual output of the activities' performance. webelieve that we can nd a solution for both problems by
+adapting techniques developed to detect invariants in soft-
+ware programs, e.g., daikon [4] can discover such invariants
+but has not been applied in the context of process mining
+yet.
+acknowledgements. the authors thank j.c. bose for his
+analysis of the real-life event log [2]. the research leading
+to these results has received funding from the european
+community's seventh framework program fp7/2007-2013
+under grant agreement no257593.
+7. references
+[1]a. adriansyah, b. f. an dongen, and w. m. p. van der
+aalst. conformance checking using cost-based
+fitness analysis. in ieee international enterprise
+distributed object computing conference , pages 55{64.
+ieee computer society, 2011.
+[2] r. p. j. c. bose and w. m. p. van der aalst. process
+mining applied to the bpi challenge 2012: divide and
+conquer while discerning resources. technical report
+bpm center bpm-12-16, bpmcenter.org, 2012.
+[3] m. de leoni, w. m. p. van der aalst, and b. f. van
+dongen. data- and resource-aware conformance
+checking of business processes. in 15th international
+conference on business information systems , volume
+117 of lnbip , pages 48{59. springer verlag, 2012.
+[4] m. d. ernst, j. h. perkins, p. j. guo, s. mccamant,
+c. pacheco, m. s. tschantz, and c. xiao. the daikon
+system for dynamic detection of likely invariants.
+science of computer programming , 69(1{3):35{45,
+2007.
+[5] j. manyika, m. chui, b. brown, j. bughin, r. dobbs,
+c. roxburgh, and a. byers. big data: the next
+frontier for innovation, competition, and productivity.
+mckinsey global institute, 2011.
+[6] j. r. quinlan. c4.5: programs for machine learning .
+morgan kaufmann publishers inc., 1993.
+[7] a. rozinat and w. m. p. van der aalst. decision
+mining in prom. in proceedings of the 4th international
+conference on business process management , volume
+4102 of lncs , pages 420{425. springer-verlag, 2006.
+[8] n. sidorova, c. stahl, and n. tr cka. soundness
+verication for conceptual workow nets with data:
+early detection of errors with the most precision
+possible. information systems , 36(7):1026{1043, 2011.
+[9] w. m. p. van der aalst. process mining - discovery,
+conformance and enhancement of business processes .
+springer, 2011.
+[10] h. m. w. verbeek, j. c. a. m. buijs, b. f. van
+dongen, and w. m. p. van der aalst. xes, xesame,
+and prom 6. in information systems evolution ,
+volume 72 of lnbip , pages 60{75, 2011.
+[11] w. m. p. van der aalst, et al. process mining
+manifesto. in proceedings of business process
+management workshops 2011 , volume 99 of lnbip .
+springer verlag, 2012.

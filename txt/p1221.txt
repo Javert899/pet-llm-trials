@@ -1,0 +1,732 @@
+process mining on blockchain data:
+a case study of augur
+richard hobeck1, christopher klinkm uller2, h.m.n. dilum bandara2,
+ingo weber1, and wil van der aalst3
+1chair of software and business engineering,
+technische universitaet berlin, germany, hfirstname i.hlastname i@tu-berlin.de
+2data61, csiro, sydney, australia
+fchristopher.klinkmueller, dilum.bandara g@data61.csiro.au
+3rwth aachen university, germany, wvdaalst@pads.rwth-aachen.de
+abstract. through its smart contract capabilities, blockchain has be-
+come a technology for automating cross-organizational processes on a
+neutral platform. process mining has emerged as a popular toolbox for
+understanding processes and how they are executed in practice. while
+researchers have recently created techniques for the challenging task of
+extracting authoritative data from blockchains to facilitate the analysis
+of blockchain applications using process mining, as yet there has been no
+clear evaluation of the usefulness of process mining on blockchain data.
+with this paper, we close that gap with an in-depth case study of pro-
+cess mining on the popular ethereum application augur , a prediction
+and betting marketplace. we were able to generate value-adding insights
+for application-redesign and security analysis, as validated by the appli-
+cation's chief architect and revealed blind spots in augur's white paper.
+keywords: blockchain ·process mining ·case study ·process discov-
+ery ·conformance checking ·ethereum.
+1 introduction
+a blockchain can be characterized as a distributed, append-only data store for
+transactions [31]. second-generation blockchains have comprehensive smart con-
+tract capabilities, i.e., allow for the deployment and execution of user-dened
+programs. on this basis, blockchain has emerged as a technology allowing the
+automation of cross-organizational processes on a neutral platform [20,29].
+process mining [1] has become popular as a toolbox for understanding pro-
+cesses and how they are executed in practice. for example, many case stud-
+ies ranging from healthcare [5,19,25,27], nance [8,12], manufacturing [26], and
+public services [3,17] to software development [18] applied process mining to
+analyze processes from dierent perspectives including aspects, such as con-
+trol ow, conformance, drifts, and performance [24]. nevertheless, process min-
+ing on blockchain data turned out to be a challenging task [10]. hence, re-
+cently researchers have created techniques to extract authoritative data from2 r. hobeck, c. klinkm uller, d. bandara, i. weber, w. van der aalst
+event 
+data
+process mining: 
+exploration, d iscovery,  
+conformance checking , 
+performance analysis
+ ethereum 
+blockchainaugur 
+smart contracts
+elf manifest
+elf
+filtering
+fig. 1. overview of the approach.
+blockchains [13,14]. on that basis, concepts were introduced that can put ex-
+tracted blockchain data into use, e.g., for monitoring business processes executed
+on a blockchain [9]; validating smart contracts on hyperledger fabric [11]; au-
+diting blockchain applications on ethereum [7]; analyzing transactions stored
+on the ethereum network without focusing on specic decentralized applications
+(dapps) [21]; and using process mining on blockchain-wide data [22] but no
+single process in particular. as yet, there has been no clear evaluation of the
+usefulness of process mining on blockchain data. all of the above process-specic
+approaches have been evaluated with small examples, demonstrating technical
+feasibility more than the usefulness and business value.
+with this paper, we close that gap and analyze the usefulness of process
+mining on blockchain data with an in-depth case study of process mining on
+the popular ethereum application augur4. augur is a prediction and betting
+marketplace, where users can create bets (e.g., \will donald trump win the 2020
+u.s. presidential election?"), and other users can bet on the outcomes. because
+augur smart contracts run on the public ethereum blockchain, all data are time-
+stamped, transparent, and available. we used our ethereum logging framework
+(elf) [13,14] to extract augur data. this extraction resulted in nearly 3000
+traces and more than 23000 events. as shown in fig. 1, we then ltered the data
+and applied various process mining techniques to analyze augur from control
+ow, conformance, and performance perspectives.
+in our study, we were able to generate insights of value to the business. in
+more detail, we provide a clear view of how augur is used, verify its design mech-
+anisms, and check for unintended behavior and bugs in the (immutable) code;
+immutability poses a challenge from a business process management (bpm)
+perspective [20], and software engineering in general [28]. the usefulness of the
+insights was conrmed by anecdotal evidence of augur's chief architect, partic-
+ularly in terms of understanding user behavior and code validation, which is
+especially relevant for security aspects in an open-source application that can be
+invoked (and thus potentially attacked) by anyone with internet access.
+the paper is structured as follows. next, we introduce the object of our case
+study, augur. then, sect. 3 outlines the data extraction and pre-processing pro-
+cedures. the focal point of the paper is the data analysis in sect. 4, covering data
+exploration, process discovery, conformance checking, and performance analysis.
+finally, we discuss the results in sect. 5 and conclude in sect. 6.
+4https://augur.net/ , accessed 2021-03-05process mining on blockchain data: a case study of augur 3
+2 the case of augur
+augur is a betting platform and prediction marketplace that is implemented as
+a set of smart contracts on the public ethereum blockchain. augur's white pa-
+per characterizes the mechanics of a prediction and betting market: \individuals
+can speculate on the outcomes of future events; those who forecast the outcome
+correctly win money, and those who forecast incorrectly lose money." as a bet-
+ting market organized on ethereum, the developers claim that augur bypasses
+disadvantages of traditional betting markets, such as trusted market operator
+and limited participation [23].
+currently, there are two versions of augur available in parallel: augur v1.0
+(launched 2018-07-09) and augur v2.0 (details announced april 20205, launched
+2020-07-286). interestingly, to gain user trust, the augur developers open-sourced
+the smart contracts and deployed both versions without any option to update
+or stop them { giving themselves the privilege to do either might result in the
+loss of users' cryptocurrency and omitting such a possibility; therefore, increases
+trustworthiness. hence, the new version is deployed in parallel to the old one, as
+such not comprising an update in any traditional sense. however, once the new
+version was deployed and users migrated to it, the old version became \econom-
+ically insecure" according to the developer team, and therefore should not be
+used anymore. because prediction markets are long-running, and hence extended
+observation time frames are crucial for their analysis, we nevertheless focused on
+augur v1.0 and considered the data from its launch until its use was no longer
+recommended in july 2020 (see sect. 3 for details).
+augur was chosen for this case study for several reasons. data availability.
+augur v1 was among the most popular ethereum dapps at times, resulting in
+the availability of substantial amounts of data to analyze. application design.
+augur is designed so that events are tracked and stored by a central logging
+contract with a high level of detail, which allowed insights in user behavior
+and simplied the extraction of data with elf (in contrast to other dapps, in
+which logging is fragmented over multiple contracts). subsidiary information.
+information on augur is widely available, such as in the whitepaper [23], which
+served as basis, e.g., for conformance checking. thus, augur promised to be an
+interesting candidate for deeper analysis.
+markets are distinguished based on their outcome: yes/no-markets deal with
+binary questions, while categorical and scalar markets expect discrete and nu-
+meric answers, respectively. for each type, the augur market process follows
+a procedure organized in four stages: market creation, trading, reporting, and
+settlement. market creation : a market is set up for a future event, i.e., \market
+event." trading : traders place bets on the outcome of the market by buying
+shares for that outcome. reporting : a user reports the outcome of the event the
+market revolves around. the report can be challenged in disputes that are part
+5https://twitter.com/augurproject/status/1245715269042888706, accessed 2021-03-
+14
+6https://www.augur.net/blog/augur-v2-launch/, accessed 2021-03-144 r. hobeck, c. klinkm uller, d. bandara, i. weber, w. van der aalst
+of the reporting. settlement : traders resolve their positions. within these four
+stages, the augur smart contracts specify 35 dierent types of events.
+participants can be active in an augur market in ve roles: market creator,
+traders, designated reporter, public reporters, and disputants. a market creator
+instantiates markets, including choosing a market question that revolves around
+a market event and appointing a designated reporter. traders place bets by buy-
+ing and selling shares of market outcomes. a designated reporter reports on the
+market event, thus creating the rst tentative outcome of the market. if the des-
+ignated reporter fails to submit a report within three days of the market event,
+reporting opens to public reporters who can report on the market outcome. once
+an initial report is submitted, disputants can challenge the reported outcome of
+an event by crowd-sourcing a dispute bond with augur's native token called
+\reputation" (rep). if the dispute bond crosses a threshold, the crowd-funded
+outcome becomes the new tentative outcome. if disputes against an outcome
+remain unsuccessful, the tentative outcome becomes the nal outcome. depend-
+ing on the dispute's success, disputants are redeemed after the dispute round
+(unsuccessful) or after the market is nalized (successful). a market nalizes if a
+tentative market outcome has not been successfully disputed within seven days.
+after it nalizes, market creators receive the market creation fee, designated
+reporters receive a fee if their report represents the nal outcome, and traders
+settle their positions. as a nal resolution mechanism for disputes, augur also
+oers a fork event, which creates parallel instantiations of augur based on each
+possible outcome of the forking market to which users can migrate. forking is
+considered \very disruptive" and has not been triggered yet [23].
+the normative process model. conformance checking requires a norma-
+tive process model, which we created from information in the white paper [23].
+we enriched it with information gained from discovery and conformance check-
+ing where the information in the white paper was not detailed or precise enough
+for our purposes. the resulting process model is shown in fig. 2. additional in-
+formation on initial discrepancies is discussed in sect. 5. we restricted the model
+to activities where the corresponding events were triggered.
+3 data extraction and pre-processing
+on a second-generation blockchain like ethereum, that allows for deploying and
+executing arbitrary smart contracts, log entries are the primary means for pass-
+ing information to o-chain components. commonly, log entries communicate
+information related to results of and events occurring during the execution of
+smart contract invocations. the developers of augur v1.0 made extensive use of
+this feature and implemented a central logging contract that handles the emis-
+sion of log entries. this contract denes a range of log event types intended to
+share detailed information about all possible events. due to the level of detail
+provided by these log entries, we decided to solely focus on information from
+augur's log entries for this case study. hence, we typically did not consider
+additional information from the transactions or the states of augur's smart con-process mining on blockchain data: a case study of augur 5
+contribute to
+dispute
+complete
+disputetransfer market
+redeem dispute
+crowdsourcercreate disputepurchase
+complete sets
+redeem as initial
+reporter
+redeem dispute
+crowdsourcerclaim trading
+proceedscreate marketsubmit initial
+report
+finalize market
+yes
+yesnono
+at least once
+successfully
+disputed?initial report
+correct?dispute amount
+reached?
+yesnoreporting trading market creation
+settlementdispute
+fig. 2. normative bpmn model.
+tracts, as the information we could obtain this way is largely included in the log
+entries; deviations from this rule are marked.
+we extracted the data using the publicly available ethereum logging frame-
+work7[13,14]. elf enables analysts to extract, transform, and format infor-
+mation from blocks, transactions, log entries, and smart contracts stored on
+ethereum-based networks. elf takes as input a manifest le, which contains
+instructions that dene which data to extract and how to process it { see also
+fig. 1. we dened such a manifest le for augur v1.0 based on its source code,
+which provided us with the denitions for all the log entries. the execution of
+the manifest resulted in an event log in the xes format [4], where for each log
+entry, there is an xes event containing the information from augur's log entry.
+we grouped the events into traces based on the notion of a market.
+we extracted information related to 2897 markets stemming from the period
+of 2018-07-09 to 2020-11-10. the former date marks the date of the rst execution
+of augur v1.0. regarding the latter, we ran the data extraction from 2020-11-
+12 to 2020-11-16, and the last event that we extracted was from 2020-11-10.
+however, as outlined in sect. 2, the launch of augur v2.0 in july 2020 rendered6 r. hobeck, c. klinkm uller, d. bandara, i. weber, w. van der aalst
+exploration 
+(outlier 
+detection 
+and 
+visual 
+analytics) 
+event 
+data
+process 
+models
+process 
+discovery
+conformance 
+checking
+performance 
+analysis
+performance 
+and 
+conformance 
+diagnostics
+comparative 
+process 
+mining 
+and 
+drift 
+detection
+fig. 3. process mining techniques applied to the augur v1.0 data extracted with elf.
+augur v1.0 \economically insecure" and unsurprisingly caused a decline in user
+interest which already started after the announcement of augur v2.0 in april
+2020. to account for this decrease, we removed 162 cases that were either created
+after v2.0 was announced on 2020-04-02 or that were not nalized before its
+actual launch, leaving us with a total of 2735 cases and 22772 events.
+for purposes of replication, all data and code used in this study are available
+publicly, including the source code of elf7, the manifest, the normative process
+model and the resulting xes log8, the source code of augur v1.09, the augur
+white paper [23], and the data on the public ethereum blockchain.
+4 process mining analysis and results
+as discussed in sect. 3, we used elf to extract an xes event log [4] for augur
+v1.0. as a result, we can apply a range of process mining techniques, as illus-
+trated by fig. 3. it is possible to discover the actual betting/prediction process,
+check conformance of the process with respect to a normative model, analyze
+performance, and compare process variants [1]. in the remainder, we will mainly
+use the prom process mining platform. we could apply any other process mining
+tool, e.g., open-source tools like pm4py, apromore, bupar, and rapidprom, or
+commercial closed-source tools like celonis, disco, processgold (uipath), minit,
+qpr, myinvenio, pafnow, lana, software ag, signavio (sap), abbyy time-
+line, and mehrwerk. however, our goal is not to present specic process mining
+algorithms or tools. instead, we demonstrate that event data extracted from
+ethereum using elf can be used to analyze marketplaces like augur.
+4.1 exploring the event data
+all process mining tools start from event data [1]. an event log is a collection of
+events stored in a format like xes. an event may have many dierent attributes,
+but at least a case identier , an activity name , and a timestamp . additional
+7https://github.com/chrisklinkmueller/ethereum-logging-framework
+8https://github.com/ingo-weber/dapp-data
+9https://github.com/augurproject/augur-core, accessed 2021-03-19process mining on blockchain data: a case study of augur 7
+860 traces
+31.44% of the logcreate market submit initial report finalize market redeem as initial reporter
+187 traces
+6.84% of the logcreate market submit initial report finalize market
+168 traces
+6.14% of the logcreate market submit initial report finalize market redeem as initial reporter claim trading proceeds
+138 traces
+5.05% of the logcreate market submit initial report finalize market claim trading proceeds redeem as initial reporter
+89 traces
+3.25% of the logcreate market submit initial report finalize market claim trading proceeds claim trading proceeds redeem as initial reporter
+76 traces
+2.78% of the logcreate market submit initial report finalize market claim trading proceeds
+74 traces
+2.71% of the logcreate market submit initial report finalize market redeem as initial reporter redeem as initial reporter
+64 traces
+2.34% of the logcreate market purchase complete sets submit initial report finalize market redeem as initial reporter
+60 traces
+2.19% of the logcreate market submit initial report finalize market redeem as initial reporter claim trading proceeds claim trading proceeds
+51 traces
+1.86% of the logcreate market submit initial report finalize market claim trading proceeds claim trading proceeds
+35 traces
+1.28% of the logcreate market submit initial report finalize market redeem as initial reporter claim trading proceeds claim trading proceeds claim trading proceeds
+fig. 4. some of the most frequent variants, e.g., 860 markets follow the most frequent
+variant having only four events. the event data have a pareto distribution with 35
+variants (i.e., 8.5% of variants) explaining 80% of all cases.
+attributes may refer to locations, resources, costs, transactional information,
+and on ethereum blockchain, the consumed gas. events are grouped using the
+case identier and sorted using the timestamps. hence, each case corresponds to
+atrace, i.e., a sequence of events. by focusing only on the activity names, these
+traces can be grouped into variants , i.e., sequences of activities. most event logs
+have a pareto distribution, i.e., a few variants explain a large proportion of the
+event log.
+the event log we extracted and ltered as per sect. 3 has 2735 cases (each
+case refers to a market), 22772 events, and 11 unique activities. there are 414
+variants where 35 variants have at least ten corresponding cases and describe
+2203 cases. this implies that 80% of the cases are described by less than 8.5% of
+variants. some of the most frequent variants are shown in fig. 4. 319 cases have
+a unique sequence of activities. a few of the shorter unique variants are shown
+in fig. 5. the length varies from three to 226 events per case.
+the event log contains 11 activities having the following frequencies: claim
+trading proceeds (6046), redeem as initial reporter (3259), submit initial report
+(2735), create market (2735), nalize market (2735), contribute to dispute (1598),
+redeem dispute crowdsourcer (1412), create dispute (901), complete dispute (780),
+purchase complete sets (570), and transfer market (1).
+fig. 6 shows a so-called dotted chart where each dot refers to an event (i.e.,
+22772 dots). in a dotted chart, we can congure the two axes and the coloring8 r. hobeck, c. klinkm uller, d. bandara, i. weber, w. van der aalst
+1 traces
+0.04% of the logcreate market submit initial report create dispute contribute to dispute complete dispute create dispute contribute to dispute complete dispute create dispute contribute to dispute finalize market redeem as initial reporter claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds
+1 traces
+0.04% of the logcreate market submit initial report create dispute contribute to dispute complete dispute create dispute contribute to dispute contribute to dispute contribute to dispute complete dispute create dispute contribute to dispute complete dispute create dispute contribute to dispute contribute to dispute complete dispute finalize market redeem as initial reporter
+1 traces
+0.04% of the logcreate market submit initial report finalize market claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds
+1 traces
+0.04% of the logcreate market submit initial report create dispute contribute to dispute complete dispute finalize market claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds redeem as initial reporter
+1 traces
+0.04% of the logcreate market purchase complete sets purchase complete sets submit initial report create dispute contribute to dispute complete dispute create dispute contribute to dispute complete dispute create dispute contribute to dispute complete dispute create dispute contribute to dispute complete dispute finalize market redeem as initial reporter claim trading proceeds
+1 traces
+0.04% of the logcreate market submit initial report finalize market redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter redeem as initial reporter
+1 traces
+0.04% of the logcreate market submit initial report create dispute contribute to dispute contribute to dispute contribute to dispute complete dispute finalize market claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds redeem as initial reporter
+1 traces
+0.04% of the logcreate market purchase complete sets submit initial report create dispute contribute to dispute contribute to dispute complete dispute create dispute contribute to dispute complete dispute create dispute contribute to dispute contribute to dispute complete dispute finalize market claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds
+1 traces
+0.04% of the logcreate market submit initial report create dispute contribute to dispute complete dispute create dispute contribute to dispute complete dispute create dispute contribute to dispute contribute to dispute complete dispute finalize market claim trading proceeds claim trading proceeds claim trading proceeds claim trading proceeds redeem as initial reporter
+1 traces
+0.04% of the logcreate market submit initial report create dispute contribute to dispute complete dispute create dispute contribute to dispute contribute to dispute complete dispute create dispute contribute to dispute complete dispute create dispute contribute to dispute contribute to dispute complete dispute finalize market redeem as initial reporter
+1 traces
+0.04% of the logcreate market submit initial report create dispute contribute to dispute complete dispute create dispute contribute to dispute complete dispute create dispute contribute to dispute contribute to dispute contribute to dispute contribute to dispute contribute to dispute contribute to dispute contribute to dispute contribute to dispute finalize market claim trading proceeds
+fig. 5. some of the unique variants that only have one corresponding market. the
+gure is not intended to be readable but gives an idea of the variability. 319 of the 414
+variants are unique, covering 11.7% of all markets.
+of the dots [1]. in fig. 6, the x-axis refers to the time of the event, the y-axis
+corresponds to the cases (i.e., markets) sorted by the time of the rst event, and
+the color of the dot refers to the activity name (e.g., blue is the creation of the
+market). the dotted chart shows that many markets were created in the rst
+month (july/august 2018). after that, there was a steady ow of new cases,
+until the arrival rate decreased after may 2019. the vertical patterns indicate
+batching , i.e., shorter periods where the same activity occurs for many cases.
+some of these batching patterns are highlighted in fig. 6. for example, on 2020-
+02-11, activity claim trading proceeds is executed 63 times for 53 cases in less
+than one hour. another example of batching is the burst of the activities claim
+trading proceeds andredeem as initial reporter at the end of the day on 2019-07-
+07. these occur respectively 148 and 98 times in a three hours. there are also
+horizontal patterns indicating a sequence of events for the same case in a short
+period. for example, for the market \ethereum price at end of march 2019" we
+witnessed redeem dispute crowdsourcer and claim trading proceeds four and 132
+times, respectively, within a period of a few weeks. although one can already
+visually spot exceptional cases, we discuss these further when presenting the
+conformance checking results.
+timemarket
+(cases sorted 
+by time of 
+first event )
+cases start with “create 
+market ” (blue )
+“claim trading proceeds ” 
+for many cases at the 
+same time“claim trading proceeds ” 
+for many cases at the 
+same time
+“claim trading proceeds ” 
+immediately followed by 
+“redeem as initial 
+reporter ” for many cases 
+at the same time“submit initial report ” for many 
+cases at approximately the 
+same time“redeem as initial reporter ” 
+for many cases at 
+approximately the same time
+many subsequent “claim 
+trading proceeds ” for a 
+single case“submit initial report ” 
+for many cases at 
+approximately the same 
+time“redeem as initial reporter ” 
+for many cases at 
+approximately the same time
+zooming in on the first two days of sept . 2019 
+shows 6 cases generating more than 500  
+“redeem as initial reporter ” events
+fig. 6. dotted chart showing all 22772 events. the vertical patterns indicate batching.process mining on blockchain data: a case study of augur 9
+4.2 process discovery
+fig. 7, 8, and 9 are based on the whole event log (i.e., 2735 markets generating
+22772 events). fig. 7 shows a so-called directly-follows graph (dfg) without
+ltering [1,2]. the nodes are activities and show the frequencies of each activity.
+the connections show how often one activity is followed by another. dfgs are
+the most-widely used discovery technique in commercial process mining tools due
+to their simplicity. however, there are several know problems, as demonstrated
+in [2]. these can be witnessed in fig. 7, where there are many loops in the
+diagram because activities are not performed in a xed order.
+fig. 8 shows the process tree (pt) obtained by the inductive miner in prom
+for the whole event log using the default settings [16]. the model is not intended
+to be readable, but one can see that the process model has more structure. 1771
+of all cases (65%) can be explained by this model (the average trace tness is
+94%). fig. 9 shows the same model but now with timing information rather
+than frequencies. two activities that have a longer sojourn time are highlighted.
+fig. 10, 11, and 12 are based on the variants with at least ten corresponding
+cases. this ltered event log contains only 35 of the 414 variants; however, it
+represented over 80% of all markets (2203 cases). due to the congurations used,
+all three models are guaranteed to be able to replay all 2203 cases from which
+these models were discovered. actually, the process models in fig. 11 and 12 can
+replay 2501 cases in the original event logs. note that the pt was discovered
+using the basic inductive mining algorithm without further ltering [1,15]. this
+algorithm is also implemented in a few commercial systems (e.g., celonis). the
+petri net in fig. 12 is semantically equivalent to the model in fig. 11.
+after focusing on the frequent variants, one can focus on particular parts of
+the process model. such models are simpler and can be used to drill down. let us,
+for example, focus on the dispute phase and consider only the activities create
+dispute ,contribute to dispute , and complete dispute . fig. 13 and 14 show two
+process models explaining the dispute subprocess. this example illustrates that
+process mining tools like prom provide various ways to reduce the complexity
+and either focus on a particular part of the process or zoom-out (e.g., using
+aggregation) to see the overall process.
+4.3 conformance checking and unusual cases
+fig. 2 shows a normative process model that can be used for conformance check-
+ing[1,6]. the goal of conformance checking is to identify commonalities and
+dierences between the modeled process and the actual process. fig. 15 and 16
+show the reference model in the form of a process tree and a petri net to allow
+for easy comparison with the discovered process models. a visual comparison
+shows that the reference model is close to the discovered models, but there are
+some notable dierences. compare, for example, fig. 16 (petri-net version of the
+reference model) with fig. 12 (petri-net able to replay all traces that happened
+at least ten times). some of the striking dierences: transfer market is missing
+in the discovered model (it was only executed in one trace); in the discovered10 r. hobeck, c. klinkm uller, d. bandara, i. weber, w. van der aalst
+fig. 7. directly-follows graph (dfg) for the whole event log without ltering.
+fig. 8. process tree (pt) for the whole event log using default settings.
+the average sojourn time of “submit 
+initial report ” is 63 days (the maximum 
+observed sojourn time is 657 days )the average sojourn time of “finalize 
+market ” is 19 days (the maximum 
+observed sojourn time is 609 days )
+fig. 9. process tree (pt) for the whole event log showing sojourn times.
+process model, the activities contribute to dispute and complete dispute both
+occur precisely once after creating the dispute; and redeem dispute crowdsourcer
+can occur before claim trading proceed and redeem as initial reporter , but not
+after.
+the representations shown in fig. 15 and 16 can be used in prom to perform a
+range of conformance checking techniques. here, we limit ourselves to alignment-
+based conformance checking [1,6], i.e., for each trace in the event log, we searched
+for a path through the model that is closest.
+prom's diagnostics show that the reference model in fig. 2 explains 2511
+of the 2735 cases, i.e., 224 cases have at least one deviation. fig. 17 shows the
+same diagnostics after aligning event log and process model. there are 21647
+synchronous moves (i.e., events in the log that t the model) and 1125 moves
+on the log (i.e., events in the log that do not t the model). however, there
+are no moves on the model (i.e., missing events). 223 of the 224 deviating cases
+have multiple redeem as initial reporter events, and 1119 of the 1125 log-only
+moves fall into this category. almost all of these are instantaneous: using disco's
+performance view, we see a median duration of 0 ms, a total duration over all
+1119 moves of 42 days, and a maximum of 35 days { i.e., much of the whole
+duration can be accounted for with a single of the 1119 occurrences.
+for a random sample of 20 of these 1119 occurrences, we inspected the un-
+derlying blockchain transactions, and observed the following pattern in all 20
+instances: the rst redeem as initial reporter event resulted in a payout, the
+second did not; the rst and second transaction came from the same account
+in all 20 pairs; and the pairs were close together (between 0 and 47 blocks, the
+large majority with less than ten blocks). we also observed two cases with 108
+redeem as initial reporter events (\who will win the second democratic primary
+debate?" and \will tulsi gabbard poll higher than andrew yang on august
+12th?").process mining on blockchain data: a case study of augur 11
+fig. 10. directly-follows graph (dfg) for 8.5% of variants covering 91.4% of the
+cases.
+fig. 11. process tree (pt) discovered for the ltered event log showing all paths.
+fig. 12. the petri net discovered for the ltered event log.
+fig. 13. directly-follows graph (dfg) discovered for the dispute phase.
+fig. 14. process tree (pt) discovered for the dispute phase.
+like in discovery, there is the possibility to focus on selected parts of the
+process. fig. 18 shows conformance checking results for the dispute subprocess.
+there is only a single deviating case (see the upper part of fig. 18) where there
+are two instances of two subsequent occurrences of create dispute without any
+contributions in between. this is not possible according to the reference model.
+we discuss possible reasons for non-conformance in sec. 5.
+next to the non-conforming cases, we identied the following unusual cases .
+in our data, we observed 13 cases with nine or more complete dispute events
+created in 2018. ten of those were created in july 2018, the month the ap-
+plication was launched. the market with the highest number of contributions
+to disputes (98) was created on 2018-07-13 and posed the question, \will the
+weather be good for the bastille day military parade in paris tomorrow?" the
+high ambiguity of the market question led to a debate in the augur community
+revolving around wording of market questions and forking the application shortly12 r. hobeck, c. klinkm uller, d. bandara, i. weber, w. van der aalst
+fig. 15. normative process tree based on the bpmn reference model.
+fig. 16. normative petri net model.
+fig. 17. replay results after aligning event logs and process model: 2511 of the 2735
+cases are perfectly tting the reference model.
+after its launch. after 15 rounds of dispute10, the market resolved as invalid and
+remained a familiar quotation. soon after the debate around the bastille day
+market gained momentum, a meta-market was created (\will the weather good
+when the \ will the weather be good for the bastille day military parade in paris
+tomorrow? " market resolve?"), betting on the events based on existing markets.
+that phenomenon, however, did not become a trend.
+on 2018-07-10, four identical markets were created within 17 seconds, asking
+the question \will bitcoin go below $6000". one of the markets resolved as
+invalid after ve weeks, while the other three went through dispute rounds until
+mid-september 2018, before also resolving invalid, all on the same day. in sum,
+this market question went through the highest number of dispute rounds (20).
+4.4 performance analysis
+events have timestamps; therefore, it is trivial to enrich process models with
+timing information (e.g., waiting times and service times). this is a key capability
+of process mining and often used to improve operational processes, e.g., to reduce
+10https://themajority.report/market/0x67ef420c045f3561d11ef94b24da7e2010650cc3,
+accessed 2021-03-05
+fig. 18. conformance checking results for the dispute phase including the activities
+create dispute ,contribute to dispute , and complete dispute . only one case is non-tting.process mining on blockchain data: a case study of augur 13
+the time needed to produce a car or process a claim. for marketplaces like
+augur, standard measurements like waiting times are less relevant, because the
+duration is related to the nature of the particular bet. for example, users can
+create markets for future events, no matter how far into the future the event
+is expected to take place. in this regard, we inspected the top 100 completed
+traces concerning the waiting time before submitting the initial report. all these
+markets were created in 2018 but referred to events that took place in 2019
+and 2020. we also noted that there is a market with a prospected market event
+in 2070. in addition to these analyses, we zoomed into the dispute phase and
+only considered the activities create dispute ,contribute to dispute , and complete
+dispute shown in fig. 13 and 14. the mean duration of this phase is 15.4 days,
+the median duration is 7.1 days, and the longest duration is 111 days. this
+illustrates that time also plays a role in the analysis of markets.
+5 discussion
+the augur logging smart contract species 35 activities, of which only 11 ac-
+tivities could be observed after the data extraction. partially, this discrepancy
+can be explained by events not being triggered throughout the application's
+life-cycle, such as the fork event. the option to fork serves as a nal resolution
+mechanism in case a dispute could not be resolved over many rounds, and forms
+the last resort. thus, not observing it was expected, and can indeed be seen
+as a sign that the incentive mechanism (geared towards avoiding forks) work.
+however, other events such as disputewindowcreated could be expected to be
+triggered frequently but were not part of the logged data, although specied in
+our elf manifest.
+additionally, the white paper did not cover all events included in the smart
+contract (e.g., disputecrowdsourcercompleted ortradingproceedsclaimed ).
+that led to multiple iterations for creating the normative process model, where
+we started with the information in the white paper, ran discovery and confor-
+mance checking, found discrepancies, and resolved those by reconsidering the
+white paper and inspecting the source code. one observation was that the white
+paper in part turned out to be too abstract to model the normative process, as
+some information on the workings of augur was not contained in it. for instance,
+completedispute only happens if a sucient amount of stakes is contributed
+to a dispute; this information is not contained in the white paper.
+as pointed out in sect. 4, cases with many dispute events were observed
+mainly in 2018, and mainly had creation dates in july 2018, the month of the
+augur v1.0 launch. disputes delay resolving a market and hint towards disagree-
+ment in the community. their occurrence in the early days of the application
+indicates that the user group needed to build up experience in using the appli-
+cation. at times, users seemingly tested the resilience of the application (e.g., a
+market for \did this market need a fork to be resolved?", created 2018-07-27, led
+to 12 complete dispute rounds but no fork). eventually, the users learned to pose14 r. hobeck, c. klinkm uller, d. bandara, i. weber, w. van der aalst
+less ambiguous market questions, leaving less wiggle room for interpretation and
+reducing the potential for disputes.
+comparing the normative and discovered models in fig. 16 and fig. 12, we
+observed paths that were executed infrequently. recall that the model in fig. 12
+was discovered from the 35 most frequent variants, and hence represents typical
+(but not all) observed behavior. some paths, however, occurred very rarely if at
+all: according to the white paper, after unsuccessful disputes crowdsourcers are
+redeemed at the end of the dispute round, while for successful disputes redeeming
+happens after the market nalized [23]. the sequence for redeeming unsuccessful
+disputes occurred only four times, and the log does not show a single case of
+contribute to dispute being directly followed by redeem dispute crowdsourcer .
+that poses the question why users did not make use of that option.
+the most striking result from conformance checking was the frequent occur-
+rences of redeem as initial reporter more than once, where we observed for a
+sample that the rst event resulted in a payout and the second did not, and
+both originated from the same account within a short time frame. the logging
+on augur could be made more precise here, and dierentiate successful, legiti-
+mate transactions from others. note that transaction inclusion may be subject
+to delay [30], and the timestamp for a transaction to be nally included in the
+ledger may be signicantly after the transaction had been announced to the
+network. there are multiple possible explanations for the phenomenon of the
+repeated redeem as initial reporter events, including: (i) the reporter was impa-
+tient; (ii) the reporter used an automated tool with a time-out before retry, but
+the tool did not implement retry correctly (as per [30]); or (iii) the reporter tried
+to cheat or hack the system. given that these attempts were unsuccessful and
+the reporter had to pay fees, and the same reporter accounts showed the same
+behavior repeatedly, we nd (ii) the most plausible of the three scenarios.
+the non-conforming repeated create dispute events happened in the same
+categorical market \2018 mlb world series champion". all four transactions
+(two pairs of two) were sent from the same blockchain account, and each pair was
+included in the ledger in direct succession in the same block. the two pairs were
+95 blocks apart. the four transactions initialized four dierent dispute rounds,
+although at any time only one of those was active. by initializing future dispute
+rounds, the user \pre-staked" tokens for these future rounds. this was a bugin
+augur v1.0, but turned out to be useful and was made a feature in v2.0, as we
+established in discussion with augur's chief architect (see below).
+note that we did not aim to apply process mining as a design time or pre-
+deployment test for software vulnerabilities. however, we were able to show
+that process mining can serve as a tool to discover bugs and performance issues
+for blockchain applications post-deployment (based on actual user behavior),
+which enables developers to patch weaknesses or formalize unexpected behavior
+in updates. methods for design time checks of vulnerabilities are nevertheless
+very important, particularly for dapps, but can be complemented with analyses
+such as ours.process mining on blockchain data: a case study of augur 15
+to validate the veracity and assess the usefulness of the insights generated by
+our analyses, we interviewed paul gebheim, the chief architect of augur. given
+that we only interviewed one person, we classify results from this interview as
+anecdotal evidence ; but given his position, we believe this evidence to be of value.
+we asked him to check assumptions we had { all of which he conrmed { and
+presented intermediate results from our analyses to him. from his perspective,
+using process mining for the analysis of blockchain applications generally, and
+augur, in particular, provides value in three ways. first, it helps to verify the de-
+sign mechanisms and check for unintended behavior and bugs in the (immutable)
+code; immutability poses a challenge from a bpm perspective [20] and software
+engineering in general [28]. second, process mining provides a clear view of how
+an application is used, which is also helpful for designing updated versions of
+an application. third, it has great potential for technical and economic security
+analysis, e.g., in that, an auditor could create a model and conformance-check
+it against actual user behavior. also, even though a smart contract typically
+implements a xed set of rules, analyses of process variability may reveal valu-
+able insights that could help evolve future versions of the smart contract, e.g.,
+to align them better with changed user expectations.
+the validity of this case study faced several threads to validity. as an internal
+thread, we might have introduced a bias in our conformance checking approach.
+as a basis for conformance checking, we used the entire normative process model
+(fig. 2) and thus the overall control ow without checking the gate conditions for
+individual cases. that might have led to overly generalized results, ignoring non-
+conforming cases. additionally, we largely observed the user behavior as a whole
+and not over time, which might have compromised awareness of maturation
+eects. an external thread to the study may be that the data we performed
+our analysis on was incomplete or its quality corrupted. we did, however, take
+precautions in reducing these threads by validating intermediate results and
+ndings with augur's user interface and their chief architect, as described above.
+6 conclusion and future work
+in this paper, we conducted a case study on process mining for data extracted
+from the blockchain application augur. to this end, we used elf to extract
+data over essentially the entire lifecycle of augur v1.0. we used process mining
+methods and tools to explore the data, discover models for a set of variants, and
+conducted conformance checking and performance analyses. finally, we inter-
+viewed the chief architect of augur to validate our insights and understand their
+usefulness. as stated in sect. 3, we followed open science principles and made
+all data and code from our study available publicly.
+in summary, we conclude that there is clear evidence for the usefulness of pro-
+cess mining on blockchain data. main areas of interest for software developers
+may include user behavior analysis and security audits, for which we demon-
+strated the applicability of process mining tools. indeed, we discovered a bug in
+augur's smart contracts { albeit a non-critical one. future research can be done16 r. hobeck, c. klinkm uller, d. bandara, i. weber, w. van der aalst
+evaluating other applications which might run on other blockchains, such as hy-
+perledger fabric. the analysis method could be extended for blockchain-specic
+security and user studies, e.g., through drift detection and cohort analysis.
+acknowledgment we are very thankful for the input of paul gebheim, chief
+architect at the augur project. we would also like to thank martin rebesky for
+writing the rst version of the elf manifest to extract an augur event log.
+references
+1. van der aalst, w.m.p.: process mining: data science in action. springer (2016)
+2. van der aalst, w.m.p.: a practitioner's guide to process mining: limitations of the
+directly-follows graph. in: int. conf. on enterprise information systems (centeris
+2019). procedia computer science, vol. 164, pp. 321{328. elsevier (2019)
+3. van der aalst, w.m.p., et al.: business process mining: an industrial application.
+information systems 32(5), 713{732 (2007)
+4. acampora, g., vitiello, a., stefano, b., van der aalst, w., g unther, c., verbeek,
+e.: ieee 1849: the xes standard. ieee computational intelligence magazine
+12(2), 4{8 (2017)
+5. andrews, r., suriadi, s., wynn, m., ter hofstede, a.h.m., rothwell, s.: improv-
+ing patient ows at st. andrew's war memorial hospital's emergency department
+through process mining. in: business process management cases: digital innova-
+tion and business transformation in practice. pp. 311{333 (2018)
+6. carmona, j., dongen, b., solti, a., weidlich, m.: conformance checking: relating
+processes and models. springer-verlag, berlin (2018)
+7. corradini, f., marcantoni, f., morichetta, a., polini, a., re, b., sampaolo, m.:
+enabling auditing of smart contracts through process mining. in: from software
+engineering to formal methods and tools, and back. pp. 467{480 (2019)
+8. de weerdt, j., schupp, a., vanderloock, a., baesens, b.: process mining for the
+multi-faceted analysis of business processes - a case study in a nancial services
+organization. computers in industry 64(1), 57{67 (2013)
+9. di ciccio, c., meroni, g., plebani, p.: business process monitoring on blockchains:
+potentials and challenges. in: enterprise, business-process and information sys-
+tems modeling. pp. 36{51 (2020)
+10. di ciccio, c., et al.: blockchain-based traceability of inter-organisational business
+processes. in: business modeling and software design. pp. 56{68 (2018)
+11. duchmann, f., koschmider, a.: validation of smart contracts using process mining.
+in: central europ. workshop on services and their composition. pp. 13{16 (2019)
+12. jans, m., van der werf, j.m., lybaert, n., vanhoof, k.: a business process mining
+application for internal transaction fraud mitigation. expert systems with appli-
+cations 38(10), 13351{13359 (2011)
+13. klinkm uller, c., ponomarev, a., tran, a.b., weber, i., van der aalst, w.m.p.:
+mining blockchain processes: extracting process mining data from blockchain ap-
+plications. in: bpm blockchain forum. pp. 71{86 (2019)
+14. klinkm uller, c., weber, i., ponomarev, a., tran, a.b., van der aalst, w.: e-
+cient logging for blockchain applications. corr abs/2001.10281 (2020), https:
+//arxiv.org/abs/2001.10281 , accessed 2021-03-21
+15. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured
+process models from event logs: a constructive approach. in: applications and
+theory of petri nets. pp. 311{329 (2013)process mining on blockchain data: a case study of augur 17
+16. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: scalable process discovery
+and conformance checking. software and systems modeling 17(2), 599{631 (2018)
+17. leemans, s.j.j., poppe, e., wynn, m.t.: directly follows-based process mining:
+exploration a case study. in: 2019 int. conf. on process mining. pp. 25{32 (2019)
+18. lemos, a.m., sabino, c.c., lima, r.m.f., oliveira, c.a.l.: using process mining
+in software development process management: a case study. in: 2011 ieee int.
+conf. on systems, man, and cybernetics. pp. 1181{1186 (2011)
+19. mans, r., schonenberg, m.h., song, m., van der aalst, w.m.p., bakker, p.: ap-
+plication of process mining in healthcare: a case study in a dutch hospital. in:
+biomedical engineering systems and technologies. vol. 25, pp. 425{438 (2009)
+20. mendling, j., et al.: blockchains for business process management { challenges and
+opportunities. acm transactions on management information systems (tmis)
+9(1), 4:1{4:16 (feb 2018)
+21. m uhlberger, r., bachhofner, s., di ciccio, c., garc a-ba~ nuelos, l., l opez-pintado,
+o.: extracting event logs for process mining from data stored on the blockchain.
+in: business process management workshops. pp. 690{703 (2019)
+22. m uller, m., ruppel, p.: process mining for decentralized applications. in: ieee
+int. conf. on decentralized applications and infrastructures. pp. 164{169 (2019)
+23. peterson, j., krug, j., zoltu, m., williams, a.k., alexander, s.: augur: a decen-
+tralized oracle and prediction market platform. tech. rep., forecast foundation
+(july 12, 2018), https://github.com/augurproject/whitepaper/blob/master/
+v1/english/whitepaper.pdf , accessed 2021-01-05
+24. reinkemeyer, l.: process mining in action: principles, use cases and outlook.
+springer-verlag, berlin (2020)
+25. rovani, m., maggi, f.m., leoni, m., van der aalst, w.m.p.: declarative process
+mining in healthcare. expert systems with applications 42(23), 9236{9251 (2015)
+26. rozinat, a., de jong, i.s.m., g unther, c.w., van der aalst, w.m.p.: process
+mining applied to the test process of wafer scanners in asml. ieee transactions
+on systems, man and cybernetics, part c 39(4), 474{479 (2009)
+27. suriadi, s., mans, r.s., wynn, m.t., partington, a., karnon, j.: measuring patient
+ow variations: a cross-organisational process mining approach. in: asia pacic
+business process management. pp. 43{58 (2014)
+28. weber, i., staples, m.: programmable money: next-generation conditional pay-
+ments using blockchain { keynote paper. in: int. conf. on cloud computing and
+services science (closer) (apr 2021)
+29. weber, i., xu, x., riveret, r., governatori, g., ponomarev, a., mendling, j.:
+untrusted business process monitoring and execution using blockchain. in: int.
+conf. on business process management. rio de janeiro, brazil (sep 2016)
+30. weber, i., et al.: on availability for blockchain-based systems. in: ieee int. sym-
+posium on reliable distributed systems (srds). pp. 64{73 (sep 2017)
+31. xu, x., weber, i., staples, m.: architecture for blockchain applications. springer
+(2019)

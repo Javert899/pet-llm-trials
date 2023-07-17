@@ -1,0 +1,843 @@
+workﬂownet2bpel4ws: a tool for translating
+unstructured workﬂow processes to readable bpel
+kristian bisgaard lassen1and wil m.p. van der aalst2;1
+1department of computer science, university of aarhus, it-parken, aabogade 34, dk-8200
+aarhus n, denmark. k.b.lassen@daimi.au.dk
+2department of information systems, eindhoven university of technology, p.o. box 513,
+nl-5600 mb, eindhoven, the netherlands. w.m.p.v.d.aalst@tm.tue.nl
+abstract. this paper presents workﬂownet2bpel4ws a tool to automatically
+map a graphical workﬂow model expressed in terms of workﬂow nets (wf-nets)
+onto bpel. the business process execution language for web services (bpel)
+has emerged as the de-facto standard for implementing processes and is supported
+by an increasing number of systems (cf. the ibm websphere choreographer and
+the oracle bpel process manager). while being a powerful language, bpel is
+difﬁcult to use. its xml representation is very verbose and only readable for the
+trained eye. it offers many constructs and typically things can be implemented
+in many ways, e.g., using links and the ﬂow construct or using sequences and
+switches. as a result only experienced users are able to select the right construct.
+some vendors offer a graphical interface that generates bpel code. however, the
+graphical representations are a direct reﬂection of the bpel code and not easy
+to use by end-users. therefore, we provide a mapping from wf-nets to bpel.
+this mapping builds on the rich theory of petri nets and can also be used to map
+other languages (e.g., uml, epc, bpmn, etc.) onto bpel. to evaluate work-
+ﬂownet2bpel4ws we used more than 100 processes modeled using protos (the
+most widely used business process modeling tool in the netherlands), automat-
+ically converted these into cpn tools, and applied our mapping. the results of
+these evaluation are very encouraging and show the applicability of our approach.
+keywords : bpel4ws, petri nets, workﬂow management, business process management.
+1 introduction
+the primary goal of this paper is to present workﬂownet2bpel4ws , a tool to auto-
+matically map wf-nets onto bpel. the tool uses the approach described in [9] and
+assumes a wf-net modeled using cpn tools [11, 27] and the resulting bpel code can
+be used in systems such as the ibm websphere choreographer [22] and the oracle
+bpel process manager [32]. note that the approach is also applicable to other petri-
+net-based tools (e.g., systems such as prom, yasper, woped, and protos that are able to
+export pnml). moreover, the ideas are also applicable to other graph-based languages
+such as bpmn [44], uml activity diagrams [21], epcs [24, 37], etc.
+this introduction motivates the need for a tool like workﬂownet2bpel4ws . to
+do this we start by introducing bpel followed by a brief discussion of wf-nets, an
+introduction to the tool, and some information about the evaluation using 100 protos
+models.1.1 bpel
+after more than a decade of attempts to standardize workﬂow languages (cf. [5, 31]), it
+seems that the business process execution language for web services (bpel4ws or
+bpel for short) [10] is emerging as the de-facto standard for executable process speci-
+ﬁcation. systems such as oracle bpel process manager, ibm websphere application
+server enterprise, ibm websphere studio application developer integration edition,
+and microsoft biztalk server 2004 support bpel, thus illustrating the practical rele-
+vance of this language.
+interestingly, bpel was intended initially for cross-organizational processes in a
+web services context: “bpel4ws provides a language for the formal speciﬁcation of
+business processes and business interaction protocols. by doing so, it extends the web
+services interaction model and enables it to support business transactions.” (see page
+1 in [10]). however, it can also be used to support intra-organizational processes. the
+authors of bpel [10] envision two possible uses of the language: “business processes
+can be described in two ways. executable business processes model actual behavior
+of a participant in a business interaction. business protocols, in contrast, use process
+descriptions that specify the mutually visible message exchange behavior of each of the
+parties involved in the protocol, without revealing their internal behavior. the process
+descriptions for business protocols are called abstract processes. bpel4ws is meant to
+be used to model the behavior of both executable and abstract processes.” in this paper
+we only consider the use of bpel as an execution language.
+bpel is an expressive language [45] (i.e., it can specify highly complex processes)
+and is supported by many systems. unfortunately, bpel is not a very intuitive lan-
+guage. its xml representation is very verbose and there are many, rather advanced,
+constructs. clearly, it is at another level than the graphical languages used by the tradi-
+tional workﬂow management systems (e.g., staffware, filenet, cosa, lotus domino
+workﬂow, sap workﬂow, etc.). this is the primary motivation of this for developing
+workﬂownet2bpel4ws, i.e., a tool to generate bpel code from a graphical workﬂow
+language.
+the modeling languages of traditional workﬂow management systems are exe-
+cutable but at the same time they appeal to managers and business analysts. clearly,
+managers and business analysts will have problems understanding bpel code. as a
+turing complete3language bpel can do, well, anything, but to do this it uses two
+styles of modeling: graph-based and structured. this can be explained by looking at
+its history: bpel builds on ibm’s wsfl (web services flow language) [28] and
+microsoft’s xlang (web services for business process design) [39] and combines
+accordingly the features of a block structured language inherited from xlang with
+those for directed graphs originating from wsfl. as a result simple things can be im-
+plemented in two ways. for example a sequence can be realized using the sequence
+orflow elements, a choice based on certain data values can be realized using the
+switch orflow elements, etc. however, for certain constructs one is forced to use
+the block structured part of the language, e.g., a deferred choice [7] can only be mod-
+eled using the pick construct. for other constructs one is forced to use the links, i.e.,
+the more graph-based oriented part of the language, e.g., two parallel processes with
+a one-way synchronization require a link inside aflow . in addition, there are very
+subtle restrictions on the use of links: “a link must not cross the boundary of a while
+3since bpel offers typical constructs of programming languages, e.g., loops and if-the-else
+constructs, and xml data types it is easy to show that bpel is turing complete.
+2activity, a serializable scope, an event handler or a compensation handler... in addition,
+a link that crosses a fault-handler boundary must be outbound, that is, it must have
+its source activity within the fault handler and its target activity within a scope that en-
+closes the scope associated with the fault handler. finally, a link must not create a
+control cycle, that is, the source activity must not have the target activity as a logically
+preceding activity, where an activity a logically precedes an activity b if the initiation
+of b semantically requires the completion of a. therefore, directed graphs created by
+links are always acyclic.” (see page 64 in [10]). all of this makes the language complex
+for end-users. therefore, there is a need for a “higher level” language for which one can
+generate intuitive andmaintainable bpel code.
+such a “higher level” language will not describe certain implementation details, e.g.,
+particularities of a given legacy application. this needs to be added to the generated
+bpel code. therefore, it is important that the generated bpel code is intuitive and
+maintainable. if the generated bpel code is unnecessary complex or counter-intuitive,
+it cannot be extended or customized.
+note that tools such as oracle bpel process manager and ibm websphere studio
+offer graphical modeling tools. however, these tools reﬂect directly the bpel code , i.e.,
+the designer needs to be aware of structure of the xml document and required bpel
+constructs. for example, to model a deferred choice in the context of a parallel process
+[7] the user needs to add a level to the hierarchy (i.e., a pick deﬁned at a lower level
+than theflow ). moreover, subtle requirements such as links not creating a cycle still
+need to be respected in the graphical representation. therefore, it is interesting to look
+at a truly graph-based language with no technological-oriented syntactical restrictions
+and see whether it is possible to generate bpel code.
+1.2 wf-nets
+in this paper we use a speciﬁc class of petri nets, named workflow nets (wf-nets)
+[1–3], as a source language to be mapped onto the target language bpel. there are
+several reasons for selecting petri nets as a source language. it is a simple graphical
+language with a strong theoretical foundation. petri nets can express all the routing con-
+structs present in existing workﬂow languages [4, 17, 42] and enforce no technological-
+oriented syntactical restrictions (e.g., no loops). note that wf-nets are classical petri
+nets without data, hierarchy, time and other extensions. therefore, their applicability is
+limited. however, we do notpropose wf-nets as the language to be used by end-users;
+we merely use it as the theoretical foundation. it can capture the control-ﬂow structures
+present in other graphical languages, but it abstracts from other aspects such as data
+ﬂow, work distribution, etc. note that there are many petri-net based modeling tools,
+e.g., general tools such as exspect, cpn tools, etc. and more dedicated petri-net-based
+workﬂow modeling and analysis tools such cosa, protos, woped, yasper, and pro-
+tos. clearly, these tools can be used to model wf-nets (possibly extended with time,
+data, hierarchy, etc.). moreover, as demonstrated in the context of tools such as prom
+[12] and woﬂan [41], it is possible to map (abstractions of) languages like staffware,
+mqseries workﬂow, epcs, yawl, etc. onto wf-nets. hence, the mapping presented
+in this paper can be used as a basis for translations from other source languages such
+as uml activity diagrams [21], event-driven process chains (epcs) [24, 37], and the
+business process modeling notation (bpmn) [44]. moreover, the basic ideas can also
+be used to map graph-based languages onto other (partly) block-structured languages.
+31.3 workﬂownet2bpel4ws
+in a technical report [9], we introduced an approach to automatically map a wf-net onto
+bpel using an iterative approach. to support this approach, we implemented the tool
+workﬂownet2bpel4ws . this tool automatically translates colored petri nets (cpns,
+[27]) into bpel code. these cpns are speciﬁed using cpn tools [11]. note that a cpn
+may also contain detailed data transformations and stochastic information (e.g., delay
+distributions and probabilities). however, in the transformation, we abstract from data,
+time, and probabilities and mainly focus on the wf-net structure of the cpn. the code
+generated by workﬂownet2bpel4ws can be imported into any system that supports
+bpel, e.g., ibm’s websphere studio [22].
+1.4 evaluation using 100 protos models
+to evaluate the applicability of our approach we used 100 processes modeled using
+protos [36]. these models were automatically converted into cpn tools using prom
+[12] and then we used workﬂownet2bpel4ws to map them onto bpel. protos (pallas
+athena) uses a petri-net-based modeling notation [36] and is a widely used business
+process modeling tool. it is used by more than 1500 organizations in more than 20
+countries. the number of users that use protos for designing processes is estimated to
+be 25000. some of the organizations have modeled more than 1500 processes. the 100
+process models used for the evaluation resulted from student projects where students
+had to model and redesign realistic business cases.
+1.5 outline
+the remainder of this paper is organized as follows. first, we provide an overview of re-
+lated work. section 3 describes the approach used to map wf-nets onto bpel using an
+iterative approach. section 4 presents the implementation of workﬂownet2bpel4ws.
+section 5 evaluates our approach using 100 protos models. these models where then
+executed using ibm’s websphere studio. section 6 concludes the paper.
+2 related work
+since the early nineties workﬂow technology has matured [20] and several textbooks
+have been published, e.g., [6, 13, 23, 29]. during this period many languages for mod-
+eling workﬂows have been proposed, i.e., languages ranging from generic petri-net-
+based languages to tailor-made domain-speciﬁc languages. the workﬂow management
+coalition (wfmc) has tried to standardize workﬂow languages since 1994 but failed to
+do so [17]. xpdl, the language proposed by the wfmc, has semantic problems [4] and
+is rarely used. in a way bpel [10] succeeded in doing what the wfmc was aiming at.
+however, bpel is really at the implementation level rather than the workﬂow modeling
+level or the requirements level (thus providing the motivation for this paper).
+several attempts have been made to capture the behavior of bpel [10] in some
+formal way. some advocate the use of ﬁnite state machines [18, 19], others process
+algebras [16, 26], and yet others abstract state machines [14, 15] or petri nets [33, 30,
+38, 40]. for a detailed analysis of bpel based on the workﬂow patterns [7] we refer to
+[45].
+4the work reported in this paper is also related to the various tools and mappings
+used to generate bpel code being developed in industry. tools such as the ibm web-
+sphere choreographer and the oracle bpel process manager offer a graphical notation
+for bpel. however, this notation directly reﬂects the code and there is no intelligent
+mapping as shown in this paper. this implies that users have to think in terms of bpel
+constructs (e.g., blocks, syntactical restrictions on links, etc.). more related is the work
+of steven white that discusses the mapping of bpmn onto bpel [43] and the work
+by jana koehler and rainer hauser on removing loops in the context of bpel [25].
+note that none of these publications provides a mapping of some (graphical) process
+modeling language onto bpel: [43] merely presents the problem and discusses some
+issues using examples and [25] focusses on only one piece of the puzzle. also related
+is the mapping presented in [34] where a subclass of bpmn is mapped onto bpel us-
+ing eca rules as an intermediate format. then these eca rules are realized by bpel
+event handlers (onevent). note that this mapping heavily relies on the implementation
+of events in bpel. moreover, the resulting code is not very readable for humans be-
+cause this mapping does not try to identify patterns close to the bpel constructs. a
+more recent mapping tries to overcome this problem [35] but has not been implemented
+yet.
+the tool presented in this paper uses our translation which was described in detail
+in a technical report [9]. the work is also related to [8] where we describe a case study
+where for a new bank system requirements are mapped onto colored workﬂow nets (a
+subclass of colored petri nets) which are then implemented using bpel in the ibm
+websphere environment.
+3 mapping wf-nets to bpel
+in this paper, we would like to focus on the workﬂownet2bpel4ws tool and the
+evaluation of it. therefore, we do not show any details for the algorithms being used.
+moreover, we do not give any proof of the correctness of our approach. for this we
+refer to the technical report [9] mentioned before. we also assume that the reader has
+basic knowledge of bpel and petri nets. this allows us to focus on the application of
+our translation from wf-nets to bpel.
+as indicated in the introduction, it is important that the generated bpel code is intu-
+itive and maintainable. if the generated bpel code is unnecessary complex or counter-
+intuitive, it cannot be extended or customized. therefore, we try to map parts of the
+wf-net onto bpel constructs that ﬁt best. for example, a sequence of transitions con-
+nected through places should be mapped onto a bpel sequence . we aim at recogniz-
+ing “sequences”, “switches”, “picks”, “while’s”, and “ﬂows” where the most speciﬁc
+construct has our preference, e.g., for a sequence we prefer to use the sequence el-
+ement over the flow element even though both are possible. we aim at an iterative
+approach where the wf-net is reduced by packaging parts of the network into suitable
+bpel constructs.
+we would like to stress that our goal is not to provide just any mapping of wf-nets
+onto bpel. note that a large class of wf-nets can be mapped directly onto a bpel
+flow construct. however, such a translation results in unreadable bpel code. instead
+we would like to map a graph-based language like wf-nets onto a hierarchical decom-
+position of speciﬁc bpel constructs. for example, if the wf-net contains a sequence
+of transitions (i.e., activities) this should be mapped onto the more speciﬁc sequence
+5construct rather than the more general (and more verbose) flow construct. hence, our
+goal is to generate readable and compact code.
+cp1
+p2p1
+tcct1
+p1tc
+p1p2
+cp1
+t1p1
+tcct1
+tc
+t2
+fig. 1. folding a component cinto a single transition tc.
+to map wf-nets onto (readable) bpel code, we need to transform a graph struc-
+ture to a block structure. for this purpose we use components . a component should
+be seen as a selected part of the wf-net that has a clear start and end. one can think
+of it as subnet satisfying properties similar to a wf-net. however, unlike a wf-net, a
+component may start and/or end with a transition, i.e., wf-nets are “place bordered”
+while components may be “place and/or transition bordered”. the goal is to map com-
+ponents onto “bpel blocks”. for example, a component holding a purely sequential
+structure should be mapped onto a bpel sequence while a component holding a
+parallel structure should be mapped onto a flow . figure 1 shows the basic idea. we try
+to identify a place and/or transition bordered component cand fold this into a single
+transition tc. the annotation of tchold the bpel code corresponding to c. by repeat-
+ing this process we hope to ﬁnd a single transition annotated with the bpel code of the
+entire process.
+so we can summarize our approach as follows: the idea is to start with an an-
+notated wf-net where each transition is labeled with references to primitive activities
+such asinvoke (invoking an operation on some web service), receive (waiting
+for a message from an external source), reply (replying to an external source), wait
+6(waiting for some time), assign (copying data from one place to another), throw (in-
+dicating errors in the execution), and empty (doing nothing). taking this as starting
+point, a component in the annotated wf-net is mapped onto bpel code. the compo-
+nentcis replaced by transition tcwhose inscription (cf. figure 1) describes the bpel
+code associated to the whole component. this process is repeated until there is just a
+single transition whose inscription corresponds to the bpel speciﬁcation of the entire
+process. how this can be done is detailed using an example.
+a
+hk
+receive
+paperg
+get review 2
+time-out 2collect
+reviewsb
+decidemaccept
+n
+rejectfe
+get review 1
+time-out 1
+ji
+get review 3
+time-out 3decision =
+“accept”
+decision =
+“reject”l c
+dinvite reviewer 1
+invite reviewer 2
+invite reviewer 3
+fig. 2. a petri net describing the process of reviewing papers.
+figure 2 shows a petri net corresponding to a reviewing process. first we look
+for a maximal sequence component , i.e., a component representing a sequence that is
+chosen as large as possible. this component is mapped into a new transition with the
+corresponding bpel annotation. in figure 2 there is a sequence consisting of transition
+kandland we replace this component by a transition f1. the resulting wf-net and
+the annotation of transition f1is shown in figure 3.
+after folding kandlintof1there is no sequence component remaining. there-
+fore, we replace mandnby a transition f2tagged with a switch expression. note
+that this component is not mapped onto a pick construct because of the inscriptions
+on the arcs suggesting some choice based on data rather than a time or message trigger.
+in our tool, we use a set of annotations to guide the generation of bpel code. however,
+for the basic idea this is of less importance. figure 4 shows the resulting wf-net.
+because of the introduction of f2a new sequence is created. clearly, this sequence
+is maximal and we can replace is by a transition f3tagged with a sequence expres-
+sion as shown in figure 5
+in figure 5 there are three components representing a pick component. note that
+we assume that these represent a pick because there are no conditions on the arcs
+or the places with multiple outgoing arcs. as indicated, the workﬂownet2bpel4ws
+tool can handle a variety of tags directing the mapping process. in case of a pick it
+is possible to describe more about the nature of the choice (e.g., events, timers, etc.).
+however, in this paper we focus on the control-ﬂow. each of the pick components can
+7a
+hf1
+receive
+paperg
+get review 2
+time-out 2b
+maccept
+n
+rejectfe
+get review 1
+time-out 1
+ji
+get review 3
+time-out 3decision =
+“accept”
+decision =
+“reject”c
+dinvite reviewer 1
+invite reviewer 2
+invite reviewer 3<sequence  name="sequence_f1 ">
+<invoke name="collect reviews "/>
+<invoke name="decide"/>
+</sequence >fig. 3. the petri net after replacing kandlby a transition f1tagged with a sequence ex-
+pression.
+a
+hf1
+receive
+paperg
+get review 2
+time-out 2b
+f2fe
+get review 1
+time-out 1
+ji
+get review 3
+time-out 3c
+dinvite reviewer 1
+invite reviewer 2
+invite reviewer 3<sequence  name="sequence_f1 ">
+<invoke name="collect reviews "/>
+<invoke name="decide"/>
+</sequence ><switch name="switch_f2 ">
+<case condition ="decision = &quot;reject&quot; ">
+<invoke name="reject"/>
+</case>
+<case condition ="decision = &quot;accept&quot; ">
+<invoke name="accept"/>
+</case>
+</switch>
+fig. 4. the petri net after replacing mandnby a transition f2tagged with a switch expres-
+sion.
+be replaced by a single transition which is then merged with the preceding transition
+into asequence transition.
+figure 6 illustrates the sequence of steps that are taken. note that the intermediate
+result shown is actually not possible, i.e., ﬁrst dandf4would be merged into f5
+before moving to the other two parallel branches. however, dandf4are depicted
+separately to show the process in more intuitive manner. if dandf4are also merged
+(i.e., the sequence of dandf4is replaced by f5), there are 5 transitions remaining:
+a,f3,f5,f7, and f9. together they form a flow component.
+8a
+hf3
+receive
+paperg
+get review 2
+time-out 2b
+fe
+get review 1
+time-out 1
+ji
+get review 3
+time-out 3c
+dinvite reviewer 1
+invite reviewer 2
+invite reviewer 3<sequence  name="sequence_f3 "
+               joincondition ="bpws:getlinkstatus('fragment5_fragment3') and
+                  bpws:getlinkstatus('fragment7_fragment3') and
+                  bpws:getlinkstatus('fragment9_fragment3') ">
+<target linkname ="sequence_f9_sequence_f3 "/>
+<target linkname ="sequence_f7_sequence_f3 "/>
+<target linkname ="sequence_f5_sequence_f3 "/>
+<sequence  name="sequence_f1 ">
+<invoke name="collect reviews "/>
+<invoke name="decide"/>
+</sequence >
+<switch name="switch_f2 ">
+<case condition ="decision = &quot;reject&quot; ">
+<invoke name="reject"/>
+</case>
+<case condition ="decision = &quot;accept&quot; ">
+<invoke name="accept"/>
+</case>
+</switch>
+</sequence >fig. 5. the petri net after replacing f1andf2by a transition f3tagged with a sequence
+expression.
+a f3
+receive
+paper
+df7f9
+invite reviewer 3
+<pick name="pick_f4">
+<onmessage  operation ="">
+<invoke name="get review 3 "/>
+</onmessage >
+<onmessage  operation ="">
+<invoke name="time-out 3 "/>
+</onmessage >
+</pick>f4<sequence  name="sequence_f7 ">
+<source linkname ="sequence_f7_sequence_f3 "/>
+<target linkname ="receive paper_sequence_f7 "/>
+<invoke name="invite reviewer 2 "/>
+<pick name="pick_f6">
+<onmessage  operation ="">
+<invoke name="time-out 2 "/>
+</onmessage >
+<onmessage  operation ="">
+<invoke name="get review 2 "/>
+</onmessage >
+</pick>
+</sequence ><sequence  name="sequence_f9 ">
+<source linkname ="sequence_f9_sequence_f3 "/>
+<target linkname ="receive paper_sequence_f9 "/>
+<invoke name="invited reviewer 1 "/>
+<pick name="pick_f8">
+<onmessage  operation ="">
+<invoke name="get review 1&#xa; "/>
+</onmessage >
+<onmessage  operation ="">
+<invoke name="time-out 1&#xa; "/>
+</onmessage >
+</pick>
+</sequence >
+fig. 6. the petri net after replacing iandjby a transition f4tagged with a pick expression.
+then dandf4can be merged into a sequence f5. similarly, f7andf9can be created.
+figure 7 shows the result after applying the last step. note that this is the 10th fold-
+ing and the result is a wf-net consisting of only one transition f10. the annotation of
+f10is the bpel code for the entire process. hence, we provided an iterative approach
+to translate the wf-net shown figure 2 into bpel template code.
+4 implementation
+for a detailed description of the algorithm we refer to [9]. in this section, we only
+highlight the basic structure of the tool. the starting point is a wf-net. we assume that
+9f10<flow name="flow_f10 ">
+<links>
+<link name="receive paper_sequence_f7 "/>
+<link name="receive paper_sequence_f9 "/>
+<link name="receive paper_sequence_f5 "/>
+<link name="sequence_f5_sequence_f3 "/>
+<link name="sequence_f7_sequence_f3 "/>
+<link name="sequence_f9_sequence_f3 "/>
+</links>
+<invoke name="receive paper ">
+<source linkname ="receive paper_sequence_f5 "/>
+<source linkname ="receive paper_sequence_f9 "/>
+<source linkname ="receive paper_sequence_f7 "/>
+</invoke>
+<sequence  name="sequence_f3 "
+joincondition ="bpws:getlinkstatus('fragment5_fragment3') and
+bpws:getlinkstatus('fragment7_fragment3') and
+bpws:getlinkstatus('fragment9_fragment3') ">
+<target linkname ="sequence_f9_sequence_f3 "/>
+<target linkname ="sequence_f7_sequence_f3 "/>
+<target linkname ="sequence_f5_sequence_f3 "/>
+<sequence  name="sequence_f1 ">
+<invoke name="collect reviews "/>
+<invoke name="decide"/>
+</sequence >
+<switch name="switch_f2 ">
+<case condition ="decision = &quot;reject&quot; ">
+<invoke name="reject"/>
+</case>
+<case condition ="decision = &quot;accept&quot; ">
+<invoke name="accept"/>
+</case>
+</switch>
+</sequence ><sequence  name="sequence_f5 ">
+<source linkname ="sequence_f5_sequence_f3 "/>
+<target linkname ="receive paper_sequence_f5 "/>
+<invoke name="invite reviewer 3 "/>
+<pick name="pick_f4">
+<onmessage  operation ="">
+<invoke name="get review 3 "/>
+</onmessage >
+<onmessage  operation ="">
+<invoke name="time-out 3 "/>
+</onmessage >
+</pick>
+</sequence >
+<sequence  name="sequence_f7 ">
+<source linkname ="sequence_f7_sequence_f3 "/>
+<target linkname ="receive paper_sequence_f7 "/>
+<invoke name="invite reviewer 2 "/>
+<pick name="pick_f6">
+<onmessage  operation ="">
+<invoke name="time-out 2 "/>
+</onmessage >
+<onmessage  operation ="">
+<invoke name="get review 2 "/>
+</onmessage >
+</pick>
+</sequence >
+<sequence  name="sequence_f9 ">
+<source linkname ="sequence_f9_sequence_f3 "/>
+<target linkname ="receive paper_sequence_f9 "/>
+<invoke name="invited reviewer 1 "/>
+<pick name="pick_f8">
+<onmessage  operation ="">
+<invoke name="get review 1&#xa; "/>
+</onmessage >
+<onmessage  operation ="">
+<invoke name="time-out 1&#xa; "/>
+</onmessage >
+</pick>
+</sequence >
+</flow>fig. 7. the petri net after replacing the remaining part by one transition f10tagged with a flow
+expression.
+this wf-net is modeled using cpn tools [11, 27]. note that through prom [12] and
+woﬂan [41], it is possible to map (abstractions of) languages like protos, staffware,
+mqseries workﬂow, epcs, yawl, etc. onto wf-nets and export them to cpn tools.
+in cpn tools we assume some annotation describing e.g. the nature of choice ( pick or
+switch ) and the content of the activity represented by an atomic transition. we allow
+for the annotation of activity types like invoke (invoking an operation on some web
+service),receive (waiting for a message from an external source), reply (replying
+to an external source), wait (waiting for some time), assign (copying data from
+one place to another), throw (indicating errors in the execution), and empty (doing
+nothing).
+in principle, no annotations are needed for the translation of workﬂow nets in cpn
+tools to bpel. if a choice construct (place with outgoing arcs) is not annotated, it is
+assumed to be part of a switch . if an atomic transition is not annotated, it is assumed
+to be aninvoke activity.
+an important assumption for the correctness of our approach is that the initial wf-
+net is safe and sound. this can be checked with tools such as prom [12] and woﬂan
+[41] and also the state-space tool of cpn tools [11].
+in [9] we described that the various components can be detected in a wf-net. based
+on this, workﬂownet2bpel4ws uses the following algorithm to produce bpel code.
+deﬁnition 1 (algorithm). letpn= (p; t; f; ¿ p; ¿g; ¿ma; ¿t)be a safe and sound
+annotated wf-net.
+(i)x:=pn
+(ii)while [x]6=;(i.e.,xcontains a non-trivial component)4
+(iii-a) if there is a maximal sequence component c2[x], select it and goto (vi).
+4note that this is the case as long as xis not reduced to a wf-net with just a single transition.
+10(iii-b) if there is a switch component c2[x], select it and goto (vi).
+(iii-c) if there is a pick component c2[x], select it and goto (vi).
+(iii-d) if there is a while component c2[x], select it and goto (vi).
+(iii-e) if there is a maximal flow component c2[x], select it and goto (vi).
+(iv) if there is a component c2[x]that appears in the component library, select
+it and goto (vi).
+(v)select a component c2[x]to be manually mapped onto bpel and add it to
+the component library.
+(vi) attach the bpel translation of ctotcas illustrated in figure 1.
+(vii)x:=fold(pn; c)and return to (ii).
+(viii) output the bpel code attached to the transition in x.
+the actual translation of components is done in step (vi)followed by the folding in
+step(vii). the component to be translated/folded is selected in steps (iii). if there is still
+a sequence remaining in the net, this is selected. a maximal sequence is selected to keep
+the translation as compact and simple as possible. only if there are no sequences left
+in the wf-net, other components are considered. the next one in line is the switch
+component followed by the pick component and the while component. given the
+fact that switch, pick and while components are disjoint, the order of steps (iii-
+b),(iii-c) , and (iii-d) is irrelevant. finally, maximal flow components are considered.
+not every net can be reduced into sequence, switch, pick, while, and
+flow components. therefore, steps (iv)and(v)have been added. the basic idea is to
+allow for ad-hoc translations. these translations are stored in a component library. if
+the wf-net cannot be reduced any further using the standard sequence, switch,
+pick, while and flow components, then the algorithm searches the component li-
+brary (note that it only has to consider the network structure and not the speciﬁc names
+and annotations). if the search is successful, the stored bpel mapping can be applied
+(modulo renaming of nodes and arc and transition annotations). if there is not a match-
+ing component, the tool will save a the irreducible net along with each of the compo-
+nents in the net. a manual translation can be then provided for one of the components
+and stored in the component library for future use.
+the component library is composed of pairs of component and the translation of it
+into bpel activity. when we match a component against a library component we take
+each pair of transitions that where matched successfully by that component and substi-
+tute the bpel activity in the library bpel speciﬁcation code by that of the transition
+in the net that is being translated. so if a transition is annotated with a sequence and the
+corresponding transition in the library component is an invoke then the invoke in the
+library bpel invoke is replaced by the sequence. if we did not do this, then each time
+a library component is used for reduction, all previous translations would get lost.
+figure 8 shows a screenshot of workﬂownet2bpel4ws in action. the wf-net
+figure 2 is loaded into cpn tools and workﬂownet2bpel4ws iteratively creates
+bpel template code. note that workﬂownet2bpel4ws saves the result of each step,
+i.e., for figure 2 there are 9 intermediate and one ﬁnal model generated. this allows
+the designer to check the translation process. if the net is irreducible, i.e. there is no
+predeﬁned or library component that can match a component in the net, then work-
+ﬂownet2bpel4ws stores the irreducible net along with a copy of the components that
+exists in the irreducible net. this makes it easy to develop the library to cope with a
+particular workﬂow net, by choosing a component in the list that workﬂownet2bpel
+provides and translating it, and adding the component and the translation of it to the
+library.
+11workflownet2bpel4wsfig. 8. a screenshot of cpn tools and the resulting bpel code after applying the work-
+ﬂownet2bpel4ws tool.
+the default component matching order in the tool is the one described in [9], but it
+is possible to change the order in which components are matched. it is possible express
+that flow components are selected before sequence components, or that a user-
+deﬁned component has priority over flow components. by doing this, the user of the
+tool can adjust the “style” of the generated bpel and not just settle with some ﬁxed
+order.
+5 evaluation
+to evaluate our approach and to test the workﬂownet2bpel4ws tool, we used 100
+process models developed by students in group projects. each group modeled the pro-
+cesses related to a realistic business case using protos. each group was free to select
+their own business case. using interviews and documentation, their assignment was to
+model the business processes, to analyze them, and to propose redesigns. it is important
+to stress that the processes were not selected or modeled by the authors of this paper,
+i.e., the groups were free to choose a business case. there were only requirements with
+respect to the size and complexity of the models. moreover, the models had to be cor-
+rect. using woﬂan the groups could verify the soundness of their models [41]. as a
+modeling tool we used protos. the reason is that this is the most widely used business
+process modeling tool in the netherlands (see section 1.4). moreover, we have devel-
+oped interfaces to petri-net-based analysis tools such as woﬂan, prom, exspect, and
+cpn tools.
+although there were more than protos 100 models, we made an random selection
+of 100 models. all these models where exported to our input format by, ﬁrst importing
+12them into prom and then exporting them to the cpn tools format. on average the
+generated cpn models contained 23.66 places and 26.54 transitions.
+the goal of the evaluation was to take the workﬂownet2bpel4ws tool and con-
+vert each of the 100 protos models into bpel. this was not trivial since only 11 of
+the 100 models could be reduced using the standard predeﬁned components of the al-
+gorithm, i.e., just 11 models could be completely reduced into sequence, switch,
+pick, while, and flow components. therefore, we were forced to add components
+to our component library. we started with an empty component library and each time we
+encountered a wf-net that could not be reduced completely, we added a manual trans-
+lation of the smallest irreducible component to our library. after adding 76 components
+to the library we succeeded in completely reducing all protos models.
+ 0 20 40 60 80 100
+ 0  10  20  30  40  50  60  70reduced workflow nets
+components added
+fig. 9. a graph showing the relationship between added components and reduced nets.
+in figure 9 we see the relationship between components added to the library and
+the number of nets reduced. it starts out in (0,11) (11 nets could be reduced using the
+predeﬁned components) and ends up in (100,76) (76 components had to be added to
+reduce all 100 nets).
+for each library component we added, we translated all of the 100 nets to check
+the distribution of components types. figure 10 shows how often each component type
+could be applied to reduce the wf-nets in each of the 76 steps. for example, the number
+of times a component could be reduced by mapping it onto a sequence increases
+from less than 700 until 743 (top line). this number increases because each time a
+component is added to the library a further reduction is possible and new sequence
+components may surface. the line “x” in figure 10 shows the number of reductions
+possible because of the component library. initially, this value is 0 because the compo-
+nent library is empty. after adding 76 ad-hoc components, 132 reductions result from
+the component library. after adding these 76 each wf-net can be reduced completely
+and as a result we obtain the bpel code for all 100 models.
+figure 11 shows the ﬁnal distribution of reductions, i.e., while generating the bpel
+code 73 flow components, 132 library components, 743 sequence compo-
+13 0 100 200 300 400 500 600 700 800
+ 0  10  20  30  40  50  60  70components matched
+components addedflow
+library
+sequence
+switch
+whilefig. 10. a graph showing the distribution of components used.
+0100200300400500600700800
+flow library sequence switch whiletimes used
+fig. 11. the number of times each component type can be used for a reduction after adding 76
+ad-hoc components to the library.
+nents, 90 switch components, and 24 while components are encountered.5these
+numbers show that the standard reductions using the sequence, switch, pick,
+while, and flow components are doing remarkably well. on the total of 1062 re-
+ductions required to generate the bpel code, only 132 were due to library compo-
+nents ( '12.4%).
+after adding all 76 components to the library we checked to see how often a library
+component was used when translating all of the 100 wf-nets. this is shown in fig-
+5the reason that no pick components where found was that the current export facility of prom
+to cpn tools do not annotate the wf-nets with this information. since the only difference
+between a match for a pick and a switch component is the annotation of the place splitting
+the ﬂow, the reduction process is not inﬂuenced. if we would have transferred this information
+from protos, the sum of the number of switch and pick reductions would be 90 and the
+other numbers would not be affected. note that this information is available in protos but
+cannot (yet) be stored in the intermediate pnml format.
+14051015202530
+1 4 7 10 13 16 19 22 25 28 31 34 37 40 43 46 49 52 55 58 61 64 67 70 73 76 
+componenttimes usedfig. 12. a graph showing how many times each added component is used.
+ure 12. the ﬁgure shows that most of the library components we used only once. only
+one library component (number 5) was used frequently, i.e., of the 76 library compo-
+nents 50 components were used only once ( '66%), 21 were used twice ( '28%), 2
+were used three times ( '3%), 1 was used four times ( '1%), 1 was used ﬁve times
+('1%), and 1 was used 25 times ( '1%).
+p1
+tct1
+t2
+p2t3
+t4
+fig. 13. the reduction using the library component that was used 25 times.
+figure 13 shows the library component that could be applied most frequently. clearly,
+this is a good candidate to be added to the set of standard components. none of the other
+library components is used very frequently. this shows that some manual work will al-
+ways be necessary. we would like to point out that students were encouraged to select
+complicated business processes, i.e., part of the grading was based on the use of as
+many workﬂow patterns as possible [7]. as a result we expect the selected set of protos
+models to be more complicated than usual. for example, the students were encouraged
+to use the “milestone pattern” [7] which cannot be reduced using any of the standard
+15components and is difﬁcult to capture this pattern in a single component to be added
+to the library. therefore, the results should be interpreted as a worst-case scenario. we
+expect that in a most situations, more than 95% of the components can be reduced using
+the standard components and the component depicted in figure 13.
+the performance of the reductions and bpel generation is not an issue. after
+adding the 76 library components, each of the 100 workﬂow nets was translated within
+a few seconds.
+6 conclusion and future work
+in this paper we presented an approach to generate bpel code from wf-nets using
+reductions, i.e., components are folded into transitions labeled with bpel code. the
+main goal is to generate readable bpel code. therefore, we did not aim at a compli-
+cated full translation (e.g., using events handler [34]) but at recognizing “natural bpel
+constructs”. the approach is supported by the translation tool workﬂownet2bpel4ws .
+the tool also supports an extensible component library, i.e., components and their pre-
+ferred bpel translations can be added thus allowing for different translation styles.
+we have evaluated workﬂownet2bpel4ws and the underlying ideas using 100
+complex protos models. based on this evaluation we estimate that more than 95% of
+real-life process models can be automatically translated into readable bpel code. how-
+ever, some manual interventions are needed to translate the remaining 5%. as demon-
+strated, larger component libraries could be used to achieve a fully automatic translation
+in most cases.
+the current implementation can be used in conjunction with a wide variety of petri
+net based tools, e.g., cpn tools, prom, yasper, woped, pnk, cpn-ami, and protos.
+moreover, the ideas are also applicable to other graph-based languages such as bpmn,
+uml activity diagrams, epcs , and proprietary workﬂow languages.
+in the near future we plan to implement this algorithm directly into prom [12] so
+it will be possible to translate a wide variety of process modeling languages to bpel.
+moreover, pallas athena is interested in integrating workﬂownet2bpel4ws into pro-
+tos. give the widespread use of protos, such an implementation would allow many
+organizations to generate bpel code.
+references
+1.w.m.p. van der aalst. veriﬁcation of workﬂow nets. in p. az ´ema and g. balbo, editors,
+application and theory of petri nets 1997 , volume 1248 of lecture notes in computer
+science , pages 407–426. springer-verlag, berlin, 1997.
+2.w.m.p. van der aalst. the application of petri nets to workﬂow management. the journal
+of circuits, systems and computers , 8(1):21–66, 1998.
+3.w.m.p. van der aalst. workﬂow veriﬁcation: finding control-flow errors using petri-net-
+based techniques. in w.m.p. van der aalst, j. desel, and a. oberweis, editors, business
+process management: models, techniques, and empirical studies , volume 1806 of lecture
+notes in computer science , pages 161–183. springer-verlag, berlin, 2000.
+4.w.m.p. van der aalst. business process management demystiﬁed: a tutorial on models,
+systems and standards for workﬂow management. in j. desel, w. reisig, and g. rozenberg,
+editors, lectures on concurrency and petri nets , volume 3098 of lecture notes in computer
+science , pages 1–65. springer-verlag, berlin, 2004.
+165.w.m.p. van der aalst, m. dumas, and a.h.m. ter hofstede. web service composition
+languages: old wine in new bottles? in g. chroust and c. hofer, editors, proceeding
+of the 29th euromicro conference: new waves in system architecture , pages 298–305.
+ieee computer society, los alamitos, ca, 2003.
+6.w.m.p. van der aalst and k.m. van hee. workﬂow management: models, methods, and
+systems . mit press, cambridge, ma, 2002.
+7.w.m.p. van der aalst, a.h.m. ter hofstede, b. kiepuszewski, and a.p. barros. workﬂow
+patterns. distributed and parallel databases , 14(1):5–51, 2003.
+8.w.m.p. van der aalst, j.b. jørgensen, and k.b. lassen. let’s go all the way: from require-
+ments via colored workﬂow nets to a bpel implementation of a new bank system paper.
+in r. meersman and z. tari et al., editors, on the move to meaningful internet systems
+2005: coopis, doa, and odbase: otm confederated international conferences, coopis,
+doa, and odbase 2005 , volume 3760 of lecture notes in computer science , pages 22–39.
+springer-verlag, berlin, 2005.
+9.w.m.p. van der aalst and k.b. lassen. translating workﬂow nets to bpel4ws. beta
+working paper series, wp 145, eindhoven university of technology, eindhoven, 2005.
+10.t. andrews, f. curbera, h. dholakia, y . goland, j. klein, f. leymann, k. liu, d. roller,
+d. smith, s. thatte, i. trickovic, and s. weerawarana. business process execution language
+for web services, version 1.1. standards proposal by bea systems, international business
+machines corporation, and microsoft corporation, 2003.
+11.cpn group, university of aarhus, denmark. cpn tools home page.
+http://wiki.daimi.au.dk/cpntools/.
+12.b. van dongen, a.k. alves de medeiros, h.m.w. verbeek, a.j.m.m. weijters, and w.m.p.
+van der aalst. the prom framework: a new era in process mining tool support. in
+g. ciardo and p. darondeau, editors, application and theory of petri nets 2005 , volume
+3536 of lecture notes in computer science , pages 444–454. springer-verlag, berlin, 2005.
+13.m. dumas, w.m.p. van der aalst, and a.h.m. ter hofstede. process-aware information
+systems: bridging people and software through process technology . wiley & sons, 2005.
+14.d. fahland and w. reisig. asm-based semantics for bpel: the negative control ﬂow. in
+d. beauquier and e. b ¨orger and a. slissenko, editor, proc. 12th international workshop on
+abstract state machines , pages 131–151, paris, france, march 2005.
+15.r. farahbod, u. gl ¨asser, and m. vajihollahi. speciﬁcation and validation of the business
+process execution language for web services. in w. zimmermann and b. thalheim, editors,
+abstract state machines 2004 , volume 3052 of lecture notes in computer science , pages
+79–94, lutherstadt wittenberg, germany, may 2004. springer-verlag, berlin.
+16.a. ferrara. web services: a process algebra approach. in proceedings of the 2nd inter-
+national conference on service oriented computing , pages 242–251, new york, ny , usa,
+2004. acm press.
+17.l. fischer, editor. workﬂow handbook 2003, workﬂow management coalition . future
+strategies, lighthouse point, florida, 2003.
+18.j.a. fisteus, l.s. fern ´andez, and c.d. kloos. formal veriﬁcation of bpel4ws business
+collaborations. in k. bauknecht, m. bichler, and b. proll, editors, proceedings of the 5th
+international conference on electronic commerce and web technologies (ec-web ’04) ,
+volume 3182 of lecture notes in computer science , pages 79–94, zaragoza, spain, august
+2004. springer-verlag, berlin.
+19.x. fu, t. bultan, and j. su. analysis of interacting bpel web services. in international
+world wide web conference: proceedings of the 13th international conference on world
+wide web , pages 621–630, new york, ny , usa, 2004. acm press.
+20.d. georgakopoulos, m. hornick, and a. sheth. an overview of workﬂow management:
+from process modeling to workﬂow automation infrastructure. distributed and parallel
+databases , 3:119–153, 1995.
+21.object management group. omg uniﬁed modeling language 2.0 . omg,
+http://www.omg.com/uml/, 2005.
+22.ibm websphere. www.ibm-306.ibm.com/software/websphere.
+1723.s. jablonski and c. bussler. workﬂow management: modeling concepts, architecture, and
+implementation . international thomson computer press, london, uk, 1996.
+24.g. keller, m. n ¨uttgens, and a.w. scheer. semantische processmodellierung auf der
+grundlage ereignisgesteuerter processketten (epk). ver ¨offentlichungen des instituts f ¨ur
+wirtschaftsinformatik, heft 89 (in german), university of saarland, saarbr ¨ucken, 1992.
+25.j. koehler and r. hauser. untangling unstructured cyclic flows a solution based on
+continuations. in r. meersman, z. tari, w.m.p. van der aalst, c. bussler, and a. gal et al.,
+editors, on the move to meaningful internet systems 2004: coopis, doa, and odbase:
+otm confederated international conferences, coopis, doa, and odbase 2004 , volume
+3290 of lecture notes in computer science , pages 121–138, 2004.
+26.m. koshkina and f. van breugel. veriﬁcation of business processes for web ser-
+vices. technical report cs-2003-11, york university, october 2003. available from:
+http://www.cs.yorku.ca/techreports/2003/.
+27.l.m. kristensen, s. christensen, and k. jensen. the practitioner’s guide to coloured petri
+nets. international journal on software tools for technology transfer , 2(2):98–132, 1998.
+28.f. leymann. web services flow language, version 1.0, 2001.
+29.f. leymann and d. roller. production workﬂow: concepts and techniques . prentice-hall
+ptr, upper saddle river, new jersey, usa, 1999.
+30.a. martens. analyzing web service based business processes. in m. cerioli, editor, pro-
+ceedings of the 8th international conference on fundamental approaches to software en-
+gineering (fase 2005) , volume 3442 of lecture notes in computer science , pages 19–33.
+springer-verlag, berlin, 2005.
+31.m. zur muehlen. workﬂow-based process controlling: foundation, design and application
+of workﬂow-driven process information systems . logos, berlin, 2004.
+32.oracle bpel process manager. www.oracle.com/technology/products/ias/bpel.
+33.c. ouyang, w.m.p. van der aalst, s. breutel, m. dumas, , and h.m.w. verbeek. formal
+semantics and analysis of control flow in ws-bpel. bpm center report bpm-05-15,
+bpmcenter.org, 2005.
+34.c. ouyang, m. dumas, s. breutel, and a.h.m. ter hofstede. translating standard process
+models to bpel. bpm center report bpm-05-27, bpmcenter.org, 2005.
+35.c. ouyang, w.m.p. van der aalst, m. dumas, and a.h.m. ter hofstede. translating bpmn
+to bpel. bpm center report bpm-06-02, bpmcenter.org, 2006.
+36.pallas athena. protos user manual . pallas athena bv, plasmolen, the netherlands, 2004.
+37.a.w. scheer. aris: business process modelling . springer-verlag, berlin, 2000.
+38.c. stahl. transformation von bpel4ws in petrinetze (in german). master’s thesis, hum-
+boldt university, berlin, germany, 2004.
+39.s. thatte. xlang web services for business process design, 2001.
+40.h.m.w. verbeek and w.m.p. van der aalst. analyzing bpel processes using petri nets.
+in d. marinescu, editor, proceedings of the second international workshop on applications
+of petri nets to coordination, workﬂow and business process management , pages 59–78.
+florida international university, miami, florida, usa, 2005.
+41.h.m.w. verbeek, t. basten, and w.m.p. van der aalst. diagnosing workﬂow processes
+using woﬂan. the computer journal , 44(4):246–279, 2001.
+42.wfmc. workﬂow management coalition workﬂow standard: workﬂow process deﬁni-
+tion interface – xml process deﬁnition language (xpdl) (wfmc-tc-1025). technical
+report, workﬂow management coalition, lighthouse point, florida, usa, 2002.
+43.s. white. using bpmn to model a bpel process. bptrends , 3(3):1–18, march 2005.
+44.s.a. white et al. business process modeling notation (bpml), version 1.0, 2004.
+45.p. wohed, w.m.p. van der aalst, m. dumas, and a.h.m. ter hofstede. analysis of web
+services composition languages: the case of bpel4ws. in i.y . song, s.w. liddle, t.w.
+ling, and p. scheuermann, editors, 22nd international conference on conceptual modeling
+(er 2003) , volume 2813 of lecture notes in computer science , pages 200–215. springer-
+verlag, berlin, 2003.
+18

@@ -1,0 +1,650 @@
+control-flow-based querying of process
+executions from partially ordered event data
+daniel schuster1,2, michael martini1, sebastiaan j. van zelst1,2, and
+wil m. p. van der aalst1,2
+1fraunhofer institute for applied information technology fit,
+sankt augustin, germany
+{daniel.schuster,michael.martini,sebastiaan.van.zelst }@fit.fraunhofer.de
+2rwth aachen university, aachen, germany
+wvdaalst@pads.rwth-aachen.de
+abstract. event logs, as viewed in process mining, contain event data
+describing the execution of operational processes. most process mining
+techniques take an event log as input and generate insights about the
+underlying process by analyzing the data provided. consequently, han-
+dling large volumes of event data is essential to apply process mining
+successfully. traditionally, individual process executions are considered
+sequentially ordered process activities. however, process executions are
+increasingly viewed as partially ordered activities to more accurately re-
+flect process behavior observed in reality, such as simultaneous execution
+of activities. process executions comprising partially ordered activities
+may contain more complex activity patterns than sequence-based pro-
+cess executions. this paper presents a novel query language to call up
+process executions from event logs containing partially ordered activities.
+the query language allows users to specify complex ordering relations
+over activities, i.e., control flow constraints. evaluating a query for a
+given log returns process executions satisfying the specified constraints.
+we demonstrate the implementation of the query language in a process
+mining tool and evaluate its performance on real-life event logs.
+keywords: process mining ·process querying ·partial orders
+1 introduction
+executing operational processes generates large amounts of event data in enter-
+prise information systems. analyzing these data provides great opportunities for
+operational improvements, for example, reduced cycle times and increased con-
+formity with reference process models. therefore, process mining [17] comprises
+data-driven techniques to analyze event data to gain insights into the under-
+lying processes; for example, automatically discovered process models, confor-
+mance statistics, and performance analysis information. since service-oriented
+computing is concerned with orchestrating services to form dynamic business
+processes [6], process mining can provide valuable insights into the actual exe-
+cution of processes within organizations [16]. these insights can then be used,2 d. schuster et al.
+for example, to define services and ultimately construct service-oriented archi-
+tectures. further, process mining provides valuable tools for service monitoring.
+most process mining techniques [17] define process executions, termed traces ,
+as a sequence, i.e., a strict total order , of executed activities. in reality, however,
+processes can exhibit parallel behavior, i.e., several branches of a process are ex-
+ecuted simultaneously. consequently, the execution of individual activities may
+overlap within a single trace. thus, traces are defined by partially ordered exe-
+cuted activities. considering traces as partial orders, the complexity of observed
+control flow patterns, i.e., relations among executed activities, increases com-
+pared to sequential traces. thus, tools are needed that facilitate the handling,
+filtering, and exploring of traces containing partially ordered process activities.
+this paper introduces a novel query language for querying traces from an
+event log containing partially ordered activities. the proposed language allows
+the specification of six essential control flow constraints, which can be further
+restricted via cardinality constraints and arbitrarily combined via boolean op-
+erators. the language design is based on standardized terms for control flow
+patterns in process mining. we provide a formal specification of the language’s
+syntax and semantics to facilitate reuse in other tools. further, we present its im-
+plementation in the process mining software tool cortado [14], which supports
+partially ordered event data. query results are visualized by cortado using a
+novel trace variant visualization [13]. finally, we evaluate the performance of
+the query evaluation on real-life, publicly available event logs.
+the remainder of this paper is structured as follows. sect. 2 presents related
+work. sect. 3 introduces preliminaries. in sect. 4, we introduce the proposed
+query language. we present an exemplary application use case of the query
+language in sect. 5. in sect. 6, we present an evaluation focusing on performance
+aspects of the proposed query language. finally, sect. 7 concludes this paper.
+2 related work
+a framework for process querying methods is presented in [10]. in short, process
+query methods differ in the input used, for instance, event logs (e.g., [3,20]) or
+process model repositories (e.g., [2,5]), and the goal or capabilities of the query
+method. overviews of process querying languages can be found in [8,9,10,19];
+the majority of existing methods focuses on querying process model repositories.
+subsequently, we focus on methods that operate on event logs.
+celonis pql [18] is a multi-purpose, textual query language that works on
+event logs and process models and provides a variety of query options. however,
+traces are considered sequentially ordered activities compared to the proposed
+query language in this paper. in [3], a query language is proposed that operates
+on a single graph, i.e., a rdf, connecting all events in an event log by user-
+defined correlations among events. the query language allows to partition the
+events by specified constraints and to query paths that start and end with events
+fulfilling certain requirements. compared to our approach, we do not initiallycontrol-flow-based querying of process executions 3
+transform the entire event log into a graph structure; instead, we operate on
+individual traces composed of partially ordered event data.
+in [4], the authors propose a natural language interface for querying event
+data. similar to [3], a graph based search is used. the approach allows specifying
+arbitrary queries like “who was involved in processing case x” and “for which
+cases is the case attribute y greater than z.” however, control flow constraints
+over partially ordered event data are not supported, unlike the query language
+proposed in this paper, which is designed exclusively for control flow constraints.
+in [11], the authors propose an ltl-based query language to query traces, con-
+sisting of sequentially aligned process activities, fulfilling specified constraints
+from an event log. in [20], the authors propose an approach to query trace frag-
+ments from various event logs that are similar to a trace fragment surrounding a
+selected activity from a process model using a notion of neighborhood context.
+traces are, in this approach, considered sequentially ordered activities.
+in summary, various process querying methods exist, most of them operating
+over process model repositories rather than event logs, cf. [8,9,10,19]. in short,
+the proposed query language differs in three main points from existing work.
+1. first process querying language focusing on traces containing partially or-
+dered activities (to the best of our knowledge)
+2. focus on traces rather than event data as a whole, i.e., executing a query
+returns traces satisfying the specified constraints
+3. specific focus on control flow patterns, i.e., extensive options for specifying
+a wide range of control flow patterns
+3 preliminaries
+this section introduces notations and concepts used throughout this paper.
+we denote the natural numbers by nand the natural numbers including 0 by
+n0. we simplify by representing timestamps by positive real numbers denoted
+byr+. we denote the universe of activity labels by l, activity instance identifier
+byia, and case identifier by ic. further, we denote a missing value by ⊥.
+definition 1 (activity instances). an activity instance a= (i, c, l, t s, tc)∈
+ia× ic× l × 
+r+∪ {⊥}
+×r+uniquely identified by i∈ iarepresents the
+execution of an activity l∈ lthat was executed for the process instance identified
+byc∈ ic. the activity instance’s temporal information is given by the optional
+start timestamp ts∈r+∪ {⊥} and the complete timestamp tc∈r+. ifts̸=
+⊥ ⇒ ts≤tc. we denote the universe of activity instances by a.
+leta=(i, c, l, t s, tc)∈ abe an activity instance, we use short forms to assess
+the different components of a; we write ai,ac,al,ats, and atc.
+an event log can be seen as a set of activity instances describing the same pro-
+cess; table 1 shows an example. each row corresponds to an activity instance
+describing the execution of an activity. for instance, the first row describes
+the execution of the activity “credit request received” executed on 16.06.21 at4 d. schuster et al.
+table 1: example of an event log with partially ordered event data
+id timestamp
+activity
+instancecase activity label start completion . . .
+1 1 credit request received (crr) ⊥ 16.06.21 12:43:35 . . .
+2 1 document check (dc) 17.06.21 08:32:23 18.06.21 12:01:11 . . .
+3 1 request info. from applicant (rip) 19.06.21 09:34:00 22.06.21 09:12:00 . . .
+4 1 request info. from third parties (rit) 19.06.21 14:54:00 25.06.21 08:57:12 . . .
+5 1 document check (dc) ⊥ 28.06.21 14:23:59 . . .
+6 1 credit assessment (ca) 30.06.21 13:02:11 04.07.21 08:11:32 . . .
+7 1 security risk assessment (sra) 01.07.21 17:23:11 06.07.21 18:51:43 . . .
+8 1 property inspection (pi) ⊥ 05.07.21 00:00:00 . . .
+9 1 loan-to-value ratio determined (ltv) ⊥ 05.07.21 00:00:00 . . .
+10 1 decision made (dm) ⊥ 08.07.21 14:13:18 . . .
+11 2 credit request received (crr) ⊥ 17.06.21 23:21:31 . . .
+. . . . . . . . . . . . . . . . . .
+crr dc riprit dc ca piltvsra
+dm
+fig. 1: ordering of the activity instances within the trace describing case 1. solid
+arcs depict the transitive reduction; solid and dotted arcs the transitive closure.
+12:43:35 for the process instance identified by case-id 1. individual process ex-
+ecutions within an event log are termed traces . next, we formally define traces
+as a partially ordered set of activity instances belonging to the same case.
+definition 2 (trace). lett⊆a. we call (t,≺)a trace if:
+1.∀ai, aj∈t(ac
+i=ac
+j)and
+2.≺⊆t×tand for arbitrary ai, aj∈tholds that ai≺ajiff:
+–atc
+i< ats
+jgiven that atc
+i, ats
+j∈r+, or
+–atc
+i< atc
+jgiven that atc
+i∈r+andats
+j=⊥.
+we denote the universe of traces by t.
+for a trace ( t,≺)∈t, note that the relation ≺(cf. definition 2) is the tran-
+sitive closure . we denote the transitive reduction of≺by≺r. for≺rit holds
+that∀a, b∈th
+a≺rb↔
+a≺b∧ 
+̸ ∃ea∈t(a≺rea∧ea≺rbi
+. fig. 1 visualizes the
+ordering relations of the activity instances of the trace describing case 1 (cf. ta-
+ble 1). solid arcs show direct relationships among activity instances. thus, thecontrol-flow-based querying of process executions 5
+solid arcs represent the transitive reduction. solid and dotted arcs represent all
+relations among activity instances and thus, represent the transitive closure.
+finally, we define notation conventions regarding the existential quantifier.
+letk∈nandxbe an arbitrary set, we write ∃=k,∃≥k, and∃≤kto denote that
+there exist exactly ,at least , and at most kdistinct elements in set xsatisfying a
+given formula p(. . .). below we formally define the three existential quantifier.
+–∃=kx1, . . . , x k∈x 
+∀1≤i≤kp(xi)
+≡ ∃x1, . . . , x k∈x 
+∀1≤i<j≤kxi̸=xj
+∧ 
+∀1≤i≤kp(xi)
+∧ 
+∀x∈x\{x1,...,x k}¬p(xi)
+–∃≥kx1, . . . , x k∈x 
+∀1≤i≤kp(xi)
+≡ ∃x1, . . . , x k∈x 
+∀1≤i<j≤kxi̸=xj
+∧ 
+∀1≤i≤kp(xi)
+–∃≤kx1, . . . , x k∈x 
+∀1≤i≤kp(xi)
+≡ ∃x1, . . . , x k∈x 
+∀1≤i≤kp(xi)
+∧ 
+∀x∈x\{x1,...,x k}¬p(x)
+note that x1, . . . , x kmust not be different elements in the formula above; it
+specifies that at most kdistinct elements in xexist satisfying p(. . .).
+4 query language
+this section introduces the proposed query language. sect. 4.1 introduces its
+syntax, while sect. 4.2 defines its semantics. sect. 4.3 covers the evaluation of
+queries. finally, sect. 4.4 presents the implementation in a process mining tool.
+4.1 syntax
+this section introduces the syntax of the proposed query language. in total, six
+operators exist, allowing to specify control flow constraints. table 2 provides an
+overview of these six operators, three binary, (i.e., iscontained (isc),isstart
+(iss), and isend (ise)), and three unary operators (i.e., isdirectlyfollowed
+(isdf ),iseventuallyfollowed (isef ), and isparallel (isp)). next to each
+operator, we list query examples, including the corresponding operator, and
+present its semantics in natural language. as the examples show, each operator
+can be additionally constrained by a cardinality. we call a query a leaf query
+if only one operator is used, for instance, all examples shown in table 2 are
+query leaves. query leaves can be arbitrarily combined via boolean operators,
+for instance, see fig. 2. next, we formally define the query language’s syntax.
+
+(’dc’ isc =2) or 
+(’dc’ isc =1) and (’crr’ isdf ’dc’)
+and
+not(’dc’ isdf ’dm’)
+and
+or
+(’dc’ isc =2) and
+(’dc’ isc =1) (’crr’ isdf ’dc’)not
+(’dc’ isdf ’dm’)
+fig. 2: example of a query. leaves represent individual control flow constraints
+(cf. table 2) that are combined via boolean operators.6 d. schuster et al.
+table 2: overview of the six control flow constraints and corresponding examples
+type syntaxexample
+nr. query description of semanticsunaryiscontained
+(isc)e1 ’a’ isc activity ais contained in the trace
+e2 ’a’ isc ≥6activity ais contained at least 6 times in the
+trace
+e3 all{’a’,’b’ }iss≥6activity aand bare both contained at least 6
+times each in the trace
+isstart
+(iss)e4 ’a’ iss there exists a start activity a(a)
+e5 ’a’ iss = 1exactly one start activity of the trace is an a
+activity(a)
+e6 any{’a’,’b’ }isc = 1trace starts with exactly one aactivity or/and
+with exactly one bactivity(a)
+isend
+(ise)e7 ’a’ ise there exists an end activity a(a)
+e8 ’a’ ise ≥2at least two end activities of the trace are an a
+activity(a)
+e9 all{’a’,’b’ }isetrace ends with at least one aand one b
+activity(a)binaryisdirectly
+followed
+(isdf)e10 ’a’ isdf ’b’abactivity directly follows each aactivity in
+the trace
+e11 ’a’ isdf ’b’ = 1trace contains exactly one aactivity that is di-
+rectly followed by b
+e12 ’a’ isdf all {’b’,’c’ }every aactivity is directly followed by a band
+cactivity
+iseventually
+followed
+(isef)e13 ’a’ isef ’b’after each aactivity in the trace a bactivity
+eventually follows
+e14 ’a’ isef ’b’ ≥1trace contains at least one aactivity that is
+eventually followed by b
+e15 all{’a’,’b’ }isef ’c’allaand bactivities are eventually followed by
+acactivity
+isparallel
+(isp)e16 ’a’ isp ’b’each aactivity in the trace is in parallel to some
+bactivity
+e17 ’a’ isp ’b’ ≤4trace contains at most four aactivities that are
+in parallel to some bactivity
+e18 ’a’ isp any {’b’,’c’ } ≤ 2trace contains at most two aactivities that are
+parallel to a borcactivity
+(a)trace may contain arbitrary further start respectively end activities.
+definition 3 (query syntax). letl1, . . . , l n−1, ln∈lbe activity labels, k∈n0,
+□∈{≤,≥,=},◦∈{isdf,isef,isp},•∈{isc,iss,ise}, and△∈{ all,any}. we
+denote the universe of queries by qand recursively define a query q∈qbelow.
+leaf query with an unary operator (without/with cardinality constraint)
+–q=’l1’• q=’l1’•□k
+–q=△{’l1’, . . . , ’ln−1’} • q=△{’l1’, . . . , ’ln−1’} •□kcontrol-flow-based querying of process executions 7
+leaf query with a binary operator (without/with cardinality constraint)
+–q=’l1’◦’ln’ q=’l1’◦’ln’□k
+–q=△{’l1’, . . . , ’ln−1}’◦’ln’ q=△{’l1’, . . . , ’ln−1}’◦’ln’□k
+–q=’ln’◦ △{ ’l1’, . . . , ’ln−1}’ q=’ln’◦ △{ ’l1’, . . . , ’ln−1}’□k
+composed query using boolean operators
+–ifq1, q2∈qare two queries and ■∈{and,or}, then q=(q1■q2)is a query
+–ifq1∈qis a query, then q=not(q1)is a query
+4.2 semantics
+this section introduces the query language’s semantics. table 2 presents query
+examples with corresponding semantics. in short, the unary operators allow to
+specify the existence of individual activities within a trace, for example, is con-
+tained ( isc), is a start activity ( iss), or is an end activity ( ise). optionally,
+operators can have cardinality constraints that extend the existential seman-
+tics of unary operators by quantification constraints. binary operators allow to
+specify relationships between activities; for example, two activities are parallel
+(isp), directly follow each other ( isdf ), or eventually follow each other ( isef ).
+in contrast to unary operators, binary operators always have to hold globally
+when no cardinality constraint is given. for example, e10 (cf. table 2) specifies
+that a b activity must directly follow each a activity, i.e., there is an arc in the
+transitive reduction from each a activity to a b activity. in comparison, e11
+specifies that the trace contains precisely one a activity that is directly followed
+by a b activity. allsets specify that a constraint must be fulfilled for all activity
+labels within the set. analogously, anysets specify that the constraint must be
+fulfilled at least for one activity. next, we formally define the semantics.
+definition 4 (query semantics). letq, q 1, q2∈qbe queries, t≺=(t,≺)∈
+tbe a trace, and l1, . . . , l n∈lbe activity labels. we recursively define the func-
+tioneval :q×t → { true, false }assigning a boolean value, i.e., eval(q, t≺),
+to query qand trace t≺.
+unary operators:
+–ifq=’l1’ isc □k, then eval 
+q, t≺
+⇔
+∃□ka1, . . . , a k∈t
+∀1≤i≤k(al
+i=l1)
+–ifq=’l1’ iss □k, then eval 
+q, t≺
+⇔
+∃□ka1, . . . , a k∈th
+∀1≤i≤k
+al
+i=l1∧ ¬∃ea∈t(ea≺ai)i
+–ifq=’l1’ ise □k, then eval 
+q, t≺
+⇔
+∃□ka1, . . . , a k∈th
+∀1≤i≤k
+al
+i=l1∧ ¬∃ea∈t(ai≺ea)icontrol-flow-based querying of process executions 9
+–ifq=’l1’ isp all {’l2’,. . .,’ln’}□k, then eval 
+q, t≺
+⇔
+∃□ka1, . . . , a k∈th
+∀1≤i≤k
+al
+i=l1∧∃ea2, . . . ,ean∈t vn
+j=2(ai̸≺eaj∧eaj̸≺ai∧eal
+j=lj)i
+boolean operators:
+–ifq=not(q1), then eval 
+q, t≺
+⇔ ¬eval 
+q1, t≺
+–ifq=(q1orq2), then eval 
+q, t≺
+⇔eval 
+q1, t≺
+∨eval 
+q2, t≺
+–ifq=(q1andq2), then eval 
+q, t≺
+⇔eval 
+q1, t≺
+∧eval 
+q2, t≺
+note that definition 4 does not cover all queries constructible using the syn-
+tax in definition 3. however, any query can be rewritten into a logically equiva-
+lentone covered by definition 3. we call queries q1, q2∈qlogically equivalent,
+denoted q1≡q2, iff∀t≺∈a∗ 
+eval(q1, t≺)⇔eval(q2, t≺)
+. below, we list
+query rewriting rules.
+–’l1’• ≡’l1’•≥1
+–any{’l1’,. . .,’ln’}• ≡ (’l1’•) or . . .or (’ ln’•)
+–all{’l1’,. . .,’ln’}• ≡ (’l1’•) and . . .and (’ ln’•)
+–any{’l1’,. . .,’ln’}•□k≡(’l1’•□k) or . . .or (’ ln’•□k)
+–all{’l1’,. . .,’ln’}•□k≡(’l1’•□k) and . . .and (’ ln’•□k)
+–any{’l1’,. . .,’ln−1’}◦’ln’≡(’l1’◦’ln’) or . . .or (’ ln−1’◦’ln’)
+–all{’l1’,. . .,’ln−1’}◦’ln’≡(’l1’◦’ln’) and . . .and (’ ln−1’◦’ln’)
+–any{’l1’,. . .,’ln−1’}◦’ln’□k≡(’l1’◦’ln’□k) or . . .or (’ ln−1’◦’ln’□k)
+–all{’l1’,. . .,’ln−1’}◦’ln’□k≡(’l1’◦’ln’□k) and . . .and
+(’ln−1’◦’ln’□k)
+–’l1’◦all{’l2’,. . .,’ln’} ≡(’l1’◦’l2’) and . . .and (’ l1’◦’ln’)
+note that according to definition 4, the following queries are notlogically
+equivalent. thus, anyandallsets are not syntactic sugar.
+–’l1’◦any{’l2’,. . .,’ln’} ̸≡(’l1’◦’l2’) or . . .or (’ l1’◦’ln’)
+–’l1’◦any{’l2’,. . .,’ln’}□k̸≡(’l1’◦’l2’□k) or . . .or (’ l1’◦’ln’□k)
+–’l1’◦all{’l2’,. . .,’ln’}□k̸≡(’l1’◦’l2’□k) and . . .and (’ l1’◦’ln’□k)
+for example, consider e18 in table 2. the query states that there exist at
+most two a activities that are in parallel to b or c activities. thus, a trace
+containing four a activities, two parallel to an arbitrary number (greater than
+zero) of b activities, and two parallel to c activities, does not fulfill query e18.
+however, the described trace fulfills the query q=(’a’ isp ’b’ ≤2) or
+(’a’ isp ’c’ ≤2); hence, e18 = ’a’ isp any {’b’,’c’ } ≤2̸≡q.
+4.3 evaluating queries
+this section briefly discusses our approach to query evaluation. as shown in
+fig. 2, queries represent trees. since each leaf represents a query, we evaluate the
+queries composed of boolean operators bottom-up. first, the leaves are evaluated10 d. schuster et al.
+on a given trace, resulting in boolean values per leaf. then, bottom-up, the given
+boolean operators are applied recursively.
+in many cases, however, a complete query evaluation is not needed to de-
+termine its overall boolean value for a given trace. for instance, if one leaf of a
+logical andparent evaluates to false, the other leaves do not need to be further
+evaluated for the given trace. similar applies to the logical or. reconsider the
+query given in fig. 2 and the trace depicted in fig. 1. the query consists of four
+leaves; however, only two must be evaluated. following a depth-first traversing
+strategy, we first evaluate the leaf (’dc’ isc =2) satisfied by the given trace.
+thus, we do not need to evaluate the right subtree of the or, i.e., leaves (’dc’
+isc =1) and (’crr’ isdf ’dc’) . finally, we evaluate the leave (’dc’ isdf
+’dm’) . in short, by evaluating only two leaves, we can evaluate the entire query.
+4.4 implementation
+this section briefly demonstrates the implementation of the proposed query
+language in the process mining tool cortado [14]3. we refer to [14] for an intro-
+duction to cortado’s architecture and a feature overview.
+fig. 3: excerpt from a screenshot of cortado showing a query editor (bottom
+right), a trace variant explorer visualizing the matching trace variants of the
+query, and a tabular overview of activities from the event log
+3available at https://cortado.fit.fraunhofer.de/control-flow-based querying of process executions 11
+incremental
+process
+discovery
+event log
+trace variants
+input 
+process model
+user
+extended 
+process modeltrace variant to
+beaddedselect extract
+initial 
+process model
+proposed trace querying
+explore , filter&find
+fig. 4: example of an application scenario of the proposed query language, i.e.,
+trace variant selection in the context of incremental process discovery
+fig. 3 depicts a screenshot of cortado. the shown chevron-based visual-
+izations represent trace variants4from the loaded event log that satisfies the
+displayed query. we refer to [13] for an introduction to the trace variant visu-
+alization. as shown in fig. 3, the query editor offers syntax highlighting; colors
+of the activity labels in the query editor correspond to the colors used in the
+variant explorer to improve usability. executing a query results in an updated
+list of trace variants satisfying the query. in fig. 3, the numbers at the top next
+to the blue filter icon indicate that 109 out of 3,830 trace variants satisfy the
+displayed query. in the backend, we use antlr [7] for generating a parser for
+the query language. the language’s design ensures that every valid query, when
+parsed with antlr, corresponds to a single parse tree that can be transformed
+into a unique query tree (cf. fig. 2).
+5 application scenario example
+this section presents an exemplary application scenario of the proposed query
+language. process discovery is concerned with learning a process model from an
+event log. conventional discovery approaches [1] are fully automated, i.e., an
+event log is provided as input and the discovery algorithm returns a process
+model describing the event data provided. since automated process discovery
+algorithms often return process models of low quality, incremental/interactive
+process discovery approaches have emerged [15] to additionally utilize domain
+4a trace variant summarizes traces that share identical ordering relationships among
+the contained activities.12 d. schuster et al.
+knowledge next to event data. incremental process discovery allows users to
+gradually add selected traces to a process model that is considered under con-
+struction. by building a process model gradually, users can control the discovery
+phase and intervene as needed, for example, by selecting different traces or mak-
+ing manual changes to the model. in short, gradually selecting traces from event
+data is the major form of interaction in incremental process discovery, cf. fig. 4.
+with event logs containing numerous trace variants, user assistance in explor-
+ing, finding, and selecting trace variants is critical for the success of incremental
+process discovery. for instance, the log used in fig. 3 contains 3,830 trace vari-
+ants. manual visual evaluation of all these variants is inappropriate. in such a
+scenario, the proposed query language is a valuable tool for users to cope with
+the variety, complexity, and amount of trace variants. as most process discovery
+approaches [1], including incremental ones, focus on learning the control flow of
+activities, a specialized query language focusing on control flow constraints is a
+valuable tool. to this end, we implemented the query language in cortado, a
+tool for incremental process discovery, cf. fig. 4.
+6 evaluation
+this section presents an evaluation focusing on performance aspects of the query
+language. sect. 6.1 presents the experimental setup and sect. 6.2 the results.
+6.1 experimental setup
+we used four publicly available, real-life event logs, cf. table 3. for each log, we
+automatically generated queries from which we pre-selected 1,000 such that no
+finally selected query is satisfied by all or by no trace in the corresponding log.
+with this approach, we have attempted to filter out trivial queries to evaluate.
+we measured performance-related statistics given the 1,000 queries per log.
+table 3: statistics about the event logs used
+event log #traces #trace variants(a)
+bpi challenge 2012(b)13,087 3 ,830
+bpi challenge 2017(d)31,509 5,937
+bpi challenge 2020, prepaid travel cost log(d)2,099 213
+road traffic fine management (rtfm)(e)150,370 350
+(a)based on the variant definition presented in [13]
+(b)https://doi.org/10.4121/uuid:3926db30-f712-4394-aebc-75976070e91f
+(d)https://doi.org/10.4121/uuid:5f3067df-f10b-45da-b98b-86ae4c7a310b
+(d)https://doi.org/10.4121/uuid:52fb97d4-4588-43c9-9d04-3604d4613b51
+(e)https://doi.org/10.4121/uuid:270fd440-1057-4fb9-89a9-b699b47990f5control-flow-based querying of process executions 13
+1.0 2.0 3.0 4.0 5.0 6.0
+median number of leaves evaluated0.020.040.060.080.10runtime (seconds)
+(a) bpi challenge 2012
+1 2 3 4 5 6 7
+median number of leaves evaluated0.0250.0500.0750.1000.1250.1500.175runtime (seconds)
+ (b) bpi challenge 2017
+1 2 3 4 5 6 7
+median number of leaves evaluated0.0010.0020.0030.004runtime (seconds)
+(c) bpi challenge 2020
+1.0 2.0 3.0 4.0 5.0 6.0
+median number of leaves evaluated0.0020.0040.0060.0080.0100.012runtime (seconds)
+ (d) rtfm
+fig. 5: query evaluation time. since the queries are applied to all traces, they
+are ordered by the median number of leaves evaluated per trace
+6.2 results
+each query is applied to all traces from the given event log. since not all leaves
+of a query have to be evaluated, cf. sect. 4.3, the number of leaves evaluated may
+differ per trace. thus, the actual trace determines how many leaves of a given
+query must be evaluated. fig. 5 shows the runtime (in seconds) of the queries
+per event log for the median number of leaf nodes that were evaluated. thus,
+each boxplot is made up of 1,000 data points, i.e., 1,000 queries each evaluated
+on all traces from the given log. across all four event logs, we clearly observe a
+linear trend of increasing runtime the more query leaves are evaluated.
+fig. 6 depicts the distribution of queries according to their evaluation time.
+further, we can see the proportion of leaves evaluated at the median. as before,
+each plot contains 1,000 data points, i.e., 1,000 queries. similar to fig. 5, we
+observe that the number of evaluated leaves is the primary driver of increased
+evaluation time. the observed behavior is similar for the different logs.
+fig. 7 shows the impact of early termination, as introduced in sect. 4.3.
+note that in the previous plots, i.e., fig. 5 and fig. 6, early termination was
+always used. we clearly see from the plots in fig. 7 that early termination has14 d. schuster et al.
+0.02 0.04 0.06 0.08 0.10
+runtime (seconds)050100150200countmedian number of 
+ leaves evaluated
+1.0
+2.0
+3.04.0
+5.0
+6.0
+(a) bpi challenge 2012
+0.025 0.050 0.075 0.100 0.125 0.150 0.175
+runtime (seconds)0255075100125150175countmedian number of 
+ leaves evaluated
+1
+2
+3
+45
+6
+7 (b) bpi challenge 2017
+0.001 0.002 0.003 0.004
+runtime (seconds)0255075100125150175countmedian number of 
+ leaves evaluated
+1
+2
+3
+45
+6
+7
+(c) bpi challenge 2020
+0.002 0.004 0.006 0.008 0.010 0.012
+runtime (seconds)0255075100125150175countmedian number of 
+ leaves evaluated
+1.0
+2.0
+3.04.0
+5.0
+6.0 (d) rtfm
+fig. 6: query evaluation time distribution
+a significant impact on the evaluation time of a query across all used event logs.
+in conclusion, the results shown in this section indicate that the time required
+to evaluate queries increases linearly with the number of leaves evaluated.
+7 conclusion
+we proposed a novel query language that can call up traces from event logs
+containing partially ordered event data. the core of the language is the control
+flow constraints, allowing users to specify complex ordering relationships over
+executed activities. we formally defined the query language’s syntax and seman-
+tics. further, we showed its implementation in the tool cortado. we presented
+one potential application scenario of the language, i.e., the trace selection within
+incremental process discovery. in short, the proposed query language facilitates
+handling large event logs containing numerous traces consisting of partially or-
+dered activities. for future work, we plan to conduct user studies exploring the
+query language’s ease of use [12]. further, we plan to extend the language with
+a graphical editor allowing query specification in a no-code environment.control-flow-based querying of process executions 15
+0.05 0.10 0.15 0.20
+runtime (seconds)010203040506070countno early stopping
+early stopping
+(a) bpi challenge 2012
+0.05 0.10 0.15 0.20 0.25
+runtime (seconds)010203040506070countno early stopping
+early stopping (b) bpi challenge 2017
+0.002 0.004 0.006 0.008
+runtime (seconds)020406080countno early stopping
+early stopping
+(c) bpi challenge 2020
+0.000 0.005 0.010 0.015 0.020
+runtime (seconds)020406080100countno early stopping
+early stopping (d) rtfm
+fig. 7: impact of early termination on the query evaluation time
+references
+1. augusto, a., conforti, r., dumas, m., la rosa, m., maggi, f.m., marrella, a.,
+mecella, m., soo, a.: automated discovery of process models from event logs:
+review and benchmark. ieee transactions on knowledge and data engineering
+31(4), 686–705 (2019). https://doi.org/10.1109/tkde.2018.2841877
+2. beeri, c., eyal, a., kamenkovich, s., milo, t.: querying business
+processes with bp-ql. information systems 33(6), 477–507 (2008).
+https://doi.org/10.1016/j.is.2008.02.005
+3. beheshti, s.m.r., benatallah, b., motahari-nezhad, h.r., sakr, s.: a query lan-
+guage for analyzing business processes execution. in: rinderle-ma, s., toumani, f.,
+wolf, k. (eds.) business process management, lecture notes in computer science,
+vol. 6896, pp. 281–297. springer (2011). https://doi.org/10.1007/978-3-642-23059-
+222
+4. kobeissi, m., assy, n., gaaloul, w., defude, b., haidar, b.: an intent-based
+natural language interface for querying process execution data. in: 2021 3rd in-
+ternational conference on process mining (icpm). pp. 152–159. ieee (2021).
+https://doi.org/10.1109/icpm53251.2021.9576850
+5. markovic, i., costa pereira, a., de francisco, d., mu˜ noz, h.: querying in business
+process modeling. in: di nitto, e., ripeanu, m. (eds.) service-oriented computing16 d. schuster et al.
+- icsoc 2007 workshops, lecture notes in computer science, vol. 4907, pp. 234–
+245. springer (2009). https://doi.org/10.1007/978-3-540-93851-4 23
+6. papazoglou, m.p., traverso, p., dustdar, s., leymann, f.: service-oriented com-
+puting: state of the art and research challenges. computer 40(11), 38–45 (2007).
+https://doi.org/10.1109/mc.2007.400
+7. parr, t.j., quong, r.w.: antlr: a predicated-ll(k) parser gen-
+erator. software: practice and experience 25(7), 789–810 (1995).
+https://doi.org/10.1002/spe.4380250705
+8. polyvyanyy, a.: business process querying. in: sakr, s., zomaya, a.y. (eds.)
+encyclopedia of big data technologies, pp. 1–9. springer, cham (2019).
+https://doi.org/10.1007/978-3-319-77525-8 108
+9. polyvyanyy, a.: process querying methods. springer (2022).
+https://doi.org/10.1007/978-3-030-92875-9
+10. polyvyanyy, a., ouyang, c., barros, a., van der aalst, w.m.p.: process query-
+ing: enabling business intelligence through query-based process analytics. decision
+support systems 100, 41–56 (2017). https://doi.org/10.1016/j.dss.2017.04.011
+11. r¨ aim, m., di ciccio, c., maggi, f.m., mecella, m., mendling, j.: log-based under-
+standing of business processes through temporal logic query checking. in: meers-
+man, r., panetto, h., dillon, t., missikoff, m., liu, l., pastor, o., cuzzocrea, a.,
+sellis, t. (eds.) on the move to meaningful internet systems: otm 2014 confer-
+ences, lecture notes in computer science, vol. 8841, pp. 75–92. springer (2014).
+https://doi.org/10.1007/978-3-662-45563-0 5
+12. reisner, p.: human factors studies of database query languages: a sur-
+vey and assessment. acm computing surveys 13(1), 13–31 (1981).
+https://doi.org/10.1145/356835.356837
+13. schuster, d., schade, l., van zelst, s.j., van der aalst, w.m.p.: visualizing trace
+variants from partially ordered event data. in: munoz-gama, j., lu, x. (eds.)
+process mining workshops, lecture notes in business information processing,
+vol. 433, pp. 34–46. springer (2022). https://doi.org/10.1007/978-3-030-98581-3 3
+14. schuster, d., van zelst, s.j., van der aalst, w.m.p.: cortado—an interactive tool
+for data-driven process discovery and modeling. in: buchs, d., carmona, j. (eds.)
+application and theory of petri nets and concurrency, lecture notes in computer
+science, vol. 12734, pp. 465–475. springer (2021). https://doi.org/10.1007/978-3-
+030-76983-3 23
+15. schuster, d., van zelst, s.j., van der aalst, w.m.p.: utilizing domain knowledge
+in data-driven process discovery: a literature review. computers in industry 137
+(2022). https://doi.org/10.1016/j.compind.2022.103612
+16. van der aalst, w.m.p.: service mining: using process mining to discover, check,
+and improve service behavior. ieee transactions on services computing 6(4),
+525–535 (2013). https://doi.org/10.1109/tsc.2012.25
+17. van der aalst, w.m.p.: process mining: data science in action. springer (2016).
+https://doi.org/10.1007/978-3-662-49851-4
+18. vogelgesang, t., ambrosy, j., becher, d., seilbeck, r., geyer-klingeberg, j.,
+klenk, m.: celonis pql: a query language for process mining. in: polyvyanyy,
+a. (ed.) process querying methods, pp. 377–408. springer, cham (2022).
+https://doi.org/10.1007/978-3-030-92875-9 13
+19. wang, j., jin, t., wong, r.k., wen, l.: querying business process model repos-
+itories. world wide web 17(3), 427–454 (2014). https://doi.org/10.1007/s11280-
+013-0210-zcontrol-flow-based querying of process executions 17
+20. yongsiriwit, k., chan, n.n., gaaloul, w.: log-based process fragment querying to
+support process design. in: 2015 48th hawaii international conference on system
+sciences. pp. 4109–4119. ieee (2015). https://doi.org/10.1109/hicss.2015.493
+view publication stats

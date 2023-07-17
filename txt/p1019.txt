@@ -1,0 +1,674 @@
+conceptual schema transformation
+in ontology-based data access
+diego calvanese1, tahir emre kalayci2;1, marco montali1, ario santoso3;1, and
+wil van der aalst4
+1krdb research centre for knowledge and data, free university of bozen-bolzano (italy)
+{calvanese,tkalayci,montali,santoso}@inf.unibz.it
+2virtual vehicle research center, graz (austria)
+emre.kalayci@v2c2.at
+3department of computer science, university of innsbruck (austria)
+ario.santoso@uibk.ac.at
+4process and data science (pads), rwth aachen university (germany)
+wvdaalst@pads.rwth-aachen.de
+abstract. ontology-based data access (obda) is a by now well-established
+paradigm that relies on conceptually representing a domain of interest to provide
+access to relational data sources. the conceptual representation is given in terms of
+adomain schema (also called an ontology), which is linked to the data sources by
+means of declarative mapping speciﬁcations, and queries posed over the conceptual
+schema are automatically rewritten into queries over the sources. we consider
+the interesting setting where users would like to access the same data sources
+through a new conceptual schema, which we call the upper schema . this is
+particularly relevant when the upper schema is a reference model for the domain,
+or captures the data format used by data analysis tools. we propose a solution to
+this problem that is based on using transformation rules to map the upper schema
+to the domain schema, building upon the knowledge contained therein. we show
+how this enriched framework can be automatically transformed into a standard
+obda speciﬁcation, which directly links the original relational data sources to
+the upper schema. this allows us to access data directly from the data sources
+while leveraging the domain schema and upper schema as a lens. we have realized
+the framework in a tool-chain that provides modeling of the conceptual schemas,
+a concrete annotation-based mechanism to specify transformation rules, and the
+automated generation of the ﬁnal obda speciﬁcation.
+keywords: conceptual schema transformation, ontology-based data access,
+ontology-to-ontology mapping
+1 introduction
+during the last two decades, (structural) conceptual schemas have been increasingly
+adopted not only to understand and document the relevant aspects of an application do-
+main at a high level of abstraction, but also as live, computational artifacts. in particular,
+the paradigm of ontology-based data access (obda) exploits conceptual schemas
+(also called ontologies) as an intermediate layer for accessing and querying data storedinside legacy information systems [ 23]. in the context of obda, the conceptual schema
+provides end-users with a vocabulary they are familiar with, at the same time masking
+how data are concretely stored, and enriching those (incomplete) data with domain
+knowledge. in this light, we call such a conceptual schema domain schema . the abstrac-
+tion mismatch between the domain schema and the underlying data sources is covered by
+a second conceptual component, namely a mapping speciﬁcation that declaratively links
+such two layers, expressing how patterns in the data correspond to domain concepts and
+relationships. once an obda speciﬁcation is in place, end-users may inspect the data
+sources by expressing high-level queries over the domain schema. an obda system
+handles this challenging setting by automatically rewriting such queries into correspond-
+ing low-level queries that are directly posed over the data sources, and by automatically
+reformulating the so-obtained answers into corresponding answers expressed over the
+domain schema. this supports domain experts in autonomously interacting with legacy
+data without the manual intervention of it savvy. notably, the actual data storage is
+completely transparent to end-users, who see the data in the form of conceptual objects
+and relations, even though no actual materialization takes place . from the foundational
+point of view, this is made possible by carefully tuning the expressive power of the
+conceptual modeling and mapping speciﬁcation languages, and by exploiting key for-
+mal properties of their corresponding logic-based representations [ 4]. on top of these
+foundations, several obda systems have been engineered, ontop being one of the main
+representatives in this spectrum [3].5
+obda has been subject of extensive research, and its advantages have been con-
+cretely shown in a plethora of application domains (see, e.g., [ 11,15,17]). surprisingly,
+though, no research has been carried out on how to suitably extend the obda approach
+to handle the common situation where a higher-level conceptual schema (which we
+callupper schema ) is needed to further abstract the knowledge captured by the domain
+schema. this happens when there is the need of viewing the domain schema and, in turn,
+the underlying data, according to a predeﬁned structure, described by a reference model
+or an interchange format. in addition, different users may need to generate different
+views on the data, possibly using different upper schemas.
+there are in particular two situations where the need for such a multi-level approach
+to data access is apparent. the ﬁrst is when an obda speciﬁcation is already in place,
+but certain types of users adopt reference models as an upper schema to understand
+the organization, create reports, and exchange information with external stakeholders.
+for example, the manager of an e-commerce company needs to reconstruct the state of
+contractual relationships and mutual commitments with customers, on top of the domain
+concepts of orders, payments, and deliveries. in this setting, which we discuss later on in
+the paper, the main objective is to reuse the available obda speciﬁcation.
+the second is the one where data analysis applications are exploited to extract
+insights from legacy data. here, the main problem is that the actual input for such
+applications consists of speciﬁc abstractions that may not be explicitly present in the
+legacy data, and that have to be represented according to the expected input data format.
+e.g., the application of process mining techniques to discover, monitor, and improve
+business processes [ 1] requires structured event data as input using key notions such
+5http://ontop.inf.unibz.itdatamapdomain schematransformupper schemaquery/answer
+obda
+(a) 2-level obdadatamapdomain schemaidentify services and commitmentsufo-sinspect contract states
+obda
+(b) 2obda framework
+for service managementdatamapdomain schemaidentify cases and eventsevent log formatfetch cases and eventsprocess mining tool
+obda
+(c) 2obda framework for pro-
+cess mining
+fig. 1: the 2obda framework, and two relevant concrete instantiations
+as case (process instance), event, timestamp, activity, etc. only event data that meet
+these requirements can be mapped onto input formats like xes [ 14] and used by process
+mining tools. this is especially challenging in the common case where the organization
+relies on legacy information systems and/or general-purpose management systems (such
+as erp or crm applications) [ 1]. previous approaches [ 8,6] tackled this problem by
+hard-coding the xes format inside the log extraction framework. while xes is supported
+by a wide range of tools (such as disco by fluxicon, celonis process mining by celonis,
+minit by gradient ecm, and many more), it does not provide native support for important
+aspects such as durative and hierarchical events (such as those naturally provided by
+enterprise systems like sap, and consequently supported in process mining tools like
+celonis process mining). accounting for these aspects would require ﬂexibility in the
+event log format, that is, the possibility of tuning the upper event schema based on the
+application context and needs.
+to tackle such challenging but common scenarios, we propose to suitably extend
+the obda framework so as to take into account multiple conceptual layers at once. we
+focus on the case where two conceptual layers are present, accounting for the domain
+and upper schemas, and call the resulting setting 2-level obda (2obda for short).
+however, all our results seamlessly extend to the case where more layers are present.
+speciﬁcally, our contribution is threefold. first, in section 4, we introduce the
+2obda model as an elegant extension of obda. the core part of the framework is the
+conceptual transformation of concepts and relations in the domain schema into corre-
+sponding concepts and relations in the upper schema. this is speciﬁed in a declarative
+way, similarly to obda mappings but in this case accounting for ontology-to-ontology
+correspondences. the resulting framework (sketched in figure 1a) is different from
+well-known approaches for ontology matching [ 12] and ontology/schema mapping [ 9],
+the ﬁrst being focused on overlapping conceptual schemas that work at the same level of
+abstraction, the second neglecting the presence of underlying data.
+second, we show how a 2obda speciﬁcation can be automatically compiled into a
+classical obda speciﬁcation that directly connects the legacy data to the upper schema,fully transparently to the end-users. consequently, these can query the legacy data
+through the upper schema, by resorting to standard obda systems like ontop .
+finally, in section 5, we report on how the approach has been realized in a tool-chain
+that supports end-users in modeling the domain and upper schema, and in specifying
+the corresponding transformations as annotations of the domain schema, whose types
+and features are derived from the concepts present in the upper schema. notably, the
+tool-chain fully implements the compilation technique described above.
+2 motivation
+in this section, we motivate the need for a multi-level obda approach, discussing
+scenarios in service management. we concentrate on the situation where the upper
+schema takes the form of a reference model, used by certain users to understand the
+business relationships existing between an organization and its external stakeholders.
+this is, e.g., the case of business managers and analysts, who often need to see the
+organization as an element of a bigger value chain, which consumes and provides services.
+to illustrate the challenges, we provide a concrete order scenario. in this scenario, the
+domain schema provides the basis to understand legacy data in terms of key concepts
+and relationships related to the notion of order . at the same time, managers employ
+the commitment-based core reference ontology for services (ufo-s) [ 20] as an upper
+schema, to understand and monitor the state of commitments that contractually relate the
+company and its customers. while the conceptual modeling community has made major
+advancements in the creation of reference models for services and commitments (as
+witnessed by ufo-s itself), no systematic approach to query organizational data through
+such reference models has been proposed so far. at the same time, recent attempts in
+formalizing relational, data-aware commitments, have either neglected the presence of
+legacy data [18] or the role of reference models [10].
+2.1 the order scenario
+in our order scenario, an organization called ohub acts as a hub between companies
+selling goods and persons interested in buying those goods. in particular, ohub takes care
+of an order-to-delivery process that supports a person in placing an order, allows her to
+pay for the order, and ﬁnally deliver the paid goods where the person desires. we assume
+that each order contains items that are all provided by the same company, but different
+orders may be about goods offered by different companies. domain experts operating
+within ohub understand (some of) the key concepts and relations in this domain as
+speciﬁed by the uml class diagram of figure 2, where the three subclasses of order
+represent three distinct order states (for simplicity, we do not consider cancellation).
+at the same time, the employees of ohub use a legacy management system to
+handle orders, and are unaware of how the actual data about orders and their involved
+stakeholders are stored. such a management system relies on a relational database,
+whose schema is shown in figure 3 together with some sample data. the schema
+consists of three tables, respectively keeping track of the stakeholders of ohub, of
+the orders managed by ohub, and of the respective money transfers. speciﬁcally, the{disjoint}
+{disjoint}
+makes ◁
+1..1
+0..*
+supplies ▷
+1..1
+0..*
+closed
+person
+name: string
+paid
+ptime: date_time
+company
+title: string
+open
+order
+address: string
+otime: date_time
+fig. 2: uml class diagram of the order domain schema
+id name addr type
+pa alice bz-4 p
+ce edvd na-1 c
+pb bob tn-3 p
+stakeholdersid ctime from to dest nal
+o1 5 pa ce bz-5 0
+o2 10 pb ce null 1
+o3 20 pa ce null 1
+orderdataid order ttime
+t1 o2 15
+mtransferstype = ptype = c
+nal = 1
+fig. 3: legacy schema of the order database, with some sample data. directed edges
+denote foreign keys, contextualized to those tuples that satisfy the ﬁlter on the edge
+stakeholders table stores the main information about companies selling and delivering
+goods, and persons who buy such goods trough ohub. these two kinds of stakeholders
+are distinguished by the type attribute (which corresponds to string pfor persons, and
+cfor companies). the orderdata table stores the active and past orders managed by
+ohub. for each order, the table stores the creation time, the person who made it, the
+company responsible for the order, the destination address, and a ﬂag indicating whether
+the order has been ﬁnalized by the person, or is still in the creation phase. it is intended
+that if the destination address is not speciﬁed (i.e., it is null ), then the address of the
+person (as speciﬁed in the stakeholders table) should be used for delivery. finally, table
+mtransfers keeps track of monetary transfers related to ﬁnalized orders, for simplicity
+only recalling the transaction id, its time, and the order to which the transaction refers.
+managers of ohub often need to understand orders and their states in contractual
+terms, that is, as business objects and relationships that contractually bind ohub with
+its suppliers and customers. this is crucial, in turn, to assess the quality of service of
+ohub, and to detect whether the mutual commitments induced by order contracts are
+indeed honored or not. to do so, they adopt ufo-s as a reference model to deﬁne which
+services are offered by ohub, and which commitments relate to those services [ 20].
+a portion of this reference model is shown in figure 4. we only included the parts
+relevant for this small case study. we also incorporated explicit state attributes into
+the commitment classes, accounting for the different phases in which a commitment
+can be at a given time (pending, discharged, canceled, etc.) [ 10,18]. with ufo-s at
+hand, managers would like to inspect the negotiations and agreements established by
+sn_resultsin_sa ▽
+1..1
+1..1
+sp_participates_sn ▷
+1..1
+0..1
+sa_contains_soc ◁
+0..*
+0..*
+tc_participates_sn ◁
+1..1
+0..1
+tc_bindedby_scc ▽
+1..1
+0..*
+sa_contains_scc ▷
+0..*
+0..*
+sp_bindedby_soc ▽
+1..1
+0..*
+servicenegotiation
+serviceoﬀeringcommitment
+socname: string
+socstate: string
+serviceprovider
+spname: string
+servicecustomercommitment
+sccname: string
+sccstate: string
+targetcustomer
+tcname: string
+serviceagreement
+fig. 4: fragment of ufo-s used as upper schema extracted from ufo-scompanies and persons via ohub. we consider for simplicity only the following two
+commitments. contractually, when a person makes an order, she becomes obliged to
+issuing a corresponding payment. in turn, upon payment the selling company becomes
+committed towards the actual delivery of the order.
+2.2 challenges
+the ohub scenario presents a series of very interesting challenges in conceptual mod-
+eling and data access. let us consider the need of ohub managers to inspect which
+commitments currently exist, and in which state they are. obviously, they cannot directly
+formulate queries of this form on top of the legacy data, due to a vocabulary mismatch.
+a possible solution would be to create a dedicated obda speciﬁcation that directly
+connects the legacy data to the ufo-s upper schema. however, this is unrealistic from
+the conceptual modeling point of view, for a twofold reason. first and foremost, linking
+data directly to concepts and relations in the upper schema requires to ﬁrst understand
+the data in terms of domain notions, and only then to establish suitable connections
+between the domain and the upper level. for example, to inspect the contractual rela-
+tionships between ohub’s stakeholders, one has to clarify how orders, payments, and
+deliveries are reﬂected in the data, before identifying how mutual commitments about
+payments and deliveries are established and evolved. in addition, an obda speciﬁcation
+connecting data to the domain schema could already be in place independently on these
+ufo-s related needs. it is well-known that creating an obda speciﬁcation, especially
+for what concerns the understanding of the legacy data structures and the construction of
+corresponding mappings, is a labor-intensive and challenging task, similarly to alterna-
+tive approaches to data access and integration [ 8]. if such a speciﬁcation is already in
+place, it would be beneﬁcial to build on it so as to gracefully integrate the upper schema
+into the picture, instead of creating another obda speciﬁcation from scratch.
+a second issue is related to the fact that reference models and upper ontologies are
+typically meant to capture a plethora of concepts and relations spanning over a wide range
+of application domains, with the purpose of resolving ambiguities and misunderstandings
+[20,22,13]. in a speciﬁc application domain such as that of ohub, only a small portion
+of the whole reference model is needed to capture the commitments of interest.
+to attack these issues, we propose to ground the paradigm shown in figure 1a into
+the concrete framework of figure 1b. here, a standard obda approach is adopted to
+make sense of the legacy data in terms of the domain schema. this can be used, e.g., to
+declare that each entry in the orderdata table corresponds to an order, whose supplying
+company is obtained from the entry in stakeholders pointed by the tocolumn, and
+whose making person is obtained from the entry in stakeholders pointed by the from
+column. the state of the order is, in turn, declared as follows: the order is open if the
+corresponding entry in orderdata hasnal =/zero.alt1;closed if the corresponding entry
+inorderdata hasnal=1, but no monetary transfer exists in mtransfers for the
+order; paid if the corresponding entry in orderdata hasnal=1, and there exists an
+entry in mtransfers pointing to the order. once this obda speciﬁcation is in place,
+domain experts can forget about the schema of the legacy data, and work directly at the
+level of the domain schema. the domain schema is then employed to declare which
+concepts and relations deﬁne the ufo-s notions of service provider, target customer,and corresponding offering and customer commitments. this identiﬁcation step is seen
+as a declarative speciﬁcation of how the domain schema of orders can be transformed
+into (a portion of) the ufo-s upper schema. here, one could declaratively specify
+that: (i)each closed order gives rise to a pending customer commitment binding its
+making person (i.e., its target customer) to paying it. (ii)each paid order corresponds to a
+discharged customer commitment related to the order payment, and to a pending offering
+commitment binding its supplying company (i.e., its service provider) to delivering it.
+once the mapping and transformation rules are speciﬁed, ohub managers can
+express queries over ufo-s, and obtain answers automatically computed over the legacy
+data. for example, upon asking about all the pending commitments existing in the state of
+affairs captured by the data in figure 3, one would get back two answers: one indicating
+that company edvd has a pending commitment related to the delivery of order o2, and
+one telling that person alice is committed to pay order o3.
+this approach favors modularity and separation of concerns, since the mapping
+and the transformation rules can vary independently from each other. in particular, if
+the underlying data storage changes, only the mapping to the domain schema needs
+to be updated, without touching the deﬁnition of commitments. if instead the contract
+is updated, the domain-to-upper schema transformation needs to change accordingly,
+without touching the obda speciﬁcation. in addition, the approach is driven by the
+actual querying requirements, that is, only the aspects of the upper schema that are
+relevant for querying need to be subject of transformation rules. the transformation rules
+themselves also provide a way to customize the view over the data. even with the same
+upper schema, two different sets of transformation rules might provide different views
+over the data represented by the domain schema. we might even go beyond that, and
+consider situations where several upper schemas are provided, each with different sets of
+transformation rules. we do not explicitly consider this latter scenario in the following,
+since it can be obtained by multiple instantiations of the 2obda scenario.
+3 ontology-based data access
+we adopt a variant of description logics (dls) [ 2] as a conceptual modeling language in
+which to express conceptual schemas. speciﬁcally, we rely on dl-litea[4], a prominent
+member of the dl-lite family [ 5] of lightweight dls, which have been speciﬁcally de-
+signed for efﬁciently accessing large amounts of data through an ontology. we introduce
+now such dl, and recall then the standard formalization of obda [21,4,23].
+dl-litea[21]. indl-litea, the domain of interest is modeled through concepts , repre-
+senting sets of (abstract) objects, roles , representing binary relations between objects,
+andattributes , representing binary relations between objects and values. values belong
+to concrete datatypes, such as strings, integers, etc., but, for simplicity, we do not dis-
+tinguish between different datatypes, and use a unique datatype instead (e.g., string )
+for all values in the system. the syntax of dl-liteaconcept expressions band role
+expressions ris given by the grammar
+b !nj 9rj(u); r !pjp ;
+wheren,p, andu(here and in the following) denote a concept name , arole name ,
+and an attribute name , respectively. the role p denotes the inverse of role p, andthe concept9r, also called unqualiﬁed existential restriction , denotes the domain of a
+roler, i.e., the set of objects that rrelates to some object. similarly, the concept (u)
+denotes the domain of an attribute u, i.e., the set of objects that urelates to some value.
+notice that the domain 9p of the inverse of role pactually represents the range of
+rolep. instead, since we have adopted a unique datatype for all values, there is no need
+to refer to the range of an attribute (since it is always, e.g., string ).
+adl-liteaknowledge base (kb)k=ht;aiconsists of a tbox t, modeling
+intensional information, and an abox a, modeling extensional information.
+thetbox consists of a ﬁnite set of tbox assertions of the following forms:
+b1vb2;
+r1vr2;
+u1vu2;b1v:b2;
+r1v:r2;
+u1v:u2;(functr);
+(functu):
+from left to right, assertions of the ﬁrst column respectively denote inclusions between
+concepts, roles, and attributes; assertions of the second column denote disjointness
+between concepts, roles, and attributes; assertions of the last column denote functionality
+of roles and attributes. in order to ensure the desired computational properties of dl-
+liteathat make it suitable as an ontology language in the context of obda, we impose
+that in a tbox, the roles and attributes occurring in functionality assertions cannot be
+specialized (i.e., they cannot occur in the right-hand side of inclusions) [5,4].
+example 1. we give some of the dl-lite tbox assertions that capture the conceptual
+schema in figure 2, where intuitively concepts correspond to classes, roles to binary
+associations, and dl attributes to uml attributes:
+open vorder;
+paidvorder;paidv :open;
+(name )vperson;9makes vperson;
+9makes vorder;order v 9makes ;
+(funct makes ); :::
+these assertions state that open andpaid are sub-concepts of order and that paid and
+open are disjoint. they further specify the domain of name andmakes and the range of
+makes , that orders are made by someone, and that the inverse of makes is functional.
+theabox consists of a ﬁnite set of abox assertions of the form n(t1),p(t1;t2),
+oru(t1;v), wheret1andt2denote individuals (representing abstract objects) and v
+denotes a value . aconstant is an individual or a value. the domain of an abox a,
+denoted by adom (a), is the (ﬁnite) set of constants appearing in a.
+for the semantics of dl-litea, we note that we interpret objects and values over
+disjoint domains, and that for both we adopt the unique name assumption , i.e., different
+terms denote different objects (or values). the various types of tbox assertions (i.e.,
+inclusion, disjointness, and functionality) are satisﬁed when the corresponding condition
+holds for the interpretation of the involved concepts, role(s), or attribute(s). we refer to [ 4]
+for details. we also adopt the usual notions of satisfaction ,model , and entailment [4].
+we point out that dl-liter, which is the sublanguage of dl-liteaobtained by
+dropping functionality assertions, is the formal counterpart of the owl 2 ql language
+standardized by the w3c [19] as a proﬁle of the web ontology language owl 2.
+queries. we consider queries that are formulated over the conceptual schema elements,
+and whose answers are formed by terms of the abox. a conjunctive query (cq)q(~ x)
+over a tboxtis a ﬁrst-order logic (fol) formula of the form 9~ y.conj(~ x;~ y), whosefree variables (a.k.a. answer variables ) are~ x. the formula conj(~ x;~ y)is a conjunction of
+atoms of the form n(z),p(z;z0), andu(z;z0)wheren,pandurespectively denote
+a concept, a role, and an attribute name of t, andz,z0are constants, or variables in ~ xor
+~ y. ifqhas no answer variables, then it is called boolean . aunion of conjunctive queries
+(ucq)q(~ x)overtis a disjunction of cqs with the same answer variables ~ x, i.e., a
+fol formula of the form: 9~ y1.conj1(~ x;~ y 1)__9~ yn.conjn(~ x;~ yn).
+the(certain) answers to a (u)cqq(~ x)over a kbk=ht;aiis the set cert(q;k)
+of substitutions6of the answer variables ~ xwith constants in adom (a), such that
+the closed fol formula qevaluates to true in every model of k. the answer to a
+boolean query is either true (i.e., the empty substitution) or false (i.e., no substitution).
+computing cert(q;k)of a ucqqover a dl-liteakbk=ht;aiis polynomial in the
+size oftand in ac0in the size ofa. this is a consequence of the fact that dl-litea
+enjoys fol rewritability , which in our setting means that for every ucq q, one can
+compute cert(q;k)by evaluating the ucq rew(q;t)overaconsidered as a database,
+where rew(q;t)is the so-called perfect rewriting ofqw.r.t.t[5,4,23].
+ontology-based data access (obda). anobda speciﬁcation is a triples=
+hr;m;ti, where: (i)ris relational database schema, consisting of a ﬁnite set of
+relation schemas, possibly with constraints, (ii)tis adomain schema , formalized as
+adl-liteatbox; and (iii)mis an obda mapping , consisting of a set of mapping
+assertions. these specify how to extract data from the underlying database and how
+to use them to instantiate the elements of the domain schema. to denote instances of
+the domain schema, we consider a countably inﬁnite set of (uninterpreted) functions,
+and apply them to the values retrieved from the database. speciﬁcally, each mapping
+assertion has the form '(~ x)  (~ y;~t), where'(~ x)is an arbitrary sql query over r
+with~ xas output variables, and  (~ y;~t)is a conjunction of atoms over tusing variables
+~ y~ xand terms~t, where each term in ~thas the form f(~ z), withf2and~ z~ x.
+example 2. in our running example, the following mapping assertion is used to populate
+the concept person and the corresponding attribute name , by selecting in the table
+stakeholders entries for which the value of type equals ’p’:
+select id as pid, name from stakeholders where type = ’p’
+ person (person (pid))^name (person (pid);name )
+the following mapping assertion is used to populate the role makes with all pairs
+consisting of an order and the corresponding person who made the order:
+select od.id as oid, s.id as pid from orderdata od, stakeholders s
+where od.from = s.id  makes (person (pid);order (oid))
+given an obda speciﬁcation s=hr;m;tiand a database instance dthat con-
+forms tor, the pairj=hs;diis called an obda instance (fors). each mapping as-
+sertionm='(~ x)  (~ y;~t)inmgenerates fromda setm(d) =s
+~ c2eval(';d) [~ x=~ c]
+of abox assertions, where eval(';d)denotes the evaluation of '(~ x)overd, and where
+ [~ x=~ c]is the set (as opposed to the conjunction) of atoms obtained by substituting in
+ (~ y;~t)each variable x2~ xwith the corresponding constant c2~ c. then, the (virtual)
+abox7generated bymfromdism(d) =s
+m2mm(d). given an obda instance
+6as customary, we view a substitution of ~ xas a tuple of constants, one for each variable in ~ x.
+7such abox is called virtual because in general it is not actually materialized.j=hs;diwiths=hr;m;ti, amodel forjis a model of the kb ht;m(d)i.
+we say thatjissatisﬁable if it admits a model.
+a ucqqover an obda speciﬁcation s=hr;m;tiis simply a ucq over t,
+and given an obda instance j=hs;di, the certain answers to qoverj, denoted
+cert(q;j), are deﬁned as cert(q;ht;m(d)i). to compute cert(q;j), instead of mate-
+rializing the virtual abox m(d), we can apply the following three-step approach [ 21]:
+(i) rewriteqto compile awayt, obtainingqr=rew(q;t);(ii)use the mappingmto
+unfoldqrinto a query overr, denoted by qu=unf(qr;m), which turns out to be an
+sql query; (iii)evaluatequoverd, obtaining eval(qu;d). it has been shown in [ 21]
+thatcert(q;hhr;m;ti;di) =eval(unf(rew(q;t);m);d).
+example 3. recall our example, and consider the query q(x) =person (x)that retrieves
+all persons. sincetcontains9makesvperson and9namevperson , the rewriting of
+q(x)w.r.t.tgives us the ucq qr(x) =person (x)_9y:makes (x;y)_9z:name(x;z),
+and the unfolding of qr(x)w.r.t.mgives us the following sql query qu(x):
+select id as x from stakeholders where type = ’p’ union
+select s.id as x from orderdata od, stakeholders s where od.from = s.id
+4 2-level ontology based data access
+within an obda speciﬁcation s=hr;m;ti, the tboxtprovides a speciﬁc concep-
+tual view, which we called domain schema , of the domain of interest, through which
+the data sourcesrare accessed. however, as illustrated in section 2, users might be
+interested in accessing the same data sources through a different conceptual schema t0,
+which we called upper schema , without the need to redeﬁne from scratch the relationship
+betweent0andr. thus, we need a mechanism to relate the upper schema t0to the
+domain schemat, and to exploit this connection, together with the information on t
+andmencoded ins, for answering queries over the upper schema.
+here we introduce a solution based on transformation rules that declaratively map the
+domain schematto the upper schema t0and that are based on so-called gav mappings .
+such form of mappings have been widely used in the data integration setting (cf. [ 16])
+as a natural means to connect a global schema used for querying a data integration
+system to the schemas of the underlying data sources. formally, given two tboxes t
+andt0, aschema transformation fromttot0, is a setnoftransformation rules ,
+each of the form '(~ x)  (~ y;~t);where'(~ x)is a ucq overtwith answer variables
+~ x, and (~ y;~t)is a conjunction of atoms over t0over variables ~ y~ xand terms~t.
+similarly to the case of obda mappings, the terms in ~thave the form f(~ z), with
+f2and~ z~ x, and they are used to construct the identiﬁers of individuals for t0.
+however, such identiﬁers might also be returned directly by the query '. essentially,
+such a schema transformation populates the elements of the upper schema t0with the
+information obtained from the answers to queries over the domain schema t. formally,
+given an aboxafort, a transformation rule r='(~ x)  (~ y;~t)inngenerates
+a setr(t;a) =s
+~ c2cert(';ht;ai) [~ x=~ c]of abox assertions for t0, where [~ x=~ c]is
+deﬁned as for obda mapping assertions. notice that since a transformation rule is
+applied to a kb (and not to a database instance), the query in the left-hand side of therule is interpreted under certain-answer semantics. then, the abox generated by nfrom
+ht;aiis deﬁned asn(t;a) =s
+r2nr(t;a).
+example 4. the transformation rule person (x) targetcustomer (tc(x))maps
+each instance of the domain schema concept person into the upper schema concept
+targetcustomer .
+we are now ready to formalize the setting of 2-level obda , or2obda for short. a
+2obda speciﬁcation is a tuplesh2i=hs;n;t0i, wheres=hr;m;tiis an obda
+speciﬁcation,t0is an upper schema (expressed as a dl-liteatbox), andnis a schema
+transformation from ttot0. given an obda instance j=hs;difors, the tuple
+jh2i=hj;n;t0iis called a 2obda instance forsh2i. the notions of virtual abox
+and query answering in obda can be lifted to 2obda as well. let j=hs;di, with
+s=hr;m;ti, be a satisﬁable obda instance. the (virtual) abox n(j)generated
+bynfromjis deﬁned asn(j) =n(t;m(d)). moreover, a model forjh2iis a
+model of the kbht0;n(j)i, andjh2iissatisﬁable if it admits a model. a ucq qover
+a 2obda instance jh2iis simply a ucq over the upper schema t0, and the certain
+answers toqoverjh2i, denoted cert(q;jh2i), are deﬁned as cert(q;ht0;n(j)i).
+to compute cert(q;jh2i), instead of materializing the intermediate and ﬁnal virtual
+aboxes, we can use the following 5-step approach: (i) rewriteqto compile away the
+upper schemat0, obtainingq0
+r=rew(q;t0), which is a ucq over t0;(ii)use the
+schema transformation ntounfoldq0
+rinto a query over the domain schema t, denoted
+byq0
+u=unf(q0
+r;n), which turns out to be a ucq; (iii) rewrite q0
+uto compile away
+the domain schema t, obtainingqr=rew(q0
+u;t);(iv)use the mappingmtounfold
+qrinto a query overr, denoted by qu=unf(qr;m), which turns out to be an sql
+query; (v)evaluatequoverd, obtaining eval(qu;d). the correctness of this approach for
+computing the certain answers cert(q;jh2i)can be shown by considering that essentially
+it combines two rewriting and unfolding phases for computing certain answers, and that
+both combinations are correct since they are based on standard obda [21]. we get:
+theorem 1. given a 2obda instance jh2i=hj;n;t0i, wherej=hs;diand
+s=hr;m;ti, and a ucq qovert, we have that
+cert(q;jh2i) = eval(unf(rew(unf(rew(q;t0);n);t);m);d).
+this result provides a way for answering queries in 2obda, but at the cost of an ah-
+hoc solution for query translation. we present now an alternative approach based on deriv-
+ing from a 2obda speciﬁcation an equivalent standard obda speciﬁcation. speciﬁcally,
+we show how to compile away from a 2obda speciﬁcation sh2i=hs;n;t0i, where
+s=hr;m;ti, the domain schema t, and synthesize from sh2ia standard obda
+speciﬁcations0=hr;m0;t0iin which the elements of the upper schema t0are di-
+rectly mapped to the sources. to construct the obda mapping m0ofs0, we ﬁrst rewrite
+w.r.t.tand then unfold w.r.t. meach query over the domain schema in each transforma-
+tion rule inn. formally, for each transformation rule '(~ x)  (~ y;~t)inn, the mapping
+m0contains a mapping assertion '0(~ x)  (~ y;~t), where'0=unf(rew(';t);m).
+example 5. continuing example 4, by applying the steps above, we get the obda
+mappingqu(x) targetcustomer (tc(x)), wherequ(x)is the sql query in example 3.
+to show the correctness of this approach, consider a source database dconform-
+ing tor, and the corresponding obda instance j=hs;diand 2obda instancejh2i=hj;n;t0i. by the correctness of the rewriting and unfolding approach to
+obda (cf. [ 21]), for each transformation rule r='(~ x)  (~ y;~t)inn, we have that
+cert(';j) = cert(';ht;m(d)i) = eval('0;d), where'0=unf(rew(';t);m).
+hence,'(~ x)inrand'0(~ x)in the mapping assertion mofm0derived from rreturn the
+same answers, and in both randmthese instantiate the same atoms in  (~ y;~t). it follows
+thatnandm0populate the elements of the tbox t0with the same facts. we get:
+theorem 2. letsh2i=hs;n;t0ibe a 2obda speciﬁcation, where s=hr;m;ti,
+and lets0=hr;m0;t0ibe the obda speciﬁcation derived from sh2ias speciﬁed
+above. thensh2iands0have the same models.
+by relying on this result, query answering over a 2obda instance can be delegated
+to a traditional obda system, and we can use for it existing implementations (e.g., [ 3]).
+5 using annotations for specifying schema transformations
+to specify the schema transformation rules between the domain ontology and the upper
+ontology, we propose an approach based on annotations, which are then used to actually
+generate the rules. we employ uml class diagrams as a concrete language for conceptual
+data modeling, and we rely on their logic-based encoding in terms of owl 2 ql [ 4,6].
+therefore, we assume to work with owl 2 ql compliant ontologies. the available
+types of annotations are automatically deduced from the upper ontology based on this
+assumption. in fact, we have developed an editor for annotating the domain ontology
+with upper ontology concepts that dynamically builds the annotation types accordingly.
+every class/concept in the ontology is considered to be an annotation type. data
+properties having this class as domain are considered as ﬁelds of this annotation and they
+will be populated from the ﬁelds available in the domain ontology. object properties
+are instead populated in their range class. it is possible to select any data property of
+the domain ontology or enter a static value to the data properties. for object properties,
+it is necessary to select an annotation instance deﬁned over the domain ontology. for
+both data and object properties, the user can exploit navigational access, which provides
+the knowledge of how to access any ﬁeld or annotation over the uml diagram using
+relations between classes as paths. after the selection of the corresponding ﬁelds, values,
+or navigational paths for each element in the annotation, queries for the transformation
+rules are automatically generated and actually used for rule generation (cf. section 4).
+the different annotations enrich the domain schema sby indicating which
+classes/concepts, associations/roles, and attributes in scontribute to the identiﬁcation
+of different attributes of the annotations extracted from t0. towards the automated pro-
+cessing of such annotations, and the consequent automated generation of transformation
+rules, the ﬁrst step is to formally represent the annotations using a machine-processable
+language. to this end, we rely on conjunctive queries encoded in sparql , which are used
+to extract objects/values targeted by the annotations. in this way, we can represent ga v
+mappings that go well beyond one-to-one correspondences between classes/associations.
+we provide a tool-chain that supports the various phases of the 2obda design and in
+particular implements the automated processing technique for annotations. it is available
+as a stand-alone software, or as a set of plugins running inside the prom process miningfig. 5: annotating the domain ontology using concepts from the upper ontology
+(a) payment pending service customer comm.
+ (b) payment discharged service customer comm.
+(c) shipment service offering commitment
+fig. 6: forms of commitment annotations showing the values
+framework8. speciﬁcally, it consists of the following components: (i)auml editor , to
+model the domain and upper ontologies as uml class diagrams, and to import from and
+export to owl 2 ql. (ii)adynamic annotation editor , to enrich the domain ontology
+with annotations extracted from the upper ontology. the editor supports navigational
+selections over the diagram via mouse-click operations to simplify the annotation task.
+the annotations are automatically translated into corresponding sparql queries by
+the editor. (iii)atransformation rule generator , which automatically processes the
+annotations, and generates rules between the domain and upper ontologies. it implements
+the mapping synthesis technique described in section 4, leveraging the state-of-the-art
+framework ontop9[3] for mapping management and query rewriting and unfolding.
+currently we do not have native tool support for specifying the mapping between the
+domain ontology and the data sources, and we assume that it is realized manually or by
+exploiting third-party tools, such as the mapping editor in the ontop plugin for protégé.9
+to use the dynamic annotation editor to annotate the domain ontology with the
+concepts of the upper ontology, a user ﬁrst deﬁnes the upper ontology as the target
+ontology, and then loads the ﬁle with the domain ontology to annotate. for example,
+if we use the partial ufo-s ontology as our upper ontology, and use it to annotate the
+order ontology, we can easily extract commitments available in the system. figure 5
+8http://onprom.inf.unibz.it
+9http://ontop.inf.unibz.itshows example annotations for extracting the commitments required by the company
+from the order system and figure 6 shows the forms of corresponding annotations. note
+that figure 2 and figure 4 are image exports taken from the uml editor, and figure 5 is
+an image export taken from the dynamic annotation editor.
+according to the annotations deﬁned in figure 5, the targetcustomer s are extracted
+from the person concept and serviceprovider s from the company . the order concept
+deﬁnes a servicenegotiation and a serviceagreement between a company and a
+person . two servicecustomercommitment s for the payment are extracted when a
+person gives an order over the closed (for pending payment commitment) and paid
+(for discharged payment commitment) specializations of order . after the payment
+is successfully discharged, a serviceofferingcommitment for the shipment will be
+available in the system. figure 5 depicts the commitment extraction requirements of the
+company regarding their order system, and their presentation in the form of a diagram
+allows users to understand the relations and the requirements in a more intuitive way.
+the tool-chain provides an easy annotation mechanism to the users with diagrams,
+forms, and point-and-click actions, so they don’t have to deal with any text processing
+or etl kind of approaches. the mapping generator of the tool-chain automatically
+generates the mapping between the underlying data sources and the upper ontology,
+using the domain ontology, the mapping speciﬁcation between data sources and domain
+ontology, the upper ontology, and the annotations deﬁned over the domain ontology.
+6 conclusions
+in this paper, we proposed a framework for accessing data through different conceptual
+schemas, e.g., a domain schema and an upper schema acting as a reference model for the
+domain. we have formalized the framework in terms of 2-level obda, and have shown
+how to exploit an existing obda speciﬁcation for the domain schema, together with
+conceptual mappings between the domain and the upper schema, to automatically derive
+an new obda speciﬁcation for the upper schema. we have shown how the framework
+can be realized through schema annotations, and we have implemented a tool-chain
+supporting such approach. we have illustrated our approach on a use case adopting as
+upper schema a commitment-based core reference ontology for service (ufo-s).
+another interesting and highly relevant setting that calls for a multi-level approach to
+data access, is that of process mining , sketched in figure 1c [ 1]. in [ 8,6,7], a framework
+for extracting event logs using obda has been proposed, considering the xes standard
+for event logs [ 14] as a ﬁxed, upper schema that is hard-coded in the framework. the
+2obda approach presented here allows us to overcome the rigidity of xes and use
+instead a customized upper schema that can account e.g., for events with start and end
+time, or for hierarchical process instances. finally, we observe that the framework of
+2-level obda and the results in section 4, can be easily generalized to multiple-levels ,
+where schema transformations are speciﬁed between multiple conceptual schemas.
+acknowledgements. this research is supported by the euregio ipn12 kaos (knowledge-
+aware operational support) project, funded by the “european region tyrol-south tyrol-trentino”
+(egtc), and by the unibz internal project onprom (ontology-driven process mining) .references
+1.van der aalst, w., et al.: process mining manifesto. in: daniel, f., barkaoui, k., dustdar, s.
+(eds.) proc. of the bpm int. workshops. lnbip, vol. 99, pp. 169–194. springer (2012)
+2.baader, f., calvanese, d., mcguinness, d., nardi, d., patel-schneider, p.f. (eds.): the
+description logic handbook: theory, implementation and applications. cup (2003)
+3.calvanese, d., cogrel, b., komla-ebri, s., kontchakov, r., lanti, d., rezk, m., rodriguez-
+muro, m., xiao, g.: ontop: answering sparql queries over relational databases. semantic
+web j. 8(3), 471–487 (2017)
+4.calvanese, d., de giacomo, g., lembo, d., lenzerini, m., poggi, a., rodríguez-muro, m.,
+rosati, r.: ontologies and databases: the dl-lite approach. in: tessaris, s., franconi, e.
+(eds.) rw tutorial lectures, lncs, vol. 5689, pp. 255–356. springer (2009)
+5.calvanese, d., de giacomo, g., lembo, d., lenzerini, m., rosati, r.: tractable reasoning
+and efﬁcient query answering in description logics: the dl-lite family. jar 39(3) (2007)
+6.calvanese, d., kalayci, t.e., montali, m., santoso, a.: obda for log extraction in process
+mining. in: rw tutorial lectures, lncs, vol. 10370, pp. 292–345. springer (2017)
+7.calvanese, d., kalayci, t.e., montali, m., santoso, a.: the onprom toolchain for extracting
+business process logs using ontology-based data access. in: proc. of the bpm demo track
+and bpm dissertation award, co-located with bpm 2017. ceur, vol. 1920 (2017)
+8.calvanese, d., kalayci, t.e., montali, m., tinella, s.: ontology-based data access for extract-
+ing event logs from legacy data: the onprom tool and methodology. in: proc. of bis. lnbip,
+vol. 288, pp. 220–236. springer (2017)
+9.catarci, t., lenzerini, m.: representing and using interschema knowledge in cooperative
+information systems. jicis 2(4), 375–398 (1993)
+10.chopra, a.k., singh, m.p.: custard: computing norm states over information stores. in: proc.
+of aamas. pp. 1096–1105 (2016)
+11.daraio, c., et al.: the advantages of an ontology-based data management approach: openness,
+interoperability and data quality. scientometrics 108(1), 441–455 (2016)
+12. euzenat, j., shvaiko, p.: ontology matching. springer, 2nd edn. (2013)
+13.guizzardi, g.: on ontology, ontologies, conceptualizations, modeling languages, and
+(meta)models. in: proc. of db&is. pp. 18–39. ios press (2006)
+14.ieee computational intelligence society: ieee standard for extensible event stream (xes)
+for achieving interoperability in event logs and event streams. std 1849-2016, ieee (2016)
+15. kharlamov, e., et al.: ontology based data access in statoil. j. of web semantics 44(2017)
+16. lenzerini, m.: data integration: a theoretical perspective. in: proc. of pods (2002)
+17.mehdi, g., et al.: semantic rule-based equipment diagnostics. in: proc. of iswc. lncs, vol.
+10588, pp. 314–333. springer (2017)
+18.montali, m., calvanese, d., de giacomo, g.: veriﬁcation of data-aware commitment-based
+multiagent systems. in: proc. of aamas. pp. 157–164 (2014)
+19.motik, b., cuenca grau, b., horrocks, i., wu, z., fokoue, a., lutz, c.: owl 2 web ontology
+language proﬁles (second edition). w3c recommendation, w3c (dec 2012)
+20.nardi, j.c., de almeida falbo, r., almeida, j.p.a., guizzardi, g., pires, l.f., van sinderen,
+m.j., guarino, n., fonseca, c.m.: a commitment-based reference ontology for services.
+information systems 54, 263 – 288 (2015)
+21.poggi, a., lembo, d., calvanese, d., de giacomo, g., lenzerini, m., rosati, r.: linking
+data to ontologies. j. on data semantics x, 133–173 (2008)
+22.scherp, a., saathoff, c., franz, t., staab, s.: designing core ontologies. applied ontology
+6(3), 177–221 (2011)
+23.xiao, g., calvanese, d., kontchakov, r., lembo, d., poggi, a., rosati, r., zakharyaschev,
+m.: ontology-based data access: a survey. in: proc. of ijcai. aaai press (2018)

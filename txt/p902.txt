@@ -1,0 +1,2768 @@
+this is the author’s version of a work that was submitted/accepted for pub-
+lication in the following source:
+polyvyanyy, artem, van der aalst, wil m.p ., ter hofstede, arthur h.m., &
+wynn, moe t.
+(2016)
+impact-driven process model repair.
+acm transactions on software engineering and methodology (tosem) ,
+25(4), article number-28.
+this ﬁle was downloaded from: https://eprints.qut.edu.au/97668/
+ccopyright 2016 acm
+this is the author’s version of the work. it is posted here by permission of
+acm for your personal use. not for redistribution. the deﬁnitive version
+was published in acm transactions on software engineering and method-
+ology, 25(4), article no. 28.
+notice :changes introduced as a result of publishing processes such as
+copy-editing and formatting may not be reﬂected in this document. for a
+deﬁnitive version of this work, please refer to the published source:
+https://doi.org/10.1145/29807641
+impact-driven process model repair
+artem pol yvyanyy , queensland university of technology, brisbane, australia
+wil m.p . van der aalst , eindhoven university of technology, eindhoven, the netherlands, and
+queensland university of technology, brisbane, australia
+arthur h.m. ter hofstede , queensland university of technology, brisbane, australia, and
+eindhoven university of technology, eindhoven, the netherlands
+moe t. wynn , queensland university of technology, brisbane, australia
+the abundance of event data in today’s information systems makes it possible to “confront” process models with the
+actual observed behavior. process mining techniques use event logs to discover process models that describe the observed
+behavior, and to check conformance of process models by diagnosing deviations between models and reality. in many
+situations it is desirable to mediate between a preexisting model and observed behavior. hence, we would like to repair
+the model while improving the correspondence between model and log as much as possible. the approach presented
+in this paper assigns predeﬁned costs to repair actions (allowing inserting or skipping of activities). given a maximum
+degree of change, we search for models that are optimal in terms of ﬁtness , i.e., the fraction of behavior in the log not
+possible according to the model is minimized. to compute ﬁtness we need to align the model and log and this can be time
+consuming. hence, ﬁnding an optimal repair may be intractable. we propose different alternative approaches to speed-up
+repair. the number of alignment computations can be reduced dramatically while still returning near-optimal repairs. the
+different approaches have been implemented using the process mining framework prom and evaluated using real-life logs.
+ccs concepts: •theory of computation →design and analysis of algorithms; •information systems →information
+systems applications; •mathematics of computing →combinatorial optimization;
+additional key words and phrases: process mining, process model repair, repair recommendation, process model, event log
+acm reference format:
+artem polyvyanyy, wil m.p. van der aalst, arthur h.m. ter hofstede, moe t. wynn. 2016. impact-driven process model
+repair. acm trans. softw. eng. methodol. (july 2016), 52 pages.
+1. introduction
+process mining techniques [van der aalst 2011] aim to bridge the gap between process-centric ap-
+proaches that use models to analyze or implement operational processes and data-centric approaches
+focusing on data analysis (data mining, machine learning, statistics, etc.). process mining includes
+(automated) process discovery (learning process models from raw event data), conformance checking
+(monitoring deviations by comparing model and log), organizational mining, e.g., discovering roles
+in processes, decision-point analysis, bottleneck analysis, automated construction of simulation
+authors’ address: a. polyvyanyy (artem.polyvyanyy@qut.edu.au), a.h.m. ter hofstede (a.terhofstede@qut.edu.au), and
+moe t. wynn (m.wynn@qut.edu.au), business process management discipline, information systems school, science &
+engineering faculty, queensland university of technology, brisbane, australia. w.m.p van der aalst (w.m.p.v.d.aalst@tue.nl),
+department of mathematics and computer science, eindhoven university of technology, eindhoven, the netherlands.
+permission to make digital or hard copies of all or part of this work for personal or classroom use is granted without fee
+provided that copies are not made or distributed for proﬁt or commercial advantage and that copies bear this notice and the full
+citation on the ﬁrst page. copyrights for components of this work owned by others than acm must be honored. abstracting
+with credit is permitted. to copy otherwise, or republish, to post on servers or to redistribute to lists, requires prior speciﬁc
+permission and/or a fee. request permissions from permissions@acm.org.
+© 2016 acm. 1539-9087/2016/07-art1 $15.00
+acm transactions on software engineering and methodology, publication date: july 2016.1:2 a. polyvyanyy et al.
+process 
+discoveryconformance 
+checkingimpact-driven 
+model repairxno initial model is given.
+xpurely driven by event data.
+x*rdolvwrilqgdprghowkdwehvw´ilwvµwkhgdwd .
+xproblem: event data are merely a sample of what is possibl e, 
+making it difficult to balance between overfitting and 
+underfitting.
+xproblem: domain knowledge cannot be exploited to guide 
+discovery.
+xproblem: process models may be highly variable over time 
+(different samples of the same process may lead to very 
+different models).
+xproblem: wavering collection of models makes interpretat ion of 
+projected data on models (e.g., performance) difficult .xevent data and process model are 
+compared.
+xmodel is considered to be the 
+´qrupµ .
+xgoal is to quantify deviations and 
+to diagnose them.
+xproblem: initial model may be 
+deviating too much from reality to 
+be useful.
+xproblem: the problem of creating a 
+´ehwwhuµprgholvohiwwrwkhxvhu . xprocess model is repaired based 
+on event data.
+xmediates between model and 
+reality and returns a model 
+reflecting the trade-off. 
+xthe degree of change can be 
+limited thereby taking into account 
+wkh´vhyhulw\µriwkhuhsdlu .
+xthe repairs that have the highest 
+impact on fitness are selected, 
+\lhoglqjdq´rswlpdoprghoµ .   
+fig. 1: impact-driven process model repair as the bridge between two extremes: process discovery
+(discovering the model using just the data) and conformance checking (taking the model as the
+“norm”, without producing a “better” model).
+models (covering different perspectives), and process-centric predictive analytics, e.g., estimating the
+remaining ﬂow time of a running case or recommending activities and resources.
+input for any process mining exercise is an event log . an event log is composed of traces and each
+trace represents a process instance (case). a trace corresponds to a sequence of events denoting the
+“life” of a process instance and is typically represented by a sequence of activity labels. process mining
+connects observed behavior, i.e., an event log, to a process model, e.g., a petri net, a bpmn model, a
+uml activity diagram, or an epc, to answer questions related to conformance or performance.
+this paper focuses on data-driven process model repair . given an initial process model and an
+event log, a repaired process model is produced. the goal is to create a model that is as close to
+the original model as possible and at the same time allows for as much of the observed behavior
+as possible. process model repair sits in-between process discovery andconformance checking ,
+cf. fig. 1. techniques for process discovery do notconsider an initial model and construct a model
+that best “ﬁts the data”. conformance checking techniques consider the initial model to be the “norm”
+and only diagnose and quantify deviations without constructing a new process model. unlike process
+discovery and conformance checking, data-driven process model repair approaches aim for a trade-off
+between observed and modeled behavior. although this paper focuses on control-ﬂow only, it is
+important to understand that performance analysis, decision-point analysis, predictive analytics, etc.
+rely on a proper control-ﬂow model and events related to model elements. in fact, process discovery
+and model repair serve as a starting point for more advanced types of analysis. the latter are outside
+the scope of this paper, but of great practical value.
+dozens of process discovery algorithms have been proposed in literature. for example, inductive
+mining techniques [leemans et al .2013; leemans et al .2015] provide formal guarantees (soundness
+and, if desired, also satisfying a preset minimal ﬁtness level), can deal with infrequent behavior, and
+are highly scalable, i.e., deal with extremely large event logs and support distribution. this triggers
+the following question: why repair an existing model and not simply discover a “fresh” model from
+the event log? this question indicates that repair only makes sense if the initial hand-made model
+provides additional insights. in many process mining scenarios one can ﬁnd such models. in fact,
+there may be various reasons for using an initial model:
+○the event log may be incomplete and domain knowledge captured in the initial model can help to
+guide discovery. for more complex processes typically only a fraction of all possible traces can
+be observed. an initial model may help to avoid overﬁtting or underﬁtting the event data.
+○users may be familiar with a process model, e.g., a reference model, and should not be confronted
+with unnecessarily different models. the process may change over time and one would only like
+to see the signiﬁcant changes, i.e., repairing a process model rather than discovering a model from
+scratch. process discovery techniques may yield very different models even when changes in the
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:3
+process are small, so, to avoid wavering, changes should only be made if there are signiﬁcant
+changes in the event data.
+○process models may be descriptive or normative. if the desired model has normative elements but
+should also reﬂect reality as well as possible, then trade-offs are unavoidable. some deviations
+may be unacceptable and should not end up in the repaired model. other deviations may trigger
+model changes to better reﬂect reality.
+note that event logs only contain sample data collected over a particular period. even when the
+underlying process does not change, the event log in one period may contain traces not observed
+in other periods and vice versa. if a trace did not happen, one cannot conclude that it could not
+have happened, i.e., there are no negative traces. given these uncertainties, it makes sense to exploit
+a reference or handcrafted model. process models are used to project information on, e.g., about
+current bottlenecks or risks. end-users need to be able to interpret this information and, therefore,
+should have sufﬁcient control over the models used to project this information on.
+the repair approach described in this paper builds on the notion of alignments [van der aalst et al .
+2012; adriansyah 2014]. an alignment relates each trace in the event log to a path in the process
+model, i.e., a model execution. an alignment can be viewed as a sequence of moves . model and
+reality move synchronously if they agree. if reality and model disagree, the model needs to make a
+move that cannot be mimicked by the event log or the event log needs to make a move that cannot
+be mimicked by the model. alignments serve two purposes: diagnosing where model and reality
+disagree and mapping traces in the log onto model executions (even when the ﬁt is not perfect). this
+information can be used to repair the model and to quantify the (possible) effects of repair actions.
+conformance checking techniques can be used to diagnose imperfections of the model, but leave
+the actual repair of the model to the user. fahland et al. [fahland and van der aalst 2015] proposed
+a technique to repair models by decomposing the log into several sublogs of non-ﬁtting subtraces.
+for each sublog, either a loop is discovered that can replay the sublog or a subprocess is derived
+that is then added to the original model at the appropriate location. just like in [fahland and van der
+aalst 2015], we aim to exploit the alignments between the original process model and event log.
+however, we want to control the degree of change and make sure the impact of the changes we allow
+is maximal. we refer to this as impact-driven process model repair (see fig. 1). instead of ﬁxing
+every problem as in [fahland and van der aalst 2015], we look for those process model repairs that
+have most impact (thereby considering various trade-offs).
+the approach proposed in this paper can be summarized as follows. we assign costs to repair
+actions of inserting andskipping activities in the model. for example, one can decide that inserting a
+payment activity in the model is more costly than skipping a check activity. to limit model change,
+the total repair cost (the cost of all repair actions) should not exceed a preset level of available repair
+resources . thus, if certain repair actions are undesirable, their costs can be set high. we are interested
+in the set of repair actions that maximize ﬁtness . model and log have perfect ﬁtness if all moves
+in their alignment are synchronous, i.e., there are no deviations. at the same time, cost of repair
+must be lower than the given repair resources. we use another cost model to quantify deviations,
+i.e., mismatches between the model and log, as some deviations may indeed be more severe than
+others. the sum of all deviations is a measure of ﬁtness, which we strive to minimize.
+by checking all possible combinations of repair actions, i.e., inserting and skipping activities, we
+can always ﬁnd an “optimal” repaired model within the range set by the available repair resources.
+this is a model whose total repair cost does not exceed the preset level and has the best ﬁtness with
+the log. there may be multiple “optimally repaired” models that have the same ﬁtness with the log.
+note that it may be time consuming to compute alignments when log and model are large, as we
+need to solve an optimization problem per trace and there may be thousands or millions of traces
+in the log. hence, a brute-force approach becomes intractable if there are many candidate repairs
+and large event logs. therefore, we propose various alternative approaches limiting the number of
+alignment computations. it turns out that we can dramatically decrease computation time, while still
+returning models of good quality.
+acm transactions on software engineering and methodology, publication date: july 2016.1:4 a. polyvyanyy et al.
+the different repair techniques have been implemented using the process mining framework
+prom.1the impact-driven process model repair approach has been evaluated using artiﬁcial event
+logs (to illustrate particular phenomena) and real-life event logs (to show feasibility in practice).
+experiments show that to obtain a small improvement in repair quality, often much more computation
+time is needed. if the degree of change allowed is small, all the proposed techniques tend to discover
+same repair recommendations. the results justify our exploration of different repair strategies and
+demonstrate scalability and feasibility of impact-driven process model repair in real-life settings.
+the remainder of the paper is organized as follows. section 2 introduces basic notions such as
+event logs and petri nets. the results are not speciﬁc for petri nets and are equally applicable to
+other notations, including bpmn, bpel, epcs, and uml activity diagrams. however, we need
+a theoretical foundation to reason about repairs and alignments. section 3 introduces the topic of
+conformance checking thereby focusing on the seminal notion of alignments. alignments are later
+used for repairing models. in section 4, the topic of event-based model repair is introduced. section 5
+introduces the notion of repair resources to limit the search space of possible repairs, i.e., repair
+resources are bounded. given this, the notion of “optimal repair” is deﬁned. section 6 provides
+algorithms for different repair approaches including an exhaustive search method for solving the
+optimal model repair recommendation problem and alternative approaches capable of discovering
+viable minimal optimal repair recommendations using efﬁcient approximation schemes. in section 7
+the different approaches are evaluated and compared. related work is discussed in section 8. section 9
+concludes the paper and outlines future work. finally, appendix a and appendix b list all the proofs
+of mathematical statements claimed in the paper and the speciﬁc mathematical notations used in the
+paper, respectively.
+2. preliminaries
+this section introduces basic concepts that are related to event logs andpetri nets . these concepts
+will be used to support later discussions.
+2.1. multisets, sequences, and functions
+in mathematics, a multiset , or a bag, is a generalization of the concept of a set that allows a multiset
+to contain multiple instances of the same element. it is a common practice to employ multisets to
+encode states of petri nets. moreover, an event log is usually formalized as a multiset of traces to
+capture the fact that the same trace may appear multiple times in the event log.
+letabe a set. byp(a)andb(a), whereb∶a→n0, we denote the power set of aand the set of
+all ﬁnite multisets over a, respectively.2for some multiset b∈b(a),b(a)denotes the multiplicity of
+element ainb, i.e., the number of times element a∈aappears in b. for example, b1∶=[],b2∶=[a],
+b3∶=[a,b,b],b4∶=[a,b,b,c,b,a], and b5∶=[a2,c,b,b0,b2]are multisets over a∶={a,b,c}. multiset
+b1isempty , i.e., contains no elements. multiset b2contains a single element a∈a. multiset b3
+contains three elements: one occurrence of element a∈aand two occurrences of element b∈a.
+multisets b4andb5both contain six elements and are equal, i.e., b4=[a2,b3,c]=b5. the above
+examples demonstrate the notation (with its compact version) for describing multisets and hint at the
+fact that the ordering of elements in multisets is irrelevant.
+the standard set operations have been extended to deal with multisets as follows. if element
+ais a member of multiset b, this is denoted by a∈b, while if element bis not a member of
+b, we write b/slash.l⟩ft∈b. for example, for the multisets deﬁned above, it holds that a∈b2,b/slash.l⟩ft∈b2, and
+a,b∈b3. the union of two multisets candd, denoted by c⊎d, is the multiset that contains all
+elements of canddsuch that the multiplicity of an element in the resulting multiset is equal to the
+sum of multiplicities of this element in candd. for example,[a,a,b,b]=b2⊎b3=[a2,b2]. the
+difference of two multisets candd, denoted by c∖d, is the multiset that for every element xinc
+1use our command line tool or download prom from http://www.promtools.org and use the selectiveprepair package.
+the command line tool and the package are available via https://svn.win.tue.nl/repos/prom/packages/selectiveprepair.
+2n0denotes the set of all natural numbers including zero.
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:5
+contains max(0,c(x)−d(x))occurrences of element x. for example, it holds that b4∖b3=[a,b,c],
+b2∖b4=[], and b4∖b2=[a,b3,c]. finally, the cardinality of a multiset b, denoted by/d◾v◾d⟩s.alt0b/d◾v◾d⟩s.alt0, is the
+sum of the occurrences of its members. for example, it holds that /d◾v◾d⟩s.alt0b1/d◾v◾d⟩s.alt0=0,/d◾v◾d⟩s.alt0b2/d◾v◾d⟩s.alt0=1,/d◾v◾d⟩s.alt0b3/d◾v◾d⟩s.alt0=3, and
+/d◾v◾d⟩s.alt0b4/d◾v◾d⟩s.alt0=6=/d◾v◾d⟩s.alt0b5/d◾v◾d⟩s.alt0.
+given a multiset b∈b(a)over some set a, byset(b)we refer to the set that contains all and only
+elements in b, i.e., set(b)∶={b∈a∣b∈b}.
+in mathematics, a sequence is an ordered list of elements. similar to multisets, in a sequence,
+instances of the same element can appear multiple times. however, unlike in multisets, positions of
+element occurrences in the sequence matter. we use sequences to capture traces in event logs and
+orderings of transition occurrences in petri nets. by σ∶=⟨a1,a2,..., an⟩∈a∗, we denote a sequence
+of length n∈n0over some set a,ai∈a,i∈[1..n].3theempty sequence, i.e., the sequence without
+elements, is denoted by ⟨⟩. by/d◾v◾d⟩s.alt0σ/d◾v◾d⟩s.alt0, we indicate the number of all occurrences of elements in σ. given
+a sequence σand a set k, byσ/d◾v◾d⟩s.alt0kwe denote the restriction of σtok, i.e., a sequence obtained from σ
+by deleting all elements of σthat are not members of kwithout changing the order of the remaining
+elements. a sequence σis said to be a preﬁx of a sequence ωiff there exists a sequence σ′such that
+concatenation of σandσ′, i.e., the sequence obtained by appending σ′to the end of σ, is equal to
+ω. given a sequence σ∶=⟨a1,a2,..., an⟩∈a∗,n∈n0, we deﬁne the i-th preﬁx of σ,i∈[0..n], as
+σ[i]∶=⟨a1,a2,..., ai⟩. for example, if σ∶=⟨a,b,a,b,a,h,a,l,a,m,a,h,a⟩, then it holds that/d◾v◾d⟩s.alt0σ/d◾v◾d⟩s.alt0=13,
+σ[2]=⟨a,b⟩,σ[5]=⟨a,b,a,b,a⟩,σ[7]=⟨a,b,a,b,a,h,a⟩, and σ[0]is the empty sequence.
+given a sequence σ∶=⟨a1,a2,..., an⟩∈a∗,n∈n0, by set(σ)we refer to the set that contains
+every element of σ, i.e., set(σ)∶={b∈a∣∃i∈[1..n]∶ai=b}.
+letk∶=(k1,k2,..., kn)∈k1×k2×...×knbe a point in n-dimensional space, where k1,k2,..., kn
+are some sets. the projection function πi(k),i∈[1..n], is deﬁned as πi(k)∶=ki, where kiis the
+i-th coordinate of k. let κ∶=⟨κ1,κ2,..., κm⟩,m∈n0, where κj∈k1×k2×...×kn,j∈[1..m], be a
+sequence of points in n-dimensional space. then, πi(κ)∶=⟨πi(κ1),πi(κ2),..., πi(κm)⟩,i∈[1..n], is
+the sequence of i-th coordinates of elements of κ.
+2.2. petri nets and net systems
+petri nets is a well-established mathematical modeling language for the description of distributed
+systems [reisig 1998]. in this paper, we use petri nets to discuss our ideas and present results.
+however, all the discussions can be easily adapted for various other modeling languages, e.g., bpmn,
+bpel, epc, uml activity diagram, etc.
+definition 2.1(petri net).
+apetri net is a triple n∶=(p,t,f), where pandtare ﬁnite disjoint sets of places andtransitions ,
+respectively, and f⊆(p×t)∪(t×p)is the ﬂow relation . /un◾231f.alt1
+an element x∈p∪tis anode ofn. a node x∈p∪tis an input node of a node y∈p∪tiff(x,y)∈f.
+similarly, a node x∈p∪tis an output node of a node y∈p∪tiff(y,x)∈f. by●x,x∈p∪t, we
+denote the preset ofx, i.e., the set of all input nodes of x, while by x●, we denote the postset ofx,
+i.e., the set of all output nodes of x. for a set of nodes x⊆p∪t,●x∶=⋃x∈x●xandx●∶=⋃x∈xx●.
+transitions of petri nets are used to encode actions. it is often convenient to distinguish between
+observable andsilent transitions to describe actions that have a well-deﬁned meaning and those that
+have no domain interpretation, respectively. moreover, one may wish to assign a certain semantics in
+the application domain to several different transitions. to this end, one can use labeled petri nets.
+letadenote the universe of labels and let τsignify a special label such that τ/slash.l⟩ft∈a.
+definition 2.2(labeled net).
+alabeled petri net , or a labeled net , or a net, is a 4-tuple n∶=(p,t,f,λ), where(p,t,f)is a petri
+net and λ∶t→a∪{τ}is a function that assigns labels to transitions. /un◾231f.alt1
+3a∗denotes the kleene star operation on set a.
+acm transactions on software engineering and methodology, publication date: july 2016.1:6 a. polyvyanyy et al.
+ap1
+cdb f
+g
+h
+et1t2
+t3
+t4t5
+t6t7t8
+t9
+t10t11
+p2p3
+p4p5p6p7
+p8p9
+p10p11
+fig. 2: a net system that is an adapted version of fig. 2 in [van der aalst 2013], where a= “update
+request registration”, b= “examine ﬁle”, c= “check ticket”, d= “decide”, e= “reinitiate request”,
+f= “send acceptance letter”, g= “pay compensation”, and h= “send rejection letter”.
+ifλ(t)≠τ,t∈t, then tisobservable ; otherwise, tissilent .
+the execution semantics of labeled nets is deﬁned in terms of states and state transitions. a state
+of a labeled net is captured by the concept of a marking .
+definition 2.3(marking of a net ).
+amarking of a labeled net n∶=(p,t,f,λ)is a multiset m∈b(p). /un◾231f.alt1
+a marking mof a labeled net n∶=(p,t,f,λ)is often interpreted as an assignment of tokens to
+places, i.e., marking m‘puts’ m(p)tokens at place p,p∈p.
+letn∶=(p,t,f,λ)be a labeled net. a transition t∈tisenabled in a marking mofn, denoted
+by(n,m)[t⟩, iff every input place of tcontains at least one token, i.e., ∀p∈●t∶m(p)>0. if a
+transition t∈tis enabled in a marking mofn, then tcanoccur , which leads to a fresh marking
+m′∶=(m∖●t)⊎t●ofn, i.e., transition t‘consumes’ one token from every input place of tand
+‘produces’ one token for every output place of t. by(n,m)[t⟩(n,m′), we denote the fact that an
+occurrence of transition tleads from marking mto marking m′in net n.
+a ﬁnite sequence of transitions σ∶=⟨t1,t2,...,tn⟩∈t∗,n∈n0, is an occurrence sequence
+of a labeled net n∶=(p,t,f,λ)in a marking miffσis empty or there exists a sequence of
+markings⟨m0,m1,..., mn⟩, such that m0=mand for every position i∈[1..n]inσit holds that
+(n,mi−1)[ti⟩(n,mi); we say that σleads from m0tomn. by(n,m)[σ⟩(n,m′), we say that σ
+leads from marking mto marking m′. a marking m′isreachable from a marking minniff there
+exists an occurrence sequence of nthat leads from mtom′.
+a net system is a labeled net with two markings, one initial and the other ﬁnal.
+definition 2.4(net system).
+anet system , or a system , is a triple s∶=(n,mini,mﬁn), where n∶=(p,t,f,λ)is a labeled net,
+mini∈b(p)is the initial marking ofn, and mﬁn∈b(p)is the ﬁnal marking ofn./un◾231f.alt1
+bys, we denote the universe of net systems. net systems have a well-established graphical notation.
+in this notation, places are visualized as circles, silent transitions are drawn as empty rectangles
+while each observable transition depicts the assigned label within its boundaries, every pair of nodes
+(x,y)in the ﬂow relation is depicted as a directed arc that leads from xtoy, and tokens induced by
+the initial marking are depicted as black dots inside the assigned places. note that there is no explicit
+visual notation for capturing the ﬁnal marking (the reader is cordially invited to invent one).
+fig. 2 visualizes a net system. at this stage the reader should easily recognize that this net
+system can be formalized as a tuple (n,mini,mﬁn),n∶=(p,t,f,λ), where p∶={p1,..., p11},t∶=
+{t1,...,t11}, the ﬂow relation fcontains 27 ordered pairs that encode all the directed arcs in the
+ﬁgure, e.g.,(p1,t1),(t1,p2),(t1,p4)∈fare all the arcs that are incident with transition t1∈t,λ∶=
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:7
+{(t1,a),(t2,b),(t3,τ),(t4,c),(t5,d),(t6,e),(t7,τ),(t8,f),(t9,g),(t10,h),(t11,τ)}, and mini∶=[p1].
+transitions t3,t7, and t11are silent, while all the other transitions in the ﬁgure are observable. an
+occurrence of an observable transition signiﬁes completion of the corresponding activity (captured
+by the assigned label). in the ﬁgure we use short labels. their full counterparts are proposed in the
+caption to fig. 2. for example, an occurrence of transition t1∈trepresents completion of activity a,
+i.e., the activity of updating request registration.
+when working with a net system, it is often convenient to refer to its executions.
+definition 2.5(execution , label execution , observable execution ).
+anexecution of a net system s∶=(n,mini,mﬁn),n∶=(p,t,f,λ), is an occurrence sequence of n
+that leads from minitomﬁn. let σ∶=⟨t1,t2,...,tn⟩∈t∗,n∈n0, be an execution of s. then, α∶=
+⟨λ(t1),λ(t2),..., λ(tn)⟩is the label execution ofsinduced by σ, while β∶=α/d◾v◾d⟩s.alt0ais the observable
+execution ofsinduced by σ. /un◾231f.alt1
+an execution of a net system is an occurrence sequence that leads from its initial to its ﬁnal marking.
+given a net system s, byeswe refer to the set of all executions of s.
+note that the labeled net nof the net system in fig. 2 is a labeled workﬂow net [van der aalst
+1997], i.e., it has a dedicated source place p1and a dedicated sinkplace p11such that every node of
+nis on a directed path from the source to the sink. workﬂow nets are often used as abstract models
+for the explicit representation, validation, and veriﬁcation of business procedures. every workﬂow
+net describes a collection of business cases as executions that lead from its initial marking that puts
+one token at the source place and no tokens elsewhere to its ﬁnal marking that puts one token at the
+sink place and no tokens elsewhere. thus, it is common practice to deﬁne the ﬁnal marking of a net
+system(n,mini,mﬁn), where n∶=(p,t,f,λ)is a labeled workﬂow net with a sink place p∈p, as
+the multiset[p]. accordingly, we deﬁne the ﬁnal marking of the net system in fig. 2 as the marking
+that puts one token at place p11and no tokens elsewhere.
+the sequences of transitions ⟨t1,t2,t4,t5,t10⟩and⟨t1,t4,t3,t5,t6,t2,t4,t5,t7,t9,t8,t11⟩are two exam-
+ple executions of the net system sin fig. 2. note that the set es, i.e., the set of all executions of the
+system in fig. 2, is inﬁnite due to the presence of a loop.
+in the sequel, we require that every net system has at least one execution, i.e., for every s∈sit
+holds that es≠∅, and is bounded , i.e., the set of all reachable markings of the system is ﬁnite. these
+requirements are introduced to allow alignment-based conformance checking between event logs
+and net systems, refer to section 3. no other requirements are imposed on net systems. for example,
+given a net system, it is possible that the net enables a transition in its ﬁnal marking.
+2.3. event logs
+an event log is a mathematical model for capturing the historic information about executions of
+dynamic systems. formally, an event log is a multiset of traces, where every trace describes an
+execution of some (distributed) system, i.e., a process instance , as a sequence of observed events.
+definition 2.6(trace , event log).
+atrace is a ﬁnite sequence of labels. an event log , or a log, is a multiset over a set of traces. /un◾231f.alt1
+we assume that every label in a trace υ∈a∗signiﬁes an event , i.e., an occurrence of an activity.
+furthermore, we assume that the order in which labels appear in a trace encodes temporal relations
+between the events, i.e., a label at position isigniﬁes an event that was observed before an event
+denoted by a label at position j,j>i, of the trace. the ability of an event log to contain multiple
+instances of a trace allows for capturing the fact that some process execution was observed and
+recorded several times. note that in situations when labels in an event log do not directly correspond to
+occurrences of activities in the corresponding model, such correspondences can often be constructed
+automatically, e.g., using the techniques proposed in [baier et al. 2015a; baier et al. 2015b].
+consider these three example event logs:
+○l1∶=[⟨a,c,d,h⟩10,⟨a,b,c,d,f,g⟩7,⟨a,c,d,e,b,c,d,f,g⟩5],
+acm transactions on software engineering and methodology, publication date: july 2016.1:8 a. polyvyanyy et al.
+○l2∶=[⟨a,c,b,d,f,g⟩25,⟨a,b,c,d,e,x,c,h,a⟩15], and
+○l3∶=[⟨a,b,c,f,d,e,f⟩10,⟨a,c,d,c,e,d,g,f⟩9,⟨a,b,c,d,e,x,c,h,a⟩9,
+⟨c,d,d,f,e,g⟩7,⟨a,b⟩6,⟨a,b,c,d,e,d,f⟩2,⟨a,b,c,d,e,b,c,d,g⟩2].
+the reader may recognize that event log l1contains information about 10+7+5=22executions of
+the net system sin fig. 2. indeed, trace υ1∶=⟨a,c,d,h⟩can be interpreted as capturing execution
+σ∶=⟨t1,t3,t4,t5,t10⟩ofs; note that υ1is the observable execution of sinduced by σ. similarly,
+traces υ2∶=⟨a,b,c,d,f,g⟩andυ3∶=⟨a,c,d,e,b,c,d,f,g⟩can be interpreted as capturing executions
+⟨t1,t2,t4,t5,t7,t8,t9,t11⟩and⟨t1,t4,t3,t5,t6,t2,t4,t5,t7,t8,t9,t11⟩ofs, respectively. according to event
+logl1, 10 executions followed trace υ1, 7 executions followed trace υ2, and 5 executions followed
+trace υ3. in total, event log l1records information about 4×10+6×7+9×5=127observed events.
+event log l2stores information about 40 process instances that comprise 285 observed events.
+while trace⟨a,c,b,d,f,g⟩is an observable execution of the net system in fig. 2 induced by ex-
+ecution⟨t1,t4,t2,t5,t7,t8,t9,t11⟩, there exists no execution of the net system in fig. 2 that induces
+observable execution ⟨a,b,c,d,e,x,c,h,a⟩. finally, event log l3describes 45 process instances of
+some distributed system.
+in what follows, we will use the three event logs listed above to exemplify and discuss proposed
+concepts and principles.
+3. conformance checking
+in an ideal situation, every trace in an event log lof a distributed system sdescribes some observable
+execution of s. in this perfect world, we can say that l ﬁts s perfectly .
+definition 3.1(perfectly fitting event log ).
+an event log l∈b(a∗)ﬁts perfectly a net system s∈sif and only if for every trace υ∈lthere
+exists an observable execution βofsfor which it holds that υ=β. /un◾231f.alt1
+for example, event log l1from section 2.3 ﬁts perfectly the net system in fig. 2. in the real world,
+however, observed process instances may deviate from those captured in the model. the reasons
+for deviations are manifold. for example, a deviation can be caused by a decision to perform an
+ad hoc activity while executing an outdated model that no longer caters for all the required process
+instances, or may stem from a bypass of a recognized problem in the model. in this light, event log
+l2proposed in section 2.3 can be interpreted as a data structure that captures the historic information
+on executions of the net system in fig. 2.
+in process mining, conformance checking refers to the following problem: given an event log l
+and a model of a distributed system s, e.g., a net system, check whether traces in lare in accordance
+with (observable) executions of s.
+conformance checking is interesting for various reasons. it can be used to audit processes to
+check whether observed reality conforms to some descriptive model [van der aalst et al .2010],
+as deviations between modeled and observed processes may point to fraudulent cases and poorly
+designed process practices. moreover, conformance checking can serve as the basis for evaluating
+performance of process discovery techniques. speciﬁcally, techniques for conformance checking
+can be used to assess how well do process instances recorded in an event log lﬁt a model that is
+discovered from l, cf. [van der aalst 2011].
+a system with a ‘good’ ﬁtness allows for most of the process instances seen in the event log. there
+are various ways to measure ﬁtness between event logs and net systems [rozinat and van der aalst
+2008; van der aalst et al .2012; munoz-gama and carmona 2011]. a starting point when studying
+the degree to which a trace in an event log deviates from some execution of a system is the alignment
+between these two artifacts. consider the ﬁve alignments proposed below.
+γ1∶=acbd≫fg≫
+acbdτfgτ
+t1t4t2t5t7t8t9t11γ2∶=acbd≫≫≫≫≫fg≫
+acbdecτdτfgτ
+t1t4t2t5t6t4t3t5t7t8t9t11
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:9
+γ3∶=abcdexcha
+abcd≫≫≫h≫
+t1t2t4t5 t10γ4∶=abcdexc≫≫ha
+abcde≫cτdh≫
+t1t2t4t5t6 t4t3t5t10
+γ5∶=abcde≫xc≫ha
+abcdeτ≫cdh≫
+t1t2t4t5t6t3 t4t5t10
+these are alignments between traces ⟨a,c,b,d,f,g⟩and⟨a,b,c,d,e,x,c,h,a⟩in event log l2
+listed in section 2.3 and executions of the net system in fig. 2. the top row of an alignment refers to
+‘steps on trace’, while the bottom two rows refer to ‘steps on system’. note that every step on system
+is given by the transition and its label, as there could be multiple transitions with the same label; for
+example, transitions t3,t7, and t11, all ‘carry’ label τ.
+an alignment between a trace in an event log and an execution of a net system can be formalized
+as a sequence of moves, where a move is a pair in which the ﬁrst component refers to an element in
+the trace and the second component refers to an element in the execution. let ‘ ≫’ be a special ‘no
+move’ symbol which is neither a label, i.e., ≫/slash.l⟩ft∈a∪{τ}, nor a transition, i.e., for every net system
+(n,mini,mﬁn)∈s, where n∶=(p,t,f,λ), it holds that≫/slash.l⟩ft∈t. a move is a pair as detailed below.
+definition 3.2(move, legal move).
+amove over a net system s∶=(n,mini,mﬁn)∈s, where n∶=(p,t,f,λ),
+is a pair(x,y)∈(a∪{≫})×( t∪{≫})∖{(≫,≫)}.
+○move(x,y)is amove on trace iffx∈aandy=≫.
+○move(x,y)is amove on system iffx=≫ andy∈t.
+○move(x,y)is asynchronous move iffx∈a,y∈t, and λ(y)=x.
+move(x,y)is alegal move over sif it is either a move on trace, a move on system, or a synchronous
+move; otherwise move (x,y)is an illegal move over s. /un◾231f.alt1
+byms, we denote the set of all legal moves over a net system s. moves on trace are introduced
+to capture situations when events in traces cannot be mimicked by occurrences of transitions. for
+examples,(a,≫)and(x,≫)are the two moves on trace of alignment γ4proposed above. moves
+on system represent cases when occurrences of transitions cannot be mimicked by events in traces.
+for instance,(≫,t3)and(≫,t5)are the two moves on system of alignment γ4. finally, synchronous
+moves signify occurrences of transitions that are mimicked by events in traces. for example, (a,t1),
+(b,t2),(c,t4),(d,t5),(e,t6),and(h,t10)are all the synchronous moves of γ4.
+analignment between a trace υand an execution of a net system σis a sequence of moves that
+‘respects’ the orders of elements in υandσ.
+definition 3.3(alignment).
+analignment between a trace υ∈a∗and an execution σof a net system s∶=(n,mini,mﬁn), where
+n∶=(p,t,f,λ), is a ﬁnite sequence γ∈m∗
+sof legal moves over sfor which it holds that π1(γ)/d◾v◾d⟩s.alt0a=υ
+andπ2(γ)/d◾v◾d⟩s.alt0t=σ. /un◾231f.alt1
+as illustrated above, in dealing with alignments it is convenient to represent them by means of tables.
+in such a representation, moves are encoded as columns, where two successive columns in a table
+refer to two successive moves in the alignment. each column in an alignment table has three rows.
+given a move over a net system, the corresponding column of an alignment table is populated as
+follows. the top row of the column contains the ﬁrst component of the move, which is either a label
+that encodes an observed event or the special no move symbol ‘ ≫’. the bottom row of the column
+is kept empty if the second component of the move is the no move symbol. otherwise, it contains
+the second component of the move, which encodes an occurrence of a transition. the middle row
+contains ‘≫’ if the second component of the move is the special no move symbol. otherwise, it
+contains a label assigned to a transition recorded as the second component of the move. since an
+acm transactions on software engineering and methodology, publication date: july 2016.1:10 a. polyvyanyy et al.
+alignment table speciﬁes the alignment unambiguously, it is customary and convenient to refer to the
+table of an alignment γasγitself.
+for instance, two tables γ1andγ2proposed in the beginning of this section specify two alignments
+deﬁned by two sequences of moves ⟨(a,t1),(c,t4),(b,t2),(d,t5),(≫,t7),(f,t8),(g,t9),(≫,t11)⟩
+and⟨(a,t1),(c,t4),(b,t2),(d,t5),(≫,t6),(≫,t4),(≫,t3),(≫,t5),(≫,t7),(f,t8),(g,t9),(≫,t11)⟩, respec-
+tively. note that alignments γ1andγ2do indeed ‘respect’ the orders of elements in traces and
+executions as it holds that π1(γ1)/d◾v◾d⟩s.alt0a=⟨a,c,b,d,f,g⟩,π2(γ1)/d◾v◾d⟩s.alt0t=⟨t1,t4,t2,t5,t7,t8,t9,t11⟩,π1(γ2)/d◾v◾d⟩s.alt0a=
+⟨a,c,b,d,f,g⟩,π2(γ2)/d◾v◾d⟩s.alt0t=⟨t1,t4,t2,t5,t6,t4,t3,t5,t7,t8,t9,t11⟩;tis the set of all transitions in fig. 2.
+two alignments between the same trace but two distinct executions show different deviations
+between the observed and modeled process instances. a common approach to comparing alignments
+is by quantifying them based on the moves that they contain.
+definition 3.4(cost of legal moves ).
+acost function on legal moves over a net system s∈sis a function c∶ms→n0that assigns costs to
+legal moves over s. /un◾231f.alt1
+the cost of an alignment is the sum of costs of all moves of this alignment.
+definition 3.5(alignment cost).
+thecost of an alignment γbetween a trace υ∈a∗and an execution σof a net system s∈sas per a
+cost function con legal moves over sis denoted by c(γ)and is the sum of costs of all moves of γ,
+i.e.,c(γ)∶=∑∣γ∣
+i=1c(γi). /un◾231f.alt1
+it is often convenient to work with the standard cost function. the standard cost function on legal
+moves over a net system s∶=(n,mini,mﬁn),n∶=(p,t,f,λ), is the function stdc s∶ms→{0,1}such
+thatstdc s(x,y)=0if it holds that(x,y)is either a synchronous move over s, orx=≫,y∈tand
+λ(y)=τ, and stdc s(x,y)=1otherwise. we will omit the subscript swhere the context is clear. the
+cost of an alignment as per the standard cost function is equal to the number of moves on trace and
+moves on system that are deﬁned for observable transitions in the alignment, i.e., it is equal to the
+number of deviations between the observed process instance and the modeled one.
+given a trace and two alignments between this trace and two distinct executions of a net system,
+the one with the lower cost exhibits less severe deviations (as per the employed cost function) from
+the corresponding execution, i.e., it justiﬁes a better ﬁt of the trace and the net system. for example,
+stdc s(γ1)=0,stdc s(γ2)=3,stdc s(γ3)=4,stdc s(γ4)=3, and stdc s(γ5)=3, where sis the net system
+in fig. 2 and γ1–γ5are the ﬁve alignments proposed in the beginning of this section. thus, as per the
+standard cost function, alignment γ1justiﬁes a ‘better’ ﬁt between trace ⟨a,c,b,d,f,g⟩andsthan
+alignment γ2. similarly, γ4andγ5justify a ‘better’ ﬁt between ⟨a,b,c,d,e,x,c,h,a⟩andsthan γ3.
+given a trace υ∈a∗and a net system s∈s, byaυ
+swe denote the set that for every execution
+σ∈escontains all alignments between υandσ, and contains nothing else, i.e., aυ
+s∶={γ∈m∗
+s∣
+∃σ∈essuch that γis an alignment between υandσ}. an optimal alignment between a trace and a
+system is an alignment between this trace and an execution of the system that yields the lowest cost.
+definition 3.6(optimal alignment ).
+anoptimal alignment between a trace υ∈a∗and a system s∈sas per a cost function con legal
+moves over sis an alignment γ∈aυ
+ssuch that∀γ′∈aυ
+s∶c(γ)≤c(γ′). /un◾231f.alt1
+the problem of ﬁnding an optimal alignment between a trace and a net system is an optimization
+problem. the reader can refer to [adriansyah et al .2011] for a solution to this problem. an optimal
+alignment between a trace and a net system suggests an execution of the net system with the
+‘cheapest’ required deviations from the trace (as per the employed cost function), i.e., it gives one
+among possibly several best ﬁts between the trace and the system. it clearly holds that alignment
+γ1is an optimal alignment between trace ⟨a,c,b,d,f,g⟩and the system sin fig. 2 as stdc s(γ1)=0.
+interestingly, alignment γ4is an optimal alignment between trace ⟨a,b,c,d,e,x,c,h,a⟩ands(as per
+the standard cost function); there exists no alignment γbetween this trace and ssuch that stdc s(γ)<3.
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:11
+given a trace υ∈a∗, a system s∈s, and a cost function con legal moves over s, byoυ
+s,cwe
+denote the set of all optimal alignments between υandsas per c. it is immediate that for every
+two optimal alignments γ,γ′∈oυ
+s,cit holds that c(γ)=c(γ′). hence, we deﬁne the cost of optimal
+alignment between υandsas per cost function c, denoted by cost[υ,s,c], as the cost of some
+optimal alignment between υandsas per c, i.e., cost[υ,s,c]∶=c(γ), where γ∈oυ
+s,c. for example,
+it holds that oυ
+s,stdc={γ4,γ5}andcost[υ,s,stdc]=3, where υ∶=⟨a,b,c,d,e,x,c,h,a⟩,sis the system
+in fig. 2, and γ4andγ5are two out of the ﬁve alignments listed in the beginning of this section. the
+reader can refer to [adriansyah 2014] for a solution to the problem of ﬁnding all optimal alignments
+between a trace and a system.
+finally, the cost of optimal alignment between an event log l∈b(a∗)and a net system s∈sis
+the sum of costs of optimal alignments between each trace in lands.
+definition 3.7(cost of optimal alignment ).
+thecost of optimal alignment between an event log l∈b(a∗)and a net system s∈sas per a cost
+function con legal moves over sis denoted by cost[l,s,c]and equals∑υ∈l(l(υ)×cost[υ,s,c])./un◾231f.alt1
+the cost of optimal alignment between an event log and a net system can be used as a basis
+for measuring ﬁtness between the event log and the net system. intuitively, the lower the cost of
+optimal alignment, the better the event log ﬁts the net system. for example, one can conclude that
+event log l1ﬁts the net system sin fig. 2 better than event log l2based on the observation that
+cost[l1,s,stdc]<cost[l2,s,stdc]. indeed, it holds that cost[l1,s,stdc]=10×0+7×0+5×0=0and
+cost[l2,s,stdc]=25×0+15×3=45 (note for the multiplicities of traces in the event log).
+there are various ways to convert the cost of an optimal alignment [van der aalst et al .2012;
+adriansyah 2014] into a ﬁtness value in-between 0 (poor ﬁtness) and 1 (perfect ﬁtness). for example,
+one can take the costs of undesirable moves, i.e., non-synchronous moves, and divide that by the
+potential costs of all moves in the alignment. it is also possible to take the cost of an optimal
+alignment and divide that by the cost of a worst case scenario where we have no synchronous moves,
+i.e., all events in the log correspond to moves on trace and the system proceeds to the end by just
+using moves on system. in the paper, we abstract from the ﬁtness calculation and focus on the cost
+of an optimal alignment. however, intuitively it should be clear that lower optimal alignment costs
+correspond to higher ﬁtness.
+the optimal alignment cost of zero as per the standard cost function is an indicator of a perfectly
+ﬁtting event log.
+lemma 3.8(perfectly fitting event log , lemma 1in[van der aalst 2013]).
+an event log l∈b(a∗)ﬁts perfectly a net system s ∈siff cost[l,s,stdc s]=0. /un◾231f.alt1
+the proof of lemma 3.8 revolves around the fact that the standard cost function assigns zero costs
+only to synchronous moves and moves on system that are deﬁned for silent transitions, which are the
+only permissible moves of an optimal alignment between a trace in a perfectly ﬁtting event log and
+the net system, cf. [van der aalst 2013].
+4. model repair
+in process mining, model repair refers to the following problem: given an event log lthat does not
+ﬁt a model of a distributed system s, e.g., a net system, transform sintos′such that lﬁtss′‘better’
+than it ﬁts s. thus, model repair allows keeping models in sync with observed process instances by
+suggesting mechanisms for reﬂecting traces encountered in event logs in executions of models.
+this section contributes to the body of knowledge on model repair by introducing the notions of
+a repair recommendation, an (optimal) alignment-based repair of a model based on a given repair
+recommendation, and a na ¨ıve repair of a model. while a repair recommendation can be seen as an
+abstract speciﬁcation of what should be repaired in a model, an alignment-based repair of a model
+based on a given event log and a repair recommendation is any transformation of the model into its
+repaired version that guarantees that the recommended repairs are fulﬁlled and the event log ﬁts the
+repaired model at least as ‘good’ as it ﬁts the original model; an optimal repair recommendation
+acm transactions on software engineering and methodology, publication date: july 2016.1:12 a. polyvyanyy et al.
+in addition requires that the fact that the repair recommendation is fulﬁlled is evidenced in optimal
+alignments between traces in the event log and the repaired version of the original model. finally,
+a na¨ıve repair of a model is a model transformation that can be used to perform alignment-based
+repairs. this repair is based on simple model transformation rules, hence the name, and attempts to
+keep changes to the original model minimal.
+in some abstract sense, a model of a system can be seen as a collection of rules that guide
+occurrences of (observable) activities. in this light, a repair of a model of a system sw.r.t. an event
+loglis a transformation of rules of sthat results in a new model s′that modiﬁes the rules of s
+to allow executing certain activities in those contexts seen in lbut not captured in sand skipping
+(omitting) execution of certain activities in those contexts captured in sbut not seen in l. at this
+level of abstraction, every repair of model scan be characterized by two sets of labels rinsandrskp
+that represent those activities to insert and those to skip in the process instances of s, respectively,
+in order to obtain all the process instances of s′. to formally capture this characteristic of a model
+repair, we introduce the notion of a repair recommendation.
+definition 4.1(repair recommendation ).
+arepair recommendation is a pair r∶=(rins,rskp), where rins⊆aandrskp⊆aare ﬁnite sets of
+labels recommended for insertion andskipping , respectively. /un◾231f.alt1
+note that a repair recommendation does not specify the exact points in the net where repairs must be
+applied, but captures which issues should be addressed in a model repair exercise.
+when solving a model repair problem, one can rely on different measures for assessing ﬁtness
+between event logs and models, e.g., the cost of optimal alignment, cf. deﬁnition 3.7. in [fahland
+and van der aalst 2015], the authors propose a technique that given an event log land a net system
+suses optimal alignments between traces in land executions of sto automatically repair s. this
+technique relies on net system transformations that insert subprocesses, introduce loops, and remove
+unused or rarely used parts in net systems.
+from the point of view of an external observer, a model that is claimed to be a repaired version of
+a given model w.r.t. some event log should, intuitively, result in alignments between traces in the
+event log and executions of the repaired model that contain less costly moves on trace and moves
+on system (deﬁned for observable transitions) than alignments between traces in the event log and
+executions of the original model; as, indeed, these moves signify deviations between observed and
+modeled process instances. one can implement the above intuition for the comparison of alignments
+by comparing alignment costs, if these costs are computed as per some cost function that assigns
+zero costs to all moves that do not stand for a deviation. the lower the cost of an alignment the better
+is the match between the observed and modeled process instance. another useful observation is that
+deviations between a trace and an execution of a net system stem from the inability of one of the
+artifacts to mimic an event or activity, i.e., an observed label, of the other artifact and, thus, they are
+independent of identities of the underlying transition occurrences. considering the above and for the
+sake of simplifying the subsequent discussions, it is convenient to lift the concept of the cost function
+on legal moves from costs of individual transition occurrences to costs of observed labels.
+definition 4.2(cost of label moves ).
+acost function on label moves for events x⊆aand activities y⊆ais a function f∶(x×{≫})∪
+({≫}×y)→n. the cost function on legal moves over a net system s∶=(n,mini,mﬁn)∈s,n∶=
+(p,t,f,λ),induced by a cost function on label moves f∶(x×{≫})∪({≫}×y)→nis the function
+c∶ms→n0such that for every (x,y)∈msit holds that c(x,y)=f(x,≫)ifx∈xandy=≫;c(x,y)=
+f(≫,λ(y))ifx=≫,y∈t, and λ(y)∈y; otherwise c(x,y)=0. /un◾231f.alt1
+the cost function on legal moves induced by a cost function on label moves implements the
+above intuition by ensuring that costs of all the synchronous moves are equal to zero, and any two
+moves on system that are deﬁned for transitions that ‘carry’ the same label have the same cost.
+the standard cost function on label moves for events x⊆aand activities y⊆ais the function
+stdf∶(x×{≫})∪({≫}×y)→{1}. note that one can employ the standard cost function on label
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:13
+moves for events and activities z∶={a,b,c,d,e,f,g,h,x}to induce the standard cost function on
+legal moves over the net system in fig. 2 (under the assumption that a=z).
+every repair of a model is a transformation, but not every transformation is a repair! we deﬁne the
+notion of repair that relies on the (optimal) alignment when assessing ﬁtness as follows.
+definition 4.3((optimal )alignment -based repair).
+a net system s′∶=(n,mini,mﬁn)∈s,n∶=(p,t,f,λ), is the result of an alignment-based repair of
+a net system sw.r.t. an event log l∈b(a∗)as per a cost function on label moves fusing a repair
+recommendation r∶=(rins,rskp)if and only if there exists a function ψthat maps every trace υ∈l
+to an alignment in aυ
+s′such that:
+(i)l ﬁts s′at least as ‘good’ as it ﬁts s , i.e., for every trace υ∈lit holds that
+(c′○ψ)(υ)≤cost[υ,s,c], where candc′are the cost functions on legal moves over sands′
+induced by f, respectively, and
+(ii)s′fulﬁlls r , i.e., for every trace υ∈lit holds that:
+○for every label x∈rinsalignment ψ(υ)contains no move on trace (x,≫), and
+○for every label y∈rskpalignment ψ(υ)contains no move on system from the set
+{(≫,t)∈{≫}×t∣λ(t)=y},
+note that s′is the result of an optimal alignment-based repair ofsif and only if ψmaps every trace
+υ∈lto an optimal alignment in oυ
+s′,c′. /un◾231f.alt1
+we say that function ψjustiﬁes the fact that s′is the result of an (optimal) alignment-based repair of
+s. clearly, every optimal alignment-based repair is an alignment-based repair, while the converse
+does not necessarily always hold. an alignment-based repair of a system stransforms sinto a
+repaired system s′in such a way that for every trace υ∈lone can ﬁnd an alignment between υand
+s′which has an alignment cost equal to or lower than the cost of optimal alignment between υands,
+and which contains no moves that are recommended for repair by r. one consequence of the above
+observations is that every alignment-based repair of a system guarantees that the optimal alignment
+between the event log and the repaired system is at least as ‘good’ as the optimal alignment between
+the event log and the original system.
+corollary 4.4(alignment -based repair).
+if a net system s′∈sis the result of an alignment-based repair of a net system s∈sw.r.t. an event
+logl∈b(a∗)as per a cost function on label moves fusing a repair recommendation, then it holds
+that cost[l,s′,c′]≤cost[l,s,c], where c and c′are the cost functions on legal moves over s and s′
+induced by f , respectively. /un◾231f.alt1
+the proof of corollary 4.4 can be found in appendix a.
+two elementary repairs on net systems proposed in [fahland and van der aalst 2015] are the
+self-loop injection and the skip injection.
+definition 4.5(self-loop and skip injections ).
+lets∶=(n,mini,mﬁn)∈s,n∶=(p,t,f,λ), be a net system.
+○a net system s′∶=(n′,mini,mﬁn)∈s,n′∶=(p,t′,f′,λ′), is the result of self-loop injections in
+sfor a label a∈aat places in x⊆pif and only if there exists a set y, for which it holds that
+(p∪t)∩y=∅, and a bijective function f∶x→ysuch that t′=t∪y,f′=f∪f∪f−1, and
+λ′=λ∪{(y,a)∣y∈y}.
+○a net system s′∶=(n′,mini,mﬁn)∈s,n′∶=(p,t′,f′,λ′), is the result of skip injections insfor
+transitions in x⊆tif and only if there exists a set y, for which it holds that (p∪t)∩y=∅, and a
+bijective function f∶x→ysuch that t′=t∪y,f′=f∪{(p,y)∈p×y∣∃x∈x∶p∈●x∧f(x)=
+y}∪{( y,p)∈y×p∣∃x∈x∶f(x)=y∧p∈x●}, and λ′=λ∪{(y,τ)∣y∈y}. /un◾231f.alt1
+the system in fig. 3(b) is the result of self-loop injections in the system in fig. 3(a) for label xat
+places in{p3}, while the system in fig. 3(d) is the result of skip injections in the system in fig. 3(b)
+for transitions in{t4}. it is easy to see that different orders of the same repertoire of injections lead to
+the same resulting net system. for example, one indeed obtains the net system in fig. 3(d) as the
+acm transactions on software engineering and methodology, publication date: july 2016.1:14 a. polyvyanyy et al.
+ap1t1p2bc
+dep3
+p4p5t2t3
+t4t5
+(a)s1ap1t1p2bc
+dep3
+p4p5t2t3
+t4t5xt6
+(b)s2
+ap1t1p2bc
+dep3
+p4p5t2t3
+t4t5t6
+(c)s3ap1t1p2bc
+dep3
+p4p5t2t3
+t4t5xt6
+t7
+(d)s4
+fig. 3: four net systems: (a) s1, (b) s2is the result of self-loop injections in s1for labelxat places
+in{p3}, (c) s3is the result of skip injections in s1for transitions in{t4}, and (d) s4is the result of
+skip injections in s2for transitions in{t4}.
+result of self-loop injections in the net system in fig. 3(c) for label xat places in{p3}, where the net
+system in fig. 3(c) is the result of skip injections in the net system in fig. 3(a) for transitions in {t4}.
+note that all the ‘injected’ transitions are highlighted with grey background in figs. 3(a)–3(d).
+one can repair a net system sw.r.t. a given event log lby injecting (i) self-loops for those labels
+for which there exist moves on trace and (ii) skips for those observable transitions of sfor which
+there exist moves on system in optimal alignments between traces in lands, cf. [fahland and van der
+aalst 2015]. however, it is a challenging task to decide which injections (out of all possible ones) to
+introduce as many of them may be redundant. the approach we take in this work to decide which
+self-loop and/or skip injections to apply in a given net system requires the reader to become familiar
+with the notion of a minimal hitting set. given a collection of sets c, a set which intersects all sets in c
+in at least one element is called a hitting set ofc. given the set of sets d∶={{1,2,5},{2,4,5},{2,3}},
+the sets{2},{3,5}, and{1,3,4}are examples of hitting sets of d. a hitting set of smallest size is
+known as a minimal hitting set . by mhs, we denote a function that maps every collection of sets to
+one of its minimal hitting sets. for example, it holds that mhs(d)={2}. the problem of ﬁnding a
+minimal hitting set is equivalent to the set covering problem, which is shown to be np-complete
+in [karp 1972]. this problem can be solved using the technique proposed in [wotawa 2001].
+we are now in a position to propose the notion of a na ¨ıve repair of a net system.
+definition 4.6(na¨ive repair).
+a net system s′∈sis the result of a na¨ıve repair of a net system s∶=(n,mini,mﬁn)∈s,n∶=(p,t,f,λ),
+based on the alignments in the image of a function φ, which maps every trace υin an event log
+l∈b(a∗)to some alignment in aυ
+s, using a repair recommendation r∶=(rins,rskp)if and only
+if there exist two sequences of labels α∶=⟨α1,α2,..., αn⟩andβ∶=⟨β1,β2,..., βm⟩, for which it
+holds that set(α)=rins,/d◾v◾d⟩s.alt0α/d◾v◾d⟩s.alt0=/d◾v◾d⟩s.alt0rins/d◾v◾d⟩s.alt0,set(β)=rskp, and/d◾v◾d⟩s.alt0β/d◾v◾d⟩s.alt0=/d◾v◾d⟩s.alt0rskp/d◾v◾d⟩s.alt0, and a sequence of systems
+⟨s0,s1,..., sn,sn+1,..., sn+m⟩such that s0=s,sn+m=s′, for every si,i∈[1..n], it holds that si
+is the result of self-loop injections in si−1for label αiat places in mhs({x⊆p∣∃m∈b(p)∃υ∈
+l∃k∈[1../d◾v◾d⟩s.alt0φ(υ)/d◾v◾d⟩s.alt0]∶x=set(m)∧(n,mini)[((π2○φ)(υ))[k−1]/d◾v◾d⟩s.alt0t⟩(n,m)∧(φ(υ))k=(αi,≫)}), and
+for every sn+j,j∈[1..m]it holds that it is the result of skip injections in sn+j−1for transitions in
+{t∈t∣∃υ∈l∃k∈[1../d◾v◾d⟩s.alt0φ(υ)/d◾v◾d⟩s.alt0]∶( φ(υ))k=(≫,t)∧λ(t)=βj}. /un◾231f.alt1
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:15
+ap1
+cdb
+f
+g
+h et1t2
+t3
+t4t5
+t6t7t8
+t9
+t10t11p2p3
+p4p5p6p7
+p8p9
+p10p11
+t12t13
+t14xf
+et15
+t16t17
+fig. 4: a net system obtained as the result of a na ¨ıve repair of the net system in fig. 2 using repair
+recommendation r∶=({e,f,x},{c,f,g}).
+note that one can replace the order of injections employed in the above deﬁnition with any other
+order, as it does not inﬂuence the end result.
+fig. 4 shows a net system that is obtained as the result of a na ¨ıve repair of the net system
+s∶=(n,mini,mﬁn),n∶=(p,t,f,λ), in fig. 2 using repair recommendation r∶=({e,f,x},{c,f,g}).
+the repair is based on the alignments in the image of function φthat maps traces in event log l3
+from section 2.3 to optimal alignments (as per the standard cost function on legal moves over
+s) between these traces and sas follows. let υ1∶=⟨a,b,c,f,d,e,f⟩,υ2∶=⟨a,c,d,c,e,d,g,f⟩,
+υ3∶=⟨a,b,c,d,e,x,c,h,a⟩,υ4∶=⟨c,d,d,f,e,g⟩,υ5∶=⟨a,b⟩,υ6∶=⟨a,b,c,d,e,d,f⟩, and υ7∶=
+⟨a,b,c,d,e,b,c,d,g⟩. then, φ∶={(υ1,γ1
+0),(υ2,γ2
+0),(υ3,γ3
+0),(υ4,γ4
+0),(υ5,γ5
+0),(υ6,γ6
+0),(υ7,γ7
+0)},
+where the optimal alignments γ1
+0–γ7
+0are listed below.
+γ1
+0∶=abcfd≫ef≫≫
+abc≫dτ≫fgτ
+t1t2t4 t5t7 t8t9t11γ2
+0∶=ac≫dce≫≫d≫gf≫
+acτd≫eτcdτgfτ
+t1t4t3t5 t6t3t4t5t7t9t8t11
+γ3
+0∶=abcdexc≫≫ha
+abcde≫cτdh≫
+t1t2t4t5t6 t4t3t5t10γ4
+0∶=≫c≫d≫dfeg≫
+acτdτ≫f≫gτ
+t1t4t3t5t7 t8 t9t11
+γ5
+0∶=ab≫≫≫
+abcdh
+t1t2t4t5t10γ6
+0∶=abcde≫≫d≫f≫≫
+abcdeτcdτfgτ
+t1t2t4t5t6t3t4t5t7t8t9t11
+γ7
+0∶=abcdebcd≫g≫≫
+abcdebcdτgfτ
+t1t2t4t5t6t2t4t5t7t9t8t11
+the fact that the net system in fig. 4 is the result of a na ¨ıve repair of sis justiﬁed by the
+existence of two sequences of labels α∶=⟨e,f,x⟩andβ∶=⟨c,f,g⟩and one sequence of net systems
+⟨s0,s1,s2,s3,s4,s5,s6⟩, where s0=s,s6is the net system in fig. 4, s1is the result of self-loop
+injections in s0for labeleat places in{p8},s2is the result of self-loop injections in s1for label
+fat places in{p3},s3is the result of self-loop injections in s2for labelxat places in{p4},s4is
+the result of skip injections in s3for transitions in{t4},s5is the result of skip injections in s4for
+transitions in{t8}, and ﬁnally s6is the result of skip injections in s5for transitions in{t9}.
+the places and transitions at which self-loop and for which skip injections, respectively, are
+performed in s, were identiﬁed based on the alignments γ1
+0–γ7
+0. for example, s1is obtained from s0
+acm transactions on software engineering and methodology, publication date: july 2016.1:16 a. polyvyanyy et al.
+as the result of self-loop injections at places in {p8}because it holds that mhs({{p7,p8},{p8,p9}})=
+{p8}, where{p7,p8}and{p8,p9}are places that are ‘marked’, i.e., contain at least one token, in the
+markings[p7,p8]and[p8,p9], which are the markings that are reachable from minivia occurrence
+sequences σ1∶=⟨t1,t2,t4,t5,t7⟩andσ2∶=⟨t1,t4,t3,t5,t7,t8⟩inn, respectively. note that it holds that
+σ1=((π2○φ)(υ1))[6]/d◾v◾d⟩s.alt0tandσ2=((π2○φ)(υ4))[7]/d◾v◾d⟩s.alt0t; the 6-th and 7-th preﬁx are used because γ1
+0
+andγ4
+0contain move on trace (e,≫)at positions 7 and 8, respectively. note also that s4is the result
+of skip injections in s3for transitions in{t4}because of the existence of trace υ2which contains
+move on system(≫,t4)such that λ(t4)=c, and there exists no other transition t∈t,t≠t4, for which
+some of the seven alignments proposed above contains move on system (≫,t)andλ(t)=c.
+the above examples reveal the rationale behind the design of the notion of a na ¨ıve repair, which is
+to perform the least number of self-loop and/or skip injections possible for every move on trace and/or
+every move on system observed in the given collection of alignments and deﬁned on labels that are
+recommended for repair. the injections guarantee that moves on trace and/or moves on system that
+are requested to be repaired can be mimicked by the repaired net system and/or trace, respectively, in
+the alignments that follow similar paths through the repaired net system as the alignments that were
+used to perform the na ¨ıve repair.
+letcbe the cost function on legal moves over the net system sshown in fig. 2 induced
+by the standard cost function stdf on label moves for events z∶={a,b,c,d,e,f,g,h,x}and
+activities z∖{x}. then, cis the standard cost function on legal moves over system sfor
+which it holds that c=(z×{≫})×{ 1}∪({≫}×{t3,t7,t11})×{ 0}∪({≫}×(t∖{t3,t7,t11}))×{ 1}∪
+{((a,t1),0),((b,t2),0),((c,t4),0),((d,t5),0),((e,t6),0),((f,t8),0),((g,t9),0),((h,t10),0)}. using the op-
+timal alignments γ1
+0–γ7
+0proposed above, the reader can now verify that cost[υ1,s,c]=3,
+cost[υ2,s,c]=2,cost[υ3,s,c]=3,cost[υ4,s,c]=3,cost[υ5,s,c]=3,cost[υ6,s,c]=2, and
+cost[υ7,s,c]=1. thus, cost[l3,s,c]=10×3+9×2+9×3+7×3+6×3+2×2+2×1=120.
+let c′be the cost function on legal moves over the net system s′in fig. 4 in-
+duced by stdf. then, c′is the standard cost function on legal moves over s′for which
+it holds that c′=c∪({≫}×{ t14,t15,t17})×{ 0}∪({≫}×{ t12,t13,t16})×{ 1}∪{((x,t12),0),
+((f,t13),0),((e,t16),0)}. the reader can ﬁnd an optimal alignment between every trace in l3
+ands′as per cost function c′listed below.
+γ1
+1∶=abcfd≫ef≫≫
+abcfdτefττ
+t1t2t4t13t5t7t16t8t17t11γ2
+1∶=ac≫dce≫≫d≫gf≫
+acτd≫eττdτgfτ
+t1t4t3t5 t6t3t14t5t7t9t8t11
+γ3
+1∶=abcdexc≫≫ha
+abcdexcτdh≫
+t1t2t4t5t6t12t4t3t5t10γ4
+1∶=≫c≫d≫dfeg≫
+acτdτ≫fegτ
+t1t4t3t5t7 t8t16t9t11
+γ5
+1∶=ab≫≫≫≫≫≫
+abτdττττ
+t1t2t14t5t7t15t17t11γ6
+1∶=abcde≫≫d≫f≫≫
+abcdeττdτfττ
+t1t2t4t5t6t3t14t5t7t8t17t11
+γ7
+1∶=abcdebcd≫g≫≫
+abcdebcdτgττ
+t1t2t4t5t6t2t4t5t7t9t15t11
+using the optimal alignments γ1
+1–γ7
+1shown above, the reader can easily verify that indeed
+cost[υ1,s′,c′]=0,cost[υ2,s′,c′]=1,cost[υ3,s′,c′]=2,cost[υ4,s′,c′]=2,cost[υ5,s′,c′]=1,
+cost[υ6,s′,c′]=0, and cost[υ7,s′,c′]=0. thus, it holds that cost[l3,s′,c′]=10×0+9×1+9×
+2+7×2+6×1+2×0+2×0=47.
+six out of seven alignments γ1
+1–γ7
+1proposed above follow paths in the repaired model that are
+similar to those followed by alignments γ1
+0–γ7
+0in the original model. for example, alignment
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:17
+γ1
+1follows a path that is similar to that followed by γ1
+0as one can construct alignment γ1
+1from
+alignment γ1
+0by replacing moves (f,≫),(e,≫), and(≫,t9), with moves(f,t13),(e,t16), and
+(≫,t17), respectively, i.e., with moves that are deﬁned for the transitions injected in the repaired
+model. note that alignment γ5
+1does not follow the path of alignment γ5
+0as, due to the repair, there
+exists a more optimal alignment that follows the path via injected transitions t15andt17.
+lets′∈sbe the result of a na ¨ıve repair of a net system s∈sbased on a set of alignments γ. then,
+for every alignment γ∈γthere exists a unique alignment that follows a path in s′that is similar to
+the path followed by γins. we denote this alignment by similar[γ,s,s′]. for example, it holds that
+similar[γ1
+0,s,s′]=γ1
+1, where sands′are net systems in fig. 2 and fig. 4, respectively.
+the net system s′∶=(n′,mini,mﬁn),n′∶=(p,t′,f′,λ′), in fig. 4 is the result of an op-
+timal alignment-based repair of the net system sin fig. 2, cf. deﬁnition 4.3. let ψ∶=
+{(υ1,γ1
+1),(υ2,γ2
+1),(υ3,γ3
+1),(υ4,γ4
+1),(υ5,γ5
+1),(υ6,γ6
+1),(υ7,γ7
+1)}be a function that maps traces to
+alignments. then, one can employ function ψto justify that: (i) l3ﬁtss′at least as ‘good’ as
+it ﬁts s(and in fact strictly ‘better’ than it ﬁts s) as obviously(c′○ψ)(υ1)<cost[υ1,s,c](be-
+cause 0<3),(c′○ψ)(υ2)<cost[υ2,s,c](1<2),(c′○ψ)(υ3)<cost[υ3,s,c](2<3),(c′○ψ)(υ4)<
+cost[υ4,s,c](2<3),(c′○ψ)(υ5)<cost[υ5,s,c](1<3),(c′○ψ)(υ6)<cost[υ6,s,c](0<2), and
+ﬁnally(c′○ψ)(υ7)<cost[υ7,s,c](0<1); note that as one of the consequences of the above ob-
+servations it must hold that cost[l3,s′,c′]≤cost[l3,s,c], cf. corollary 4.4. in fact, it holds that
+cost[l3,s′,c′]<cost[l3,s,c]as, indeed, 47is less than 120. (ii) s′fulﬁlls repair recommendation
+({e,f,x},{c,f,g}), because for every trace υ∈l3it holds that ψ(υ)contains no move (x,≫),
+x∈{e,f,x}, and no move(≫,y),y∈t′, such that λ′(y)∈{c,f,g}.
+not every na ¨ıve repair results in an optimal alignment-based repair of the system, even if
+performed based on optimal alignments. we demonstrate this using the system s1in fig. 3(a), event
+logl∶=[⟨a,b,x,e⟩,⟨a,e⟩], cost function on label moves f∶={((a,≫),1),((b,≫),1),((e,≫),1),
+((x,≫),1),((≫,a),1),((≫,b),1),((≫,c),2),((≫,d),3),((≫,e),1),((≫,x),1)}, and repair
+recommendation r∶=({x},{d}). the optimal alignments between traces in lands1as per the
+cost function con legal moves over s1induced by fare given below; it holds that c={((a,≫),1),
+((b,≫),1),((e,≫),1),((x,≫),1),((≫,t1),1),((≫,t2),1),((≫,t3),2),((≫,t4),3),((≫,t5),1),
+((a,t1),0),((b,t2),0),((c,t3),0),((d,t4),0),((e,t5),0)}.
+γ1
+2∶=abx≫e
+ab≫c≫
+t1t2 t3γ2
+2∶=a≫e
+ade
+t1t4t5
+alignment γ1
+2is one out of three optimal alignments between trace ⟨a,b,x,e⟩ands1, while γ2
+2is
+the only optimal alignment between trace ⟨a,e⟩ands1. it holds that c(γ1
+2)=4andc(γ2
+2)=3. the
+result of a na ¨ıve repair of s1based on optimal alignments γ1
+2andγ2
+2using repair recommendation r
+is the net system s4in fig. 3(d). let c′be the cost function on legal moves over s4induced by f.
+then, it holds that c′=c∪{((x,t6),0),((≫,t7),0)}. the optimal alignments between the two traces
+in event log land net system s4as per cost function c′are listed below.
+γ1
+3∶=a≫bxe
+aτ≫≫e
+t1t7 t5γ2
+3∶=a≫e
+aτe
+t1t7t5
+using these alignments, one can verify that c′(γ1
+3)=2and c′(γ2
+3)=0. thus, function ψ∶=
+{(⟨a,b,x,e⟩,γ1
+3),(⟨a,e⟩,γ2
+3)}justiﬁes the fact that lﬁtss4at least as ‘good’ as (and in fact ‘better’
+than) it ﬁts s1. however, ψdoes not justify the fact that s4fulﬁlls r; note that alignment γ1
+3contains
+move on trace(x,≫)which is recommended for repair by r. nevertheless, net system s4is the result
+of an alignment-based repair of s1. this is justiﬁed by function ψ′∶={(⟨a,b,x,e⟩,γ),(⟨a,e⟩,γ2
+3)},
+acm transactions on software engineering and methodology, publication date: july 2016.1:18 a. polyvyanyy et al.
+where γ∶=⟨(a,t1),(b,t2),(x,t6),(≫,t3),(e,≫)⟩,c′(γ)=3, is a non-optimal alignment between trace
+⟨a,b,x,e⟩ands4; note that γfollows a path that is similar to the path of γ1
+2.
+in fact, every na ¨ıve repair of a given net system based on a collection of optimal alignments always
+results in an alignment-based repair; one can justify this fact using a function that maps traces to
+alignments that follow similar paths as those followed by the optimal alignments. this observation is
+crystallized in the next statement, the proof of which can be found in appendix a.
+lemma 4.7(alignment -based repair).
+if a net system s′∈sis the result of a na ¨ıve repair of a net system s∈sbased on the alignments in the
+image of a function φ, which maps every trace υin an event log l∈b(a∗)to an optimal alignment
+inoυ
+s,c, using a repair recommendation r, where cis the cost function on legal moves over sinduced
+by a cost function on label moves f, then s′is the result of an alignment-based repair of sw.r.t.
+l as per f using r. /un◾231f.alt1
+5. optimal model repair recommendation
+in this section, we deﬁne and motivate a new problem in process mining—the problem of optimal
+model repair recommendation , which refers to the following problem: given a model of a distributed
+system s, e.g., a net system, and an event log lthat does not ﬁt s, among all possible repair recom-
+mendations, cf. deﬁnition 4.1, that satisfy some given constraint cﬁnd a repair recommendation r
+such that a model s′obtained by repairing susing (and fulﬁlling) ris such that lﬁtss′at least as
+‘good’ as it ﬁts any other model obtained by repairing susing any other repair recommendation that
+satisﬁes c. note that ﬁnding a solution to an optimal model repair recommendation problem is not
+about constructing a repaired version of a given model, but is rather about identifying a repair recom-
+mendation that when implemented in the given model, e.g., as some transformation of the model,
+will have the best impact on ﬁtness. furthermore, this section demonstrates that na ¨ıve repairs can be
+used to implement optimal alignment-based repairs when are based on optimal alignments as per a
+special cost function on legal moves. finally, this section introduces the notion of an optimal repair
+recommendation, i.e., a recommendation that when used to perform an optimal alignment-based
+repair of a model leads to a repaired model that has the ‘best’ ﬁt with the given event log.
+the problem of optimal model repair recommendation is an optimization problem of ﬁnding
+the best repair recommendation from all feasible repair recommendations. one can often assess
+the feasibility of a solution to an optimization problem by associating it with a numeric value and
+comparing this value with a given threshold. we rely on the concept of a repair constraint to induce
+the set of all feasible repair recommendations.
+definition 5.1(repair constraint ).
+arepair constraint is a triple c∶=(cins,cskp,res), where cins∶a→n0andcskp∶a→n0are functions
+that assign costs of inserting andskipping activities to labels, respectively, and res∈n0is the amount
+of available repair resources . /un◾231f.alt1
+functions cinsandcskpspecify the costs of including labels into a repair recommendation. a repair
+constraint is standard iff both images of cinsandcskpare equal to{1}.
+given a repair recommendation r∶=(rins,rskp)and a repair constraint c∶=(cins,cskp,res), by
+cost[r,c], we denote the cost of ras per repair constraint c, which is deﬁned as cost[r,c]∶=
+∑r∈rinscins(r)+∑r∈rskpcskp(r). then, ris afeasible solution to an optimal model repair recommen-
+dation problem restricted by cif it holds that its cost does not exceed available repair resources,
+i.e.,cost[r,c]≤res. thus, one can rely on the notion of a repair constraint to formulate an optimal
+model repair recommendation problem to search for a repair recommendation within the available
+repair resources that has the best impact on ﬁtness between the event log and the repaired model.
+we have observed that one can simulate the effect of an alignment-based repair of a net system
+s∈sw.r.t. an event log l∈b(a∗)as per some cost function on label moves fusing a repair
+recommendation rwithout performing actual transformations on s. indeed, by setting costs of
+certain moves in the cost function on legal moves induced by fto be equal to zero one eliminates the
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:19
+ap1t1p2bc
+dep3
+p4p5t2t3
+t4t5t7
+xt6
+fig. 5: net system s5.
+effect of these moves on the costs of optimal alignments between traces in landsin a similar way
+as if shas been transformed to cater for these moves. consequently, in order to simulate the effect of
+performing an alignment-based repair of susing r, one needs to ‘adjust’ the costs of all the moves
+that are recommended for repair by r. this can be accomplished using the notion of the adjusted
+cost function proposed below.
+definition 5.2(adjusted cost of label moves ).
+theadjusted cost function on label moves induced by a cost function on label moves ffor events
+x⊆aand activities y⊆ausing a repair recommendation r∶=(rins,rskp)is the restriction of fto
+((x∖rins)×{≫})∪({≫}×(y∖rskp)), denoted by f/d◾v◾d⟩s.alt0r. /un◾231f.alt1
+letl∈b(a∗)be an event log, let rbe a repair recommendation, and let fbe a cost function on label
+moves. an optimal alignment between a trace υ∈land a net system s∈sas per the cost function c
+on legal moves over sinduced by f/d◾v◾d⟩s.alt0rhints at the fact that one can use rto repair sinto a fresh net
+system s′such that the cost of optimal alignment between υands′as per the cost function on legal
+moves over s′induced by fis as good as the cost of optimal alignment between υandsas per c.
+the next statement justiﬁes this fact by pointing to one such repair.
+theorem 5.3(optimal alignment -based repair).
+if a net system s′∈sis the result of a na ¨ıve repair of a net system s∈sbased on the alignments in
+the image of a function φusing a repair recommendation r, where φmaps every trace υin an event
+logl∈b(a∗)to an alignment in oυ
+s,c,cis the cost function on legal moves over sinduced by f/d◾v◾d⟩s.alt0r,f
+is a cost function on label moves, then s′is the result of an optimal alignment-based repair of sw.r.t.
+l as per f using r. /un◾231f.alt1
+the proof of theorem 5.3 can be found in appendix a.
+we exemplify implications of theorem 5.3 by extending the discussion of the example proposed at
+the end of section 4. let f∶={((a,≫),1),((b,≫),1),((e,≫),1),((x,≫),1),((≫,a),1),((≫,b),1),
+((≫,c),2),((≫,d),3),((≫,e),1),((≫,x),1)}be a cost function on label moves. net system s5in
+fig. 5 is the result of a na ¨ıve repair of net system s1in fig. 3(a) based on the alignments in the
+image of function φ∶={(⟨a,b,x,e⟩,γ1
+4),(⟨a,e⟩,γ2
+4)}using repair recommendation r∶=({x},{d});
+the ‘injected’ transitions are highlighted with grey background in the ﬁgure.
+γ1
+4∶=a≫bxe
+ad≫≫e
+t1t4 t5γ2
+4∶=a≫e
+ade
+t1t4t5
+alignments γ1
+4andγ2
+4shown above are two optimal alignments constructed between two traces
+⟨a,b,x,e⟩and⟨a,e⟩and the system s1in fig. 3(a) as per the cost function con legal moves over s1
+induced by f/d◾v◾d⟩s.alt0r. note that it holds that f/d◾v◾d⟩s.alt0requals{((a,≫),1),((b,≫),1),((e,≫),1),((≫,a),1),
+((≫,b),1),((≫,c),2),((≫,e),1),((≫,x),1)}. thus, according to deﬁnition 4.2, c={((a,≫),1),
+((b,≫),1),((e,≫),1),((x,≫),0),((≫,t1),1),((≫,t2),1),((≫,t3),2),((≫,t4),0),((≫,t5),1),
+((a,t1),0),((b,t2),0),((c,t3),0),((d,t4),0),((e,t5),0)}, and c(γ1
+4)=1 and c(γ2
+4)=0.
+acm transactions on software engineering and methodology, publication date: july 2016.1:20 a. polyvyanyy et al.
+note that net system s5in fig. 5 is, indeed, the result of a na ¨ıve repair of s1∶=(n,mini,mﬁn),
+n∶=(p,t,f,λ), as it is the result of skip injections for transitions in {t4}in the net system that, in
+turn, is obtained as the result of self-loop injections in s1for labelxat places in{p4}. the self-loop
+injections for label xare performed at places in {p4}because there exist marking [p4]and only
+one alignment γ1
+4in the image of φwith only one move on trace (x,≫)at position 4such that
+π2(γ1
+4)[3]/d◾v◾d⟩s.alt0t=⟨t1,t4⟩,(n,mini)[⟨t1,t4⟩⟩(n,[p4]),set([p4])={p4}, and mhs({{p4}})={p4}. the
+skip injections are performed for transitions in {t4}, because the two moves on system (≫,t4),
+λ(t4)=d, both at position 2 in optimal alignments γ1
+4andγ2
+4, are the only moves on system deﬁned
+for labeldin all the alignments in the image of φ.
+thus, according to theorem 5.3, s5is the result of an optimal alignment-based repair of s1w.r.t.
+l∶=[⟨a,b,x,e⟩,⟨a,e⟩]as per fusing r. one can use function ψ∶={(⟨a,b,x,e⟩,γ1
+5),(⟨a,e⟩,γ2
+5)}
+to justify this claim, where γ1
+5andγ2
+5are optimal alignments between traces in lands5listed below.
+γ1
+5∶=a≫bxe
+aτ≫xe
+t1t7 t6t5γ2
+5∶=a≫e
+aτe
+t1t7t5
+one can easily verify that (i) g′(γ1
+5)<g(γ1
+2)because 1<4andg′(γ2
+5)<g(γ2
+2)because 0<3, where
+gandg′are the cost functions on legal moves over s1ands5induced by f, respectively, and, thus,
+lﬁtss5at least as ‘good’ as (and in fact ‘better’ than) it ﬁts s1, and (ii) s5fulﬁlls ras neither γ1
+5
+norγ2
+5contain moves that are recommended for repair by r. note that alignments γ1
+5andγ2
+5follow
+paths in s5that are similar to those followed by alignment γ1
+4andγ2
+4ins1, respectively.
+as demonstrated above, one can use adjusted cost functions to ‘guide’ optimal alignment-based
+repairs of net systems. we also use adjusted cost functions to deﬁne the concept of an optimal
+alignment-based repair recommendation.
+definition 5.4(optimal repair recommendation ).
+anoptimal repair recommendation for a net system s∈sw.r.t. an event log l∈b(a∗)as
+per a cost function on label moves frestricted by a repair constraint c∶=(cins,cskp,res)is a repair
+recommendation rsuch that cost[r,c]≤resand for every repair recommendation x,cost[x,c]≤res,
+it holds that cost[l,s,cr]≤cost[l,s,cx], where crandcxare the cost functions on legal moves
+over sinduced by f/d◾v◾d⟩s.alt0randf/d◾v◾d⟩s.alt0x, respectively. /un◾231f.alt1
+an optimal repair recommendation r∶=(rins,rskp)forsw.r.t. las per frestricted by cis said to be
+minimal iff there exists no other optimal repair recommendation x∶=(xins,xskp)forsw.r.t. las per
+frestricted by csuch that xins⊆rinsandxskp⊆rskpandx≠r. byr[s,l,f,c]andrmin[s,l,f,c],
+we denote the set of all optimal and the set of all minimal optimal repair recommendations for sw.r.t.
+las per frestricted by c, respectively.
+letfbe a cost function on label moves. a feasible repair recommendation runder the given
+constraint cis optimal for a net system sif there exist no other feasible repair recommendation x
+under cfor which the cost of optimal alignment between the given event log landsas per the
+cost function on legal moves over sinduced by f/d◾v◾d⟩s.alt0xis ‘cheaper’ than the cost of optimal alignment
+between landsas per the cost function on legal moves over sinduced by f/d◾v◾d⟩s.alt0r. note that the cost of
+optimal alignment between landsas per the cost function on legal moves induced by f/d◾v◾d⟩s.alt0rcan be
+used to determine the cost of optimal alignment between land the repaired version of sas per the
+cost function on legal moves induced by f.
+lemma 5.5(optimal alignment -based repair).
+if a net system s′∈sis the result of a na ¨ıve repair of a net system s∈sbased on the alignments in
+the image of a function φusing a repair recommendation r, where φmaps every trace υin an event
+logl∈b(a∗)to an alignment in oυ
+s,c,cis the cost function on legal moves over sinduced by f/d◾v◾d⟩s.alt0r,
+andfis a cost function on label moves, then it holds that cost[l,s,c]=cost[l,s′,c′], where c′is the
+cost function on legal moves over s′induced by f . /un◾231f.alt1
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:21
+ap1
+cdb
+f
+g
+h et1t2
+t3
+t4t5
+t6t7t8
+t9
+t10t11p2p3
+p4p5
+p6p7
+p8p9
+p10
+p11
+t13t12
+fx
+t14
+ft15
+t16t17
+t18
+fig. 6: a net system obtained as the result of a na ¨ıve repair of the net system in fig. 2 using repair
+recommendation r∶=({f,x},{d,e,c,h}).
+the proof of lemma 5.5 can be found in appendix a.
+finally, if one performs an optimal alignment-based repair w.r.t. a given event log lusing an
+optimal repair recommendation, then one obtains a repaired model that exhibits the best cost of
+optimal alignment with lamong all the costs of optimal alignments between land models that are
+obtained as alignment-based repairs using feasible repair recommendations.
+corollary 5.6(optimal alignment -based repair).
+if a net system s′∈sis the result of a na ¨ıve repair of a net system s∈sbased on the alignments in
+the image of a function φusing a repair recommendation r∈r[s,l,f,c], where fis a cost function
+on label moves, φmaps every trace υin an event log l∈b(a∗)to an alignment in oυ
+s,c,cis the cost
+function on legal moves over sinduced by f/d◾v◾d⟩s.alt0r, and c∶=(cins,cskp,res)is a repair constraint, then for
+every repair recommendation xsuch that cost[x,c]≤resit holds that cost[l,s′,c′]≤cost[l,s′′,c′′],
+where s′′∈sis the result of a na ¨ıve repair of sbased on φusing x,c′is the cost function on legal
+moves over s′induced by f , and c′′is the cost function on legal moves over s′′induced by f ./un◾231f.alt1
+corollary 5.6 follows immediately from deﬁnition 5.4 and lemma 5.5.
+letc∶=(cins,cskp,6)be the standard repair constraint deﬁned under the assumption that a=
+{a,b,c,d,e,f,g,h,x}. then,({f,x},{d,e,c,h})∈rmin[s,l3,f,c], where sis the net system in
+fig. 2, l3is the event log from section 2.3, and fis the standard cost function on label moves for
+events and activities a.
+fig. 6 shows system s′′obtained as a result of a na ¨ıve repair of net system sin fig. 2 using minimal
+optimal repair recommendation r∶=({f,x},{d,e,c,h}); the ‘injected’ transitions are highlighted
+with grey background. this repair is performed based on optimal alignments between traces in l3
+andsas per the cost function on legal moves over sinduced by f. optimal alignments between
+traces in l3ands′′as per the cost function con legal moves over s′′induced by fare listed below.
+γ1
+6∶=abcfde≫f≫≫≫
+abcfdeτfτττ
+t1t2t4t13t5t6t16t13t3t17t18
+γ2
+6∶=ac≫d≫c≫≫e≫≫d≫gf≫
+acτdτcττeττdτgfτ
+t1t4t3t5t15t4t3t17t6t3t16t5t7t9t8t11
+γ3
+6∶=abcdexc≫≫ha
+abcdexcττh≫
+t1t2t4t5t6t12t4t3t17t10γ4
+6∶=≫c≫d≫≫≫d≫feg≫
+acτdτττdτf≫gτ
+t1t4t3t5t15t3t16t5t7t8 t9t11
+acm transactions on software engineering and methodology, publication date: july 2016.1:22 a. polyvyanyy et al.
+γ5
+6∶=ab≫≫≫
+abτττ
+t1t2t16t17t18γ6
+6∶=abcde≫≫d≫f
+abcdeττdτf
+t1t2t4t5t6t3t16t5t18t14
+γ7
+6∶=abcdebcd≫g
+abcdebcdτ≫
+t1t2t4t5t6t2t4t5t18
+one can verify that c(γ1
+6)=0,c(γ2
+6)=0,c(γ3
+6)=1,c(γ4
+6)=2,c(γ5
+6)=0,c(γ6
+6)=0, and c(γ7
+6)=1,
+and, thus, it holds that cost[l3,s′′,c]=10×0+9×0+9×1+7×2+6×0+2×0+2×1=25. according
+to corollary 5.6, there exists no feasible repair recommendation xunder csuch that for net system ¯s
+obtained as the result of a na ¨ıve repair of sbased on the same alignments that are employed to repair
+s′′using xit holds that l3ﬁts¯sbetter than it ﬁts s′′. for example, as demonstrated in section 4,
+the cost of optimal alignment between l3and net system s′in fig. 4 that is repaired using repair
+recommendation({e,f,x},{c,f,g}), which is a feasible repair recommendation under c, equals 47.
+clearly, it holds that ({e,f,x},{c,f,g})/slash.l⟩ft∈r[s,l3,f,c].
+in the next section, we discuss issues concerning discovery and approximation of minimal optimal
+repair recommendations for net systems.
+6. searching model repair recommendations
+this section discusses techniques that given a net system, an event log, a cost function on label
+moves and a repair constraint, discover (approximate) solutions to the optimal model repair rec-
+ommendation problem stated in the previous section. the section starts with deﬁnitions of some
+algebraic operations and relations on repair recommendations, cf. section 6.1. these introduced
+concepts are used to simplify subsequent presentations of the proposed search techniques. section 6.2
+presents the exhaustive search method for solving the optimal model repair recommendation problem,
+whereas sections 6.3–6.5 devise techniques capable of discovering viable minimal optimal repair
+recommendations using efﬁcient approximation schemes. section 6.6 summarizes this section.
+6.1. algebra of repair recommendations
+letr1∶=(r1
+ins,r1
+skp)andr2∶=(r2
+ins,r2
+skp)be two repair recommendations. if every element in r1
+ins
+is also an element in r2
+insand every element in r1
+skpis also an element in r2
+skp, then we say that
+r1is contained in r2, written r1⊑r2. equivalently, one can write r2⊒r1; must be read as r2
+contains r1. ifr1is contained in r2and is not equal to r2, then r1isproperly contained in r2,
+denoted by r1⊏r2. equivalently, one can write r2⊐r1to say that r2properly contains r1. the
+relations between repair recommendations established by ‘ ⊑’ and ‘⊏’ are called containment and
+proper containment , respectively. the containment relation over a set of repair recommendations is
+a partial order, i.e., ‘ ⊑’ is reﬂexive, antisymmetric, and transitive. let r∶=p(a)×p(a)be the set
+of all possible repair recommendations deﬁned over a. then,(r,⊑)is a lattice. indeed, for every
+two repair recommendations r1,r2∈r, such that r1∶=(r1
+ins,r1
+skp)andr2∶=(r2
+ins,r2
+skp), it holds that
+r1∩r2∶=(r1
+ins∩r2
+ins,r1
+skp∩r2
+skp)andr1∪r2∶=(r1
+ins∪r2
+ins,r1
+skp∪r2
+skp)are the greatest lower bound
+and the least upper bound of r1andr2, respectively.
+letx⊆r, byxminandxmaxwe denote the set of all minimal and the set of all maximal (as per
+the containment relation) elements in x, respectively.
+6.2. brute-force search
+brute-force search, or an exhaustive search, is a problem solving technique that consists of systemati-
+cally enumerating and checking all possible candidate solutions with the purpose of identifying those
+solutions that satisfy the problem statement.
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:23
+algorithm 1: bruteforcerecommendationsearch (s,l,f,c)
+input : a net system s, an event log l, a cost function on label moves f, and
+a repair constraint c∶=(cins,cskp,res).
+output : an ordered pair composed of the set of all minimal optimal repair recommendations for sw.r.t. las
+perfrestricted by c, i.e.,rmin[s,l,f,c], and the cost of optimal alignment optcost between lands
+such that∀r∈rmin[s,l,f,c]∶cost[l,s,cr]=optcost , where cris the cost function on legal moves
+over sinduced by f/divides.alt0r.
+1optcost∶=+∞ ;r∶=∅;
+2foreach r∈{x∈p(labels(l))×p(labels(s))∣cost[x,c]≤res}do
+3 cris the cost function on legal moves over sinduced by f/divides.alt0r;
+4 cost∶=cost[l,s,cr];
+5 ifcost<optcost then
+6 optcost∶=cost;r∶=∅;
+7 ifcost=optcost thenr∶=r∪{r};
+8return(rmin,optcost);
+lets∈s,s∶=(n,mini,mﬁn),n∶=(p,t,f,λ), be a net system. by labels(s), we denote the set of
+all labels assigned to observable transitions in t, i.e., labels(s)∶=img(λ)∖{τ}.4similarly, given
+an event log l∈b(a∗), bylabels(l)we denote the set of all labels that are elements of traces in l,
+i.e.,labels(l)∶=⋃υ∈lset(υ).
+it is easy to propose the brute-force approach for discovering rmin[s,l,f,c], i.e., the set of all
+minimal optimal repair recommendations for a net system s∈sw.r.t. an event log l∈b(a∗)as per a
+cost function on label moves frestricted by a repair constraint c∶=(cins,cskp,res). one must simply
+check every feasible repair recommendation r∈p(labels(l))×p(labels(s))for which it holds that
+cost[r,c]is less than or equal to resand select those for which cost[l,s,cr]is the lowest, where cr
+is the cost function on legal moves over sinduced by f/d◾v◾d⟩s.alt0r, and which do not properly contain other
+feasible repair recommendations that lead to the lowest cost of optimal alignment between lands.
+this intuition is formalized below.
+f[s,l,c]∶={x∈p(labels(l))×p(labels(s))∣cost[x,c]≤res}
+rmin[s,l,f,c]∶={y∈f[s,l,c]∣∀z∈f[s,l,c]∶cost[l,s,cy]≤cost[l,s,cz]}min
+here, cyandczare the cost functions on legal moves over sinduced by f/d◾v◾d⟩s.alt0yandf/d◾v◾d⟩s.alt0z, respectively.
+note that the feasible repair recommendations ( f[s,l,c]) are selected from repair recommendations
+inp(labels(l))×p(labels(s)). this is because it only makes sense to recommend those labels for
+insertion that are actually observed in the event log and to propose those labels for skipping that are
+actually used in the net system. finally, the use of the adjusted cost functions in the above formulae
+is justiﬁed by theorem 5.3 and lemma 5.5, which imply that the costs of optimal alignments are,
+indeed, the costs of optimal alignments between net systems that are obtained via some optimal
+alignment-based repairs of sand event log l.
+algorithm 1 suggests an implementation (in pseudocode) of the brute-force technique for discov-
+ering the set of all minimal optimal repair recommendations.
+the main logic of algorithm 1 is encoded in the foreach loop of lines 2–7. this loop checks all
+the feasible repair recommendations (one per each iteration) to select those that ‘lead’ to the lowest
+cost of optimal alignment. once all the optimal recommendations have been discovered, the minimal
+ones are returned at line 8. the algorithm also returns the value of optcost which reﬂects the cost
+of optimal alignment between the given event log and some net system obtained as a result of an
+optimal alignment-based repair of the given net system, refer to theorem 5.3 and lemma 5.5.
+4byimg(f), we denote the image of function f∶x→yon the entire domain x, i.e., img(f)∶={y∈y∣∃x∈x∶f(x)=y}.
+acm transactions on software engineering and methodology, publication date: july 2016.1:24 a. polyvyanyy et al.
+algorithm 2: bruteforcerecommendationsearchwithoptimization (s,l,f,c)
+input : a net system s, an event log l, a cost function on label moves f, and
+a repair constraint c∶=(cins,cskp,res).
+output : an ordered pair composed of the set of all minimal optimal repair recommendations for sw.r.t. las
+perfrestricted by c, i.e.,rmin[s,l,f,c], and the cost of optimal alignment optcost between lands
+such that∀r∈rmin[s,l,f,c]∶cost[l,s,cr]=optcost , where cris the cost function on legal moves
+over sinduced by f/divides.alt0r.
+1optcost∶=+∞ ;r∶=∅;
+2foreach r∈{x∈p(labels(l))×p(labels(s))∣cost[x,c]≤res}maxdo
+3 cris the cost function on legal moves over sinduced by f/divides.alt0r;
+4 cost∶=cost[l,s,cr];
+5 ifcost<optcost then
+6 optcost∶=cost;r∶=∅;
+7 ifcost=optcost thenr∶=r∪{r};
+8return(minimizerecommendations (r,s,l,f,optcost),optcost);
+for the optimal model repair recommendation problem, however, the number of feasible repair
+recommendations tends to grow very quickly as the size of the problem increases. if one uses a
+standard repair constraint c∶=(cins,cskp,res)as input to algorithm 1, then the number of feasible
+repair recommendations to be checked in the iterations of the foreach loop of lines 2–7 is equal to5:
+res
+/summat◾on.d◾sp
+i=0i
+/summat◾on.d◾sp
+j=0/par⟩nl⟩ft.alt3/d◾v◾d⟩s.alt0labels(l)/d◾v◾d⟩s.alt0
+j/par⟩nr◾∅ht.alt3×/par⟩nl⟩ft.alt3/d◾v◾d⟩s.alt0labels(s)/d◾v◾d⟩s.alt0
+i−j/par⟩nr◾∅ht.alt3.
+for example, for the input of the net system sin fig. 2, event log l3from section 2.3, and the
+standard repair constraint c∶=(cins,cskp,6), algorithm 1 performs 21 778 iterations of the foreach
+loop of lines 2–7; note that this number is independent of the cost function on label moves used
+in the input. considering that each iteration of the loop performs one computation of the optimal
+alignment between each trace in the given event log and the net system, cf. line 4, the overall
+running time of algorithm 1 is often intractable. for the above mentioned input and the standard
+cost function fon label moves, the algorithm took 57.216 seconds to discover all the ﬁve minimal
+optimal repair recommendations in rmin[s,l3,f,c]; these are recommendations ({f},{f,d,e,c,h}),
+({f,a},{d,e,c,h}),({f},{f,g,d,e,c}),({f,x},{d,e,c,h}), and({f,g},{d,e,c,h}). recall that
+the net system obtained after a na ¨ıve repair of susing repair recommendation ({f,x},{d,e,c,h})is
+shown in fig. 6. recall also that the cost of optimal alignment between event log l3and this repaired
+net system is equal to 25. note that one will obtain the same cost of optimal alignment between l3
+and every net system obtained as the result of a na ¨ıve repair of susing any of the other four repair
+recommendations in rmin[s,l3,f,c].
+interestingly, one can introduce an optimization to the logic of the brute-force approach of
+algorithm 1. this optimization is due to the next observation.
+proposition 6.1(monotonicity between repair recommendations and costs ).
+ifr1andr2are two repair recommendations such that r1⊑r2, then it holds that cost[υ,s,cr2]≤
+cost[υ,s,cr1], where υ∈a∗is a trace, s∈sis a net system, cr1andcr2are the cost functions on
+legal moves over sinduced by f/d◾v◾d⟩s.alt0r1and f/d◾v◾d⟩s.alt0r2, respectively, and fis a cost function on label moves. /un◾231f.alt1
+the proof of proposition 6.1 is immediate as, clearly, given an alignment, its cost per cr2cannot be
+larger than that one per cr1, ascr2can be obtained from cr1by setting costs of some moves to zeros.
+every minimal optimal repair recommendation is (properly) contained in some optimal one. thus,
+in order to discover all minimal optimal repair recommendations, one can ﬁrst discover all maximal
+5/parenleft.alt1n
+k/parenright.alt1is the binomial coefﬁcient indexed by nandk.
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:25
+algorithm 3: minimizerecommendations (r,s,l,f,cost)
+input : a set of repair recommendations r, a net system s, an event log l,
+a cost function on label moves f, and cost∈n0such that for every r∈rit holds that cost[l,s,cr]=cost,
+where cris the cost function on legal moves over sinduced by f/divides.alt0r.
+output : the setxof all repair recommendations such that for every x∈xit holds that cost[l,s,cx]=cost,
+there exists a repair recommendation y∈rsuch that xis contained in y, i.e., x⊑y, and there exists
+no repair recommendation zsuch that z⊏xandcost[l,s,cz]=cost, where cxandczare the cost
+functions on legal moves over sinduced by f/divides.alt0xandf/divides.alt0z, respectively.
+1x∶=∅;visited∶=∅;tovisit∶=r;
+2while tovisit≠∅do
+3 tovisit∶=tovisit∖{(rins,rskp)}, where(rins,rskp)∈tovisit ;
+4 visited∶=visited∪{(rins,rskp)};
+5 isminimal :=true;
+6 foreach(x,y)∈({{x}∣x∈rins}×{∅})∪({∅}×{{y}∣y∈rskp})do
+7 r∶=(rins∖x,rskp∖y);
+8 cris the cost function on legal moves over sinduced by f/divides.alt0r;
+9 ifcost[l,s,cr]=cost then
+10 ifr/slash.left∈visited then tovisit∶=tovisit∪{r};
+11 isminimal :=false ;
+12 ifisminimal thenx∶=x∪{(rins,rskp)};
+13returnx;
+ones and then use them to construct all the minimal repair recommendations. this intuition is
+captured in algorithm 2.
+the structure of algorithm 2 resembles that of algorithm 1. the only two differences between the
+algorithms are (i) in the sets of repair recommendations used to guide execution of the foreach loop
+of lines 2–7, and (ii) in the way the minimal optimal repair recommendations get constructed at lines
+8 of both algorithms. instead of checking every feasible repair recommendation, algorithm 2 starts
+by selecting optimal repair recommendations from the set of maximal feasible recommendations.
+the discovered optimal repair recommendations are collected in set r. then, the minimal recom-
+mendations are constructed from those in rby iteratively removing one label and checking whether
+the resulting repair recommendations lead to the same cost of optimal alignment (the exact procedure
+for accomplishing this step is captured in algorithm 3).
+for the input of net system sin fig. 2, event log l3from section 2.3, and the standard repair
+constraint c∶=(cins,cskp,6), algorithm 2 performs 12 406 iterations of the foreach loop of lines
+2–7. for the input of s,l3,c, and the standard cost function fon label moves, algorithm 2 took
+32.594 seconds to discover all the ﬁve minimal optimal repair recommendations.
+6.3. knapsack search
+every set of optimal alignments γbetween traces of an event log l∈b(a∗)and a net system s∈s
+that can be used to compute the cost of optimal alignment between lands, refer to deﬁnitions 3.5
+and 3.7, contains information on all the individual cost contributions of legal moves over s. the
+contribution of a legal move to the cost of optimal alignment can be computed as the sum of all the
+occurrences of the move in the optimal alignments in γmultiplied by the cost of this move. given a
+repair constraint c∶=(cins,cskp,res), one can repair sto cater for those legal moves in the alignments
+inγthat impact the cost of optimal alignment between landsthe most while keeping the repair
+cost (as per cost functions cinsandcskp) within the amount of available repair resources res.
+interestingly, the above intuition is in line with the intuition of the knapsack problem [dantzig
+1957]—a classical problem in combinatorial optimization. given a set of items, each with a value
+and a weight, the knapsack problem consists in determining the number of each item to include in a
+acm transactions on software engineering and methodology, publication date: july 2016.1:26 a. polyvyanyy et al.
+algorithm 4: knapsackapproximaterecommendationsearch (s,l,f,c,singleton)
+input :a net system s, an event log l, a cost function on label moves f, a repair constraint c∶=(cins,cskp,res),
+and a boolean parameter singleton .
+output : an ordered pair(r,optcost), whereris a set of approximate minimal optimal repair
+recommendations for sw.r.t. las per frestricted by c, and optcost is the cost of optimal alignment
+between landssuch that∀r∈r∶cost[l,s,cr]=optcost , where cris the cost function on legal
+moves over sinduced by f/divides.alt0r.
+1cis the cost function on legal moves over sinduced by f;
+2x∶={(υ,γ)∣υ∈l∧γ∈oυ
+s,c};
+3y⊆xsuch that⋃y∈y{π1(y)}=set(l)and∀y1∈y∀y2∈y∶(π1(y1)=π1(y2))⇒ y1=y2;
+4optcost∶=∑(υ,γ)∈y(l(υ)×c(γ));
+5weights∶={(({ x},∅),cins(x))∣( x,≫)∈dom(f)}∪{((∅,{x}),cskp(x))∣(≫,x)∈dom(f)};
+6if∀w∈img(weights)∶w>resthen return({(∅,∅)},optcost);
+7values∶={(({ x},∅),f((x,≫))×count((x,≫),y,l,s))∣( x,≫)∈dom(f)}∪
+8{((∅,{x}),f((≫,x))×count((≫,x),y,l,s))∣(≫,x)∈dom(f)};
+9k∶=∅;r∶=∅;
+10ifsingleton thenk∶=knapsack01onesolution (weights,values,res);
+11elsek∶=knapsack01allsolutions (weights,values,res);
+12foreach k∈kdo
+13 r∶=⋃k∈kk;
+14 cris the cost function on legal moves over sinduced by f/divides.alt0r;
+15 cost∶=cost[l,s,cr];
+16 ifcost<optcost then
+17 optcost∶=cost;r∶=∅;
+18 ifcost=optcost thenr∶=r∪{r};
+19return(r,optcost);
+collection so that the total weight of items in the collection is less than or equal to a given capacity
+and the total value of the collection is as large as possible. the 0/1 knapsack problem [fayard and
+plateau 1975; martello et al .2000] is a variant of the above stated problem. it requires solutions to
+be sets, i.e., no item can be included more than once in a solution to a 0/1 knapsack problem.
+a solution to the 0/1 knapsack problem for the input of a set of repair recommendations, each
+with a value, i.e., its impact on the cost of optimal alignment between land a repaired version of s
+obtained using this recommendation, and a weight, i.e., its cost as per cinsandcskp, ‘recommends’
+repairs that address the most ‘costly’ differences between the traces and executions used to build γ.
+lets∶=(n,mini,mﬁn),n∶=(p,t,f,λ), be a net system, let fbe a cost function on label moves,
+letlbe an event log, and let hbe a function that maps every trace υ∈lto an alignment in aυ
+s. then,
+bycount(m,h,l,s),m∈dom(f), we denote the number of times that mgets ‘reﬂected’ in alignments
+(from the image of h) between traces in land executions of s, i.e., count(m,h,l,s)∶=∑υ∈l(l(υ)×
+/d◾v◾d⟩s.alt0h(υ)∣moves[m,s]/d◾v◾d⟩s.alt0), where moves[m,s]∶={(x,y)∈ms∣(x,y)=m∨(y∈t∧x=≫∧m=(x,λ(y)))}.
+then, algorithm 4 captures the above discussed reasoning in pseudocode.
+given a net system s, an event log l, a cost function on label moves f, a repair constraint
+c∶=(cins,cskp,res), algorithm 4 discovers a set of approximations of the minimal optimal repair
+recommendationsrforsw.r.t. las per frestricted by cand the cost of optimal alignment optcost
+between a net system s′andlas per the cost function on legal moves over s′induced by f, where s′
+is some net system that can be obtained as the result of an optimal alignment-based repair of sw.r.t.
+las per fusing any repair recommendation in r, cf. deﬁnition 4.3. if the input parameter singleton
+is set to true, the algorithm discovers one repair recommendation, i.e., the set of discovered repair
+recommendations has exactly one element; otherwise it may contain multiple recommendations.
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:27
+for every distinct trace υin the input event log l, sety(computed at line 3 of algorithm 4) contains
+one ordered pair composed of υand some optimal alignment between υandsas per the cost function
+on legal moves cover sinduced by f. the value of optcost (computed at line 4) is the cost of optimal
+alignment between landsas per c, refer to deﬁnition 3.7. functions weights (line 5) and values
+(line 7), map repair recommendations to their weights and values, respectively. these functions are
+computed using the principles discussed above for the elementary repair recommendations, i.e., repair
+recommendations composed of a single label. if for every repair recommendation it holds that its
+weight exceeds the amount of available repair resources, i.e., the weight of every item exceeds the
+knapsack’s capacity, then the solution to the problem is the empty knapsack,cf. line 6 of the algorithm.
+if non-empty solutions to the 0/1 knapsack problem exist, they are discovered at lines 10 and 11 of
+algorithm 4. if the input boolean parameter singleton is set to true, then a single solution is sought
+via a call to the knapsack01onesolution procedure at line 10. otherwise, all solutions are computed
+by issuing a call to the knapsack01allsolutions procedure at line 11. the knapsack01onesolution
+procedure can be implemented using dynamic programming [andonov et al .2000] or branch and
+bound [vance 1993] approaches, while the knapsack01allsolutions procedure can be carried out
+using techniques for computing k-best solutions of knapsack problems [le ˜ao et al. 2014].
+after executing lines 10 and 11 of algorithm 4, set kcontains all the discovered solutions to
+the knapsack problem. these solutions are then transformed into repair recommendations using
+theforeach loop of lines 12–18. for every discovered solution k, a repair recommendation ris
+constructed at line 13 as the union of elementary repair recommendations contained in the solution.
+the algorithm then computes the cost of optimal alignment between landsas per the cost function
+on legal moves over sinduced by f/d◾v◾d⟩s.alt0r, refer to line 15. recall, that this cost represents the cost of
+optimal alignment between land a net system obtained as a result of an optimal alignment-based
+repair of s, cf. theorem 5.3 and lemma 5.5. repair recommendations that lead to the minimal cost
+are then collected in rat lines 16–18.
+note that algorithm 4 is nondeterministic. this is because of multiple possible constructions of set
+yat line 3 as, indeed, there can exist multiple optimal alignments between a trace and a net system.
+let, again, c∶=(cins,cskp,6)be the standard repair constraint deﬁned under the as-
+sumption thata={a,b,c,d,e,f,g,h,x}. then, it holds that ({({f,e,x},{g,d,c})},40)=
+knapsackapproximaterecommendationsearch (s,l3,f,c,true), where sis the net system in fig. 2,
+l3is the event log from section 2.3, and fis the standard cost function on label moves for
+events and activities a. on this input, set ycomputed at line 3 of algorithm 4 can be composed
+of seven pairs where the ﬁrst elements of the pairs are distinct traces in l3and each second
+element is the alignment between the trace at the ﬁrst position in the pair and sshown on page 15.
+then, the ‘weights’ of repairs computed at line 5 of the algorithm are given by the set weights∶=
+{(({a},∅),1),(({b},∅),1),(({c},∅),1),(({d},∅),1),(({e},∅),1),(({f},∅),1),(({g},∅),1),
+(({h},∅),1),(({x},∅),1),((∅,{a}),1),((∅,{b}),1),((∅,{c}),1),((∅,{d}),1),((∅,{e}),1),
+((∅,{f}),1),((∅,{g}),1),((∅,{h}),1),((∅,{x}),1)}, i.e., all the repairs have ‘weight’ of one
+unit because of the given standard repair constraint. the ‘values’ of the repairs computed at
+line 7 of the algorithm are given by the set values∶={(({a},∅),9),(({b},∅),0),(({c},∅),9),
+(({d},∅),7),(({e},∅),17),(({f},∅),10),(({g},∅),0),(({h},∅),0),(({x},∅),9),((∅,{a}),
+7),((∅,{b}),0),((∅,{c}),17),((∅,{d}),15),((∅,{e}),0),((∅,{f}),2),((∅,{g}),12),((∅,
+{h}),6),((∅,{x}),0)}. for example, the ‘value’ of repair recommendation (∅,{c})is seventeen,
+because move(≫,c)occurs at positions eight, three, and seven in alignments γ2
+0,γ5
+0, and γ6
+0on page 15, respectively. moreover, the corresponding traces ⟨a,c,d,c,e,d,g,f⟩,⟨a,b⟩, and
+⟨a,b,c,d,e,d,f⟩occur nine, six and two times in l3, respectively, and, thus, it holds that
+count((≫,c),y,l3,s)=17. hence, one possible solution to the resulting 0/1 knapsack problem at
+line 10 of the algorithm is k∶={{(({e},∅),17),(({f},∅),10),(({x},∅),9),((∅,{c}),17),((∅,
+{d}),15),((∅,{g}),12)}}which gives the highest possible value of 80for a packed rucksack
+of capacity six. note that {(({e},∅),17),(({f},∅),10),(({a},∅),9),((∅,{c}),17),((∅,{d}),
+15),((∅,{g}),12)}and{(({e},∅),17),(({f},∅),10),(({c},∅),9),((∅,{c}),17),((∅,{d}),
+acm transactions on software engineering and methodology, publication date: july 2016.1:28 a. polyvyanyy et al.
+ap1
+cdb
+f
+g
+h
+et1t2
+t3
+t4t5
+t6t7t8
+t9
+t10t11 p2p3
+p4p5
+p6p7
+p8p9
+p10p11t12
+x
+t15t16t13
+f
+et14 t17
+fig. 7: a net system obtained as the result of a na ¨ıve repair of the net system in fig. 2 using repair
+recommendation r∶=({f,e,x},{g,d,c})discovered using algorithm 4.
+15),((∅,{g}),12)}are two other solutions to the 0/1 knapsack problem at hand, which can be
+discovered at line 11 of algorithm 4 provided that the input singleton parameter is set to false.
+finally, at line 13 the algorithm constructs repair recommendation r∶=({f,e,x},{g,d,c})by
+performing the union, refer to section 6.1, of individual recommendations in the only set contained
+ink, at line 15 it computes the cost of optimal alignment between l3and the repaired version of
+s, and at line 18 the algorithm saves the result of executing the algorithm, which is returned at
+line 19. note that though the cost of optimal alignment between l3and the repaired version of sis
+40=120−80, where 120is the cost of optimal alignment between l3andsand80is the ‘value’ of
+the discovered knapsack, in general the cost of optimal alignment between the given event log and
+the repaired version of the given net system can be lower than the difference of the two numbers due
+to the absence of control over the way the optimal alignments are constructed.
+fig. 7 shows net system s′′′obtained as a result of a na ¨ıve repair of susing repair recommendation
+r∶=({f,e,x},{g,d,c}); the ‘injected’ transitions are highlighted with grey background. this repair
+is performed based on optimal alignments between traces in l3andsas per the cost function on
+legal moves over sinduced by f. optimal alignments between traces in l3ands′′′as per the cost
+function con legal moves over s′′′induced by fare listed below.
+γ1
+7∶=abcfd≫ef≫≫
+abcfdτefττ
+t1t2t4t13t5t7t14t8t17t11γ2
+7∶=ac≫dce≫≫d≫gf≫
+acτd≫eττdτgfτ
+t1t4t3t5 t6t3t15t5t7t9t8t11
+γ3
+7∶=abcdexc≫≫ha
+abcdexcττh≫
+t1t2t4t5t6t12t4t3t16t10γ4
+7∶=≫c≫d≫dfeg≫
+acτdτ≫fegτ
+t1t4t3t5t7 t8t14t9t11
+γ5
+7∶=ab≫≫≫
+abττh
+t1t2t15t16t10γ6
+7∶=abcde≫≫d≫f≫≫
+abcdeττdτfττ
+t1t2t4t5t6t3t15t5t7t8t17t11
+γ7
+7∶=abcdebcd≫g≫≫
+abcdebcdτgfτ
+t1t2t4t5t6t2t4t5t7t9t8t11
+using these alignments, one can easily verify that c(γ1
+7)=0,c(γ2
+7)=1,c(γ3
+7)=1,c(γ4
+7)=2,
+c(γ5
+7)=1,c(γ6
+7)=0, and c(γ7
+7)=1, and, thus, it holds that cost[l3,s′′′,c]=10×0+9×1+9×1+7×
+2+6×1+2×0+2×1=40.
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:29
+algorithm 4 performs 1+ncomputations of optimal alignments between traces in the in-
+put event log and net system (as per different cost functions on legal moves), where nis the
+size of setkonce the algorithm reaches the execution of line 12. therefore, every call to
+knapsackapproximaterecommendationsearch (s,l3,f,c,true)that reaches the execution of line
+19 performs at least two costly alignment computations. note that if the returned value of optcost is
+of no interest, the algorithm can be easily adapted to rely on a single computation.
+6.4. goldratt search
+the theory of constraints, introduced by eliyahu m. goldratt in his book entitled the goal [goldratt
+et al.2012], studies approaches that help systems with managing the achievement of their goals.
+goldratt argues that every system has at least one constraint, where a constraint is anything that
+prevents the system from achieving (more of) its goals. given a system and methods for measuring
+accomplishments of its goal(s), the theory of constraints proposes the following procedure for
+improving performance of the system [goldratt et al. 2012]:
+(1) identify the system’s constraint(s).
+(2) decide how to exploit the system’s constraint(s).
+(3) subordinate everything else to the above decision.
+(4) elevate the system’s constraint(s).
+(5)if in the previous steps a constraint has been broken, go back to step 1, but do not allow inertia to
+cause a system’s constraint.
+given a system s, an event log l, a cost function on label moves f, and a repair constraint c, our goal
+is to repair sto obtain a net system s′such that lﬁtss′as much as possible. one can use the cost of
+optimal alignment between lands′as per the cost function on legal moves over s′induced by fas
+a measure of ﬁtness. we propose to adapt the above procedure to allow discovering approximations
+of the minimal optimal repair recommendations for sw.r.t. las per frestricted by cas follows.
+(1) identify legal moves x⊆msthat contribute to the cost of optimal alignment between lands.
+(2)decide to exploit a legal move x∈xthat contributes the most to the cost of optimal alignment
+between landsper one unit of cost required to carry out a repair of sthat caters for xand is
+feasible given the amount of available repair resources.
+(3) subordinate all the available repair resources to repair sto cater x.
+(4) elevate xby repairing sto obtain net system s′that caters for x.
+(5)ifs′caters for x, go back to step 1 to repair s′using the remaining repair resources, but do not
+allow legal move xto contribute to the cost of optimal alignment between land any of the net
+systems obtained by repairing s′in the subsequent iterations of the procedure.
+algorithm 5 formalizes the above devised procedure.
+line 1 of the algorithm initializes control variables and variables to be used for storing the result.
+the main logic of the algorithm is encoded in the repeat loop of lines 2–28. set xcontains
+repair recommendations to be explored for ‘reﬁnement’ in the current iteration of the loop. the
+constructed reﬁned repair recommendations are collected in set r. the ﬁrst iteration of the loop
+starts by initializing xwith the set that only contains the empty recommendation (∅,∅). this empty
+recommendation is gradually reﬁned in the course of the execution of the algorithm into the result
+repair recommendation(s). execution of the repeat loop terminates after its iteration completes
+without discovering any reﬁned recommendation, i.e., r=∅at line 28 of the algorithm. otherwise,
+the discovered reﬁned recommendations are passed to the next iteration of the loop to be explored
+for further reﬁnements. after the repeat loop of lines 2–28 terminates, the foreach loop of lines
+29–32 constructs the result of the algorithm by selecting each repair recommendation rinx(these
+are recommendations that were explored for reﬁnement in the last iteration of the repeat loop of
+lines 2–28) that leads to the lowest cost of optimal alignment between the input event log and some
+net system obtained by performing an optimal alignment-based repair of the input system using r.
+every iteration of the foreach loop of lines 4–27 searches for feasible reﬁnements of some
+repair recommendation r∈x. once execution of this loop reaches line 14, function w2maps each
+acm transactions on software engineering and methodology, publication date: july 2016.1:30 a. polyvyanyy et al.
+algorithm 5: goldrattapproximaterecommendationsearch (s,l,f,c,singleton)
+input :a net system s, an event log l, a cost function on label moves f, a repair constraint c∶=(cins,cskp,res),
+and a boolean value singleton .
+output : an ordered pair(r,optcost), whereris a set of approximate minimal optimal repair
+recommendations for sw.r.t. las per frestricted by c, and optcost is the cost of optimal alignment
+between landssuch that∀r∈r∶cost[l,s,cr]=optcost , where cris the cost function on legal
+moves over sinduced by f/divides.alt0r.
+1r∶={(∅,∅)};x∶=∅;costs∶=∅;optcost∶=+∞ ;
+2repeat
+3x∶=r;r∶=∅;mci∶=0;mrc∶=0;visited∶=∅;
+4 foreach r∶=(rins,rskp)∈xdo
+5 cris the cost function on legal moves over sinduced by f/divides.alt0r;
+6 x∶={(υ,γ)∣υ∈l∧γ∈oυ
+s,cr};
+7 y⊆xsuch that⋃y∈y{π1(y)}=set(l)and∀y1∈y∀y2∈y∶(π1(y1)=π1(y2))⇒ y1=y2;
+8 costs∶=costs∪{(r,∑(υ,γ)∈y(l(υ)×cr(γ)))} ;
+9 w1∶={(({ x},∅),w)∣x∈labels(l)∖rins∧w=f((x,≫))×count((x,≫),y,l,s)∧w>0}∪
+{((∅,{x}),w)∣x∈labels(s)∖rskp∧w=f((≫,x))×count((≫,x),y,l,s)∧w>0};
+10 free∶=false ;w2∶=∅;
+11 if∃(r,w)∈w1∶cost[r,c]=0then
+12 free∶=true;w2∶=w1;
+13 elsew2∶={(({ x},∅),w)∣({ x},∅)∈dom(w1)∧w=w1(({x},∅))/slash.leftcins(x)}∪
+{((∅,{x}),w)∣(∅,{x})∈dom(w1)∧w=w1((∅,{x}))/slash.leftcskp(x)};
+14 foreach(r,cci)∈w2do
+15 r′∶=r∪r;crc∶=cost[r,c];
+16 ifr′/slash.left∈visited andcost[r′,c]≤resthen
+17 visited∶=visited∪{r′};
+18 ifcrc=0andcci>mciandfreethen
+19 r∶={r′};mci∶=cci;
+20 else if crc=0andcci>0andcci=mciandfreeand not singleton then
+21 r∶=r∪{r′};
+22 else if cci>mciand not freethen
+23 r∶={r′};mrc∶=crc;mci∶=cci;
+24 else if crc>mrcandcci>0andcci=mciand not freethen
+25 r∶={r′};mrc∶=crc;
+26 else if crc>0andcrc=mrcandcci=mciand not freeand not singleton then
+27 r∶=r∪{r′};
+28untilr≠∅;
+29foreach r∈xdo
+30 ifcosts(r)<optcost then
+31 optcost∶=costs(r);r∶=∅;
+32 ifcosts(r)=optcost thenr∶=r∪{r};
+33return(r,optcost);
+elementary repair recommendation that can be used to reﬁne rto its weight. if some elementary
+recommendation rcan be repaired for free, i.e., the cost of this elementary repair recommendation
+as per the input repair constraint cis equal to zero, weights are computed (and stored in w1) as
+contributions of legal moves that are recommended for repair by rto the cost of optimal alignment
+between land some net system obtained by performing an optimal alignment-based repair of susing
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:31
+r, refer to lines 9–12 of the algorithm. otherwise, the weight of an elementary recommendation
+rinw2is derived by dividing the weight of rinw1by the cost of ras per c, refer to line 13 of
+algorithm 5, i.e., w2stores ‘impacts’ of elementary repair recommendations on the cost of optimal
+alignment per unit of repair resource.
+theforeach loop of lines 14–27 is used to select elementary repair recommendation(s) with the
+highest impact on the cost of optimal alignment, as per w2, to be used to reﬁne r. the selection
+process is designed to account for different values of the input singleton parameter and correct
+handling of free and non-free recommendations. execution of the body of the loop is controlled
+by the variables cci,mci,crc, and mrc. they are used to store values of weight of the currently
+analyzed repair recommendation (current cost improvement), maximal observed weight of repair
+recommendation (maximal cost improvement), cost of current repair recommendation (current repair
+cost), and maximal observed cost of repair recommendation (maximal repair cost), respectively.
+letc∶=(cins,cskp,6)be the standard repair constraint deﬁned for a={a,b,c,d,e,f,g,h,x}.
+then,({({f,e,a,x},{g,e})},45)=goldrattapproximaterecommendationsearch (s,l3,f,c,true),
+where sis the net system in fig. 2, l3is the event log from section 2.3, and fis the standard cost
+function on label moves for events and activities a. the execution of algorithm 5 on the above input
+starts with the empty repair recommendation r∶=(∅,∅)at line 4. then, the algorithm approximates
+which extensions of rwill have the best impact on repair of s. it achieves this by constructing weights
+of all possible extensions. when the algorithm reaches line 14 for the ﬁrst time, set w2is given by
+{(({a},∅),9),(({c},∅),9),(({d},∅),7),(({e},∅),17),(({f},∅),10),(({x},∅),9),((∅,{a}),
+7),((∅,{c}),17),((∅,{d}),15),((∅,{f}),2),((∅,{g}),12),((∅,{h}),6)}. because the input
+parameter singleton is set to true, the repair recommendation ({e},∅)is chosen nondeterministically
+by theforeach loop of lines 14–27 to be used as the only element of set rin the second iteration
+of the repeat loop of lines 2–28. note that ({e},∅), according to the data in w2, has the best ‘impact’
+of seventeen cost units on the cost of optimal alignment between l3andsas per the cost function
+on legal moves over sinduced by f; the impact is determined based on the optimal alignments
+γ1
+0–γ7
+0between traces in l3andsshown on page 15, i.e., it holds that count((e,≫),y,l3,s)=17.
+in the second iteration of the repeat loop of lines 2–28, the repair recommendation ({e},∅)gets
+extended by(∅,{g})to obtainr∶={({e},{g})}at the moment the algorithm reaches line 28
+for the second time. the repair recommendation (∅,{g})is chosen as it has the best impact on
+optimal alignments between traces in l3and the repaired version of susing the recommendation
+({e},∅); set w2at line 14 of the second iteration of the repeat loop of lines 2–28 is given by
+{(({a},∅),9),(({c},∅),9),(({d},∅),9),(({f},∅),10),(({x},∅),9),((∅,{a}),7),((∅,{c}),
+6),((∅,{d}),6),((∅,{e}),9),((∅,{f}),2),((∅,{g}),12),((∅,{h}),6)}. note that these impact
+values are determined based on optimal alignment as per the cost function on legal moves over s
+induced by f/d◾v◾d⟩s.alt0({e},∅). the subsequent iterations of the repeat loop of lines 2–28 end with the value
+ofrgiven by{({f,e},{g})},{({f,e,x},{g})},{({f,e,a,x},{g})},{({f,e,a,x},{g,e})}, and
+∅. the last iteration ends with the empty set value of rbecause the repair recommendation
+constructed in the previous iteration uses all the available repair resources, i.e., it holds that
+cost[({f,e,a,x},{g,e}),c]=6. this repair recommendation is returned as the result of the
+algorithm call together with the corresponding cost of optimal alignment between l3and the repaired
+version of sat line 33 after constructing the result in the foreach loop of lines 29–32.
+fig. 8 shows net system ˆsthat is obtained as a result of a na ¨ıve repair of net system sin fig. 2
+using repair recommendation r∶=({f,e,a,x},{g,e}); the ‘injected’ transitions are highlighted with
+grey background. this repair is performed based on optimal alignments between traces in l3ands
+as per the cost function on legal moves over sinduced by f. optimal alignments between traces in
+l3and ˆsas per the cost function con legal moves over ˆsinduced by fare listed below.
+γ1
+8∶=abcfde≫f≫≫
+abcfdeτfττ
+t1t2t4t13t5t14t7t8t19t11γ2
+8∶=ac≫d≫c≫ed≫gf≫
+acτdτcτedτgfτ
+t1t4t3t5t18t4t3t12t5t7t9t8t11
+acm transactions on software engineering and methodology, publication date: july 2016.1:32 a. polyvyanyy et al.
+ap1
+cdb
+f
+g
+h et1t2
+t3
+t4t5
+t6t7t8
+t9
+t10t11p2p3
+p4p5
+p6p7
+p8p9
+p10
+p11t17
+at18
+t19et16 e
+xeft12t13
+t14
+t15
+fig. 8: a net system obtained as the result of a na ¨ıve repair of the net system in fig. 2 using repair
+recommendation r∶=({f,e,a,x},{g,e})discovered using algorithm 5.
+γ3
+8∶=abcdexcha
+abcdex≫ha
+t1t2t4t5t14t15 t10t17γ4
+8∶=≫c≫d≫dfeg≫
+acτdτ≫fegτ
+t1t4t3t5t7 t8t16t9t11
+γ5
+8∶=ab≫≫≫
+abcdh
+t1t2t4t5t10γ6
+8∶=abcde≫df≫≫
+abcdeτ≫fττ
+t1t2t4t5t14t7 t8t19t11
+γ7
+8∶=abcdebcd≫g≫≫
+abcdebcdτgfτ
+t1t2t4t5t6t2t4t5t7t9t8t11
+one can verify that c(γ1
+8)=0,c(γ2
+8)=0,c(γ3
+8)=1,c(γ4
+8)=2,c(γ5
+8)=3,c(γ6
+8)=1, and c(γ7
+8)=1,
+and, thus, it holds that cost[l3,ˆs,c]=10×0+9×0+9×1+7×2+6×3+2×1+2×1=45.
+note that it holds that ({({f,c,x},{g,d,c}),({f,c,a},{g,d,c}),({f,a,x},{g,d,c})},38)=
+goldrattapproximaterecommendationsearch (s,l3,f,c,false).
+fig. 9 shows net system ˇsthat is obtained as a result of a na ¨ıve repair of susing repair recom-
+mendation r∶=({f,c,x},{g,d,c}); the ‘injected’ transitions are highlighted with grey background.
+optimal alignments between traces in l3and ˇsas per the cost function con legal moves over ˇs
+induced by fare listed below.
+γ1
+9∶=abcfde≫≫≫≫f≫≫
+abcfdeττττfττ
+t1t2t4t12t5t6t3t15t16t7t8t17t11γ2
+9∶=ac≫dce≫≫d≫gf≫
+acτdceττdτgfτ
+t1t4t3t5t14t6t3t15t5t7t9t8t11
+γ3
+9∶=abcdexc≫≫ha
+abcdexcττh≫
+t1t2t4t5t6t13t4t3t16t10γ4
+9∶=≫c≫d≫dfeg≫
+acτdτ≫f≫gτ
+t1t4t3t5t7 t8 t9t11
+γ5
+9∶=ab≫≫≫
+abττh
+t1t2t15t16t10γ6
+9∶=abcde≫≫d≫f≫≫
+abcdeττdτfττ
+t1t2t4t5t6t3t15t5t7t8t17t11
+γ7
+9∶=abcdebcd≫g≫≫
+abcdebcdτgfτ
+t1t2t4t5t6t2t4t5t7t9t8t11
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:33
+ap1
+cdb
+f
+g
+h
+et1t2
+t3
+t4t5
+t6t7t8
+t9
+t10t11 p2p3
+p4p5p6p7
+p8p9
+p10p11
+t15t16t12
+f
+t17
+x ct14 t13
+fig. 9: a net system obtained as the result of a na ¨ıve repair of the net system in fig. 2 using repair
+recommendation r∶=({f,c,x},{g,d,c})discovered using algorithm 5.
+using the above alignments, one can easily verify that, indeed, c(γ1
+9)=0,c(γ2
+9)=0,c(γ3
+9)=1,
+c(γ4
+9)=3,c(γ5
+9)=1,c(γ6
+9)=0, and c(γ7
+9)=1, and, thus, it holds that cost[l3,ˇs,c]=10×0+9×0+
+9×1+7×3+6×1+2×0+2×1=38.
+if algorithm 5 is invoked for the value of the singleton parameter of true and a standard repair
+constraint c∶=(cins,cskp,res), then it performs 1+rescomputations of optimal alignments between
+traces in the input event log and net system (as per different cost functions); one per each iteration of
+therepeat loop of lines 2–28. note that the same set of optimal alignments is used to compute cost
+of optimal alignment at line 8 and weights of elementary repair recommendations at line 9.
+6.5. greedy search
+a greedy algorithm is a heuristic that proceeds by taking the locally optimal intermediate decisions
+with the expectation of ﬁnding a globally optimal solution to the problem. a greedy strategy often
+fails to discover an optimal solution. however, it may yield locally optimal solutions to the problem
+that approximate a global optimal solution in a reasonable time. in this subsection, we propose a
+design of a greedy strategy for approximating minimal optimal repair recommendations. this design
+is captured in the pseudocode of algorithm 6.
+algorithm 6 iteratively constructs repair recommendations by ‘expanding’ currently discovered
+ones with elementary repair recommendations that lead to the best improvement in the cost of optimal
+alignment with the expectation of ﬁnding a minimal optimal repair recommendation. the set that
+contains one empty repair recommendation and no other recommendations is used as a starting point
+for discovering the resulting recommendations, cf. initialization of set xat line 2 of algorithm 6.
+during execution of the algorithm, set xcontains currently discovered repair recommendations to be
+tested for expansions. the main logic of the algorithm is encoded in the repeat loop of lines 3–30,
+which terminates once the algorithm depletes elements in x, i.e.,x=∅.
+every iteration of the foreach loop of lines 7–28 visits and tests one repair recommendation for
+expansion by elementary repair recommendations (one in every iteration of the foreach loop of
+lines 8–27). the expansion takes place at line 9. if the expanded recommendation was not already
+visited and is feasible, refer to line 10 in the algorithm, it is tested to be included in set xand, thus,
+tested for further expansions in the next iteration of the repeat loop. the test relies on the use of
+control variables. these variables store values for maximal cost improvement ( mci), current cost
+improvement ( cci), maximal repair cost ( mrc), current repair cost ( crc), and current cost of optimal
+alignment ( ccost ). the boolean variable freeis used to control special handling of situations in
+which repair recommendation expansions do not lead to increases in repair costs.
+let, again, c∶=(cins,cskp,6)be the standard repair constraint deﬁned under the assumption that a=
+{a,b,c,d,e,f,g,h,x}. then, one can employ algorithm 6 to verify that ({({f,d,e,a},{g,d})},39)=
+acm transactions on software engineering and methodology, publication date: july 2016.1:34 a. polyvyanyy et al.
+algorithm 6: greedyapproximaterecommendationsearch (s,l,f,c,singleton)
+input :a net system s, an event log l, a cost function on label moves f, a repair constraint c∶=(cins,cskp,res),
+and a boolean value singleton .
+output : an ordered pair(r,optcost), whereris a set of approximate minimal optimal repair
+recommendations for sw.r.t. las per frestricted by c, and optcost is the cost of optimal alignment
+between landssuch that∀r∈r∶cost[l,s,cr]=optcost , where cris the cost function on legal
+moves over sinduced by f/divides.alt0r.
+1cis the cost function on legal moves over sinduced by f;
+2r∶=∅;x∶={(∅,∅)};optcost∶=cost[l,s,c];ccost∶=optcost ;
+3repeat
+4r∶=x;
+5 ifoptcost=0then return(r,optcost);
+6x∶=∅;mci∶=0;mrc∶=0;visited∶=∅;free∶=false ;
+7 foreach(rins,rskp)∈rdo
+8 foreach r∈{({x},∅)∣x∈labels(l)∖rins}∪{(∅,{x})∣x∈labels(s)∖rskp}do
+9 r∶=(rins,rskp)∪r;
+10 ifr/slash.left∈visited andcost[r,c]≤resthen
+11 acost∶=optcost ;crc∶=cost[r,c];
+12 cris the cost function on legal moves over sinduced by f/divides.alt0r;
+13 ifcrc=0or(notfreeandoptcost/slash.leftcrc≥mci)then acost∶=cost[l,s,cr];
+14 cci∶=optcost−acost ;
+15 ifcrc>0then cci∶=cci/slash.leftcrc;
+16 ifcrc>0andcci>mciand not freethen
+17 mci∶=cci;mrc∶=crc;x∶={r};ccost∶=acost ;
+18 else if crc>mrcandcci>0andcci=mciand not freethen
+19 mrc∶=crc;x∶={r};ccost∶=acost ;
+20 else if crc>0andcrc=mrcandcci>0andcci=mciand
+notfreeand not singleton then
+21 x∶=x∪{r};
+22 else if crc=0andcci>mciandfreethen
+23 mci∶=cci;x∶={r};ccost∶=acost ;
+24 else if crc=0andcci=mciandfreeand not singleton then
+25 x∶=x∪{r};
+26 else if crc=0andcci>0and not freethen
+27 free∶=true;mci∶=cci;x∶={r};ccost∶=acost ;
+28 visited∶=visited∪{r};
+29 optcost∶=ccost ;
+30untilx≠∅;
+31return(r,optcost);
+greedyapproximaterecommendationsearch (s,l3,f,c,true), where sis the system in fig. 2, l3is
+the event log from section 2.3, and fis the standard cost function on label moves. algorithm 6 starts
+with the empty repair recommendation and then proceeds, in the foreach loop of lines 8–28, by
+exploring all its possible extensions with elementary repair recommendations. in each iteration of
+the loop, one extended recommendation is constructed and the cost of optimal alignment between
+l3and the repaired version of susing the corresponding repair recommendation is computed at
+line 13 of the algorithm. thus, in the ﬁrst iteration of the repeat loop of lines 3–30, the following
+repair recommendation are explored: ({a},∅)with the cost of optimal alignment between l3and
+the repaired version of susing this repair recommendation of 111,({b},∅)with the cost of 120,
+({c},∅)with the cost of 111,({d},∅)with the cost of 113,({e},∅)with the cost of 94,({f},∅)
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:35
+ap1
+cdb
+f
+g
+h et1t2
+t3
+t4t5
+t6t7t8
+t9
+t10t11 p2p3
+p4p5
+p6p7
+p8p9
+p10
+p11t18t12
+f
+e
+t15t19
+eddt17
+a
+t13t14t16
+fig. 10: a net system obtained as the result of a na ¨ıve repair of the net system in fig. 2 using repair
+recommendation r∶=({f,d,e,a},{g,d})discovered using algorithm 6.
+with the cost of 110,({g},∅)with the cost of 120,({h},∅)with the cost of 120,({x},∅)with
+the cost of 111,(∅,{a})with the cost of 113,(∅,{b})with the cost of 120,(∅,{c})with the cost
+of103,(∅,{d})with the cost of 105,(∅,{e})with the cost of 111,(∅,{f})with the cost of 118,
+(∅,{g})with the cost of 108, and(∅,{h})with the cost of 114. because repair recommendation
+({e},∅)leads to the best cost of optimal alignment of 94, setxis equal to{({e},∅)}at the end
+of the ﬁrst iteration of the repeat loop of lines 3–30. in the second iteration of this loop, sixteen
+distinct extensions of ({e},∅)are explored and the best extension of ({e},{g})that leads to the cost
+of optimal alignment of 82is chosen. in the third iteration, ﬁfteen further extensions are explored
+and({e},{g,d})with the cost of 67is chosen. in the fourth iteration, fourteen extensions are
+explored and({f,e},{g,d})with the cost of 57is chosen. in the ﬁfth iteration, thirteen extensions
+are explored and({f,e,a},{g,d})with the cost of 48is chosen. finally, in the sixth iteration of the
+foreach loop of lines 3–30, twelve extensions are explored and ({f,d,e,a},{g,d})with the cost
+of optimal alignment of 39is chosen as the one that can be used to perform the best repair of s. this
+repair recommendation cannot be extended further as every its extensions will have the cost that
+exceeds the amount of available repair resources res. finally, at line 31, this repair recommendation
+and the cost of 39 are returned as the result of the call to algorithm 6.
+fig. 10 shows net system ˘sthat is obtained as a result of a na ¨ıve repair of susing repair recommen-
+dation r∶=({f,d,e,a},{g,d}); the ‘injected’ transitions are highlighted with grey background. this
+repair is performed based on optimal alignments between traces in l3andsas per the cost function
+on legal moves over sinduced by f. optimal alignments between traces in l3and ˘sas per the cost
+function con legal moves over ˘sinduced by fare listed below.
+γ1
+10∶=abcfd≫ef≫≫
+abcfdτefττ
+t1t2t4t12t5t7t16t8t19t11γ2
+10∶=acdce≫d≫gf≫
+acd≫eτdτgfτ
+t1t4t13 t14t3t5t7t9t8t11
+γ3
+10∶=abcdexc≫≫ha
+abcde≫cττha
+t1t2t4t5t6 t4t3t18t10t17γ4
+10∶=≫cd≫d≫feg≫
+acdτdτfegτ
+t1t4t13t3t5t7t8t16t9t11
+γ5
+10∶=ab≫≫≫
+abcτh
+t1t2t4t18t10γ6
+10∶=abcded≫f≫≫
+abcdedτfττ
+t1t2t4t13t14t5t7t8t19t11
+γ7
+10∶=abcdebcd≫g≫≫
+abcdebcdτgfτ
+t1t2t4t5t6t2t4t5t7t9t8t11
+acm transactions on software engineering and methodology, publication date: july 2016.1:36 a. polyvyanyy et al.
+ap1
+cdb
+f
+g
+h
+et1t2
+t3
+t4t5
+t6t7t8
+t9
+t10t11p2p3
+p4p5
+p6p7
+p8p9
+p10
+p11
+t13t15
+t16t17
+t18eft12t13
+et14
+fig. 11: a net system obtained as the result of a na ¨ıve repair of the net system in fig. 2 using repair
+recommendation r∶=({f,e},{g,d,e,c})discovered using algorithm 6.
+one can use the above alignments to verify that c(γ1
+10)=0,c(γ2
+10)=1,c(γ3
+10)=1,c(γ4
+10)=1,
+c(γ5
+10)=2,c(γ6
+10)=0, and c(γ7
+10)=1, and, thus, it holds that cost[l3,˘s,c]=10×0+9×1+9×1+7×
+1+6×2+2×0+2×1=39.
+note that one can obtain a better result if the input boolean parameter singleton is set to
+false. in particular, it holds that greedyapproximaterecommendationsearch (s,l3,f,c,false)=
+({({f,e},{g,d,e,c}),33).
+fig. 11 shows net system ˜sthat is obtained as a result of a na ¨ıve repair of net system sin fig. 2
+using repair recommendation r∶=({f,e},{g,d,e,c}); the ‘injected’ transitions are highlighted with
+grey background. this repair is performed based on optimal alignments between traces in l3ands
+as per the cost function on legal moves over sinduced by f. optimal alignments between traces in
+l3and ˜sas per the cost function con legal moves over ˜sinduced by fare listed below.
+γ1
+11∶=abcfd≫ef≫≫
+abcfdτefττ
+t1t2t4t13t5t7t14t8t18t11γ2
+11∶=ac≫d≫c≫ed≫gf≫
+acτdτcτedτgfτ
+t1t4t3t5t15t4t3t12t5t7t9t8t11
+γ3
+11∶=abcdexc≫≫ha
+abcde≫cττh≫
+t1t2t4t5t6 t4t3t17t10γ4
+11∶=≫c≫d≫≫≫d≫feg≫
+acτdτττdτfegτ
+t1t4t3t5t15t3t16t5t7t8t14t9t11
+γ5
+11∶=ab≫≫≫
+abττh
+t1t2t16t17t10γ6
+11∶=abcde≫≫d≫f≫≫
+abcdeττdτfττ
+t1t2t4t5t6t3t16t5t7t8t18t11
+γ7
+11∶=abcdebcd≫g≫≫
+abcdebcdτgfτ
+t1t2t4t5t6t2t4t5t7t9t8t11
+it holds that c(γ1
+11)=0,c(γ2
+11)=0,c(γ3
+11)=1,c(γ4
+11)=1,c(γ5
+11)=2,c(γ6
+11)=0,c(γ7
+11)=1, and, thus,
+cost[l3,˜s,c]=10×0+9×0+9×2+7×1+6×1+2×0+2×1=33.
+when algorithm 6 is invoked for the value of the singleton parameter of true and a standard
+repair constraint c∶=(cins,cskp,res), it performs at most 1+∑i<res
+i=0(/d◾v◾d⟩s.alt0labels(l)/d◾v◾d⟩s.alt0+/d◾v◾d⟩s.alt0labels(s)/d◾v◾d⟩s.alt0−i)
+computations of optimal alignments between traces in the input event log land system s(as per
+different cost functions). the maximal number of optimal alignment computations is observed when
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:37
+the given amount of repair resources resis not sufﬁcient to discover a repair recommendation that
+can be used to repair sinto a net system s′for which it holds that lﬁtss′perfectly.
+6.6. summary and discussion
+table i summarizes the results of invoking all the algorithms from subsections 6.2–6.5 for the input
+of the net system in fig. 2, event log l3from subsection 2.3, the standard cost function on label
+moves for events and activities a={a,b,c,d,e,f,g,h,x}, and the standard repair constraint c∶=
+(cins,cskp,6). for different combinations of algorithms and values of the input singleton parameter
+(columns “algorithm” and “singleton”, respectively), table i lists the amount of employed repair
+resources (column “res.”), time in seconds of executing the respective algorithm (column “time
+(s)”), number of discovered approximate minimal optimal repair recommendations (column “# rec.”),
+number of computations of optimal alignments between traces in the input event log and net system
+(column “# align.comp.”), the cost of optimal alignment between the input event log and a net
+system that can be obtained as a result of an optimal alignment-based repair of the input net system
+using one of the discovered recommendations (column “cost”), and a measure of ﬁtness between the
+event log and the repaired model (column “fitness”).
+the reported ﬁtness values are the relative ﬁtness values computed as per deﬁnition 7.3.2 in [adri-
+ansyah 2014]. relative ﬁtness values rely on alignments to quantify conformance. intuitively, the
+relative ﬁtness between a given event log and net system is computed as one minus one divided by
+the number of traces in the event log multiplied by the sum of normalized costs of optimal alignment
+between each trace in the even log and the net system; each cost is normalized by the highest possible
+cost of optimal alignment between the corresponding trace and the net system. the highest possible
+cost of optimal alignment between a trace and net system is determined by the sum of costs of moves
+on trace deﬁned for each event in the trace and costs of moves on system deﬁned for each transition
+in the shortest execution of the net system. a relative ﬁtness measure takes a value between 0 and 1.
+the closer the ﬁtness value is to 1, the better the event log ﬁts the net system. note that a relative
+ﬁtness value of 1 denotes perfect ﬁtness. note also that the relation between the reported costs of
+optimal alignments and relative ﬁtness values is not monotonic. this is due to the fact that na ¨ıve
+repairs have non-trivial effects on the shortest executions of the repaired systems. nevertheless, one
+can clearly identify a trend that lower costs of optimal alignments imply better ﬁtness values between
+the event log and the repaired net systems. it is worth mentioning that the relative ﬁtness between l3
+and the original (non-repaired) net system shown in fig. 2 is equal to 0 .735.
+table i: summary of results of searching (approximate) minimal optimal repair recommendations for
+the input of net system sin fig. 2, event log l3from section 2.3, the standard cost function on label
+moves for events and activities that coincide with the universe of labels a∶={a,b,c,d,e,f,g,h,x},
+and the standard repair constraint c∶=(cins,cskp,6); recall from section 4 that cost[l3,s,c]=120,
+where cis the standard cost function on legal moves over s.
+algorithm singleton res. time (s) # rec. # align.comp. cost fitness
+knapsack true 6 0.009 1 2 40 0.886
+goldratt true 6 0.021 1 7 45 0.891
+goldratt false 6 0.03 3 12 38 0.907
+greedy true 6 0.248 1 88 39 0.879
+greedy false 6 0.306 1 118 33 0.886
+brute-force (with opt.) n/a 6 32.594 5 12 406 25 0.931
+brute-force n/a 6 57.216 5 21 778 25 0.931
+table i conﬁrms one of the expected trends, i.e., algorithms that perform more alignment com-
+putations tend to discover ‘better’ repair recommendations, i.e., repair recommendations that when
+used to perform optimal alignment-based repairs lead to repaired net systems that ﬁt the given event
+log better. the greedy approximation scheme that relies on the value of the input boolean parameter
+singleton of false performs 118 computations of optimal alignments between traces in the input
+acm transactions on software engineering and methodology, publication date: july 2016.1:38 a. polyvyanyy et al.
+event log and net system and leads to better discovered repair recommendations as, for example,
+the goldratt scheme invoked for the same input value of the singleton parameter. at the same time,
+table i demonstrates that algorithms that rely on small numbers of alignment computations can
+produce usable results. for example, the goldratt approximation schemes perform about ten times
+fewer alignment computations than the greedy schemes to discover repair recommendations of
+comparable quality. this phenomenon is studied in detail in the next section.
+note that one needs to increase the amount of available repair resources from six to nine to discover
+minimal optimal repair recommendations that can be used to completely repair the net system in
+fig. 2 w.r.t. event log l3from subsection 2.3. table ii summarizes the results of invoking all the
+algorithms from subsections 6.2–6.5 for the input that was used to construct table i with the only
+difference in the amount of available repair resources (nine instead of six).
+table ii: summary of results of searching (approximate) minimal optimal repair recommendations for
+the input of net system sin fig. 2, event log l3from section 2.3, the standard cost function on label
+moves for events and activities that coincide with the universe of labels a∶={a,b,c,d,e,f,g,h,x},
+and the standard repair constraint c∶=(cins,cskp,9); recall from section 4 that cost[l3,s,c]=120,
+where cis the standard cost function on legal moves over s.
+algorithm singleton res. time (s) # rec. # align.comp. cost fitness
+knapsack true 9 0.005 1 2 15 0.929
+goldratt true 9 0.024 1 10 20 0.916
+goldratt false 9 0.052 3 19 15 0.929
+greedy true 9 0.3 1 118 13 0.947
+greedy false 9 0.43 1 157 7 0.978
+brute-force (with opt.) n/a 9 77.374 3 24 337 0 1.0
+brute-force n/a 9 240.854 3 89 846 0 1.0
+the three minimal optimal repair recommendations discovered by the brute-force search are
+({f,a,x},{f,g,d,e,c,a}),({f,a,x},{f,d,e,c,a,h}), and({f,g,a,x},{d,e,c,a,h}). note that it
+is still possible to perform 89846 computations of optimal alignments between l3and the net system
+in fig. 2 within reasonable time bounds; cf. the brute-force search row in the table. this is primarily
+due to the small size of l3. the next section demonstrates that search schemes that rely on large
+amounts of alignment computations for event logs of practical interest are mostly intractable.
+the brute-force search strategies do not make use of the singleton parameter, as usually one needs
+to check all the feasible repair recommendations to deliver the promised results. one, however,
+may decide to terminate the brute-force search once it discovers a recommendation that can be
+used to repair all the deviations between modeled and observed behaviors in the input net system
+and event log, respectively. this can be implemented by exiting the foreach loops of lines 2–7
+in algorithms 1 and 2 once variable cost is equal to zero at the end of some iteration. with these
+modiﬁcations, the brute-force strategies, with and without optimization, perform 6 294 and 15 123
+alignment computations, respectively, to discover one out of the three existing minimal optimal repair
+recommendations (invoked for the same input).
+finally, it is worth mentioning that the knapsack (true), goldratt (true), goldratt (false), greedy
+(true), and greedy (false) search schemes discover recommendations that can be used to repair the
+given net system completely only if the amount of repair resources is increased to twelve, thirteen,
+twelve, eleven, and ten, respectively.
+7. evaluation
+all the algorithms presented in this paper have been implemented and are publicly available.6using
+this implementation we have conducted a series of experiments. this section reports on the results
+of these experiments. the experiments were performed on a computer with an intel core i7-3770
+6https://svn.win.tue.nl/repos/prom/packages/selectiveprepair
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:39
+cpu@3.40ghz, 8gb of memory, running windows 7 enterprise and sun jvm 1.7. to eliminate
+load time from the measurements, each test was executed six times, and we recorded average times
+of the second to sixth executions.
+the experiments were conducted on event logs that are publicly available from the business
+processing intelligence challenge (bpic) initiative.7,8net systems used in the experiments were
+‘mined’ from these event logs using the inductive miner algorithm [leemans et al .2013; leemans
+et al. 2015] that ships with prom 6.3 [van dongen et al. 2005; verbeek et al. 2011].
+the inductive miner algorithm takes as input an event log and a noise threshold and produces
+ablock-structured [polyvyanyy 2012; polyvyanyy and bussler 2013] process model, e.g., a net
+system. a process model is block-structured, or (well-)structured, if every node with multiple
+outgoing arcs (a split) has a corresponding node with multiple incoming arcs (a join), and vice
+versa, such that the part of the process model between the split and the join forms a single-entry-
+single-exit (sese) component [vanhatalo et al .2009; polyvyanyy et al .2011]; otherwise the
+model is unstructured [polyvyanyy 2012]. the noise threshold parameter is designed to allow
+ﬁltering of infrequent traces and events in an input event log prior to construction of the resulting
+model [leemans et al .2013; leemans et al .2015]. the threshold parameter takes a value between
+zero and one inclusive. the noise threshold value of zero indicates that no ﬁltering is to be applied
+and that the event log will ﬁt perfectly the constructed model. the closer the value of the input noise
+threshold parameter is to the value of one, the more deviations will be present between traces in the
+input event log and executions of the model produced by the inductive miner algorithm.
+five net systems were mined from each of the studied event logs using the inductive miner
+algorithm. the net systems were produced using different values of the noise threshold parameter;
+the employed noise threshold values are 0.2, 0.4, 0.6, 0.8, and 1.0. the obtained net systems were
+then repaired using repair recommendations discovered by the algorithms proposed in section 6.
+the repairs were conducted following the na ¨ıve repair method, cf. deﬁnition 4.6, based on the
+optimal alignments between traces and executions of the respective event logs and net systems,
+which, according to theorem 5.3, leads to optimal alignment-based repairs, cf. deﬁnition 4.3.
+table iii presents results of the experiments conducted on the bpic 2012 event log taken from a
+dutch financial institute. the top most sub-table contains information on costs of optimal alignments
+between the event log and repaired net systems. the sub-table is divided into ﬁve parts, cf. columns
+0.2, 0.4, 0.6, 0.8, and 1.0, where each part presents information on costs of optimal alignment
+between the input event log and the repaired version of the input net system which is mined from
+the event log using the respective noise threshold value. each mined net system was repaired using
+repair recommendations discovered via algorithms 4, 5, and 6. the algorithms were invoked for the
+inputs of standard cost functions on label moves and standard repair constraints. algorithm 4 was
+invoked for the value of the input singleton parameter of true, cf. column “k(t)” in the sub-table,
+whereas algorithms 5 and 6 were invoked for the values of the singleton parameter of true and false.
+consequently, columns “g(t)” and “g(f)” contain results of invoking algorithm 5 for the values
+of the singleton parameter of true and false, respectively. similarly, columns “gr(t)” and “gr(f)”
+contain the results of invoking algorithm 6 for the true and false input singleton values, respectively.
+each algorithm was invoked for 16 different values of available repair resources, i.e., from 0 to 15.
+the use of the repair resource value of zero corresponds to the situation of no repair and, therefore,
+the corresponding values represent the costs of optimal alignments between the bpic 2012 event
+log and the original (non-repaired) net system, refer to row 0 in the sub-table. the three other
+sub-tables are organized in a similar way as the top most one. however, instead of the costs of
+optimal alignments between the event log and repaired net systems they present numbers of optimal
+alignment computations (between traces in the event log and the net systems) performed to discover
+repair recommendations, run times of the repair recommendation search algorithms (in seconds), and
+the numbers of discovered repair recommendations; refer to the headings of the sub-tables.
+7http://dx.doi.org/10.4121/uuid:3926db30-f712-4394-aebc-75976070e91f
+8http://dx.doi.org/10.4121/uuid:500573e6-accc-4b0c-9576-aa5468b10cee
+acm transactions on software engineering and methodology, publication date: july 2016.1:44 a. polyvyanyy et al.
+that at least one of the proposed techniques for searching approximate repair recommendations was
+capable of discovering at least one minimal optimal repair recommendation. this observation was
+conﬁrmed by comparing discovered approximate recommendations with those constructed using
+algorithm 1. in addition, we ran algorithm 2 on the inputs of the net system discovered using the
+inductive miner algorithm from the bpic2013 event log for the noise threshold parameter 1.0, the
+bpic 2013 event log, the standard cost function on label moves, and the ﬁve different standard repair
+constraints for the amounts of available repair resources ranging from 1 to 5. the discovered repair
+recommendations coincide with the best repair recommendations discovered on the same inputs by
+the search techniques proposed in section 6. for example, for the amounts of repair resources, 1,
+2, 3, 4, and 5, the repair recommendations discovered using algorithm 2 can be used to repair the
+net system into systems that have the costs of optimal alignment with the bpic 2013 event log of
+39 225, 28 124, 20 571, 14 778, and 9 350, respectively. however, the times spent on executing the
+algorithm range from 297 seconds to 8 days 8 hours 22 minutes and 32 seconds, as the algorithm
+performed 65 785 computations of optimal alignments between the input event log and net system as
+per different cost functions on legal moves for the input value of available repair resources of 5.
+8. related work
+the impact-driven process model repair approach presented in this paper relates to the process mining
+research studies conducted in the areas of process discovery, conformance checking, and process
+model repair, as well as to the service-oriented computing works on self-healing services.
+process discovery techniques are concerned with generating a ‘good’ process model that depicts
+observed behavior captured in an event log. many discovery approaches exist in the literature [van der
+aalst 2011]: the alpha algorithm that makes use of ordering relations of activities [van der aalst
+et al.2004], the heuristics miner that discovers main behavior from noisy logs [weijters et al .
+2006], the fuzzy miner that caters for less structured processes and supports different levels of
+abstractions [g ¨unther and van der aalst 2007], the genetic miner that balances different quality
+criteria [de medeiros et al .2007], the inductive miner that discovers sound, ﬁt, and block-structured
+models [leemans et al .2013; leemans et al .2015], the discovery technique over precedence
+constraints [greco et al .2015], etc. these algorithms vary in terms of the types of logs they can
+effectively handle and the quality of discovered models. there are four main quality dimensions
+(ﬁtness, precision, simplicity and generalization) that can provide insights into how good a process
+model represents reality [buijs et al .2012; van der aalst 2011]. often, trade-offs between the
+different quality dimensions also need to be taken into account when assessing quality of a discovered
+process model. most discovery algorithms start from scratch. i.e., the algorithms only consider event
+data and ignore existing models. thus, it is possible to obtain models from such algorithms that are
+very different to existing process models, which could potentially limit the usability of discovered
+models. however, there have been research studies to incorporate the similarity of process models
+as an additional quality dimension. for example, buijs et al. take into account the similarity of a
+discovered model to a given process model as the ﬁfth quality dimension [buijs et al .2013]. these
+recent efforts highlight how process knowledge extracted from event logs can be supplemented with
+knowledge captured in reference process models to produce high-quality and representative models
+and, thus, further motivate our work in the area of process model repair. in [buijs et al .2013], the
+authors show that there may exist several good discovered models that adequately represent behavior
+recorded in a given event log. by constructing a pareto front of discovered models, one can identify
+collections of non-dominating (as per some quality dimensions) process models. similarly, one can
+construct a pareto front of repaired models obtained using different amounts of repair resources and
+different repair techniques to prioritize them based on different quality criteria.
+conformance checking techniques are concerned with the detection and diagnosis of the dif-
+ferences between modeled and observed behaviors of a process [rozinat and van der aalst 2008;
+adriansyah et al .2011; van der aalst 2011]. these techniques address how to determine the degree of
+conformance between modeled and observed behaviors by comparing ‘allowable moves’ by a model
+against ‘observed moves’ in an event log [adriansyah 2014]. adriansyah et al. developed a technique
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:45
+to align activities in models and transitions executed in event logs and showed how to use these
+alignments to replay an event log over a process model [adriansyah et al .2011]. deviations between
+moves on model and moves on event log are detected and the severity of deviations is quantiﬁed using
+likelihood cost functions for skipped activities (activities that should be carried out according to the
+model, but do not occur in the event log) and inserted activities (activities that should not be carried
+out according to the model, but occur in the event log). our technique relies on alignments such as
+those proposed in [adriansyah 2014] to solve the conformance checking problem. the main quality
+dimension of interest for a conformance checking algorithm is replay ﬁtness. in [munoz-gama et al .
+2013; munoz-gama et al .2013], hierarchical conformance checking approaches that decompose
+processes using the reﬁned process structure trees (rpsts) [vanhatalo et al .2009; polyvyanyy et al .
+2011] and localize conformance problems while taking into account ﬁtness and precision measures
+are presented. in [molka et al .2014], the authors propose a conformance checking approach between
+a process modeled using business process model and notation (bpmn) and an event log with
+conformance measures in terms of precision (the fraction of model behavior supported by the event
+log) and recall (the fraction of event log behavior supported by the model).
+the conformance checking approach by adriansyah [adriansyah 2014] focuses on the control-
+ﬂow behavior conformance while abstracting from other causes for potential variations between
+modeled and observed behaviors. the works in [de leoni and van der aalst 2013b; mannhardt et al .
+2015] describe multi-perspective conformance checking approaches which make use of a petri net
+enriched with data variables to capture the different process perspectives. de leoni & van der aalst
+propose to align models and event logs so that the control-ﬂow alignment is considered ﬁrst and other
+process perspectives (i.e., data, time and resources) are subsequently taken into account within the
+objective function of an ilp problem [de leoni and van der aalst 2013a]. the approach presented
+in [mannhardt et al .2015] balances different process perspectives in a customizable manner to
+identify explanations for deviations. one can extend our work to consider using alignments based on
+multiple process dimensions when searching optimal repair recommendations.
+techniques to improve the quality of a process model have been researched. the works in [li
+et al.2009; li et al .2010; li et al .2011] develop an approach to transform a process model by
+taking into account the similarity of process model variants based on edit distance. in order for a
+process model to better reﬂect reality, knowledge obtained through conformance checking analysis
+could be used for process model repairs. in [gaaloul et al .2009], the authors propose to discover
+a transactional workﬂow model from an event log and to repair the initially designed workﬂow
+based on the discrepancies between the two models. in [adriansyah 2014], the alignment-based
+conformance checking approach was extended to detect high-level deviation patterns such as the
+activity replacement pattern, the activity reordering pattern and the activity repetition pattern. by
+appending the original model with such patterns, a better alignment can be observed between a
+given event log and the repaired model. the work by fahland et al. [fahland and van der aalst
+2015] describes an approach to repair a process model such that it can replay (most of) the event
+log, i.e., to increase the ﬁtness of the model, while staying structurally close to the original model.
+this is achieved by ﬁrst computing alignments to identify non-ﬁtting traces, then grouping traces
+from the event log according to the identiﬁed misalignments, then discovering a sub-process for
+each group of traces, and inserting such a sub-process into the original model to enable the replay
+of the corresponding non-ﬁtting traces. this is repeated until a repaired process model is obtained
+that can replay the observed behavior perfectly. the resulting repaired model contains new loops
+and sub-processes to minimize misalignments between the event log and the original model. our
+approach has the same aim as the repair approach presented in [fahland and van der aalst 2015],
+i.e., to minimize misalignments, but instead of ﬁxing every single misalignment, we identify and
+prioritize those repairs that have the highest impact on model ﬁtness for a given repair constraint.
+hence, our approach can be used to suggest incremental process repair recommendations by making
+adjustments to the cost of repairs and/or the number of available resources for repair.
+service-oriented computing (soc) [papazoglou 2003] proposes to compose new value-added
+services from the existing component services. a service composition may yield unreliable during
+acm transactions on software engineering and methodology, publication date: july 2016.1:46 a. polyvyanyy et al.
+its execution as certain component services may happen to be unavailable and/or faulty. to tackle
+this problem, the notion of a self-healing service was proposed. the idea of a self-healing service
+is to supply a service composition with a mechanism to allow its automatic repair at run time. a
+self-healing service can repair itself by retrying, compensating, and/or substituting certain faulty
+component service invocations. the reader can refer to [eder et al .2009; friedrich et al .2010; islam
+et al.2010; gaaloul et al .2010] for approaches on managing self-healing services. in contrast to
+these approaches, we repair service compositions (which are usually captured as process models) at
+design time to allow the repaired models to better reﬂect the so far observed executions.
+9. conclusion
+process model repair guided by event data can be positioned in-between process discovery (discover-
+ing a control-ﬂow model based on just event data) and conformance checking (taking a predeﬁned
+model as the “norm”). to repair a model there is a trade-off between (1) staying close to the modeled
+behavior and (2) better ﬁtting the observed behavior. this paper focuses on impact-driven process
+model repair where costs are assigned to model changes and repair resources are limited. within
+the space of possible repairs, we seek repaired models that maximize ﬁtness (minimize mismatches
+between repaired model and log) constrained by the repair resources, i.e., different repairs may have
+different costs. this way model repair becomes an optimization problem that can be controlled
+through easy-to-understand parameters. the trade-offs considered in this paper were not investigated
+earlier and, overall, surprising few process mining papers considered model repair.
+in this paper, various algorithms have been proposed and implemented. a brute-force algorithm,
+and a slightly more efﬁcient variant of it, ensure ﬁnding optimal repair recommendations, but may
+be too time consuming for larger models and event logs. hence, approximative algorithms have
+been developed. these do not guarantee ﬁnding optimal repair recommendations, but require fewer
+alignment computations. experiments show that the approximations are quite good, i.e., often many
+additional alignment computations are needed to achieve further small improvements in ﬁtness.
+using the approximations, it is possible to repair real-life models in a satisfactory manner.
+future work aims at extending and improving impact-driven process model repair in various ways.
+first of all, we would like to conduct more case studies to better understand the requirements of
+model repair. for example, how to elicit repair constraints?
+second, we are interested in providing guarantees for our approximative algorithms. bounds can
+be set on the difference between the alignment costs of the unknown optimal repair recommendation
+and the result of the approximative algorithm. this way end-users can better judge the quality of the
+repair and decide whether an exhaustive search is needed. we hope that this will give us new ideas
+on faster algorithms for discovering optimal repair recommendations.
+third, repairs are considered at the level of activity labels rather than model structures. the na ¨ıve
+repair that relies on self-loop and/or skip injections (deﬁnition 4.6) can be improved in various
+ways. loops are introduced even if activities happen only once. skips are always atomic. hence, the
+na¨ıve repair approach leaves ample room for improvement and model refactoring. however, this is
+orthogonal to determining repairs at the level of activity labels as described in this paper.
+fourth, the techniques proposed in this work aim at repairing a process model using information
+on conformance analysis between the model and a given event log. the ultimate goal is to repair
+the model into one that ﬁts the event log perfectly, i.e., certain behavioral equivalence guarantees
+between the repaired model and the event log are achieved. one can adapt the problem of process
+model repair to account for other notions of behavioral equivalence. a process model can be repaired
+to become (‘more’) bisimilar [van glabbeek 1990] or (‘more’) isotactic [polyvyanyy et al .2012]
+with some given normative process model, e.g., an implementation of a system can be repaired to
+better conform with its speciﬁcation. to this end, one can reuse the existing quantitative techniques
+for measuring behavioral equivalence of two process models [desharnais et al .2004; de medeiros
+et al. 2008; de alfaro et al. 2009].
+fifth, future work will aim at considering different criteria when searching for optimal repair
+recommendations. in this paper, the focus was on ﬁtness (i.e., reducing alignment costs) and we did
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:47
+not consider the other three classical conformance dimensions: simplicity, precision, and generaliza-
+tion [van der aalst 2011; van der aalst et al .2012]. this problem was already considered in [buijs
+et al.2013]. however, instead of using a genetic approach (with no guarantees and possibly time
+consuming), we would like to use the framework presented in this paper. the effects of inserting
+or skipping activities on simplicity, precision, and generalization can be (partly) anticipated and
+quantiﬁed. at the same time there should be new operators to remove unused behavior.
+last but not least, one can design new cost schemes to guide model repairs. for example, one may
+want to give different penalties to the same unmatched label depending on whether it occurred at
+the beginning or at the end of an alignment. accordingly, we would like to extend the framework
+proposed in this paper to account for more sophisticated cost schemes.
+acknowledgments. this research was partly supported by the australian research council’s dis-
+covery projects funding scheme (project number dp120101624).
+a. proofs
+this appendix contains proofs of mathematical statements introduced in this paper.
+corollary 4.4(alignment -based repair).
+if a net system s′∈sis the result of an alignment-based repair of a net system s∈sw.r.t. an event
+logl∈b(a∗)as per a cost function on label moves fusing a repair recommendation, then it holds
+that cost[l,s′,c′]≤cost[l,s,c], where c and c′are the cost functions on legal moves over s and s′
+induced by f , respectively. /un◾231f.alt1
+proof .it sufﬁces to show that for every trace υinlit holds that cost[υ,s′,c′]≤cost[υ,s,c].
+according to deﬁnition 4.3, there exists a function ψthat justiﬁes the fact that s′is the result of
+an alignment-based repair of s. let α∈lbe a trace. then, because lﬁtss′at least as ‘good’ as
+it ﬁts s, cf. deﬁnition 4.3, it holds that (c′○ψ)(α)≤cost[α,s,c]. let γbe an optimal alignment
+between αands′as per c′; note that γalways exists. then, according to deﬁnition 3.6, it holds that
+c′(γ)≤(c′○ψ)(α). finally, note that c′(γ)=cost[α,s′,c′]. ◾
+lemma 4.7(alignment -based repair).
+if a net system s′∈sis the result of a na ¨ıve repair of a net system s∈sbased on the alignments in the
+image of a function φ, which maps every trace υin an event log l∈b(a∗)to an optimal alignment
+inoυ
+s,c, using a repair recommendation r, where cis the cost function on legal moves over sinduced
+by a cost function on label moves f, then s′is the result of an alignment-based repair of sw.r.t.
+l as per f using r. /un◾231f.alt1
+proof .letψbe a function that maps every trace in lto an alignment between this trace and
+an execution of s′for which it holds that ψ(υ)=similar[φ(υ),s,s′],υ∈l; note that the fact that
+similar[φ(υ),s,s′]∈aυ
+s′follows from the deﬁnition of the similar construction on alignments, refer
+to section 4. then, ψjustiﬁes the fact that s′is the result of an alignment-based repair of s. both
+statements that (i) lﬁtss′at least as ‘good’ as it ﬁts sand (ii) s′fulﬁlls rfollow immediately
+from deﬁnition 4.6 and the similar construction on alignments. let υ∈lbe a trace. it holds that
+(c′○ψ)(υ)≤cost[υ,s,c], where c′is the cost function on legal moves over s′induced by f. note
+thatcost[υ,s,c]=(c○φ)(υ)andψ(υ)is constructed from φ(υ)by replacing some moves with
+moves of zero costs as per c′, while the cost of every other move of ψ(υ)as per c′is equal to the cost
+of this move as per c. finally, s′fulﬁlls r∶=(rins,rskp)because similar[φ(υ),s,s′]guarantees the
+absence of moves(α,≫),α∈rins, and{(≫,y)∈{≫}×t∣λ(y)∈rskp}in the resulting alignment,
+where tandλare the set of transitions of s′and the function that assigns labels to transitions in s′,
+respectively. ◾
+the next proposition captures the statement that will be used as part of proofs of subsequent results.
+proposition a.1(similar alignments ).
+if a net system s′∈sis the result of a na ¨ıve repair of a net system s∈sbased on the alignments in the
+acm transactions on software engineering and methodology, publication date: july 2016.1:48 a. polyvyanyy et al.
+image of a function φusing a repair recommendation r, where φmaps every trace υin an event log
+l∈b(a∗)to an alignment in aυ
+s, then it holds that c(γ)=c′(similar[γ,s,s′]), where γ∈img(φ),c
+is the cost function on legal moves over sinduced by f/d◾v◾d⟩s.alt0r,c′is the cost function on legal moves over
+s′induced by f , and f is a cost function on label moves. /un◾231f.alt1
+the proof of proposition a.1 follows immediately from the similar construction on alignments and
+deﬁnitions 4.2, 4.6 and 5.2.
+theorem 5.3(optimal alignment -based repair).
+if a net system s′∈sis the result of a na ¨ıve repair of a net system s∈sbased on the alignments in
+the image of a function φusing a repair recommendation r, where φmaps every trace υin an event
+logl∈b(a∗)to an alignment in oυ
+s,c,cis the cost function on legal moves over sinduced by f/d◾v◾d⟩s.alt0r,f
+is a cost function on label moves, then s′is the result of an optimal alignment-based repair of sw.r.t.
+l as per f using r. /un◾231f.alt1
+proof .let us assume that s′is the result of a na ¨ıve repair of sbased on the alignments in the
+image of φusing r∶=(rins,rskp), but s′isnotthe result of an optimal alignment-based repair of s
+w.r.t. las per fusing r. then, according to deﬁnition 4.3, there exists no function that maps every
+trace υ∈lto an alignment in oυ
+s′,c′and justiﬁes the fact that s′is the result of an alignment-based
+repair of s, where c′is the cost function on legal moves over s′induced by f. let ψbe the function
+that maps every trace υ∈lto the alignment similar[φ(υ),s,s′]between υand an execution of s′,
+i.e.,ψ(υ)∶=similar[φ(υ),s,s′],υ∈l. let υ∈lbe a trace.
+○it holds that cost[υ,s,c]≤cost[υ,s,c′′], where c′′is the cost function on legal moves over s
+induced by f. let us assume that cost[υ,s,c]>cost[υ,s,c′′]. then, there exists γ∈oυ
+s,c′′such that
+for all η∈aυ
+sit holds that c′′(γ)<c(η). note that γ∈aυ
+sand, thus, it must hold that c′′(γ)<c(γ).
+for every legal move m∈msit holds that c(m)=0ifm∈(rins×{≫})∪{(≫,y)∈{≫}×t∣
+λ(y)∈rskp}, and c(m)=c′′(m)otherwise; this follows immediately from deﬁnitions 4.2 and 5.2.
+therefore, for every η∈aυ
+sit holds that c(η)≤c′′(η). we have reached a contradiction. note
+that(c○ψ)(υ)=cost[υ,s,c]because ψ(υ)∈oυ
+s,c. it also holds that (c′○ψ)(υ)=(c○ψ)(υ),
+cf. proposition a.1. hence, it holds that (c′○ψ)(υ)≤cost[υ,s,c′′].
+○it follows from the deﬁnition of the similar construction on alignments that ψ(υ)contains no
+move from the set(rins×{≫})∪{(≫,y)∈{≫}×t∣λ(y)∈rskp}, where tandλare the set of
+transitions of s′and the function that assigns labels to transitions in s′, respectively.
+○let us assume that ψ(υ)/slash.l⟩ft∈oυ
+s′,c′. then, there exists an alignment χ∈aυ
+s′such that c′(χ)<(c′○
+ψ)(υ). let η∈aυ
+sbe such that χ=similar[η,s,s′]. it holds that c(η)=c′(χ)and(c○φ)(υ)=
+(c′○ψ)(υ), cf. proposition a.1. therefore, it holds that c(η)<(c○φ)(υ), which means that
+φ(υ)/slash.l⟩ft∈oυ
+s,c. we have reached a contradiction and, thus, it holds that ψ(υ)∈oυ
+s′,c′.
+we have reached a contradiction as, clearly, ψmaps every trace υ∈lto an alignment in oυ
+s′,c′and
+justiﬁes the fact that s′is the result of an alignment-based repair of s. ◾
+lemma 5.5(optimal alignment -based repair).
+if a net system s′∈sis the result of a na ¨ıve repair of a net system s∈sbased on the alignments in
+the image of a function φusing a repair recommendation r, where φmaps every trace υin an event
+logl∈b(a∗)to an alignment in oυ
+s,c,cis the cost function on legal moves over sinduced by f/d◾v◾d⟩s.alt0r,
+andfis a cost function on label moves, then it holds that cost[l,s,c]=cost[l,s′,c′], where c′is the
+cost function on legal moves over s′induced by f . /un◾231f.alt1
+proof .note that if for every trace υ∈lit holds that cost[υ,s,c]=cost[υ,s′,c′], then it also
+holds that cost[l,s,c]=cost[l,s′,c′]. let υ∈lbe a trace and let γ∶=similar[φ(υ),s,s′]. then,
+according to proposition a.1, it holds that (c○φ)(υ)=c′(γ). it also holds that γ∈oυ
+s′,c′, refer to the
+proof of theorem 5.3. therefore, it holds that cost[υ,s,c]=cost[υ,s′,c′]. ◾
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:49
+b. glossary
+this appendix contains a glossary of the speciﬁc mathematical notations used in this paper.
+table v: glossary of the speciﬁc mathematical notations used in this paper. the ‘notation’ column
+exempliﬁes the notation. the ‘page’ column speciﬁes pages at which the corresponding notation is
+deﬁned. the ‘parameters’ column explains the parameters of the notation. finally, the ‘meaning’
+column states the meaning of the notation in natural language.
+notation page parameters meaning
+aυ
+s10 υ– a trace the set that for every execution σofscontains
+s– a net system all the alignments between υandσ, and con-
+tains nothing else.
+b(a) 4 a– a set the set of all ﬁnite multisets over a.
+cost[r,c] 18 r– a repair recommendation the cost of ras per c.
+c– a repair constraint
+cost[υ,s,c] 11 υ– a trace the cost of some optimal alignment between υ
+s– a net system andsas per c.
+c– a cost function on legal moves over s
+cost[l,s,c] 11 l– an event log the cost of some optimal alignment between l
+s– a net system andsas per c.
+c– a cost function on legal moves over s
+f/divides.alt0r 19 f– a cost function on label moves the adjusted cost function on label moves
+r– a repair recommendation induced by fusing r.
+es 7 s– a net system the set of all executions of s.
+labels(l) 23 l– an event log the set of all labels that are elements of.
+traces in l
+labels(s) 23 s– a net system the set of all labels assigned to observable
+transitions of s.
+ms 9 s– a net system the set of all legal moves over s.
+mhs(a) 14 a– a set of sets a minimal hitting set of a.
+oυ
+s,c11 υ– a trace the set of all optimal alignments between
+s– a net system υandsas per c.
+c– a cost function on legal moves over s
+r1⊑r2 22 r1– a repair recommendation r1is contained in r2.
+r2– a repair recommendation
+r1⊏r2 22 r1– a repair recommendation r1is properly contained in r2.
+r2– a repair recommendation
+rmax 22r– a set of repair recommendations the set of all maximal (as per the containment
+relation) repair recommendations in r.
+rmin 22r– a set of repair recommendations the set of all minimal (as per the containment
+relation) repair recommendations in r.
+r[s,l,f,c] 20 s– a net system the set of all optimal repair recommendations
+l– an event log forsw.r.t. las per frestricted by c.
+f– a cost function on label moves
+c– a repair constraint
+rmin[s,l,f,c] 20 s– a net system the set of all minimal optimal repair
+l– an event log recommendations for sw.r.t. las per f
+f– a cost function on label moves restricted by c.
+c– a repair constraint
+s 6 the universe of net systems.
+acm transactions on software engineering and methodology, publication date: july 2016.1:50 a. polyvyanyy et al.
+references
+arya adriansyah. 2014. aligning observed and modeled behavior . ph.d. dissertation. technische universiteit eindhoven.
+http://dx.doi.org/10.6100/ir770080
+arya adriansyah, boudewijn f. van dongen, and wil m.p. van der aalst. 2011. conformance checking using cost-
+based fitness analysis. in proceedings of the 15th ieee international enterprise distributed object comput-
+ing conference, edoc 2011, helsinki, finland, august 29–september 2, 2011 . ieee computer society, 55–64.
+http://dx.doi.org/10.1109/edoc.2011.12
+rumen andonov, vincent poirriez, and sanjay v . rajopadhye. 2000. unbounded knapsack problem: dynamic programming
+revisited. european journal of operational research (eor) 123, 2 (2000), 394–407.
+thomas baier, claudio di ciccio, jan mendling, and mathias weske. 2015a. matching of events and activities—an
+approach using declarative modeling constraints. in enterprise, business-process and information systems modeling—
+16th international conference, bpmds 2015, 20th international conference, emmsad 2015, held at caise 2015,
+stockholm, sweden, june 8–9, 2015, proceedings (lecture notes in business information processing) , v ol. 214. springer,
+119–134. http://dx.doi.org/10.1007/978-3-319-19237-6 8
+thomas baier, andreas rogge-solti, jan mendling, and mathias weske. 2015b. matching of events and activities: an approach
+based on behavioral constraint satisfaction. in proceedings of the 30th annual acm symposium on applied computing,
+salamanca, spain, april 13–17, 2015 . acm, 1225–1230.
+joos c.a.m. buijs, marcello la rosa, hajo a. reijers, boudewijn f. van dongen, and wil m.p. van der aalst. 2013. improving
+business process models using observed behavior. in data-driven process discovery and analysis . springer, 44–59.
+joos c.a.m. buijs, boudewijn f. van dongen, and wil m.p. van der aalst. 2012. on the role of fitness, precision,
+generalization and simplicity in process discovery. in on the move to meaningful internet systems: otm 2012 , robert
+meersman, herv ´e panetto, tharam dillon, stefanie rinderle-ma, peter dadam, xiaofang zhou, siani pearson, alois
+ferscha, sonia bergamaschi, and isabelf. cruz (eds.). lecture notes in computer science, v ol. 7565. springer berlin
+heidelberg, 305–322. http://dx.doi.org/10.1007/978-3-642-33606-5 19
+joos c.a.m. buijs, boudewijn f. van dongen, and wil m.p. van der aalst. 2013. discovering and navigating a collection
+of process models using multiple quality dimensions. in business process management workshops—bpm 2013
+international workshops, beijing, china, august 26, 2013, revised papers (lecture notes in business information
+processing) , v ol. 171. springer, 3–14. http://dx.doi.org/10.1007/978-3-319-06257-0 1
+george b. dantzig. 1957. discrete-variable extremum problems. operations research 5, 2 (1957), 266–277.
+luca de alfaro, marco faella, and mari ¨elle stoelinga. 2009. linear and branching system metrics. ieee transactions on
+software engineering (tse) 35, 2 (2009), 258–273. http://dx.doi.org/10.1109/tse.2008.106
+massimiliano de leoni and wil m.p. van der aalst. 2013a. aligning event logs and process models for multi-perspective
+conformance checking: an approach based on integer linear programming. in business process management—11th
+international conference, bpm 2013, beijing, china, august 26–30, 2013. proceedings (lecture notes in computer
+science) , v ol. 8094. springer, 113–129. http://dx.doi.org/10.1007/978-3-642-40176-3 10
+massimiliano de leoni and wil m.p. van der aalst. 2013b. data-aware process mining: discovering decisions in processes
+using alignments. in proceedings of the 28th annual acm symposium on applied computing (sac’13) . acm, new
+york, ny , usa, 1454–1461. http://dx.doi.org/10.1145/2480362.2480633
+ana karla alves de medeiros, wil m.p. van der aalst, and a.j.m.m. weijters. 2008. quantifying process
+equivalence based on observed behavior. data & knowledge engineering (dke) 64, 1 (2008), 55–74.
+http://dx.doi.org/10.1016/j.datak.2007.06.010
+ana karla alves de medeiros, a.j.m.m. weijters, and wil m.p. van der aalst. 2007. genetic process mining: an experimental
+evaluation. data mining and knowledge discovery 14, 2 (2007), 245–304.
+josee desharnais, vineet gupta, radha jagadeesan, and prakash panangaden. 2004. metrics for labelled markov processes.
+theoretical computer science 318, 3 (2004), 323–354. http://dx.doi.org/10.1016/j.tcs.2003.09.013
+johann eder, juergen mangler, enrico mussi, and barbara pernici. 2009. using stateful activities to facilitate monitoring
+and repair in workﬂow choreographies. in 2009 ieee congress on services, part i, services i 2009, los angeles,
+ca, usa, july 6–10, 2009 . ieee computer society, 219–226. http://dx.doi.org/10.1109/services-i.2009.49
+dirk fahland and wil m.p. van der aalst. 2015. model repair—aligning process models to reality. information systems (is) 47
+(2015), 220–243. http://dx.doi.org/10.1016/j.is.2013.12.007
+didier fayard and g ´erard plateau. 1975. resolution of the 0-1 knapsack problem: comparison of methods. mathematical
+programming (mp) 8, 1 (1975), 272–307.
+gerhard friedrich, mariagrazia fugini, enrico mussi, barbara pernici, and gaston tagni. 2010. exception handling
+for repair in service-based processes. ieee transactions on software engineering (tse) 36, 2 (2010), 198–215.
+http://dx.doi.org/10.1109/tse.2010.8
+walid gaaloul, sami bhiri, and mohsen rouached. 2010. event-based design and runtime veriﬁcation of com-
+posite service transactional behavior. ieee transactions on services computing (tsc) 3, 1 (2010), 32–45.
+http://dx.doi.org/10.1109/tsc.2010.1
+acm transactions on software engineering and methodology, publication date: july 2016.impact-driven process model repair 1:51
+walid gaaloul, khaled gaaloul, sami bhiri, armin haller, and manfred hauswirth. 2009. log-based transactional workﬂow
+mining. distributed and parallel databases (dpd) 25, 3 (2009), 193–240. http://dx.doi.org/10.1007/s10619-009-7040-0
+e.m. goldratt, j. cox, and d. whitford. 2012. the goal: a process of ongoing improvement . north river press.
+gianluigi greco, antonella guzzo, francesco lupia, and luigi pontieri. 2015. process discovery under precedence constraints.
+acm transactions on knowledge discovery from data (tkdd) 9, 4 (2015), 32. http://dx.doi.org/10.1145/2710020
+christian w. g ¨unther and wil m.p. van der aalst. 2007. fuzzy mining—adaptive process simpliﬁcation based on multi-
+perspective metrics. in business process management, 5th international conference, bpm 2007, brisbane, aus-
+tralia, september 24–28, 2007, proceedings (lecture notes in computer science) , v ol. 4714. springer, 328–343.
+http://dx.doi.org/10.1007/978-3-540-75183-0 24
+farhana islam, meherun nesa lucky, and barbara pernici. 2010. business analysis of web service repairability. in
+proceedings of the fourth ieee international conference on research challenges in information science, rcis 2010,
+nice, france, may 19–21, 2010 . ieee, 463–472. http://dx.doi.org/10.1109/rcis.2010.5507407
+richard m. karp. 1972. reducibility among combinatorial problems. in proceedings of a symposium on the complexity of
+computer computations, held march 20–22, 1972, at the ibm thomas j. watson research center, yorktown heights,
+new york. (the ibm research symposia series) , raymond e. miller and james w. thatcher (eds.). plenum press, new
+york, 85–103. http://www.cs.berkeley.edu/ ∼luca/cs172/karp.pdf
+aline a. s. le ˜ao, luiz h. cherri, and marcos n. arenales. 2014. determining the k-best solutions of knapsack problems.
+computers & or 49 (2014), 71–82.
+sander j.j. leemans, dirk fahland, and wil m.p. van der aalst. 2013. discovering block-structured process models
+from event logs containing infrequent behaviour. in business process management workshops—bpm 2013 in-
+ternational workshops, beijing, china, august 26, 2013, revised papers (lecture notes in business information
+processing) , niels lohmann, minseok song, and petia wohed (eds.), v ol. 171. springer international publishing, 66–78.
+http://dx.doi.org/10.1007/978-3-319-06257-0 6
+sander j. j. leemans, dirk fahland, and wil m.p. van der aalst. 2015. scalable process discovery with guarantees. in
+enterprise, business-process and information systems modeling (bpmds 2015) (lecture notes in business information
+processing) , k. gaaloul, r. schmidt, s. nurcan, s. guerreiro, and q. ma (eds.), v ol. 214. springer international
+publishing, 85–101.
+chen li, manfred reichert, and andreas wombacher. 2009. discovering reference models by mining process vari-
+ants using a heuristic approach. in business process management , umeshwar dayal, johann eder, jana koehler,
+and hajo a. reijers (eds.). lecture notes in computer science, v ol. 5701. springer berlin heidelberg, 344–362.
+http://dx.doi.org/10.1007/978-3-642-03848-8 23
+chen li, manfred reichert, and andreas wombacher. 2010. the minadept clustering approach for discovering reference
+process models out of process variants. international journal of cooperative information systems 19, 3–4 (2010),
+159–203. http://dx.doi.org/10.1142/s0218843010002139
+chen li, manfred reichert, and andreas wombacher. 2011. mining business process variants: challenges, scenarios,
+algorithms. data & knowledge engineering (dke) 70, 5 (2011), 409–434. http://dx.doi.org/10.1016/j.datak.2011.01.005
+felix mannhardt, massimiliano de leoni, hajo a. reijers, and wil m.p. van der aalst. 2015. balanced multi-perspective
+checking of process conformance. computing (2015). http://dx.doi.org/10.1007/s00607-015-0441-1
+silvano martello, david pisinger, and paolo toth. 2000. new trends in exact algorithms for the 0-1 knapsack problem.
+european journal of operational research (eor) 123, 2 (2000), 325–332.
+thomas molka, david redlich, marc drobek, artur caetano, xiao-jun zeng, and wasif gilani. 2014. conformance checking
+for bpmn-based process models. in proceedings of the 29th annual acm symposium on applied computing (sac’14) .
+acm, new york, ny , usa, 1406–1413. http://dx.doi.org/10.1145/2554850.2555061
+jorge munoz-gama and josep carmona. 2011. enhancing precision in process conformance: stability, conﬁdence and
+severity. in proceedings of the ieee symposium on computational intelligence and data mining, cidm 2011, part of
+the ieee symposium series on computational intelligence 2011, april 11–15, 2011, paris, france . ieee, 184–191.
+http://dx.doi.org/10.1109/cidm.2011.5949451
+jorge munoz-gama, josep carmona, and wil m.p. van der aalst. 2013. conformance checking in the large: par-
+titioning and topology. in business process management—11th international conference, bpm 2013, beijing,
+china, august 26–30, 2013. proceedings (lecture notes in computer science) , v ol. 8094. springer, 130–145.
+http://dx.doi.org/10.1007/978-3-642-40176-3 11
+jorge munoz-gama, josep carmona, and wil m.p. van der aalst. 2013. hierarchical conformance checking of process models
+based on event logs. in application and theory of petri nets and concurrency . springer, 291–310.
+mike p. papazoglou. 2003. service-oriented computing: concepts, characteristics and directions. in 4th international
+conference on web information systems engineering, wise 2003, rome, italy, december 10–12, 2003 . ieee computer
+society, 3–12. http://dx.doi.org/10.1109/wise.2003.1254461
+artem polyvyanyy. 2012. structuring process models . ph.d. dissertation. university of potsdam. http://nbn-resolving.de/urn/
+resolver.pl?urn:nbn:de:kobv:517-opus-59024
+acm transactions on software engineering and methodology, publication date: july 2016.1:52 a. polyvyanyy et al.
+artem polyvyanyy and christoph bussler. 2013. the structured phase of concurrency. in seminal contributions to information
+systems engineering, 25 years of caise , janis a. bubenko jr., john krogstie, oscar pastor, barbara pernici, colette
+rolland, and arne sølvberg (eds.). springer, 257–263. http://dx.doi.org/10.1007/978-3-642-36926-1 20
+artem polyvyanyy, jussi vanhatalo, and hagen v ¨olzer. 2011. simpliﬁed computation and generalization of the reﬁned
+process structure tree. in web services and formal methods—7th international workshop, ws-fm 2010, hoboken, nj,
+usa, september 16–17, 2010. revised selected papers (lecture notes in computer science) , mario bravetti and tevﬁk
+bultan (eds.), v ol. 6551. springer, 25–41. http://dx.doi.org/10.1007/978-3-642-19589-1 2
+artem polyvyanyy, matthias weidlich, and mathias weske. 2012. isotactics as a foundation for alignment and abstraction
+of behavioral models. in business process management—10th international conference, bpm 2012, tallinn, estonia,
+september 3–6, 2012. proceedings (lecture notes in computer science) , alistair barros, avigdor gal, and ekkart
+kindler (eds.), v ol. 7481. springer, 335–351. http://dx.doi.org/10.1007/978-3-642-32885-5 26
+wolfgang reisig. 1998. elements of distributed algorithms: modeling and analysis with petri nets . springer-verlag berlin
+heidelberg new york. http://www.springer.com/computer/theoretical+computer+science/book/978-3-540-62752-4
+anne rozinat and wil m.p. van der aalst. 2008. conformance checking of processes based on monitoring real behavior.
+information systems (is) 33, 1 (2008), 64–95. http://dx.doi.org/10.1016/j.is.2007.07.001
+wil m.p. van der aalst. 1997. veriﬁcation of workﬂow nets. in application and theory of petri nets 1997, 18th in-
+ternational conference, icatpn ’97, toulouse, france, june 23–27, 1997, proceedings (lecture notes in com-
+puter science) , pierre az ´ema and gianfranco balbo (eds.), v ol. 1248. springer berlin heidelberg, 407–426.
+http://dx.doi.org/10.1007/3-540-63139-9 48
+wil m.p. van der aalst. 2011. process mining: discovery, conformance and enhancement of business processes (1st ed.).
+springer-verlag berlin heidelberg. http://www.springer.com/gp/book/9783642193446
+wil m.p. van der aalst. 2013. decomposing petri nets for process mining: a generic approach. distributed and parallel
+databases 31, 4 (2013), 471–507. http://dx.doi.org/10.1007/s10619-013-7127-5
+wil m.p. van der aalst, arya adriansyah, and boudewijn f. van dongen. 2012. replaying history on process models
+for conformance checking and performance analysis. wiley interdisciplinary reviews: data mining and knowledge
+discovery (widm) 2, 2 (2012), 182–192. http://dx.doi.org/10.1002/widm.1045
+wil m.p. van der aalst, kees m. van hee, jan martijn e.m. van der werf, and marc verdonk. 2010. auditing
+2.0: using process mining to support tomorrow’s auditor. ieee computer (computer) 43, 3 (2010), 90–93.
+http://dx.doi.org/10.1109/mc.2010.61
+wil m.p. van der aalst, a.j.m.m. weijters, and laura maruster. 2004. workﬂow mining: discovering process mod-
+els from event logs. ieee transactions on knowledge and data engineering 16, 9 (sept 2004), 1128–1142.
+http://dx.doi.org/10.1109/tkde.2004.47
+boudewijn f. van dongen, ana karla alves de medeiros, h.m.w. verbeek, a.j.m.m. weijters, and wil m.p. van der aalst.
+2005. the prom framework: a new era in process mining tool support. in applications and theory of petri nets
+2005, 26th international conference, icatpn 2005, miami, usa, june 20–25, 2005, proceedings (lecture notes in
+computer science) , gianfranco ciardo and philippe darondeau (eds.), v ol. 3536. springer berlin heidelberg, 444–454.
+http://dx.doi.org/10.1007/11494744 25
+rob j. van glabbeek. 1990. the linear time-branching time spectrum (extended abstract). in concur’90, theories of
+concurrency: uniﬁcation and extension, amsterdam, the netherlands, august 27–30, 1990, proceedings (lecture notes
+in computer science) , v ol. 458. springer, 278–297. http://dx.doi.org/10.1007/bfb0039066
+pamela h. vance. 1993. knapsack problems: algorithms and computer implementations. siam rev. 35, 4 (1993), 684–685.
+http://dx.doi.org/10.1137/1035174
+jussi vanhatalo, hagen v ¨olzer, and jana koehler. 2009. the reﬁned process structure tree. data & knowledge engineering
+(dke) 68, 9 (2009), 793–818. http://dx.doi.org/10.1016/j.datak.2009.02.015
+h.m.w. verbeek, joos c.a.m. buijs, boudewijn f. van dongen, and wil m.p. van der aalst. 2011. xes, xe-
+same, and prom 6. in information systems evolution—caise forum 2010, hammamet, tunisia, june 7–9,
+2010, selected extended papers (lecture notes in business information processing) , v ol. 72. springer, 60–75.
+http://dx.doi.org/10.1007/978-3-642-17722-4 5
+a.j.m.m. weijters, wil m.p. van der aalst, and ana karla alves de medeiros. 2006. process mining with the heuristics
+miner-algorithm. technische universiteit eindhoven, tech. rep. wp 166 (2006), 1–34.
+franz wotawa. 2001. a variant of reiter’s hitting-set algorithm. information processing letters (ipl) 79, 1 (2001), 45–51.
+http://dx.doi.org/10.1016/s0020-0190(00)00166-6
+acm transactions on software engineering and methodology, publication date: july 2016.

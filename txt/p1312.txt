@@ -1,0 +1,592 @@
+detecting context-aware deviations in process
+executions
+gyunam park, janik-vasily benzin, and wil m. p. van der aalst
+process and data science group (pads), rwth aachen university, germany
+gnpark@pads.rwth-aachen.de, janik.benzin@rwth-aachen.de,
+wvdaalst@pads.rwth-aachen.de
+abstract. a deviation detection aims to detect deviating process in-
+stances, e.g., patients in the healthcare process and products in the man-
+ufacturing process. a business process of an organization is executed in
+various contextual situations, e.g., a covid-19 pandemic in the case of
+hospitals and a lack of semiconductor chip shortage in the case of auto-
+mobile companies. thus, context-aware deviation detection is essential
+to provide relevant insights. however, existing work 1) does not provide
+a systematic way of incorporating various contexts, 2) is tailored to a
+specic approach without using an extensive pool of existing deviation
+detection techniques, and 3) does not distinguish positive and negative
+contexts that justify and refute deviation, respectively. in this work, we
+provide a framework to bridge the aforementioned gaps. we have imple-
+mented the proposed framework as a web service that can be extended
+to various contexts and deviation detection methods. we have evaluated
+the eectiveness of the proposed framework by conducting experiments
+using 255 dierent contextual scenarios.
+keywords: context-aware deviation detection ·context ·deviation
+detection ·process mining
+1 introduction
+deviation detection in process executions aims to identify anomalous executions
+by distinguishing deviating behaviors from normal behaviors. a range of deviation
+detection techniques for business processes has been proposed [4]. the techniques
+are categorized as supervised and unsupervised ones. the former denes normal
+behavior to identify deviations of recorded process executions with respect to the
+specied normal behavior, whereas the latter identies deviations without such
+normal behaviors. since many businesses lack the specication of normal behavior,
+unsupervised deviation detection techniques recently gained more attention [4].
+as a process is executed in a specic context (e.g., covid-19 pandemic) that
+aects the behavior of the execution, it is indispensable to consider the context
+when detecting deviations [2]. in this regard, context-aware deviation detection
+aims to classify a trace (i.e., a sequence of events by a process instance) to 1○
+context-insensitive normal meaning the trace is normal regardless of context, 2○2 park et al.
+context-insensitive deviating meaning the trace is deviating regardless of context,
+3○context-sensitive normal meaning the trace is deviating without considering
+context but normal when considering context, and 4○context-sensitive deviating
+meaning the trace is normal without considering context but deviating when
+considering context.
+few approaches have been developed to (indirectly) solve the context-aware
+deviation detection problem [4]. for instance, pauwels et al. [15] extend bayesian
+networks to learn conditional probabilities for organizational contexts such as
+roles of resources. warrender et al. [17] propose a sliding-window based approach
+that considers time-related context. mannhardt et al. [12] conceptualize context
+as data attributes of process instances.
+however, each approach is tailored to consider limited aspects of contexts, not
+providing a systematic way to extend the approach to consider various aspects of
+contexts. given a large space of possibly relevant contexts proposed in studies on
+contexts (cf. subsect. 2.2), we need a systematic framework to integrate context
+to deviation detection.
+moreover, a framework to integrate a large number of existing deviation de-
+tection methods with dierent strengths and weaknesses on varying assumptions
+is missing. instead, the existing work is conned to a single method and inherits
+the methods' unique set of properties.
+furthermore, existing techniques do not distinguish positive and negative
+contexts. the former justies deviations. for instance, covid-19 pandemic in
+a healthcare process explains the long waiting time for admission, e.g., due to
+the sudden increase in the number of patients. the latter refutes non-deviations.
+\crunch time" in a video game industry denies a normal throughput time of the
+game development process, e.g., with the compulsory overwork by employees.
+existing work considers only negative contexts when integrating context into
+deviation detection.
+fig. 1: an overview of the framework for context-aware deviation detection
+in this paper, we propose a framework based on post-processing mechanism to
+systematically support the context-aware deviation by integrating the extensive
+existing deviation detection methods and contexts. as shown in fig. 1, the frame-
+work consists of four components. first, deviation detection computes deviatingdetecting context-aware deviations in process executions 3
+scores of traces, with which we can classify non-context deviating andnon-context
+normal traces. next, context analysis computes positive and negative contexts
+by aggregating context history . afterwards, context link connects the context to
+traces. next, post-processing increases the deviation score of a trace with the
+positive context of the trace and decreases it with the negative context. using the
+revised deviation score, we classify traces as context-normal andcontext-deviating .
+finally, we label a trace as one of 1○-4○based on the non-context and context
+classications.
+to summarize, this paper provides the following contributions:
+{we propose a framework to solve the context-aware deviation detection prob-
+lem while integrating the existing deviation detection methods and contexts.
+{we extend the context conceptualization with positive andnegative contexts
+that carry dedicated semantics for deviation detection.
+{we implement a exible and scalable web service supporting the framework
+and evaluate the eectiveness of the framework with 225 simulated scenarios.
+the remainder is organized as follows. we discuss the related work in sect. 2.
+then, we present the preliminaries in sect. 3. next, we introduce the context-
+awareness in sect. 4 and a framework for integrating contexts and deviation
+detection in sect. 5. afterward, sect. 6 introduces the implementation of a web
+application, and sect. 7 evaluates the eectiveness of the proposed framework.
+finally, sect. 8 concludes the paper.
+2 related work
+in this section, we introduce existing literature on unsupervised deviation detec-
+tion of process executions and the context of business processes.
+2.1 unsupervised deviation detection
+unsupervised deviation detection is categorized into 1) process-centric, 2) prole-
+based, 3) process-agnostic and interpretable, and 4) process-agnostic and non-
+interpretable methods.
+process-centric. [3] computes the conformance of traces to a process model
+and classies non-conforming traces as deviating. [5] renes the concept of like-
+lihood graphs by mining small likelihood graph signatures from event data. a
+deviation is determined by comparing the execution likelihood of a trace with
+respect to a set of mined signatures and a reference likelihood. [8] discovers pro-
+cess models using genetic algorithms and conducts conformance checking using
+token-based replay to detect deviating traces.
+prole-based. [11] iteratively samples more normal sets of traces and proles
+each trace against the more normal set of traces. the result is a sorted list of
+traces according to their proles in the last iteration, which is used to partition
+the event data into a set of normal traces and a set of deviating traces using a
+deviation threshold.4 park et al.
+process-agnostic and interpretable. [15] extends bayesian networks and
+denes a conditional likelihood-based score using the extended bayesian network
+on traces. all traces are then sorted according to the score, and the rst kare
+returned as deviating traces. [6] uses association rules . a set of anomaly detection
+association rules specifying normal behavior is mined from the event data. a trace
+is detected as deviating if its aggregate support is below the aggregate support
+of its most similar trace in the event data with respect to the set of anomaly
+detection association rules. [17] uses a sliding window-based approach to extract
+frequency information over those windows. if a trace contains infrequent windows,
+then it is deviating.
+process-agnostic and non-interpretable. [13] encodes traces in event
+data using one-hot encoding and train autoencoder neural network with them.
+the deviation of a trace is determined using the error the autoencoder makes in
+predicting the trace. [14] further develops the application of neural networks to
+event data by training a recurrent neural network to predict the next event in
+integer-encoding based on the current event in a trace. the aggregate likelihood
+of predicting the correct events is used to detect deviations.
+some of the unsupervised deviation detection methods provide room for
+handling limited kinds of context but take method-dependent approaches such
+that neither a general integration nor support for a systematic extension of context
+is provided. in this work, we provide a general framework to integrate various
+unsupervised deviation detection techniques with dierent strengths, weaknesses,
+and assumptions to systematically extend them with contexts.
+2.2 context
+in pervasive computing, especially for developing adaptive services, context is
+conceptualized as the lower level of the abstraction of raw data [18]. another
+higher-level abstraction, called situation, is introduced to map one or multiple
+contexts to semantically richer concepts such as users' behaviors.
+in business processes, a context is a multitude of concepts that aect the
+behavior and performance of the process. [2] derives four levels of context that
+should be considered during the analysis of processes to improve the quality of
+results. [16] extends it and provides an ontology of contexts in bpm by conducting
+an extensive literature review of the context in bpm.
+more ontological approaches have been proposed to specify context and sit-
+uations. generally, they categorize contexts into intrinsic and relational . [7]
+dierentiate between intrinsic and relational context whereby intrinsic context
+is essential to the nature of the entity and relational context is inherent to the
+relation of multiple entities. [9] develops a two-level framework for structuring
+context, which is more coarse-grained than the four levels of [2].
+in this work, we merge relevant contexts of the earlier work and their catego-
+rizations into an integrative context ontology that is aimed at extracting context
+from event data.detecting context-aware deviations in process executions 5
+3 preliminaries
+denition 1 (event). letuebe the universe of events, let uatt=fact;case;
+time;:::gbe the universe of attribute names. for any e2ueandatt2uatt:
+#att(e)is the value of attribute attfor evente, e.g., #time(e)indicates the
+timestamp of event e.
+denition 2 (trace). a trace is a nite sequence of events 2u
+esuch that
+each event appears only once, i.e., 81i<jjj(i)6=(j). given2u
+eande2
+ue, we writee2if and only if91ijj(i)=e. we dene elem2u
+e!p(ue)
+with elem ()=fe2g.
+denition 3 (event log). an event log is a set of traces lu
+esuch that each
+event appears at most once in the event log, i.e., for any 1;22lsuch that16=
+2:elem (1)\elem (2)=;. givenlu
+e, we denote e(l)=s
+2lelem ().
+denition 4 (time window). letutime be the universe of timestamps. utw=
+f(ts;te2utimeutimejtstegis the set of all possible time windows.
+duration2utw!rmaps a time window to a real valued representation of
+the dierence between the its start and end in the granularity of seconds.
+fortw=(ts;te),s(tw)=tsande(tw)=te. for instance, tw1=(2022-01-01 00:00:00 ;
+2022-01-08 00:00:00 ) is a time window where s(tw1)=2022-01-01 00:00:00 ,e(tw1)=2022-
+01-08 00:00:00 , and duration (tw1)=604800 (seconds). note that, in the remainder,
+we denote 604800 as week .
+a time span of an event log with length lis a collection of non-overlapping
+time windows of the event log that have the equal duration of l.
+denition 5 (time span). letl2rbe a time span length. let l2u
+ebe
+an event log. tmin(l) =mine2e(l)#time(e),tmax(l) =maxe2e(l)#time(e), and
+nl(l) =d(tmax(l) tmin(l))=le.spanl(l) =f(tmin(l)+(k 1)l;tmin(l)+kl)j1
+knl(l)g. for anye2e(l),twl;l(e) =tws.t.s(tw)#time(e)c(tw).
+assume that event log lcontains traces that consist of events between
+2022-01-01 00:00:00 and 2022-01-15 00:00:00 .tmin(l) = 2022-01-01 00:00:00 ,tmax(l) =
+2022-01-15 00:00:00 , andnweek(l) = 2. spanweek(l) contains two time windows tw1
+= (2022-01-01 00:00:00 ;2022-01-08 00:00:00 ) andtw2=(2022-01-08 00:00:00 ;2022-01-15 00:00:00 ).
+4 context-aware deviation detection
+in this section, we introduce a context-aware deviation detection problem and
+explain an ontology of contexts for context-aware deviation detection.6 park et al.
+4.1 context-aware deviation detection problem
+first, a deviation detection problem is to compute a function that labels traces
+either with label deviating or with label normal . all known deviation detection
+methods implicitly or explicitly use some form of scoring of traces score that is a
+mapping of traces to some real number (cf. subsect. 2.1). a threshold is used
+to decide the label. we conceptualize deviating traces as traces scored above .
+denition 6 (deviation detection). letlbe an event log. let s=[0;1]be
+a range of all possible score values and 2sbe a threshold value. a score
+function score2l!smaps traces to score values. detect score2l!fd;ngis
+a deviation detection using score such that, for any 2l,detect score() =d if
+score ()>. detect score() =n otherwise.
+instead of the two-class labeling problem, a context-aware deviation detection
+problem is a four-class labeling problem. table 1 describes the four classes with
+two dimensions: non-context andcontext . the non-context deviating ( d) and nor-
+mal (n) correspond to the two classes of the deviation detection problem, whereas
+context-deviating ( dc) and context-normal ( nc) indicate that a trace is deviat-
+ing and normal, respectively, when considering context. first, context-insensitive
+deviating (i.e.,d)dc) indicates that a trace is both non-context deviating and
+context-deviating. second, context-sensitive deviating (i.e.,n)dc) denotes that
+a trace is non-context normal, but context-deviating. third, context-sensitive
+normal (i.e.,d)nc) indicates that a trace is non-context deviating, but context-
+normal. finally, context-insensitive normal (i.e.,n)nc) denotes that a trace is
+both non-context normal and context-normal.
+table 1: four classes in a context-aware deviation detection problem
+2u
+econtext
+deviating ( dc) normal (nc)
+non-contextdeviating
+(d)context-insensitive deviating
+(d)dc)context-sensitive normal
+(d)nc)
+normal
+(n)context-sensitive deviating
+(n)dc)context-insensitive normal
+(n)nc)
+denition 7 (context-aware deviation detection problem). givenl
+u
+e, compute a function that labels traces with context-insensitive deviating, context-
+sensitive deviating, context-sensitive normal, or context-insensitive normal, i.e.,
+c-detect2l!fd)dc;n)dc;d)nc;n)ncg.
+4.2 context-awareness
+based on existing work on contexts of business processes introduced in sub-
+sect. 2.2, we provide context ontology for context-aware deviation detection in
+fig. 2. first, intrinsic context is inherent to an event. the intrinsic contexts
+resource and data correspond to the organizational and data perspectives for adetecting context-aware deviations in process executions 7
+single event. the waiting time context represents the average waiting time of an
+event. thus, the information of waiting time contexts can be used to capture
+unusually long delays for events.
+fig. 2: an ontology of business process context for deviation detection [2] [16] [7] [9].
+next, relational context is inherent to the relation of multiple events. the rela-
+tional contexts workload ,waiting time and capacity utilization represent context
+information that is measured (extracted) by relating multiple events of the data.
+the workload context represents event counts of various selections for a given
+time window. the capacity utilization context represents workloads of resources
+or locations of events by counting the respective events that were recorded dur-
+ing the time window of the context, e.g., the capacity utilization of a nance
+department. therefore, the information of capacity utilization contexts can be
+used to capture unusually high workloads of resources.
+finally, external context is not directly attributable to events, but still aects
+them. the external context pandemics represents the outbreak of infectious dis-
+ease, e.g., covid-19 pandemic. as an external context is not directly measurable
+on event data, either additional data has to be used, or it has to be represented
+by another measurable relational context caused by the external context, e.g., a
+hygienic products shop experiences exceptionally large demand during the rst
+worldwide outbreak of corona pandemic such that the workload context captures
+the unusual demand increase and, thus, the external context pandemic .
+5 framework for context-aware deviation detection
+this section introduces a framework based on post-processing mechanism . we
+explain each of the four components described in fig. 1 with a running example:
+1) deviation detection, 2) context analysis, 3) context link, and 4) post processing.
+5.1 running example
+fig. 3 shows a running example of an order management process. it describes
+events of the process for two weeks under 1) the context of high workload (i.e.,
+many events during the week) in week 1 and 2) the context of overwork (i.e.,
+many events during the weekend) in week 2 . the context of high workload is
+considered as a positive context, i.e., the context justies deviating traces in week
+1, producing more context-normal traces. in contrast, we consider the context of8 park et al.
+overwork as a negative context, i.e., the context refutes normal traces in week 2 ,
+producing more context-deviating traces in week 2 .
+fig. 3: a running example of context-aware deviation detection for the time window
+week 1 (w1) andweek 2 (w2) .(a)the context history of l1inw1shows workload of 1100
+(total number of events in w1) and overwork of 40 (total number of events during week-
+end in w1), respectively. (b)assume workload is a positive measure, workload max=1200,
+andworkload min=200. by aggregating positive (blue) and negative (red) measures in w1
+with min-max normalization , we compute the context in w1, i.e., positive context of 0 :9
+and negative context of 0 :2.(c)we rst connect the context to events (as denoted by
+gray dotted lines) and then connect the context to a trace by computing the maximum
+positive and negative contexts of its events. 2has the positive context of 0 :9 (i.e.,
+the maximum positive context of its events) and the negative context of 0 :9 (i.e., the
+maximum negative context). (d)the non-context deviating score of 1is 0:6 (>, i.e.,
+non-context deviating), but its revised deviation score is 0 :37 (, i.e., context-normal).
+thus,1is context-sensitive normal.detecting context-aware deviations in process executions 9
+5.2 context analysis
+we analyze context in two steps. first, we compute context history based on event
+logs. a context history describes the value of dierent measures (e.g., workload
+and overwork ) in dierent time windows.
+denition 8 (context history). letumeasure =fworkload;overwork;:::gbe
+the universe of measure names. uch=utw9(umeasure 9 r)is the universe of
+context history. let lbe an event log and l2ra time span length. chl(l)2uch
+is the context history in lwith time span of l.
+fig. 3(a) shows the context history of l1with time span length week , i.e.,
+chweek(l1). it contains the measures of workload and overwork . for instance,
+chweek(l1)(w1)(workload ) = 1100 and chweek(l1)(w1)(overwork ) = 40.
+a context consists of positive and negative context scores. they describe the
+overall positive/negative contexts in a time window with a value ranging from 0 to
+1, respectively. the closer the value is to 1, the stronger the respective context is.
+we compute the context in a time window using context measures in the context
+history of the time window. to this end, we 1) normalize context measures
+in the time window, 2) distinguish positive and negative context measures, 3)
+aggregate positive and negative context measures with dierent weights (i.e., the
+importance of measures).
+denition 9 (context). letlbe an event log and l2ra time span length.
+type2umeasure!fpos;neggmaps measures to posandneg, w2umeasure!r
+maps measures to weights, and norm2umeasure!(r![0;1])maps measures to
+normalization functions that assign values ranging from 0 to 1 to measure values.
+ctxl;l2spanl(l)9[0;1]2is a context such that, for any tw2dom(ctxl;l),
+ctxl;l(tw) = (pc;nc )with
+{pc=p
+m2dom(chtw
+l;l)^type(m)=posw(m)norm (m)(chtw
+l;l(m))=w(m)and
+{nc=p
+m2dom(chtw
+l;l)^type(m)=negw(m)norm (m)(chtw
+l;l(m))=w(m)
+, where chtw
+l;l=chl(l)(tw).
+the example in fig. 3 assumes norm 1,type1, and w1. first, norm 1uses
+min-max normalization for each measure, e.g., with the maximum workload of
+1200, the minimum workload of 200, the maximum overwork of 120, and the
+minimum overwork of 20. moreover, type1classies workload as a positive context
+measure and overwork as a negative context measure, i.e., type1(workload )=pos
+andtype1(overwork )=neg. finally, w1assigns the weights of 10 and 5 to workload
+and overwork , respectively, i.e., w1(workload )=10 and w1(overwork )=5.
+fig. 3(b) shows context ctxweek;l1. the positive context in time window w1is
+w1(workload )norm 1(workload )(1200)=w1(workload )=100:9=10=0:9. the negative context
+inw1isw1(overwork )norm 1(overwork )(200)=w1(overwork )=50:2=5=0:2. note that, in
+the example, the weight does not play its role since we only use one positive and
+one negative context measure.10 park et al.
+5.3 linking context to traces
+to connect context to traces, we rst link context to events. an event is connected
+to the context of the time window that the event belongs to.
+denition 10 (context-event link). letlbe an event log and l2ra time
+span length. a context-event link, elinkl;l2e(l)![0;1]2, maps events to posi-
+tive and negative contexts such that, for any e2e(l),elinkl;l(e)=ctxl;l(twl;l(e)).
+as depicted in fig. 3(c) by gray dotted lines, e1,e2, ande3 by1ande4 ande5
+by2are connected to ctxweek;l1(w1), i.e., elink week;l1(e1)=ctxweek;l1(w1)=(0:9;
+0:2), etc.
+the context of a trace is determined by the context of its events. in this work,
+we dene the maximum positive and negative context of the events of a trace as
+the context of the trace.
+denition 11 (context-trace link). letlbe an event log and l2ra time
+span length. tlinkl;l2l![0;1]2maps traces to positive and negative contexts
+s.t., for any 2l,tlink l;l()=(max(fpc2[0;1]j9e2elem ()(pc;nc )=elink l;l(e)g)
+;max(fnc2[0;1]j9e2elem ()(pc;nc )=elink l;l(e)g)).
+as shown in fig. 3(c), 1has the positive context of 0 :9 and negative context
+of 0:2, i.e., tlink week;l1(1)=(0:9;0:2), since the maximum positive context of
+its events, i.e., e1,e2, ande3, is 0:9 and the maximum negative context is 0 :2.
+tlink week;l1(2)=(0:9;0:9), since the maximum positive context of its events, i.e.,
+e4,e5, ande6, is 0:9 and the maximum negative context is 0 :9.
+5.4 post processing
+post-processing function revises the non-context deviating score of a trace using
+the positive and negative context of the trace. the positive context decreases
+the deviating score, whereas the negative context increases it.
+denition 12 (post processing). letlbe an event log, l2ra time span
+length, and score a score function. post l;l;score2l[0;1]2![0;1]maps a trace,
+a positive degree, and a negative degree to revised score such that, for any 2l,
+pos2[0;1], andneg2[0;1],post l;l;score(;pos;neg)=score () score ()
+pospc+ (1 score ())negnc where (pc;nc)=tlinkl;l().
+in fig. 3(d), 1has the deviation score of 0 :6, i.e., score 1(1)=0:6. given1,
+pos=0:5 andneg=0:5,post week;l1;score 1revises the deviating score to a new
+score of 0:37, i.e., 0:6 0:60:50:9 + (1 0:6)0:50:2=0:37.
+finally, a context-aware detection function labels traces with the four context-
+aware classes described in table 1, based on the non-context deviating score and
+revised deviating score.detecting context-aware deviations in process executions 11
+denition 13 (context-aware detection). letlbe an event log and l2
+ra time span length. let score be a score function. let pos;neg2[0;1]
+be positive and negative degrees and 2sbe a threshold. c-detect2l!
+fd)dc;n)dc;d)nc;n)ncgmaps traces to context-aware labels such that for
+any2l:
+c-detect ()=8
+>>><
+>>>:d)dcif detect score()=dand postl;l;score(;pos;neg)>
+n)dcif detect score()=nand postl;l;score(;pos;neg)>
+d)ncif detect score()=dand postl;l;score(;pos;neg)
+n)ncif detect score()=nand postl;l;score(;pos;neg)
+as shown in fig. 3(d), given =0:5,pos=0:5, andneg=0:5,c-detect (1)=
+d)ncsince detect score 1(1)=dand postweek;l1;score 1(1;pos;neg)=0:37.
+furthermore, c-detect (3)=n)dcsince detect score 1(2)=nandpostweek;l1;score 1(
+2;pos;neg)=0:63>.
+6 implementation
+the framework for context-aware deviation detection is implemented as a cloud-
+based web service with a dedicated user interface. the implementation is available
+athttps://github.com/janikbenzin/contect along with the source code, a
+user manual, and a demo video. it consists of four functional components: (1)
+context analysis, (2) deviation detection, (3) context-aware deviation detection,
+and (4) visualization.
+fig. 4: a screenshot of scatter visualization. by varying the degree of positive and
+negative context, we can deduce the adequate degree of positive and negative context
+to be used for the context-aware deviation detection.
+first, the context analysis component supports the computation of the context
+history and context. the context introduced in fig. 2 have been implemented
+including workload ,weekend ,waiting time , and capacity utilization .12 park et al.
+second, the deviation detection component implements four deviation detec-
+tion methods that correspond to representatives of four respective categories
+introduced in subsect. 2.1. for process-centric methods, we adapt the two-step
+approach in [8] by using inductive miner [10] for process discovery and align-
+ment [1] for conformance checking. for prole-based approaches, proles [11] has
+been implemented, while adar [6] and autoencoder [13] have been implemented
+as process-agnostic & interpretable/non-interpretable approaches, respectively.
+next, the context-aware deviation detection component implements the post
+processing and the context-aware deviation detection function.
+finally, the visualization component supports an analysis view for each de-
+viation detection method. each analysis view consists of three visualizations:
+tabular ,scatter , and calendar .tabular visualizes the most deviating traces by
+sorting them based on the deviation score, the proximity to being relabelled
+as context-normal, etc. scatter shows a 3d-scatter plot of the deviation score,
+positive context, and negative context, as shown in fig. 4. as the number of
+deviating traces can be large, the k-mediods clustering algorithm is applied to
+all deviating traces such that the user can analyze the medoids to understand
+the whole space of deviating traces more eciently (depicted as rst to fourth
+and seventh legend entry in fig. 4). moreover, by varying the positive and nega-
+tive degrees, we can analyze the eect of the context on the deviation detection.
+calendar visualizes the context over time by aggregating contexts by time and
+plotting them over the time span.
+7 evaluation
+this section evaluates the proposed framework using the implementation in
+sect. 6. to this end, we conduct four case studies using deviation detection
+methods: inductive ,proles ,adar , and autoencoder . in each case study, we
+compare the performance of context-aware deviation detection and context non-
+aware deviation detection in 225 dierent simulated scenarios. in the rest of this
+section, we rst introduce a detailed experimental design and then report the
+results.
+7.1 experimental design
+as depicted in fig. 5, the evaluation follows a four step pipeline: data generation ,
+simulation scenario injection ,framework application , and evaluation of results .
+first, the data generation uses cpn tools1to simulate an order management
+process. next, we inject four dierent types of deviating events into the generated
+event data and label them as non-context deviating: 1) rework randomly adds
+an event to a trace with the activity that has already occurred, 2) swap randomly
+swaps the timestamp of two existing events, 3) replace resource randomly replaces
+the resource of an event with a dierent resource, and 4) remove randomly
+1www.cpntools.orgdetecting context-aware deviations in process executions 13
+removes an existing event from the data. to understand the eect of the amount
+of deviations on the classication result, the evaluation injected 2%, 5%, or 10%
+deviations equally distributed among the four types.
+fig. 5: an overview of the experimental design
+afterward, we inject four contextual scenarios as follows.
+1.forworkload scenario, we randomly select a week and add additional orders
+in the week. we consider it as a positive context and, thus, the non-context
+deviating events of the selected week are relabelled to context-normal.
+2.forcapacity utilization performance scenario, we randomly assign vacations
+and sick leaves to resources, lowering the capacity of the process. it is consid-
+ered as a positive context, and non-context deviating events associated with
+the reduced capacity resource are relabelled to context-normal.
+3.forwaiting time , all events of randomly chosen days are randomly delayed.
+it is considered a negative context, and all of the delayed events that are
+non-context normal or context-normal are labeled as context-deviating.
+4.foroverwork scenario, we shift the random percentage of events during
+weekdays to saturday and sunday. it is regarded as a negative context, and
+all shifted events that are non-context normal or context-normal are relabelled
+to context-deviating.
+to determine the strength of the relationship between positive contexts and
+deviations, we use % context attributable parameter that determines how many
+traces are aected by positive contextual scenarios, i.e., non-context deviating
+events are relabelled to context-normal. we include it as the second parameter
+for experiments with values ranging from 0% to 100% as depicted in fig. 5.
+225 experiments per case study (3 355) result from the parameters as
+shown in fig. 5, i.e., three event datasets, three % events deviating parameters
+and the ve % context attributable parameters per positive contextual scenario.
+next, we apply the proposed framework and compute context-aware detection
+results. hyperparameter grid search is applied to nd the best combination of
+positive and negative degrees for the post function.14 park et al.
+table 2: evaluation results from four case studies
+context-non-aware
+deviation detection
+pos=neg= 0context-aware
+deviation detection
+pos;negoptimizeddierence
+inductiveaccuracy 0.389118 0.426846 -0.037728
+avg. class accuracy 0.326856 0.311832 -0.015024
+precision 0.248691 0.293496 -0.044805
+recall 0.389118 0.426846 -0.037728
+autoencoderaccuracy 0.385035 0.425686 -0.040651
+avg. class accuracy 0.311249 0.312451 -0.001202
+precision 0.235668 0.369101 -0.133433
+recall 0.385035 0.424996 -0.039961
+prolesaccuracy 0.363995 0.406368 -0.042373
+avg. class accuracy 0.293880 0.292083 -0.001797
+precision 0.220972 0.332658 -0.111686
+recall 0.363995 0.404011 -0.034061
+adaraccuracy 0.351544 0.395066 -0.043522
+avg. class accuracy 0.291969 0.289284 -0.002685
+precision 0.229760 0.334021 -0.104261
+recall 0.351544 0.385152 -0.033608
+7.2 experimental results
+first, we report average results for each case study in table 2, showing that the
+consideration of positive/negative context is eective in the context-aware devi-
+ation detection. the rst column in table 2 shows the performance of context-
+non-aware deviation detection with posandnegboth set to 0. the second
+column in table 2 shows the performance of context-aware deviation detection
+with positive posand negative degree negboth optimized through the hyper-
+parameter grid search. the third column shows the performance dierence of
+the proposed approach with respect to the baseline.
+in the case study using inductive , the accuracy of 0.389118 is improved by
+0.037728 to0.426846 , the average class accuracy of 0.326856 is slightly reduced
+by0.015024 to0.311832 , the precision of 0.248691 is boosted by 0.044805 to
+0.293496 and the recall of 0.389118 is upgraded by 0.037728 to0.425686 . the
+other three case studies also show performance improvements in terms of accuracy,
+precision, and recall similar to inductive and a decrease in average class accuracy.
+in particular, the results are signicantly more precise with the framework's
+context-aware deviation detection than for deviation detection.
+second, fig. 6 shows two confusion matrices in fig. 6 for inductive and
+autoencoder , summing the confusion matrix of each experiment. the confusion
+matrix for autoencoder is representative for proles andadar , showing similar
+results. the context-awareness generally improves the performance in all case
+studies by improving the detection of context-sensitive deviating traces, but not
+by detection of context-sensitive normal traces. with respect to context-sensitive
+normal , the framework's context-awareness has most of the time does not correctly
+predict the context-sensitive normal traces (0 out of 9,194 +9,389 +2,798 =
+21,381 context-sensitive normal traces for inductive and83out of 6,306 +11,173
++83+3,678 =21,240 traces for autoencoder ). with respect to context-sensitivedetecting context-aware deviations in process executions 15
+deviating , the framework's context-awareness performs signicantly better for the
+context-sensitive deviating traces with 54,186 of72,021 +36,952 +0+54,187
+=163,160 correctly predicted traces ( inductive ) and with 47,951 of50,485 +
+60,529 +452+47,951 =159,417 correctly predicted traces ( autoencoder ).
+(a)inductive
+(b)autoencoder
+fig. 6: confusion matrices summed over all 225 experiments of the respective context-
+aware deviation detection method
+8 conclusion
+in this paper, we proposed a framework to support context-aware deviation
+detection. the proposed framework can incorporate any existing unsupervised
+deviation detection methods with varying strengths and weaknesses and enhance
+them with various contextual aspects. we have implemented the framework as
+an extensible web service with a dedicated user interface. moreover, we have
+evaluated the eectiveness of the framework by conducting experiments using
+representative deviation detection methods in dierent contextual scenarios.
+this work has several limitations. first, the proposed framework introduces
+several parameters that possibly aect the detection results, e.g., the negative and
+positive degree of post function, the threshold of score function, etc. second, the
+framework is dependent on the performance of the deviation detection method.
+third, using an event log as the input, the framework only indirectly measures
+external contexts.
+besides addressing the above limitations, in future work, we plan to extend the
+framework to support the root cause analysis of context-aware deviations. we can
+analyze the relevant context of context-aware deviating instances and trace back
+the relevant context measure, e.g., high workload. moreover, we plan to extend
+the framework to consider contexts of dierent time window lengths, e.g., context
+inweek,day, and hour. another direction of future work is to develop dierent
+post functions to improve the performance of the context-aware deviations.16 park et al.
+references
+1.van der aalst, w.m.p., adriansyah, a., van dongen, b.f.: replaying history on pro-
+cess models for conformance checking and performance analysis. wiley interdiscip.
+rev. data min. knowl. discov. 2(2), 182{192 (2012)
+2.van der aalst, w.m.p., dustdar, s.: process mining put into context. ieee internet
+computing 16(1), 82{86 (2012)
+3.bezerra, f., wainer, j.: algorithms for anomaly detection of traces in logs of process
+aware information systems. information systems 38(1), 33{44 (2013)
+4.b ohmer, k., rinderle-ma, s.: anomaly detection in business process runtime be-
+havior - challenges and limitations. corr abs/1705.06659 (2017)
+5.b ohmer, k., rinderle-ma, s.: multi instance anomaly detection in business process
+executions. in: et al, j.c. (ed.) bpm 2017. lncs, vol. 10445, pp. 77{93 (2017)
+6.b ohmer, k., rinderle-ma, s.: mining association rules for anomaly detection in dy-
+namic process runtime behavior and explaining the root cause to users. information
+systems 90, 101438 (2020)
+7.dockhorn costa, p., almeida, j.p.a., ferreira pires, l., van sinderen, m.: situation
+specication and realization in rule-based context-aware applications. in: indulska,
+j., raymond, k. (eds.) distributed applications and interoperable systems. pp.
+32{47 (2007)
+8.jalali, h., baraani, a.: genetic-based anomaly detection in logs of process aware
+systems. world academy of science, engineering and technology 64(4), 304{309
+(2010)
+9.kronsbein, d., meiser, d., leyer, m.: conceptualisation of contextual factors for
+business process performance. lecture notes in engineering and computer science
+2210 (2014)
+10.leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured
+process models from event logs containing infrequent behaviour. in: et al, n.l. (ed.)
+business process management workshops - bpm 2013 international workshops.
+lnbip, vol. 171, pp. 66{78 (2013)
+11.li, g., van der aalst, w.m.p.: a framework for detecting deviations in complex
+event logs. intelligent data analysis 21(4), 759{779 (2017)
+12.mannhardt, f., de leoni, m., reijers, h.a., van der aalst, w.m.p.: balanced multi-
+perspective checking of process conformance. computing 98(4), 407{437 (2016)
+13.nolle, t., luettgen, s., seeliger, a., m uhlh auser, m.: analyzing business process
+anomalies using autoencoders. mach. learn. 107(11), 1875{1893 (2018)
+14.nolle, t., luettgen, s., seeliger, a., m uhlh auser, m.: binet: multi-perspective
+business process anomaly classication. corr abs/1902.03155 (2019)
+15.pauwels, s.: an anomaly detection technique for business processes based on ex-
+tended dynamic bayesian networks. proceedings of the acm symposium on ap-
+plied computing part f1477 , 494{501 (2019)
+16.song, r., vanthienen, j., cui, w., wang, y., huang, l.: towards a comprehensive
+understanding of the context concepts in context-aware business processes. in: betz,
+s. (ed.) s-bpm one 2019. pp. 5:1{5:10 (2019)
+17.warrender, c., forrest, s., pearlmutter, b.a.: detecting intrusions using system
+calls: alternative data models. in: 1999 ieee symposium on security and privacy.
+pp. 133{145 (1999)
+18.ye, j., dobson, s., mckeever, s.: situation identication techniques in pervasive
+computing: a review. pervasive and mobile computing 8(1), 36{66 (2012)

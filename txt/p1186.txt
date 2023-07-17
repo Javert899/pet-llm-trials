@@ -1,0 +1,523 @@
+may i take your order?
+on the interplay between time and order in process mining
+wil m.p. van der aalst1;2and luis santos1
+1process and data science (informatik 9), rwth aachen university, aachen, germany
+2fraunhofer-institut f ¨ur angewandte informationstechnik (fit), sankt augustin, germany
+wvdaalst@pads.rwth-aachen.de
+abstract. process mining starts from event data. the ordering of events is vital
+for the discovery of process models. however, the timestamps of events may
+be unreliable or imprecise. to further complicate matters, also causally unrelated
+events may be ordered in time. the fact that one event is followed by another does
+not imply that the former causes the latter. this paper explores the relationship
+between time and order. moreover, it describes an approach to preprocess event
+data having timestamp-related problems. this approach avoids using accidental
+or unreliable orders and timestamps, creates partial orders to capture uncertainty,
+and allows for exploiting domain knowledge to (re)order events. optionally, the
+approach also generates interleavings to be able to use existing process mining
+techniques that cannot handle partially ordered event data. the approach has been
+implemented using prom and can be applied to any event log.
+keywords: process mining · event data · partial orders · uncertainty
+1 introduction
+most process mining techniques require the events within a case to the totally ordered
+[2]. for example, nearly all discovery techniques convert the event log into a multiset
+of traces where each trace is a sequence of activities. to order the events within a
+case, typically timestamps are used. however, the timestamps may be unreliable or
+too coarse-grained. consider, for example, a nurse taking a blood sample from a patient
+at 16.55 but recording this into the hospital’s information system at 17.55 when her
+shift ends (event e1). at 17.15, the patient’s insurance company approved the operation
+and this was automatically recorded (event e2). the same patient also had an x-ray in
+the evening, but only the date is recorded (event e3). in this example, the real ordering
+of events washe1;e2;e3i, but in the event log they may appear as he3;e2;e1i. event
+e1happened before e2but was recorded one hour later. event e3was the last event,
+but because only the date was recorded, it appeared to have happened at time 00.00.
+moreover, events e1ande2were fully unrelated, so why consider the temporal order?
+the approval was triggered by a request submitted two days before. healthcare data are
+notorious for having data quality problems [10]. however, such issues can be found in
+any domain [3, 11, 15].
+in this paper, we assume that events are partially ordered and have a timestamp (see
+figure 1). this allows us to reason about the problems just mentioned. given a set of2 wil m.p. van der aalst and luis santos
+explicit order 
+information
+total order partial order
+due to 
+uncertaintydue to 
+causalitytimestamp 
+granularity
+milliseconds minutes hours days weeks
+fig. 1. we assume that events may have explicit order information (left) and have a timestamp
+(right). however, the ordering is partial and the timestamps can be coarse-grained.
+eventse, we assume a strict partial order oee.e1oe2means that event e1
+is before event e2.time(e1)andtime(e2)are the timestamps of both events. we as-
+sume that events are recorded at a certain granularity, e.g., milliseconds, seconds, hours,
+days, weeks, months, or years. events may have more ﬁne-grained timestamps, but we
+map these onto the chosen level of granularity. for example, “19-05-2021:17.15.00”
+and “19-05-2021:17.55” are both mapped onto “19-05-2021” when using days as a
+granularity.
+as mentioned, next to timestamps at a selected granularity level, we also assume a
+partial order on events. such a partial order can also be more coarse-grained or more
+ﬁne-grained. one extreme is that the events are totally ordered, i.e., for any two events
+e1ande2:e1oe2ore1oe2. another extreme is that that no two events are ordered
+(e1oe2ore1oe2). the latter case (events are unordered) is similar to assuming
+that all events have the same coarse-grained timestamp (e.g., same year).
+to better explain the problem, we consider the bpmn (business process model
+and notation) model shown in figure 2 for handling requests for compensation within
+an airline. customers may request compensation for various reasons, e.g., a delayed
+or canceled ﬂight. the process starts by registering the request ( reg). after this, three
+checks need to be performed. the customer’s ticket and history are checked for all
+cases, i.e., activities ( ct) and ( ch) need to be performed for all requests. there is a
+choice between a thorough examination ( et) and a casual examination ( ec). after this,
+register 
+request
+(reg)examine 
+casually
+(ec)examine 
+thoroughly 
+(et)
+check ticket 
+(ct)decide
+(dec)pay 
+compensation
+(pay)
+reject 
+request
+(rej)startend
+check history 
+(ch)
+fig. 2. a bpmn model having 4partially-ordered runs and 223! = 24 sequential runs.may i take your order? 3
+register 
+request
+(reg)
+examine 
+casually
+(ec)examine 
+thoroughly 
+(et)
+check ticket 
+(ct)decide
+(dec)pay 
+compensation
+(pay)reject 
+request
+(rej)
+check history 
+(ch)register 
+request
+(reg)examine 
+thoroughly 
+(et)
+check ticket 
+(ct)decide
+(dec)
+check history 
+(ch)
+register 
+request
+(reg)check ticket 
+(ct)decide
+(dec)pay 
+compensation
+(pay)
+check history 
+(ch)register 
+request
+(reg)check ticket 
+(ct)decide
+(dec)
+check history 
+(ch)reject 
+request
+(rej)examine 
+casually
+(ec)
+fig. 3. the four partially-ordered runs of the bpmn model in figure 2.
+a decision is made ( dec) and the request is rejected ( rej) or some compensation is paid
+(pay). examples of sequential runs are hreg;et;ct;ch;dec;payi,hreg;ct;ec;ch;dec;
+reji, andhreg;ch;ct;et;dec;payi. in total there are 223! = 24 sequential runs.
+note that in each run there are three concurrent activities ( ct,ch, and either etorec).
+these can be interleaved in 3! = 6 ways.
+there are only 22 = 4 partially-ordered runs. these are depicted in figure 3.
+note that the four partially-ordered runs do not need to specify the ordering of con-
+current activities. consider the scenario with 10 concurrent activities; there is just one
+partially-ordered run, but there are 10! = 3628800 sequential runs. figure 3 helps to
+understand why partial orders are considered in process mining and many other analysis
+approaches.
+table 1. a fragment of an event log where the timestamps of events are problematic.
+event id properties
+case id activity timestamp resource cost :::
+36533 9901 register request 19-05-2021:11.02.55 sarah 50 :::
+36534 9901 check ticket 19-05-2021:13.02 john 25 :::
+36535 9902 register request 19-05-2021:13.02 sarah 50 :::
+36536 9902 check history 20-05-2021:00.00.00 pete 45 :::
+36537 9901 check history 20-05-2021:00.00.00 pete 45 :::
+36538 9901 examine casually 20-05-2021:08.55.34 mary 55 :::
+36539 9902 check ticket 20-05-2021:09.11.21 john 25 :::
+36540 9902 examine thoroughly 20-05-2021:10.55 harry 55 :::
+36541 9901 decide 21-05-2021 angela 55 :::
+36542 9902 decide 21-05-2021 angela 75 :::
+36543 9902 reject request 22-05-2021:14.12.45 sarah 20 :::
+36544 9901 pay compensation 22-05-2021:16.52.37 sarah 150 :::
+::: ::: ::: ::: ::: ::: :::4 wil m.p. van der aalst and luis santos
+table 1 shows a fragment of an event log corresponding to the bpmn model in
+figure 2. process discovery techniques aim to learn a process model based on such
+data. if we assume the events to be sorted based on the identiﬁer in the ﬁrst column,
+then case 9901 corresponds to sequential run hreg;ct;ch;ec;dec;payiand case 9902
+corresponds to sequential run hreg;ch;ct;et;dec;reji. however, a closer inspection
+of the timestamp column suggests that there several problems. some events have a
+precision in seconds, others in minutes, or even days. there are also timestamps of the
+form “20-05-2021:00.00.00” which suggests that times are sometimes rounded to days.
+moreover, we may know that some timestamps show the time of recording and not the
+actual event. at the same time, we may know that the registration activity ( reg) always
+happens before the check activities.
+when timestamps are unreliable or imprecise, like in table 1, we cannot use them
+as-is. one approach is to make the timestamps more coarse-grained (e.g., just consider
+the day). this automatically leads to partially ordered traces. moreover, there may be
+explicit information that reveals explicit causal relations. for example, when the con-
+current activities do not share any information. we may know that ct,ch,ec, and et
+use only data collected in ref, but that decuses the outcomes of the three checks.
+such causal dependencies can be derived based on data-ﬂow analysis or explicit do-
+main knowledge, e.g., a payment is always preceded by a decision. as figure 1 shows,
+partial orders can be used to express either uncertainty orexplicit causality (i.e., partial
+orders have a dual interpretation).
+next to discussing the relationship between time and order, we present a concrete
+preprocessing approach implemented in prom (contained in the partialordervisualizer
+package that can be downloaded from promtools.org ). the approach uses a time
+aggregator andtiebreaker to create a partially-ordered event log. moreover, it is possi-
+ble to create a k-sequentialization of the partially-ordered event log to be able to apply
+conventional approaches.
+the remainder of this paper is organized as follows. section 2 presents related work
+and section 3 provides a theoretical foundation to reason about the relationship between
+time and order. section 4 presents our preprocessing approach, followed by implemen-
+tation details and an example (section 5). section 6 concludes the paper.
+2 related work
+for an overview of process mining techniques, we refer to [2]. see [5] for conformance
+checking and [14] for large-scale applications in organizations such as bmw, uber,
+siemens, edp, abb, bosch, and telekom.
+recently, many papers on data quality in process mining were published [3, 11, 15].
+earlier [2, 10] already provided a framework for data quality issues and guidelines for
+logging. timestamp-related data quality problems are seen as one of the main road-
+blocks in process mining.
+explicit uncertainty is considered in the work of pegoraro et al. [12, 13]. event
+logs are annotated with explicit uncertainty and this information is used when discover-
+ing process models or checking conformance. for example, timestamps of events havemay i take your order? 5
+upper and lower bounds and conformance checking yields optimistic and pessimistic
+bounds for the actual ﬁtness.
+partial orders are a well-studied topic in modeling checking and concurrency theory.
+partially-ordered causal runs are part of the standard true-concurrency semantics of
+petri net [7]. see [4] for an example of a synthesis technique using partial orders as
+input. there are a few process mining techniques that start from partial orders, e.g., the
+conformance checking technique in [9] and the process discovery technique in [8].
+in [1] techniques for partial order resolution are presented. these aim to convert a
+strict weak ordering into a probability distribution over all corresponding total orders.
+in [6] also the “same-timestamp problem” is addressed, again aiming at creating total
+orders. it is impossible to list all partial-order-based approaches here. moreover, the
+goal of this paper is not to present new conformance checking or process discovery
+techniques. instead, we provide a framework to reason about the relation between order
+and time, and the corresponding challenges.
+in this paper, we focus on the preprocessing of event data while using standard pro-
+cess mining techniques. the main contribution is a discussion on the interplay between
+time and ordering and a concrete preprocessing tool implemented in prom. obviously,
+our framework can be combined with existing partial-order-based techniques such as
+[1, 4, 6, 8, 9].
+3 on the interplay between time and order in process mining
+in this section, we deﬁne event logs that may have both explicit ordering information
+and timestamps (possibly rounded to hours, days, or weeks). we relate such event logs
+to the simpliﬁed event logs typically used as input for process discovery.
+3.1 event logs with time and order
+we ﬁrst deﬁne universes for events, attribute names, values, activities, timestamps, and
+attribute name-value mappings. attribute name-value mappings will be used to assign
+at least a case, activity, and timestamp to each event.
+deﬁnition 1 (universes). eis the universe of event identiﬁers. nis the universe of
+attribute names with fcase;act;timeg  n ,vis the universe of attribute values,
+c v is the universe of case identiﬁers, av is the universe of activity names,
+t v is the universe of totally-ordered timestamps, and mn6!v is the universe
+of attribute name-value mappings such that for any m2 m :fcase;act;timeg 
+dom(m),m(case)2c,m(act)2a, andm(time)2t. for anyn2n we write
+m(n) =?ifn62dom(m).
+the properties of an event are described by an attribute name-value mapping that
+provides at least a case identiﬁer, activity name, and timestamp. moreover, events may
+have an explicit order next to timestamp information.6 wil m.p. van der aalst and luis santos
+deﬁnition 2 (event log). an event log l= (e;;o)consists of a set of events
+ee, a mapping 2e!m ,1andoeesuch that (e;o)is a strict
+partial order (i.e., irreﬂexive, transitive, and asymmetric).2
+table 1 shows a fragment of a larger event log. consider the ﬁrst event in the ta-
+ble:e= 36533 ,case(e) = 9901 ,act(e) = register request ,time(e) = 19-05-
+2021:11.02.55, resource (e) = sarah , andcost(e) = 50 . table 1 does not deﬁne an
+explicit order. possible interpretations are that o=;(no order) or a total order based
+on the order in the table, i.e., e1oe2if the row corresponding to e1appears before
+the row corresponding to e2. however,omay also be based on domain knowledge or
+data-ﬂow analysis (events can only use a data value produced by an earlier event).
+deﬁnition 3 (notations). letl= (e;;o)be an event log.
+–a(l) =fact(e)je2egare the activities in l,c(l) =fcase(e)je2egare
+the cases inl, andec=fe2ejcase(e) =cgare the events of case c2c(l).
+–t=f(e1;e2)2eejtime(e1)< time(e2)gis the strict partial order based
+on the timestamps,
+–ot=o[tis the union of the strict partial orders oandt.
+–if two events e1;e22eare unordered with respect to o(i.e.,e1oe2and
+e1oe2), we writee1oe2. similarly,e1te2,e1te2^e1te2, and
+e1ote2,e1ote2^e1ote2.
+it is easy to verify that also (e;t)is a strict partial order (i.e., irreﬂexive, transitive,
+and asymmetric).o,t, andotare reﬂexive and symmetric by construction. note
+thate1te2if an only if time(e1) =time(e2).
+3.2 consistency
+the relationot, which combinesoandt, does not need to be a strict partial order.
+for example, e1happens before e2according too, bute2happens before e1according
+tot. because both ordering relations disagree, otis not asymmetric. therefore, we
+introduce the notion of consistency .
+deﬁnition 4 (consistent). an event log l= (e;;o)is consistent if for any e1;e22
+e:e1oe2impliestime(e1)time(e2).
+this can also be formulated as follows (using transposition): e1oe2ore1te2,
+for anye1;e22e. hence, it is impossible that e1oe2ande1te2hold at the same
+time. since both orderings are not conﬂicting and tis also a strict weak ordering, the
+combination yields a strict partial order.
+1we use the shorthand n(e) =(e)(n). note thatcase(e),act(e), andtime(e)denote the
+case, activity, and timestamp of an event e2e.
+2for anye;e1;e2;e32e:eoe(irreﬂexivity), if e1oe2ande2oe3, thene1oe3
+(transitivity), and if e1oe2, thene2oe1(asymmetry).may i take your order? 7
+(a) consistent
+ (b) time -constrained
+ (c) order -constrained
+ (d) time /order -constrained
+fig. 4. possible combinations of order and time relations between two events e1ande2assuming
+that the event log is (a) consistent, (b) time-constrained ( o t), (c) order-constrained ( t
+o), and (d) time-constrained and order-constrained ( t=o).
+proposition 1 (consistency implies strict partial ordering). letl= (e;;o)be
+an event log. (e;t)is a strict weak ordering (i.e., a strict partial order with negative
+transitivity3), and (e;ot)is a strict partial order if lis consistent.
+proof. (e;t)is irreﬂexive, transitive, and asymmetric by construction. remains to
+show that negative transitivity holds. assume that e1te2ande2te3, i.e.,time(e1)
+time(e2)andtime(e2)time(e3). hence,time(e1)time(e3), i.e.,e1te3.
+therefore, (e;t)is a strict weak ordering.
+next, assume that lis consistent. we show that (e;ot)is a strict partial order,
+i.e., for any e;e1;e2;e32e:eote(irreﬂexivity), if e1ote2ande2ote3, then
+e1ote3(transitivity), and if e1ote2, thene2ote1(asymmetry). because ot
+=o[t, irreﬂexivity follows from eoeandete. asymmetry follows directly
+from consistency: it is impossible that both e1oe2ande1te2hold, so no cycles
+are introduced. transitivity relies on the fact that that negative transitivity holds for t.
+one can use case distinction using the following four cases. (1) e1te2^e2t
+e3)e1te3)e1ote3. (2)e1oe2^e2oe3)e1oe3)e1ote3. (3)
+assumee1te2^e2oe3^e2te3. using consistency, we know that e2te3,
+hencee2te3. sincee1te2ande2te3, alsoe1te3. (ife1te3, then negative
+transitivity implies e1te3^e3te2)e1te2leading to a contradiction.) since
+e1te3, alsoe1ote3. (4) assume e1oe2^e2te3^e1te2. consistency
+impliese1te2, hencee1te2. sincee1te2ande2te3, alsoe1te3and
+e1ote3. hence, in all four cases transitivity holds, thus completing the proof.
+bothoandtorder events. lis called time-constrained if tis at least as strict
+aso, i.e.,e1oe2impliese1te2.lis order-constrained if e1te2implies
+e1oe2. figure 4 illustrates these notions.
+3.3 simpliﬁed event logs
+the basic process discovery techniques assume linear traces and only consider the ac-
+tivity names. therefore, we connect the more involved event log notion l= (e;;o)
+(deﬁnition 2) to simpliﬁed event logs and standard discovery techniques.
+deﬁnition 5 (simpliﬁed event log, process model, and discovery technique). a
+trace=ha1;a2;:::;a ni2ais a sequence of activities. s2b(a)is a simpliﬁed
+3recall that negative transitivity means that if e1te2ande2te3, thene1te3. in a strict
+weak ordering, incomparability is transitive, i.e., e1te2^e2te3)e1te3.8 wil m.p. van der aalst and luis santos
+event log, i.e., a multiset of traces. a process model m ais a set of traces. a
+discovery function disc2b(a)!p(a)maps an event log onto a process model.
+we abstract from the process model notations (e.g., bpmn or petri nets) and focus
+on the modeled behavior. this allows us to deﬁne a model as a set of possible traces
+ma.m=disc(s)is the process model discovered from simpliﬁed event log s. a
+simpliﬁed event log is a multiset of traces, e.g., s= [hreg;ct;ch;ec;dec;payi3;hreg;
+ch;ct;et;dec;reji2]contains ﬁve traces.
+deﬁnition 6 (sequential runs). letl= (e;;o)be a consistent event log. for any
+casec2c(l),=ha1;a2;:::;a ni2ais a sequential run of cif there is a bijection
+f2f1;2;:::ng!ecsuch thatai=act(f(i))for any 1inandeiotej
+for any 1i<jn.seqrl(c)aare all sequential runs of case c.
+2seqrl(c)is a trace where each activity refers to an event of case cin such a way
+that there is a one-to-one correspondence between the elements of andec, and the
+order does not contradict the combined ordering ot. given a partial order, there may
+be many linearizations, i.e., total orders that are compatible. in a k-sequentialization of
+l, we pickklinearizations for each case.
+deﬁnition 7 ( k-sequentialization of an event log). letl= (e;;o)be a consis-
+tent event log. s= [1;2;::: n]2b(a)is ak-sequentialization of lif (1) there is
+functionf2f1;2;:::ng!l(c)such thati2seqrl(f(i))for any 1in, and
+(2)jfi2f1;2;:::;ngjf(i) =cgj=kfor anyc2c(l).seqlk(l)b(a)are all
+possiblek-sequentializations of l.
+deﬁnition 7 shows how event log lcan be converted into a simpliﬁed event log
+s2seqlk(l). each case in lcorresponds to klinearizations in s. we leave it open
+how the linearizations are selected. this can be probabilistic or deterministic. (in our
+implementation, all linearizations are sampled from seqrl(c)using equal probabilities).
+4 what if timestamps are imprecise?
+as described in the introduction, timestamps may be imprecise or partially incorrect.
+therefore, we provide transformations of the event log, making time more coarse gran-
+ular, e.g., all events on the same day have the same timestamp.
+deﬁnition 8 (time aggregator). ta2t !t is a time aggregator if for any t1;t22
+tsuch thatt1<t2:ta(t1)ta(t2).
+for example, ta(19-05-2021:13.02 ) =ta(19-05-2021:17.55 ) =19-05-2021:00.00
+if a time granularity of days is used, i.e., all timestamps on the same day are mapped
+onto the same value. by making time more coarse-grained, more events become un-
+ordered. these may still be ordered by o, e.g., based on data-ﬂow analysis. next to
+o, we may use domain knowledge in the form of a so-called tiebreaker to optionally
+order events having identical coarse-grained timestamps.may i take your order? 9
+event
+logcreate time -
+based partial 
+ordervisualize all 
+partial order 
+variantsadjust time 
+aggregator and 
+tiebraker
+create k-
+sequalizationevent
+log
+apply any process 
+mining technique
+fig. 5. overview of the functionality of the partialordervisualizer package. the user can change
+the time granularity and modify the tiebreaker using domain knowledge. cases with the same
+partial order are grouped into partial-order variants. these can be sorted and inspected. at any
+point in time, it is possible to create a regular event log (using k-sequentialization).
+deﬁnition 9 (tiebreaker). a tiebreakertbaa is a strict partial order used to
+order activities having the same aggregated timestamp.
+a tiebreaker adds causal dependencies between events that have the same coarse-
+granular timestamps and belong to the same case. using time aggregator taand tie-
+breakertb, we can create a new event log lta;tb.
+deﬁnition 10 (preprocessing). letl= (e;;o)be a consistent event log, ta2
+t !t a time aggregator, and tbaa a tiebreaker. lta;tb= (e;0;0
+o)
+is the event log after applying the time aggregator taand tiebreakertbsuch that
+0
+n(e) =n(e)for anye2eandn2nnf timeg,0
+time(e) =ta(time(e))for any
+e2e, and0
+o=o[f(e1;e2)2eejcase(e1) =case(e2)^0
+time(e1) =
+0
+time(e2)^act(e1)tbact(e2)g.
+as long as the tiebreaker tbdoes not contradict o,0
+ois a partial order and
+lta;tb= (e;0;0
+o)is a consistent event log.
+hence, we can compute a k-sequentialization of lta;tband produce a simpliﬁed
+event logsl;ta;tb2seqlk(lta;tb). as mentioned before, we leave it open how se-
+quential runs are selected. using the simpliﬁed preprocessed event log, we can apply
+any process discovery technique to obtain process model ml;ta;tb=disc(sl;ta;tb).
+5 implementation
+the new prom package partialordervisualizer implements the approach described in
+section 4 and can be downloaded as part of prom’s nightly builds ( http://www.
+promtools.org/doku.php?id=nightly ). it has been implemented as a so-
+called “visualizer” and can be selected by choosing explore partial orders (variants)
+in the pull-down menu. the visualizer can be applied to any event log.
+figure 5 shows the main components of the partialordervisualizer . based on time
+aggregator taand tiebreakertbthe partial orders are computed and visualized. ini-
+tially, tais set to hours andtb=;. the user can experiment with the time granularity
+and add ordering constraints. one can inspect partial order variants and details of the
+corresponding cases. moreover, the user can create a k-sequentialization of lta;tb.
+the resulting event log can be analyzed using classical process mining techniques.10 wil m.p. van der aalst and luis santos
+set the time granularity 
+(minutes , hours , days , 
+weeks , etc.)add/remove precedence 
+constraints to modify the 
+tiebreaker based on 
+domain knowlegde
+partial -
+order 
+variantconcrete cases 
+corresponding to the 
+selected varaints
+basic 
+statistics
+fig. 6. data from a purchase-to-pay (p2p) process visualized using partialordervisualizer . what
+can be seen is that activities create purchase order item andprint and send purchase order
+often happen in the same hour.
+figure 6 shows the partialordervisualizer for the event data of a purchase-to-pay
+(p2p) process with 2,654 cases and 16,226 events. there are 685 trace variants in the
+original event log. the view shown in figure 6 uses a time granularity of one hour lead-
+ing to a similar number of partial-order variants (i.e., 710). however, one can clearly
+see that some activities often happen within the same hour. it is possible to add order-
+ing information to make these sequential (if desired). note that seeing which activities
+happen in the same period is valuable and provides new insights.
+figure 7 shows the partialordervisualizer for the same event data, but now using a
+time granularity of a week. one can see that more events become unordered, because
+they happen in the same week. using this view, we generated a new event log replicating
+each partially-ordered case 10 times. as expected, this new event log has 26,540 cases
+and 162,260 events. interestingly, there are now 8,864 trace variants.
+thepartialordervisualizer has been applied to a range of event logs, e.g., we have
+used it to analyze the treatment of covid-19 patients at uniklinik rwth aachen. in
+this covid-19 dataset, only the dates are reliable. na ¨ıvely using the ordering in the event
+log or the recorded timestamps leads to incorrect conclusions.
+for the covid-19 dataset it takes just a few seconds. for a larger data sets like the
+well-known road ﬁnes event log4, which has over 560.000 events and 150.000 cases, it
+takes around 10 seconds (using for example the day, hour, minute, and second abstrac-
+tions).
+what is interesting is that in many applications the number of partially-ordered vari-
+ants temporarily goes up when coarsening the time granularity. however, by deﬁnition,
+4road trafﬁc fine management process, 4tu.researchdata, https://doi.org/10.
+4121/uuid:270fd440-1057-4fb9-89a9-b699b47990f5may i take your order? 11
+time granularity 
+is now weekscreate a new 
+event log
+newly created 
+event log
+fig. 7. another view on the same p2p dataset now using a time granularity of a week. a new
+event log was created using a k-sequentialization (with k= 10 ).
+the number of partially-ordered variants is the smallest when all events are mapped onto
+the same time period.
+6 conclusion
+the contribution of this paper is twofold. on the one hand, we discussed the possi-
+ble interplay between time and order using an event log deﬁnition where events have
+timestamps and may be ordered by some partial order. since (rounded) timestamps
+provide a strict weak ordering, the combination is a partial order (provided that the
+event log is consistent). on the order hand, we described a new way to preprocess
+event logs using a time aggregator taand a tiebreakertb. the time aggregator makes
+the timestamps more coarse-grained to avoid accidental event ordering due to impre-
+cise or partially incorrect timestamps. the tiebreaker can be used to order events that
+have the same coarse-grained timestamp (e.g., date). the preprocessed event log can
+be created and explored using the new partialordervisualizer implemented in prom.
+viewing the event log at different time scales provides novel insights and helps to coun-
+teract data quality problems. moreover, the partialordervisualizer can also generate a
+k-sequentialization of the partially-ordered event log. this allows for the application of
+regular process mining techniques (e.g., discovery and conformance checking).
+although some process mining techniques have been developed for partially-ordered
+event logs, we feel that more research is needed. partial orders may be the result of un-
+certainty or explicit causal information. these need to be treated differently. we also
+plan to integrate frequent item-set mining into our approach. the fact that certain com-
+binations of activities often happen in the same period can be used to create event logs
+where high-level events refer to sets of low-level events.12 wil m.p. van der aalst and luis santos
+acknowledgments we thank the alexander von humboldt (avh) stiftung and the
+nhr center for computational engineering sciences (nhr4ces) for supporting our
+research.
+references
+1. h. van der aa, h. leopold, and m. weidlich. partial order resolution of event logs for
+process conformance checking. decision support systems , 136:113347, 2020.
+2. w.m.p. van der aalst. process mining: data science in action . springer-verlag, berlin,
+2016.
+3. r. andrews, c.g.j. van dun, m.t. wynn, w. kratsch, m.k.e. r ¨oglinger, and a.h.m. ter
+hofstede. quality-informed semi-automated event log generation for process mining.
+decision support systems , 132:113265, 2020.
+4. r. bergenthum, j. desel, s. mauser, and r. lorenz. synthesis of petri nets from term
+based representations of inﬁnite partial languages. fundamenta informaticae , 95(1):187–
+217, 2009.
+5. j. carmona, b. van dongen, a. solti, and m. weidlich. conformance checking: relating
+processes and models . springer-verlag, berlin, 2018.
+6. r. conforti, m. la rosa, a.h.m. ter hofstede, and a. augusto. automatic repair of same-
+timestamp errors in business process event logs. in international conference on business
+process management (bpm 2020) , volume 12168 of lecture notes in computer science ,
+pages 327–345. springer-verlag, berlin, 2020.
+7. j. desel. validation of process models by construction of process nets. in business process
+management: models, techniques, and empirical studies , volume 1806 of lecture notes in
+computer science , pages 110–128. springer-verlag, berlin, 2000.
+8. b.f. van dongen, j. desel, and w.m.p. van der aalst. aggregating causal runs into work-
+ﬂow nets. in transactions on petri nets and other models of concurrency (topnoc vi) ,
+volume 7400 of lecture notes in computer science , pages 334–363. springer-verlag, berlin,
+2012.
+9. x. lu, d. fahland, and w.m.p. van der aalst. conformance checking based on partially
+ordered event data. in business process management workshops, international workshop
+on business process intelligence (bpi 2014) , volume 202 of lecture notes in business in-
+formation processing , pages 75–88. springer-verlag, berlin, 2015.
+10. r. mans, w.m.p. van der aalst, and r. vanwersch. process mining in healthcare: evaluat-
+ing and exploiting operational healthcare processes . springer briefs in business process
+management. springer-verlag, berlin, 2015.
+11. n. martin. data quality in process mining. in c. fernandez-llatas, editor, interactive
+process mining in healthcare , pages 53–79. springer-verlag, berlin, 2021.
+12. m. pegoraro and w.m.p. van der aalst. mining uncertain event data in process mining. in
+j. carmona, m. jans, and m. la rosa, editors, international conference on process mining
+(icpm 2019) , pages 89–96, aachen, germany, 2019. ieee computer society.
+13. m. pegoraro, m.s. uysal, and w.m.p. van der aalst. efﬁcient construction of behavior
+graphs for uncertain event data. in w. abramowicz and g. klein, editors, international
+conference on business information systems (bis 2020) , volume 3389 of lecture notes in
+business information processing , pages 76–88. springer-verlag, berlin, 2020.
+14. l. reinkemeyer. process mining in action: principles, use cases and outlook . springer-
+verlag, berlin, 2020.
+15. s. suriadi, r. andrews, a.h.m. ter hofstede, and m.t. wynn. event log imperfection
+patterns for process mining: towards a systematic approach to cleaning event logs. in-
+formation systems , 64:132–150, 2017.

@@ -1,0 +1,657 @@
+conformance checking based on partially ordered
+event data
+x. lu, d. fahland, w.m.p. van der aalst
+department of mathematics and computer science
+eindhoven university of technology
+p.o. box 513, 5600 mb eindhoven, the netherlands
+(x.lu,d.fahland,w.m.p.v.d.aalst)@tue.nl
+abstract. conformance checking is becoming more important for the analysis
+of business processes. while the diagnosed results of conformance checking tech-
+niques are used in diverse context such as enabling auditing and performance
+analysis, the quality and reliability of the conformance checking techniques them-
+selves have not been analyzed rigorously. as the existing conformance checking
+techniques heavily rely on the total ordering of events, their diagnostics are un-
+reliable and often even misleading when the timestamps of events are coarse or
+incorrect. this paper presents an approach to incorporate ﬂexibility, uncertainty,
+concurrency and explicit orderings between events in the input as well as in the
+output of conformance checking using partially ordered traces andpartially or-
+dered alignments , respectively. the paper also illustrates various ways to acquire
+partially ordered traces from existing logs. in addition, a quantitative-based qual-
+ity metric is introduced to objectively compare the results of conformance check-
+ing. the approach is implemented in prom plugins and has been evaluated using
+artiﬁcial logs.
+1 introduction
+models are increasingly used to describe business processes, to automate process exe-
+cutions, to communicate with stakeholders, and to evaluate designs. however, process
+mining research shows that process executions in reality often deviate from documented
+process models, potentially violating security and compliance policies. as models en-
+able various analysis techniques ranging from veriﬁcation to simulation, it is essential
+to provide diagnostic information about the conformance of process models with re-
+spects to event logs recording the real behavior [1]. this information can be further
+used to identify and measure deviations, enable auditing and compliance analysis [2,
+3]. moreover, the relationships between models and logs obtained from aligning them
+can be used to analyze performance and repair process models [4, 5].
+dozens of approaches [1, 4, 6, 7, 2] have been proposed to check conformance be-
+tween a given model and a sequence of events (a so-called trace ) from an event log, but
+all of these approaches assume that the events in a trace are totally ordered (e.g. based
+on precise timestamps). the state-of-the-art technique in conformance checking is the
+alignment approach proposed in [6, 7], which relates behavior observed in a sequentialtrace (i.e. events) to behavior documented in a model (i.e. activities) and identiﬁes de-
+viations between them. alignments with the least number of deviations are considered
+to be optimal.
+one of the limitations of computing optimal alignments for sequential traces is that
+current approaches heavily rely on the total ordering of events in a trace. in cases where
+the timestamps are too coarse (e.g. only the dates are recorded and the order of the
+events on the same day is unknown) or incorrect (e.g. due to manual recording), using
+a non-trustworthy total ordering of these events for computing alignment may result in
+classifying abnormal behavior as conforming and normal behavior as deviating. more-
+over, sequential traces are unable to describe concurrent events (e.g. events happening
+at the same time or events of which we known that there is no causal dependency be-
+tween then). furthermore, the dependencies between events in the resulting alignments
+may be misleading because of ordering problems.
+to overcome these limitations, we propose to use partially ordered events rather
+than totally ordered events. this way we can express causal dependencies, uncertainty,
+and concurrency in a better way. moreover, we also argue that computing partially
+ordered alignments based on partial orders provides more precise diagnostic results for
+conformance checking.
+in this paper, we introduce partially ordered traces and use these as input to com-
+pute partially ordered alignments with respect to a given model. an overview of our
+approach is shown in figure 1. we discuss our approach in two parts:
+1) given a partially ordered trace and a process model, we show how to compute a
+partially ordered alignment.
+2) given a log, we show how to obtain partially ordered traces which are used as input
+for the ﬁrst part.
+v3 
+compute  model  
+partially ordered  
+traces  partially ordered  
+alignments  sequential  
+log partially 
+ordered log  
+without 
+data  
+with data  type a  
+type b  type d  
+type c  part 1 (section 3)  part 2 (section 4) 
+4 
+fig. 1: an overview of our approach.in the ﬁrst part, we
+discuss a generic approach
+which extends the sequen-
+tial alignment approach [7]
+to computing optimal par-
+tially ordered alignments.
+in addition, we also in-
+troduce a quantitative-based
+alignment quality metric to
+measure and to compare the quality of alignments and to evaluate our approach.
+in the second part, we discuss ways to derive the input of the ﬁrst part, i.e. partially
+ordered traces, from a given log. more speciﬁcally, we categorize input logs into four
+types: sequential logs without data (type a), sequential logs with data (type b), par-
+tially ordered logs with data (type c) and partially ordered logs without data (type d).
+for each type, we discuss an example of computing partially ordered traces. in addition,
+we will demonstrate shortcomings of totally ordered alignments that can be overcome
+by partially ordered alignments.
+the remainder of this paper is structured as follows. we ﬁrst introduce some ba-
+sic concepts in section 2. section 3 deﬁnes partially ordered traces and alignments,
+describes our approach based on computing partially ordered alignments, and intro-duces a novel alignment quality metric. section 4 discusses ways to acquire partially
+ordered traces from classical sequential traces and shows examples where partially or-
+dered alignments perform better than existing conformance checking approaches. sec-
+tion 5 presents results of experiments we conducted. section 6 discusses the related
+work, and section 7 concludes the paper.
+2 preliminaries
+in this section, we ﬁrst introduce a running example and use the running example to
+recall some preliminaries related to event logs and alignments.
+running example. figure 2 shows a simpliﬁed process in a hospital. the process starts
+with a patient having an appointment ( a). next, a doctor can check the patient history
+(c) while the patient is scheduled for radiology ( r) and followed by a lab test ( l).
+the doctor evaluates ( e) the result of these tests and determines whether to operate
+(o) or to send patient home for home treatment ( h). operated patients require nursing
+(n). finally, the patient might be re-evaluated ( v) to determine whether she has to be
+operated on again.
+case, events, traces, logs. acase is a process instance, i.e. an execution of a process.
+anactivity is a well-deﬁned task in a process model (e.g. blue rectangles in figure 2).
+executing an activity for a case results in an event recorded in the trace of this case.
+each event includes a set of data attributes describing the event. in the classical setting
+of process mining, a trace is thus a totally ordered sequence of events of a case. we use
+s-trace to denote such a sequential trace . alogis a collection of traces that belong to
+the same process model. in the running example, a case is a patient going through this
+process. figure 3(a) shows a s-trace consisting of seven events, each of which has four
+data attributes: the case id, the event id, the activity name and the timestamp.
+alignments. asequential alignment (abbreviated to s-alignments ) between a trace and
+a process model is deﬁned as a sequence of moves , each of which relates an event in the
+trace to an activity in the model. a “good” move is a so-called synchronous move , which
+is an event observed in the trace and allowed according to the documented behavior (i.e.
+an activity to which the event can be related). deviations are indicated by so-called log
+moves andmodel moves : alog move is an observed event not allowed by the modeled
+p0 
+c r 
+e n 
+h 
+v p2 p1 
+p5 p3 
+p6 p7 
+p11 a l p4 o 
+appointment  radiology  lab test  
+check history  evaluate  operate  nursing  
+home treatment  
+validate  patient  
+patient  
+check  patient  
+radiograph  patient  
+labtest  
+ 
+patient  
+radiograph  
+labtest  
+check  
+evaluation   
+patient  
+evaluation  
+operation   
+patient  
+operation  
+validation  
+ 
+patient  
+evaluation  
+validation   
+patient  
+validation  
+evaluation   
+data attributes  
+italic = input  
+underlined  = output  
+16 p0 place  transition  
+fig. 2: an example of a simpliﬁed process in a hospital.
+(a) s-trace
+(b) s-alignmentfig. 3: an s-trace and
+its s-alignment.behavior; a model move is an event that should have been observed according to the
+modeled behavior but missed in the trace. a cost function assigns to each possible move
+a cost. an s-alignment with lowest cost according to the cost function is an optimal s-
+alignment . for the technical details, we refer to [7]. in the rest of this paper, we use the
+standard cost function which assigns to each log move and model move the same cost
+of 1 and to each synchronous move a cost of 0. for example, the optimal s-alignment
+shown in figure 3(b) between the s-trace in figure 3(a) and the model in figure 2
+consists of four synchronous moves, two log movesl
+> >andd
+> >and one model move> >
+l.
+partial orders. apartial order over a set vis a binary relation which is irreﬂexive,
+antisymmetric, and transitive. a directed acyclic graph (dag) g = (v;!)deﬁnes a
+partial orderover v, i.e. for all v1;v22v, if there is a path from v1tov2, then v1
+v2. the transitive reduction of a dag and its corresponding partial order is unique [8].
+3 partially ordered alignment
+in this section, we deﬁne the notion of partially ordered traces and alignments. more-
+over, we describe our approach to compute an optimal partially ordered alignment if a
+partially ordered trace is given. in addition, we also deﬁne an alignment quality metric
+to compare two partially ordered alignments.
+deﬁnitions. given a case with its set of events, a partially ordered trace (p-trace ) is
+a directed acyclic graph (which deﬁnes a partial order) over the set of events. each
+dependency (dep.) in p-trace from an event eito another event ejindicates that event ei
+has led to the execution of ej. for example, the p-trace shown in figure 4 has the same
+events as the case of figure 3(a). the partial order in figure 4 shows that events r,l,
+handddirectly depend on event a, while r,l,handdareconcurrent to each other
+(i.e. in no particular order).
+correspondingly, a partially ordered alignment (p-alignment ) between a p-trace and
+a process model is a directed acyclic graph (which deﬁnes a partial order) over the set
+of moves between them. a move comprises an event in the p-trace and an activity in
+the model to which the event is related, similar to moves in s-alignments. there are
+three types of moves: synchronous moves ,log moves andmodel moves . the ordering
+of moves (i.e. dependencies between the moves) in a p-alignment respects the order-
+ing of their events in the p-trace or the ordering of their activities in the model. for
+instance, figure 5 exempliﬁes a p-alignment between the p-trace shown in figure 4 and
+the model shown in figure 2. the p-alignment shown in figure 5 has ﬁve synchronous
+moves (denoted by green ﬁve-sided polygons, e.g. a), two log moves (denoted by yel-
+low triangles, e.g. d) and one model move (denoted by blue rectangle, e.g. e).
+dependencies between moves originate either from dependencies between log events
+(yellow), between moves (blue), or from both (green), see figure 5. a dependency be-
+tween two moves is a direct dependency (d-dependency or d-dep.) if and only if there
+is no other path between the two moves. the minimal p-alignment of a p-alignment is
+the transitive reduction of the p-alignment and only consists of d-dependencies.
+anoptimal p-alignment is a p-alignment with lowest cost according to the cost
+function. we also introduce the notion of the ideal p-alignment of a case, which isthe only true p-alignment of the case, i.e. both the diagnosed moves and dependencies
+ofare correct. the p-alignment shown in figure 5 is for example assumed to be the
+ideal p-alignment for the case shown in figure 3(a).
+event
+(d-)dependency
+fig. 4: a p-trace for
+the case in figure 3.
+sync. move
+log move
+model move
+d-dep. dep.fig. 5: an optimal p-
+alignment for the p-trace in
+figure 4.
+dl 
+19 el hl 
+p0 em nm 
+hm 
+vm p2 p1 
+p5 p3 
+p6 p7 
+p11 as es hs 
+p4 om rs ls cs q0 q2 
+q4 q3 q6 
+q8 q7 q5 q9 
+q13 
+cm rm 
+am lm al 
+cl ll 
+rl 
+el p0 em p2 p1 
+p5 p3 
+p6 p11 
+as hs 
+p4 rs ls 
+cs q0 q2 
+q4 q3 q6 
+q8 q7 q9 
+q13 
+𝛽0 𝛽1 
+𝛽3 𝛽4 𝛽5 
+𝛽6 𝛽7 
+𝛽8 event net  
+and  
+log moves  
+process model  
+and  
+model moves  synchronous  
+moves  q1 
+q1 q5 
+dl 
+𝛽2 
+fig. 6: a product net between the p-trace in figure 4
+and the process model in figure 2.
+dl 
+19 el hl 
+p0 em nm 
+hm 
+vm p2 p1 
+p5 p3 
+p6 p7 
+p11 as es hs 
+p4 om rs ls cs q0 q2 
+q4 q3 q6 
+q8 q7 q5 q9 
+q13 
+cm rm 
+am lm al 
+cl ll 
+rl 
+el p0 em p2 p1 
+p5 p3 
+p6 p11 
+as hs 
+p4 rs ls 
+cs q0 q2 
+q4 q3 q6 
+q8 q7 q9 
+q13 
+𝛽0 𝛽1 
+𝛽3 𝛽4 𝛽5 
+𝛽6 𝛽7 
+𝛽8 event net  
+and  
+log moves  
+process model  
+and  
+model moves  synchronous  
+moves  q1 
+q1 q5 
+dl 
+𝛽2 
+fig. 7: the partially ordered alignment net of the p-
+alignment in figure 5.approach. our method extends
+the approach of [7] to compute
+an optimal p-alignment between
+a given p-trace and a model.
+we ﬁrst convert the p-trace into
+a so-called event net , which is
+a petri net that represents the
+behavior of the given p-trace.
+more precisely, each event in
+the p-trace is represented by a
+transition in the event net, and
+each dependency found between
+two events is converted into a
+place between their correspond-
+ing transitions in the event net.
+to complete the event net, for
+each event that has no predeces-
+sor or no successor, we add an
+input place or an output place,
+respectively.
+after computing the event
+net, we join the event net with
+the process model to obtain a
+product net which consist three
+types of transition representing
+the three types of move (i.e.
+log moves, model moves, and
+synchronous moves). for further
+detail, we refer to [7]. figure 6
+exempliﬁes the product net be-
+tween the p-trace shown in fig-
+ure 4 and the process shown in
+figure 2.
+next, we compute a ﬁring sequence with a lowest cost (according to the standard
+cost function) from the initial marking to the ﬁnal marking using the a-approach pro-
+posed in [7]. then, we replay the ﬁring sequence on the product net. we only retain the
+places visited, the transitions ﬁred and the arcs between them. we call the retained net
+anoptimal alignment net . for example, figure 7 shows an optimal alignment net of the
+product net in figure 6. finally, we convert an optimal alignment net into an optimal
+p-alignment by replacing the places between transitions with dependencies. figure 5
+shows the optimal p-alignment converted from the optimal alignment net shown in fig-
+ure 7.table 1: compare s-alignments and p-alignments using quality metrics.
+sync. move log move model move d-dependencies
+tp fp fn tp fp fn tp fp fn tp fp fn
+ideal 5 0 0 2 0 0 1 0 0 8 0 0
+seq. 4 1 1 1 1 1 0 1 1 2 5 6
+type a 5 1 0 1 0 1 0 0 1 5 1 3
+type b 5 1 0 1 0 1 0 0 1 7 0 1
+alignment quality metrics. to compare two p-alignments, we deﬁne the true pos-
+itives, false positives, and false negatives for synchronous moves, log moves, model
+moves, and d-dependencies. assuming the ideal p-alignment is known for a given
+case, we can compute a p-trace and compare an (optimal) p-alignment 0of the p-trace
+to the ideal p-alignment as follows.
+–for each synchronous move ms20, ifmsis also found in the ideal p-alignment
+, the synchronous move msistrue positive (tp) ; ifmsnot found in ,msis
+false positive (fp) . the same for each log move, model move and d-dependency
+found in0.
+–for each synchronous move msfound in the ideal p-alignment but not in0,
+msis considered to be a false negative (fn) . the same for each log move, model
+move and d-dependency found in .
+as additional quality metric, we can compute the f1-score f1= (2tp)=(2
+tp+fp +fn)for the moves and dependencies identiﬁed, which is the harmonic
+mean of recall and precision [9].
+note that by deﬁnition, an s-alignment is also a p-alignment and thus can be com-
+pared to an ideal p-alignment. for example, we can convert the s-alignment in fig-
+ure 3(b) into the p-alignment shown in figure 8. assuming figure 5 shows the ideal
+p-alignment of the same case in figure 3(a), the ﬁrst row and the second row in table 1
+respectively show the quality metrices for the ideal p-alignment and the s-alignment
+(compared to the ideal p-alignment). for instance, in the s-alignment we found one fp
+synchronous move e(i.e. the ﬁve-sided polygon e), which is a log move in the ideal
+p-alignment (i.e. a fn log move) in figure 5. this example shows that the s-alignment
+approach may classify abnormal behavior as conforming. furthermore, the fp log move
+lfound in the s-alignment is classiﬁed as a synchronous move in the ideal alignment:
+the s-alignment approach may claim conforming behavior as deviating.
+4 conversion and comparison
+in section 3, we explained our approach for computing an optimal p-alignment when
+given a p-trace. in this section, we discuss ways to compute p-traces. recall the four
+tp(s)fp(l)
+tp(l) tp(s) tp(s)fp(m) fp(s)
+tp(s)tp tpfp fp fp fp fp(l) - log moves
+(m) - model moves
+(s) - sync. moves
+fig. 8: a p-alignment which visualizes the s-alignment in figure 3(b).types of log deﬁned in the introduction, if a log (with or without data) is already par-
+tially ordered, i.e. type c and d, we can simply consider its p-traces and neglect the
+data attributes. for sequential logs with or without data attributes (i.e., type b and a, re-
+spectively), we illustrate for each type an example to compute partially ordered traces.
+in addition, we motivate p-alignments by using these examples and compare the results
+based on our alignment quality metrics.
+4.1 type a - sequential logs without data
+type a denotes sequential event logs without data. each log of this type is a collection
+of s-traces in which each event has only the basic attributes: the event identiﬁer, the
+activity name and the timestamp. for this type of log, there are various situations in
+which we can compute p-traces and use the p-traces to obtain p-alignments. one of
+the possible situations is when the timestamps of events are coarse, and the ordering of
+events are unreliable. for instance, for each event only the date is recorded which may
+lead to multiple events having the same timestamp, exempliﬁed by the trace in figure 3
+in which all seven events occurred on the same day.
+event
+fig. 9: a p-trace for
+figure 3(a) derived
+based on timestamps.
+tp(s)tp(s)
+fp(s) tp(s)tp(s) tp(l)
+tp(s)tptp
+tp
+tp tpfpfig. 10: an optimal p-
+alignment for the p-trace
+in figure 9.a simple approach to com-
+pute p-traces in this situation is
+to consider the events having the
+same timestamp to be concur-
+rent. this approach adds ﬂexibil-
+ity when computing alignments
+and removes false positive log
+moves and model moves. figure 9
+shows the p-trace computed for
+the s-trace shown in figure 3 us-
+ing this approach. since all seven
+events have the same timestamp, they are considered to be concurrent, i.e. no depen-
+dency between them as shown in figure 9. therefore, the events could have happened
+at any order, resulting in the p-alignment shown by figure 10.
+computing the quality metric of the p-alignment shown in figure 10 with respect to
+the ideal alignment shown in figure 5, we obtain the result shown by the third entry in
+table 1. compared to the s-alignment shown in figure 8 of the same case, there are no
+fp log moves or fp model moves in the p-alignment, and only one fp d-dependency.
+moreover, we ﬁnd 2.5 times more tp d-dependencies.
+4.2 type b - sequential logs annotated with data
+in this section, we ﬁrst deﬁne data annotated logs and then discuss how to use this type
+of log to compute p-traces.
+deﬁnition. we use the term data annotated log (dal) to denote a speciﬁc type of
+event log, in which each event has a set of clearly annotated input attributes and of
+output attributes, i.e. in addition to the name and the value of an attribute, we also have
+a meta data for each attribute which indicates whether the attribute is an input or anoutput of the event. input attributes of an event are attributes that already existed and
+areread when executing the activity that results in the event. similarly, output attributes
+of an event are attributes that are written (created or updated) by the event. in addition,
+we assume that if the value of a data attribute d1depends on the value of another data
+attribute d2, there exists an event that reads d1and writes d2.
+figure 11 shows an s-trace of the same case as in figure 3 but with data. each event
+has additional data attributes that are annotated as inputs (written in italics) or outputs
+(underlined). the column names denote the abbreviated identiﬁer of attributes deﬁned
+in the process model shown in figure 2.
+obtaining dal. one may argue that this type of log is difﬁcult to obtain. however,
+there are simple heuristics to convert a log enriched with data attributes but without
+annotations to a dal. given a log in which each event has a set of data attributes, if a
+speciﬁcation of the input and output attributes of each activity is available (e.g. given
+by a domain expert or documented as shown in figure 2), we can use this speciﬁcation
+to annotate the data attributes of events in a log. otherwise, we can determine for each
+event in a trace and each of its data attributes whether it is an input or an output using
+the following heuristics:
+1. when a data attribute appears the ﬁrst time in an event in the trace, the event has
+output the data (e.g. attribute pof event 1and attribute eof event 6in figure 11);
+2. every time the data attribute with the same data attribute name appears in a suc-
+ceeding event, if the value of this attribute has changed compared to the previous
+appearance, then the event has output the data (e.g. attribute eof event 7in fig-
+ure 11 has a different value compared to the previous event ethat has attribute e,
+therefore, attribute eof event 7is annotated as output (i.e. underlined));
+3. otherwise, the data is an input of the event (e.g. attribute pin events 2 6is
+considered as input because the value of pis not changed).
+thus, figure 11 also exempliﬁes a trace annotated using this simple heuristic. we have
+illustrated a simple heuristic approach to show that it is possible to obtain dals without
+any speciﬁcation. finding better heuristics is a relevant topics, but out of scope of this
+paper. in the following, we assume that dals are available for computing p-traces.
+computing partially ordered traces. after obtaining a data annotated sequential log,
+the data dependencies between the input and output attributes of events can be used to
+derive dependencies and concurrency between events. when two events eiandejin a
+trace with i<jaccessed a common data attribute, we assume that there is a dependency
+between the two events. based on this assumption, we derive two rules: (1) when two
+fig. 11: an s-trace with
+annotated attributes.
+event
+(d-)dependencyfig. 12: a p-trace for fig-
+ure 11 derived based on
+data dependencies.
+tp(s)tp(s)tp(s)
+tp(s)tp(s) fp(s) tp
+tptptp
+tptptpfig. 13: an optimal p-
+alignment for the p-trace
+in figure 12.events both read (or write) the same data attribute with the same value, then they are
+concurrent; (2) otherwise, there is a dependency between them.
+for example, shown in figures 11 and 12, events d(event 3) and r(event 4) (only)
+have data element pin common but both have read the same value for pwhich indicates
+there is no dependency between dandr, whereas events d(event 3) and c(event 5)
+have data element panddin common and since dwrites dandcread d, we add a
+dependency from dtoc.
+using the p-trace shown in figure 12 as input, we compute an optimal p-alignment
+shown in figure 13. the fourth entry in table 1 shows the measurement of this p-
+alignment. compared to the s-alignment, the p-alignment in figure 13 shows the same
+improvements as the p-alignment in figure 10. moreover, the p-alignment computed
+using data dependencies is able to locate the log move d more precisely than the other
+two alignments, increasing the true positive d-dependencies to 7.
+5 experimental results
+we implemented our p-alignment approach described in sections 3 and 4 in the par-
+tialorderreplayer package of the process mining toolkit prom. the package provides
+the plug-in named partial aware replayer . to evaluate our approach, we designed the
+hospital model shown in figure 2 in a tool called cpn tools and randomly simulated
+an event log of 1000 traces with in total 6590 events1; each trace with 6 to 12 events.
+all events have the same timestamp, and each has 1 to 5 data attributes as speciﬁed in
+figure 2. we performed four small experiments2. for each experiment, we computed
+three types of optimal alignments using three approaches: (1) s-alignments using the
+approach in [7]; (2) p-alignments using the p-traces converted based on the approach
+for type a logs described in section 4.1; (3) p-alignments of the p-traces obtained us-
+ing the approach for type b logs (with data attributes already annotated) described in
+section 4.2. the quality of each optimal alignment is measured with respect to the ideal
+alignment, which is known since the log is generated artiﬁcially.
+– experiment 1. in this experiment, the input is the perfectly generated sequential
+log in which all events are correctly ordered.
+– experiment 2 with shufﬂed events. the perfectly generated event log is used but
+the events in a trace are randomly shufﬂed. thus the ordering of events is unreliable.
+– experiment 3. the input is the generated sequential log with deviations added
+as follows. for each trace, two events are added, and two are removed from the
+trace. for each event added, a predecessor and a successor are randomly chosen
+which ensure the true direct causal dependencies (for obtaining ideal alignments
+only). each added event is then inserted between the range of its predecessor and
+successor and has the same timestamps as other events. each added event reads a
+data attribute produced by its predecessor and writes an output data attribute being
+an input to it successor.
+– experiment 4 with shufﬂed events. for this experiment, we randomly shufﬂed the
+events of each trace in the log obtained in experiment 3.
+1the ﬁles can be downloaded at https://svn.win.tue.nl/repos/prom/documentation/partialorderreplayer/sbp2014.zip
+2the implementation of the experiments can be found in the same package of prom (i.e. the class experimentsbp)table 2: the average results of 10 runs of the four experiments.
+moves d-dependencies
+sync. moves log moves model moves
+tp fp fn tp fp fn tp fp fn f1 tp fp fn f1
+exp 1. seq. 6.59 0 0 0 0 0 0 0 0 14.28 1.31 2.31 0.70
+a 6.59 0 0 0 0 0 0 0 0 16.54 0.05 0.05 0.99
+b 6.59 0 0 0 0 0 0 0 0 16.59 0 0 1.00
+exp 2. seq. 3.61 0 2.98 0 2.98 0 0 2.64 0 0.713.07 5.16 3.52 0.41
+shufﬂed a 6.59 0 0 0 0 0 0 0 0 16.48 0.11 0.11 0.98
+b 4.09 0 2.50 0 2.50 0 0 2.29 0 0.775.72 3.44 0.87 0.73
+exp 3. seq. 4.21 0.60 0.38 1.40 0.38 0.60 1.64 0.08 0.36 0.84 3.92 3.39 5.68 0.46
+a 3.94 1.23 0.65 0.77 0.65 1.23 1.39 0.02 0.61 0.69 5.40 1.18 4.20 0.67
+b 4.03 0.92 0.56 1.08 0.56 0.92 1.53 0.06 0.47 0.76 6.60 1.96 3.00 0.73
+exp 4. seq. 2.43 0.84 2.16 1.16 2.16 0.84 1.48 1.51 0.52 0.55 2.93 5.65 6.67 0.32
+shufﬂed a 3.93 1.24 0.66 0.77 0.66 1.24 1.39 0.02 0.61 0.69 5.28 1.29 4.32 0.65
+b 2.67 1.04 1.92 0.96 1.92 1.04 1.46 1.19 0.54 0.55 5.23 4.42 4.37 0.54
+denotes f1 scores of synchronous moves. the discussed results are underlined.
+discussion. table 2 shows the average quality measurements per optimal p-alignment
+(rounded in two decimals) of ten random executions of each experiment. in addition, we
+added the average f1-scores of moves (column 12) and of d-dependencies (column 16).
+the difference between the scores of the three types of p-alignments is signiﬁcant for
+experiments 2 to 41. figure 14 illustrates the conﬁdence intervals of the tp synchronous
+move rates of experiment 3 and 4 (i.e. the last 6 entries in column 3 of table 2).
+fig. 14: the cis of tp sync.
+moves of exp.3 and 4.as can be seen in the last four columns of table 2,
+in all four experiments, the tp, fp and fn scores of
+d-dependencies of the p-alignments are improved com-
+pared to the s-alignments, identifying 1.5 to 3.4 tp d-
+dependencies more and 1.2 to 5 fp d-dependencies less
+per alignment on average compared to the s-alignments.
+an increase of 40% to130% percent of the f1-scores
+of the d-dependencies in the p-alignments conﬁrms this
+observation.
+the results also show that when the ordering of
+events is unreliable, i.e. in exp. 2 and exp. 4, the two
+p-alignment approaches identify more tp synchronous
+moves and less fp log moves and fp model moves
+than the s-alignment approach, which suggest that the
+p-alignment approaches are more ﬂexible. however, this
+ﬂexibility also leads to identifying more fp synchronous
+moves (in exp. 3 and 4). the average f1-scores of moves
+also show that the p-alignment approaches perform at least as good as the s-alignment
+approach except in situations when the ordering of events is reliable and traces contain
+noise as in exp. 3.
+based on the results of the experiments, we have shown that we can obtain better
+results using the p-alignment approach, especially in unreliable and ﬂexible settings. in
+addition, the difference between the quality metrics of the two p-alignment approaches
+indicates that the quality of p-alignments also depends on the quality of derived p-traces.6 related work
+various techniques have been proposed to check conformance between the modeled
+and observed behavior. the token-based replay approach proposed by rozinat and van
+der aalst [1] measures the number of remaining tokens and of missing tokens in the
+process model when replaying the log to provide diagnotics about the quality of the
+model and deviations in the log. the state-of-art technique in conformance checking
+is the alignment approach proposed by adriansyah et al. [6, 2, 7] which can handle
+complex constructs such as invisible transitions and duplicated transitions while pro-
+viding detail information on deviations. the resulting diagnostics of these techniques
+have been applied in various context. for example, it is used to assess the quality of
+a model with respect to the reality [10], to repair or simplify models based on diag-
+nosed deviations [11, 5], to perform auditing and compliance analysis [12, 3, 2], to ﬁnd
+decision points in processes [13], to conduct root cause analysis [14] and performance
+analysis [4].
+while using the result of conformance checking in various applications, much less
+literature are found in investigating the quality of the input of conformance checking as
+well as the quality of its results. bose et al [15] discussed various quality issues found in
+event logs. the alignment approach assumes that with assigning the right cost to moves
+the “ideal alignment” can be found in optimal alignments [6, 4] without considering
+that the log may have quality problems.
+in comparison to existing conformance checking techniques, the approach pre-
+sented in this paper used partially ordered traces and alignments to provide a way
+to incorporate ﬂexibility, uncertainty, concurrency and explicit dependencies in inputs
+as well as in outputs of conformance checking to improve the quality of results. par-
+tially ordered traces and runs have been deﬁned and discussed in diverse other settings.
+lorenz et al. deﬁne partially ordered runs of petri nets in order to analyze properties of
+petri nets [16]. lassen et al. presented an approach to convert basic message sequence
+charts into p-traces and used these explicit casual dependencies to improve the process
+discovery result [17]. fahland and van der aalst used partially ordered runs to simplify
+process models [11].
+7 conclusion
+in this paper, we presented a generic approach for computing partially ordered align-
+ments using partially ordered traces. in addition, we illustrated two ways to obtain par-
+tially ordered traces as input for computing p-alignments from given sequential event
+logs. furthermore, we introduced a quantitative quality metric to compare alignments
+with respect to the ideal alignments. the evaluation results show that the quality of p-
+alignments is improved compared to s-alignments especially in unreliable settings. our
+approach provided a ﬁrst step towards improving the quality of conformance checking
+in more realistic circumstances.
+future research aims at incorporating probabilistic data to ﬁnd better p-alignments.
+in addition, we are also interested in approaches to compute the ideal partially ordered
+trace. moreover, partially ordered alignments can be used to analyze data ﬂows or to
+compute alignments in a distributed manner.acknowledgments. this research is supported by the dutch cyber security program
+in the context of the price project. we thank boudewijn van dongen for his support in
+this work.
+references
+1. rozinat, a., van der aalst, w.m.p.: conformance checking of processes based on monitoring
+real behavior. information systems 33(1) (2008) 64–95
+2. adriansyah, a., van dongen, b.f., zannone, n.: controlling break-the-glass through align-
+ment. in: social computing, 2013 international conference on, ieee (2013) 606–611
+3. ramezani, e., fahland, d., van der aalst, w.m.p.: where did i misbehave ? diagnostic
+information in compliance checking. (2012) 262–278
+4. van der aalst, w.m.p., adriansyah, a., van dongen, b.: replaying history on process models
+for conformance checking and performance analysis. wiley interdisciplinary reviews: data
+mining and knowledge discovery 2(2) (2012) 182–192
+5. fahland, d., van der aalst, w.m.p.: model repair aligning process models to reality. infor-
+mation systems (2013)
+6. adriansyah, a., van dongen, b.f., van der aalst, w.m.p.: conformance checking using cost-
+based ﬁtness analysis. in: enterprise distributed object computing conference (edoc),
+2011 15th ieee international, ieee (2011) 55–64
+7. adriansyah, a., van dongen, b.f., van der aalst, w.m.p.: memory-efﬁcient alignment of
+observed and modeled behavior. bpmcenter. org, tech. rep (2013)
+8. aho, a.v ., garey, m.r., ullman, j.d.: the transitive reduction of a directed graph. siam
+journal on computing 1(2) (1972) 131–137
+9. manning, c.d., raghavan, p., sch ¨utze, h.: introduction to information retrieval. v olume 1.
+cambridge university press cambridge (2008)
+10. buijs, j.c., van dongen, b.f., van der aalst, w.m.p.: on the role of ﬁtness, precision,
+generalization and simplicity in process discovery. in: on the move to meaningful internet
+systems: otm 2012. springer (2012) 305–322
+11. fahland, d., van der aalst, w.m.p.: simplifying discovered process models in a controlled
+manner. information systems 38(4) (2013) 585–605
+12. cederquist, j.g., corin, r., dekker, m.a.c., etalle, s., den hartog, j.i., lenzini, g.: audit-
+based compliance control. international journal of information security 6(2-3) (february
+2007) 133–151
+13. leoni, m.d., dumas, m., garc ´ıa-ba ˜nuelos, l.: discovering branching conditions from busi-
+ness process execution logs. in: fundamental approaches to software engineering. springer
+(2013) 114–129
+14. suriadi, s., ouyang, c., van der aalst, w.m.p., ter hofstede, a.h.m.: root cause analysis
+with enriched process logs. in: business process management workshops, springer (2013)
+174–186
+15. bose, r.p.j.c., mans, r.s., van der aalst, w.m.p.: wanna improve process mining results?
+in: computational intelligence and data mining (cidm), 2013 ieee symposium on, ieee
+(2013) 127–134
+16. lorenz, r., desel, j., juh ´as, g.: models from scenarios. in: transactions on petri nets and
+other models of concurrency vii. springer (2013) 314–371
+17. lassen, k.b., van dongen, b.f.: translating message sequence charts to other process lan-
+guages using process mining. in: transactions on petri nets and other models of concur-
+rency i. springer (2008) 71–85

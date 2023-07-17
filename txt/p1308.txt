@@ -1,0 +1,832 @@
+discovering process models with long-term
+dependencies while providing guarantees and
+handling infrequent behavior
+lisa l. mannelband wil m. p. van der aalst
+process and data science (pads), rwth aachen university
+fmannel, wvdaalst g@pads.rwth-aachen.de
+abstract. in process discovery, the goal is to ﬁnd, for a given event log, the
+model describing the underlying process. while process models can be repre-
+sented in a variety of ways, petri nets form a theoretically well-explored descrip-
+tion language. in this paper, we present an extension of the est-miner process
+discovery algorithm. this approach computes a set of places which are consid-
+ered to be ﬁtting with respect to a user-deﬁnable fraction of the behavior de-
+scribed by the given event log, by evaluating all possible candidate places using
+token-based replay. the set of replayable traces is determined for each place in
+isolation, i.e., they do not need to be consistent. when combining these places
+into a petri net by connecting them to the corresponding transitions, which are
+uniquely labeled for each activity in the event log, the resulting net can replay
+exactly those traces that can be replayed by each of the inserted places. thus,
+inserting places without further checks may results in deadlocks and thus low ﬁt-
+ness of the petri net. in this paper, we explore a variant of the est-miner, that
+aims to select a subset of the discovered places such that the resulting petri net
+guarantees a deﬁnable minimal ﬁtness while maintaining high precision with re-
+spect to the input event log. various place selection strategies are proposed and
+their impact on the returned petri net is evaluated by experiments using both real
+and artiﬁcial event logs.
+keywords: process discovery, petri nets, est-miner
+1 introduction and related work
+more and more corporations and organizations support their processes using informa-
+tion systems, which record the occurring behavior and represent this data in the form of
+event logs . each event in such a log has a name identifying the executed activity (activ-
+ity name), an identiﬁcation mapping the event to some execution instance (case id), a
+time stamp showing when the event was observed, and often extended meta-data of the
+activity or process instance. in the ﬁeld of process discovery , we utilize the event log
+to identify relations between the activities (e.g. pre-conditions, choices, concurrency),
+which are then expressed within a process model, for example a petri net [1–4]. this
+is non-trivial for various reasons. we cannot assume that the given event log is com-
+plete, as some possible behavior might be yet unobserved. also, real-life event logs
+often contain noise in the form of incorrectly recorded data or deviant behavior, which2 l. l. mannel, w. m. p. van der aalst
+a
+bba
+bb
+a a
+fig. 1. consider the event log l= [hi;a;b; i40;hi;b;a; i60]and the set of candidate places
+on the left. assuming, that we set the est-miner to accept all places that can replay at least 35%
+of the event log, it would add all those places and return the petri net on the right. although each
+individual place has at least 40ﬁtting traces, the whole model cannot replay any trace.
+is not desired to be reﬂected in the process model. correctly classifying behavior as
+noise can be hard to impossible. an ideal process model can reproduce all behavior
+contained in an event log, while not allowing for unobserved behavior. it should rep-
+resent all dependencies between events and at the same time be simple enough to be
+understandable by a human interpreter. computation should be fast and robust to noise.
+usually, it is impossible to fulﬁll all these requirements at the same time. thus, different
+algorithms focus on different quality criteria, while neglecting others. as a result, the
+models returned for a given event log can differ signiﬁcantly.
+many existing discovery algorithms abstract from the full information given in a
+log and/or generate places heuristically, in order to decrease computation time and
+complexity of the returned process models. while this is convenient in many applied
+settings, the resulting models are often underﬁtting, in particular when processes are
+complex. examples are the alpha miner variants ([5]), the inductive mining fam-
+ily ([6]), genetic algorithms or heuristic miner. in contrast to these approaches, which
+are not able to (reliably) discover complex model structures, algorithms based on re-
+gion theory [7–17]) discover models whose behavior is the minimal behavior repre-
+senting the input event log. on the downside, these approaches are known to be rather
+time-consuming, cannot handle noise, and tend to produce complex, overﬁtting models
+which can be hard to interpret. a combination of strategies has been introduced in [18],
+which aims to circumvent performance issues by limiting the application of region the-
+ory to small fragments of a pre-descovered petri net.
+in [19] we introduced the discovery algorithm est-miner. this approach aims to
+combine the capability of ﬁnding complex control-ﬂow structures like longterm-depen-
+dencies with an inherent ability to handle low-frequent behavior while exploiting the
+token-game to increase efﬁciency. the basic idea is to evaluate all possible places, de-
+ﬁned by all possible combinations of uniquely labeled transitions, to discover a set of
+ﬁtting ones. efﬁciency is signiﬁcantly increased by skipping uninteresting parts of the
+search space. this may decrease computation time immensely compared to the brute-
+force approach evaluating every single candidate place, while still providing guarantees
+with regard to ﬁtness and precision.
+while traditional region-theory uses a global perspective to ﬁnd a set of feasible
+places, the est-miner evaluates each place separately, that is from a local perspective.
+this allows us to easily enforce all kinds of constraints deﬁnable on the place level, e.g.,
+constraints on the number or type of connected transitions, token throughput or similar.discovering process models while providing guarantees 3
+in particular, we are able to ﬁlter infrequent behavior locally, by requiring each place to
+be able to replay only a certain fraction of the traces in the event log. a candidate place
+will be accepted, if the event log contains sufﬁcient support for the relation between
+the activities as deﬁned by the place. in contrast to common noise ﬁltering techniques
+which loose information by removing infrequent trace variants or infrequent activities
+from the event log, this approach can also consider infrequent information to discover
+relations between activities.
+the local perspective of the est-miner ensures that all occurrences of activities
+within a log can contribute to the discovered model. however, when a set of discovered
+ﬁtting places is combined into a petri net, this petri net allows only for the behavior
+in the intersection of the behaviors allowed by all inserted places. thus, the petri net
+may include deadlocks or dead parts, resulting in a much lower overall ﬁtness than the
+ﬁtness of each individual place and an overly complicated model. in extreme cases,
+the constructed net cannot replay any trace at all as illustrated by the small example
+in fig. 1. assuming we decide to add places that replay only a fraction of 0:35of the
+traces, the petri net discovered for the given event log cannot ﬁre any transition after
+the start transition.
+in this paper, we aim to remedy this issue by selecting a subset of the discovered
+places which can be combined into a petri net with deﬁnable minimal ﬁtness, while
+simultaneously striving for high precision and simplicity, without loosing the desir-
+able properties of the est-miner. thus, we require the algorithm to maintain its ability
+to discover and model non-local dependencies, to deal with infrequent behavior and
+to provide guarantees without over- or underﬁtting. additionally, the time and space
+consumption should remain reasonable, in particular more scalable than classic region
+theory approaches.
+sec. 2 provides basic notation and deﬁnitions. in sec. 3, we brieﬂy review the basics
+of the standard est-miner. our new concepts are introduced in sections 4 and 5, and
+their experimental evaluation is presented in sec. 6. finally, sec. 7 concludes this work
+by summarizing our ﬁndings and suggesting possibilities for future work.
+2 basic notations, event logs, and process models
+a set, e.g.fa;b;cg, does not contain any element more than once, while a multiset, e.g.
+[a;a;b;a ] = [a3;b], may contain multiples of the same element. the intersection of two
+sets contains only elements that occur in both sets, i.e., fx;yg\fy;zg=fyg, while
+the intersection of two multisets contains each element with its minimum frequency,
+i.e,[x;y2;z]c[y5;z2] = [y2;z]. byp(x)we refer to the power set of the set x, and
+m(x)is the set of all multisets over this set. in contrast to sets and multisets, where the
+order of elements is irrelevant, in sequences the elements are given in a certain order,
+e.g.,ha;b;a;bi6=ha;a;b;bi. the size of a set, multiset or sequence x, that isjxj, is
+deﬁned to be the number of elements in x.
+we deﬁne activities, traces, and logs as usual, except that we require each trace to
+begin with a designated start activity ( i) and end with a designated end activity ( ).
+note that this is a reasonable assumption in the context of processes, and that any log
+can easily be transformed accordingly.4 l. l. mannel, w. m. p. van der aalst
+deﬁnition 1 (activity, trace, log). letabe the universe of all possible activities
+(e.g., actions or operations), let i2a be a designated start activity and let 2a
+be a designated end activity. a trace is a sequence containing ias the ﬁrst element, 
+as the last element and in-between elements of anfi;g. lettbe the set of all such
+traces. a logl2m(t)is a multiset of traces.
+in this paper, we use an alternative deﬁnition for petri nets. we only allow for places
+connecting transitions, called here activities, that are initially empty (without tokens),
+because we allow only for traces starting with iand ending with . these places are
+uniquely identiﬁed by the non-empty sets of input activities iand output activities o.
+each activity corresponds to exactly one uniquely labeled transition, therefore, this pa-
+per refers to transitions as activities.
+deﬁnition 2 (petri nets). a petri net is a pair n= (a;p), whereaa is the set of
+activities including start and end ( fi;ga) andpf(ijo)jia^i6=;^
+oa^o6=;gis the set of places. we call ithe set of ingoing activities of a place
+andothe set of outgoing activities.
+note that ifp= (ijo), thenp=iandp=ousing standard notation.
+a place is ﬁtting if it can replay (parts of) the event log without missing or remaining
+tokens. otherwise, it is unﬁtting .
+deﬁnition 3 (fitting and unﬁtting places, compare [20]). letn= (a;p)be a petri
+net, letp= (ijo)2pbe a place, and let be a trace. with respect to the given trace
+,pis called
+–unﬁtting , denoted by(p), if and only if9k2f1;2;:::;jjgsuch that
+jfiji2f1;2;:::k 1g^(i)2igj<jfiji2f1;2;:::kg^(i)2ogjor
+jfiji2f1;2;:::jjg^(i)2igj>jfiji2f1;2;:::jjg^(i)2ogj,
+–ﬁtting , denoted by(p), if and only if not(p).
+we extend these notions to the whole log using the noise parameter: with respect to a
+logland parameter 2[0;1],pis called ﬁtting , denoted by
+l(p), if and only if
+jf2lj(p)gj=jlj, and unﬁtting otherwise.
+deﬁnition 4 (behavior of a petri net). we deﬁne the behavior of the petri net (a;p)
+to be the set of all ﬁtting traces, that is f2t j8p2p:(p)g.
+note that we only allow for behaviors of the form hi;a1;a2;:::an;i(def. 1) such
+that places are empty at the end of the trace and never have a negative number of tokens.
+we are often interested in the traces of the event log which are replayable by certain
+(sets of) places.
+deﬁnition 5 (multisets of fitting traces). for an event log land a place p, the mul-
+tiset of log traces replayable by pis
+ﬁt(l;p) = [2lj(p)]:
+for an event log land a petri net n= (a;p), the multiset of log traces replayable by
+nis the intersection of all log traces replayable by the places in p, i.e.,
+ﬁt(l;n) = [2lj8p2p:(p)] =x
+p2pﬁt(l;p):discovering process models while providing guarantees 5
+3 introducing the est-miner
+several variants and extensions of the est-miner have been proposed in the past years.
+in the following, we brieﬂy introduce the est-miner variant used as the basis of this
+work. for further details, we refer the reader to the respective papers.
+as input, the algorithm takes a log land a parameter 2[0;1], and returns a
+petri net as output. a place is considered ﬁtting , if it allows to replay at least a fraction
+of traces in the event log. inspired by language-based regions, the basic strategy of
+the approach is to begin with a petri net whose transitions correspond exactly to the
+activities used in the given log. from the ﬁnite set of unmarked, intermediate places, the
+subset of all ﬁtting places is computed and inserted. to facilitate further computations
+and human readability, implicit places are identiﬁed and removed [21–23]. a place is
+implicit if its removal does not increase the behavior of the petri net. implicit places
+can be detected based on the structure of the petri net as proposed for the ﬁrst est-
+miner variant [19], or by using the faster replay-based implicit place removal strategy
+introduced in [24]. the latter one is applied in the experimentation of this paper.
+the algorithm uses token-based replay to evaluate the candidate places. to avoid
+replaying the log on the exponential number of candidates (i.e., all pairs of subsets of
+activities, (2jaj 1)2), it organizes the potential places as a set of trees, such that certain
+properties hold. when traversing the trees, these properties allow to cut off subtrees, and
+thus candidates, based on the replay result of their parent [19]. this greatly increases
+efﬁciency, while still guaranteeing that all ﬁtting places are found.
+an example of such a tree-structured candidate space is shown in fig. 2. note the
+incremental structure of the trees, i.e., the increase in distance from the roots corre-
+sponds to the increase of input (red edges) and output (blue edges) activities. however,
+the organization of candidates within the same depth and their connections to other
+candidates is not ﬁxed, but deﬁned by the order of ingoing activities ( >i) and outgoing
+activities (>o).
+deﬁnition 6 (complete candidate tree). letabe a set of activities and let >i;>o
+be two total orderings on this set of activities. a complete candidate tree is a pair
+ct= (n;f)withn=f(ijo)jianfg^oanfig^i6=;^o6=;g.
+we have that f=fred[fblue, with
+fred=f((i1jo1);(i2jo2))2nnjjo2j= 1^o1=o2
+^9a2i1: 
+i2[fag=i1^8a02i2:a>ia0
+g(red edges)
+fblue=f((i1jo1);(i2jo2))2nnji1=i2
+^9a2o1: 
+o2[fag=o1^8a02o2:a>oa0
+g(blue edges) :
+if((i1jo1);(i2jo2))2f, we call the candidate (i1jo1)thechild of its parent (i2jo2).
+the purpose of the tree structured candidate space is to enable skipping of sets of unin-
+teresting candidates to improve time and space efﬁciency. the runtime of the est-miner
+strongly depends on the number of candidate places skipped during the search for ﬁtting
+places.
+when a candidate place is evaluated to be ﬁtting, i.e., it can replay a fraction of 
+traces in the event log, existing variants of the est-miner simply insert the place into6 l. l. mannel, w. m. p. van der aalst
+(▶|a)  (▶|b)  (▶|■)  (a|a)  (a|b)  (a|■)  (b|a)  (b|b)  (b|■)
+(▶|a,b) (▶|a,■) (▶|b,■) (a|a,b) (a|a,■) (a|b,■) (b|a,b) (b|a,■) (b|b,■)     (▶,a|a) (▶,b|a) (a,b|a) (▶,a|b) (▶,b|b) (a,b|b) (▶,a|■) (▶,b|■) (a,b|■)
+(▶|a,b,■) (a|a,b,■) (b|a,b,■)    (▶,a|a,b) (▶,a|a,■) (▶,a|b,■)    (▶,b|a,b) (▶,b|a,■) (▶,b|b,■) (a,b|a,b) (a,b|a,■) (a,b|b,■)    (▶,a,b|a) (▶,a,b|b) (▶,a,b|■) 
+(▶,a|a,b,■) (▶,b|a,b,■) (a,b|a,b,■) (▶,a,b|a,b) (▶,a,b|a,■) (▶,a,b|b,■)
+       (▶,a,b|a,b,■)
+fig. 2. example of a tree-structured candidate space for the set of activities fi;a;b; g, with
+orderings >ib>ia> iiand>ob>oa> oi.
+id traces inlp1p2p3p4p5p6p7p8n
+(ija)(ajc)(ajb)(cje)(bje)(ej)(bjc;d)(d;ej)
+1ihi;a;b;c;e; i60xxxxxxxxx
+2ihi;a;b;d; i20xxx xx
+3ihi;a;c;b;e; i15xxxxxxx
+4ihi;a;b;d;e; i5xxxxx
+a
+bc e
+dp1p2
+p3p5p4 p6
+p8p7
+fig. 3. the table indicates for each of the given trace variants and candidate places whether the
+place can replay that trace variant. the petri net nis created by inserting all places which can
+replay at least 0:75jlj= 75 traces. however, ncan replay only the ﬁrst trace variant, i.e.,
+0:6jlj= 60 traces.
+the petri net by connecting it to its uniquely labeled ingoing and outgoing transitions.
+consider the example event log and subset of candidate places in fig. 3. of the (in-
+complete) subset of candidate places, the places p1top8are ﬁtting the event log for
+= 0:75. inserting these places results in the given petri net n, which can replay
+only the ﬁrst trace variant corresponding to 60% of traces. the introductory example
+in fig. 1 illustrates, that the fraction of replayable traces may even decrease to 0. such
+a result is undesirable, since it is unnecessarily complex with respect to the behavior
+it represents, not free of dead parts and likely to disappoint user expectations with re-
+spect to ﬁtness. this work explores strategies of maintaining the ﬁtness threshold as
+a minimal ﬁtness threshold of the returned, deadlock-free petri net by inserting only a
+selection of the discovered ﬁtting places.discovering process models while providing guarantees 7
+{p1, p3}
+1,2,3,4
+1.0 {p1, p3, p4, p8}
+1,2,3
+0.95 {p1, p3, p7}
+1,2,4
+0.85
+{p1, p3, p5, p6}
+1,3,4
+0.8
+{p1, p2, p3, p4, 
+p5, p6, p8}
+1,3
+0.75{p1, p3, p4, p7, p8}
+1,2
+0.8
+{p1, p3, p5, p6, p7}
+1,4
+0.65
+{p1, p2, p3, p4, p5, 
+p6, p7, p8}
+1
+0.6n1
+n2
+n6n4 n5n3
+n7
+n8set of places
+forming n
+replayable 
+trace variants
+fraction of 
+replayable 
+traces
+fig. 4. consider the set of places given in fig. 3. this ﬁgure shows all possible combinations of
+these places such that adding any other place to the corresponding petri net would decrease the
+number of replayable log traces. each set of places, i.e., petri net, is annotated with the list of
+trace variants it can replay and the corresponding fraction of log traces. note, that n8corresponds
+to the petri net shown in fig. 3.
+4 place selection
+consider the set of all ﬁtting places discovered for a certain noise threshold . the
+selection of an adequate subset of these places, such that also the resulting petri net can
+replay a fraction of at least traces, is non-trivial for a variety of reasons. first of all,
+the deﬁnition of an optimal solution is not straightforward. several maximal subsets of
+places satisfying this requirement may exist, which differ, for example, in size, fraction
+of replayable traces, place complexity (number of connected activities) or subjective
+’interestingness’ measures for the places retained. fig. 4 illustrates all maximal sets
+of places that can be built from the example places given in fig. 3. these sets are
+maximal in the sense that adding any of the other places would decrease the number of
+replayable log traces. depending on the choice of the minimal ﬁtness threshold , the
+optimal solution is not clear.
+furthermore, even if we have somehow obtained a notion of optimality, ﬁrst col-
+lecting all ﬁtting places and then computing an optimal solution can quickly become
+unfeasible, both in terms of time complexity and memory requirements. this is due
+to the very large number of ﬁtting but potentially implicit places discovered by the
+est-miner. unfortunately, knowledge of which places are contained in the petri net is
+required to identify implicit places reliably.
+to circumvent the issue of time and space complexity, we combine the est-miners
+sequential place evaluation procedure with a guided greedy place selection approach,
+which is decsribed in detail in subsections 4.1 and 4.2. in the absence of a clear no-
+tion of optimality, we propose and investigate several heuristic selection strategies and
+evaluate their impact on different quality aspects of the returned petri net. in this paper,8 l. l. mannel, w. m. p. van der aalst
+we consider ﬁtness, precision, and simplicity as desirable properties (for details com-
+pare [25,26]). while generality is desirable, additional information would be required
+to evaluate it, which is why we consider it outside the scope of this work.
+our ﬁtness evaluation of the returned petri net nuses the standard alignment-based
+ﬁtness as deﬁned in [27]. for precision, we use the approach as implemented in [28].
+simplicity is harder to evaluate, since it is a rather subjective metric that can be in-
+ﬂuenced by a variety of features. in this paper, we simplify the notion to express the
+fraction of net elements that are transitions, arguing that a petri net with relatively few
+places is likely to be perceived as simple.
+deﬁnition 7 (simplicity). given a petri net n= (a;p), we deﬁne simplicity as the
+fraction of nodes that are transitions, i.e.,
+simplicity (n) = 1 jpj
+jpj+jaj:
+all used quality metrics return values between 0and1, where a value close to 1
+indicates high quality in general. however, note that for simplicity a value around 0:5
+indicates a model with roughly as many places as transitions, for example a simple
+sequence, while a higher value would arise from a petri net with extremely few places.
+therefore, we consider a value close to 0:5to be rather optimal in terms of simplicity.
+4.1 place classiﬁcation
+when making the decision to insert a place into the model, this reduces the possible
+choices we can make later on: the place constrains the behavior of the model and only
+places with a sufﬁciently large intersection of replayable traces can be added to the
+model at a later point. consider the example place combinations in fig. 4 with a ﬁtness
+threshold of = 0:75and assume that the model already contains the places p1andp3.
+if the next ﬁtting place we discover is p7, and we immediately insert it into the petri
+net, we can no longer discover a petri net including, for example, p6, without violating
+our global ﬁtness constraint. such choices may prevent us from discovering a more
+desirable solution. therefore, we aim to capture the main behavior of the log by using
+heuristics to postpone, or even disallow, the addition of very restrictive places.
+to this end, we introduce a new parameter which is our main tool to guide the
+choice of places while balancing ﬁtness, precision and simplicity. this speciﬁes the
+largest acceptable reduction in replayable traces when adding a place to the model.
+optionally,can be adapted for each place individually using an adaption function
+adapt to favor certain places over others, according to the users preferences. favored
+places can be added earlier, despite being rather restrictive, while other places will be
+added only if they do not constrain the behavior too much. examples for such strategies
+are presented in sec. 5.
+deﬁnition 8 formalizes the use of ,andadapt to decide for the discovered ﬁtting
+places, whether they should be added, kept for later re-evaluation or discarded.
+deﬁnition 8 (place classiﬁcation using ;andadapt ).consider a set of activities
+a, a set of places pp(a)p(a), a placep2p(a)p(a)and an event log l. wediscovering process models while providing guarantees 9
+use parameters 2[0;1]and2[0;1], and a function adapt : ([0;1];p(a)p(a))!
+[0;1]to categorize pas follows:
+keepl;a;(p;p) =jﬁt(l(a;p))\ﬁt(l;p)jjlj
+addl;a;; (p;p) =keepl;a;(p;p)
+^jﬁt(l(a;p))j jﬁt(l;(a;p))\ﬁt(l;p)jadapt (;p)jlj
+ifkeepl;a;(p;p)does not hold, pwill be discarded.
+in the following subsection, we give an overview of the complete approach.
+4.2 selection framework
+an overview of our approach, indicating inputs, outputs and use of parameters, is given
+in fig. 5. since we consider simplicity to be a desirable property, we set the est-miner
+to traverse the complete candidate tree using bfs rather than dfs. thus, places with
+few connected activities are evaluated ﬁrst and can therefore be inserted into the model
+at an earlier stage. furthermore, we limit the traversal depth to places with dcutactivi-
+ties, arguing that places with many transitions are generally not desirable - such places
+are usually devastating to simplicity while their constraints can be sufﬁciently approxi-
+mated by much simpler places.
+after the est-miner framework evaluates a candidate place pto be ﬁtting with re-
+spect to a fraction of traces (def. 3), we use the classiﬁcation functions given in def. 8
+to decide whether the place should immediately be added to the output petri net, dis-
+carded forever or kept for re-evaluation. in the latter case it is added to a queue qof
+potential places which is sorted according to how interesting a place is. in our case,
+we sort by place simplicity (few transitions are better) and place ﬁtness (number of re-
+playable log traces). optionally, the length of qcan be limited, trading an improvement
+in time and space complexity for potentially lowered model quality.
+whenever the bfs candidate traversal reaches a new level in the complete candi-
+date tree , we revisit the potential places queue qand re-evaluate its places using the
+classiﬁcation functions before proceeding with the traversal of more complex places.
+this makes sense to promote simplicity in particular together with the delta adaption
+functions proposed in section 5, which give preference to places less complex than in-
+dicated by the current tree level. after reaching the lowest tree level, the approach can
+either terminate immediately, or iterate over the potential places queue while artiﬁcially
+increasing the tree depth d+times. this can be relevant for delta adaption functions
+depending on place complexity, as exempliﬁed in sec. 5. here, the artiﬁcial tree depth
+allows for increased leniency also for the most complex places evaluated.
+finally, the resulting petri net nmay contain dead parts: in particular infrequent
+activities with erratic behavior are likely to occur only in those traces that are no longer
+replayable on n. therefore, as a ﬁnal step, we detect and remove all activities that do
+not occur in ﬁt(l;n)together with their connected arcs.
+before returning this petri net as ﬁnal output, the est-miner framework removes
+implicit places, merges places that are equal except for self-loops, i.e., (i[x1jo[x1)
+and(i[x2jo[x2)are merged into (i[x1[x2jo[x1[x2), and adds start and
+end places.10 l. l. mannel, w. m. p. van der aalst
+algorithmic framework
+re-evaluatekeep (not add)parameterstraverse the complete 
+candidate tree using bfs
+(compare def. 6)candidate traversal
+place selection(compare def. 3)candidate evaluation
+•remove dead activities
+•merge self -loop places
+•remove implicit placespost -processing
+(compare def. 8)place classification
+qn
+trigger 
+revisiting 
+of q
+add
+p
+fig. 5. overview of the presented approach, including input, output and parameter use.
+the approach returns a petri net nsatisfying the following guarantees.
+theorem 1 (guarantees). given a set of activities a, event loglovera, an adap-
+tion function adapt : ([0;1];p(a)p(a))![0;1]and parameters 2[0;1];2
+[0;1];s2n;jqj2n;d+2n;dcut2n, the presented approach computes a petri net
+n= (a0;p)witha0a, such thatncan replay at least jljtraces fromland
+every transition in a0can be ﬁred at least once.
+furthermore, if the length of qis not limited, and thus a place pis discarded only if
+it does not satisfy keepl;a;(p;p), the set of places pis maximal in the sense that
+no place from the set of evaluated candidate places can be added without violating the
+ﬁtness constraints imposed by the chosen heuristics.
+5 selection strategies
+as illustrated by the example place combinations in fig. 4, the order of places added
+can have a signiﬁcant impact on the selected subset of places and thus the behavior of
+the returned petri net. the presented framework allows for a wide range of heuristic
+functions, optimizing the place selection individually towards a variety of possible user
+interests. thus, obviously, the examples presented in the following are by far not ex-
+haustive and entirely different choices are possible, but they can serve as a starting point
+to an investigation of the impact and suitability of our approach.
+the linear andsigmoid delta adaption functions both aim to promote ﬁtness and
+simplicity. the constant andno delta delta adaption functions are introduced to be used
+as a baseline in our experiments, towards which the effect of the other strategies can be
+compared.
+no delta as a baseline to compare to, we introduce a function that ignores delta and
+simply adds every ﬁtting place to the petri net as soon as it is discovered. within thediscovering process models while providing guarantees 11
+fig. 6. example behavior of the delta adaption modiﬁers mod sigmoid()(left) and mod linear()
+(right) for three places with 2;3and4activities, respectively. the x-axis indicates the current
+tree depthd, withdmax= 12 , while the y-axis indicates the modiﬁer to be multiplied with .
+framework, this can be formalized to
+adaptnodelta (;p) = 1:
+constant delta trivially, we can choose not to adapt delta at all. we simply add every
+ﬁtting, non-discarded place that does not reduce the replayable traces from the log by a
+fraction of more than delta. formally, this resembles the identity function:
+adaptconstant (;p) =
+linear and sigmoid delta adaption for a set of activities a, letdmax= 2jajbe
+the maximum depth of the complete candidate tree, and let d2[2;3;:::;d max]be the
+current depth of the candidate tree traversal. we call s2nnf0gthesteepness modiﬁer .
+consider a place p= (ijo).
+thelinear delta adaption function computes the adapted as follows:
+adaptlinear(;(ijo)) =mod linear((ijo))
+=s
+(jij+joj)d (jij+joj)
+dmax 2
+we deﬁne the sigmoid delta adaption function as follows:
+adaptsigmoid (;(ijo)) =mod sigmoid ((ijo))
+=0
+@2
+1 +exp
+( 1)s
+(jij+joj)(d (jij+joj)) 11
+a
+fig. 6 illustrates the behavior of the modiﬁer each adaption function multiplies with
+the parameter for three example places of varying complexity. both, the linear and
+sigmoid delta adaption are designed to prefer simple places. when a place originates
+from the currently traversed level of the complete candidate tree , i.e., it is among the
+most complex places currently available, both functions will evaluate to 0, meaning that
+only a perfectly ﬁtting place can be added. the simpler the evaluated place is compared
+to the current tree level, the larger the result of the function and the more unﬁtting traces12 l. l. mannel, w. m. p. van der aalst
+are allowed, with marking the maximal returnable value. the only difference is the
+steepness of the functions: while the linear function increases linearly with the place
+complexity, the sigmoid function grows fast in the beginning but stagnates towards the
+end. thus, the linear function becomes uniformly less lenient with increasing place
+complexity. in contrast, the sigmoid function prefers the simpler places more strongly,
+while the more complex places are (roughly) equally undesirable.
+6 experimental results and evaluation
+we perform several introductory experiments where we run the proposed algorithm
+with a wide variation of combinations of possible parameter settings on several event
+logs with different properties. to investigate the impact of the proposed heuristics, we
+use a lexicographical ordering of the activities, thus ﬁxing the order of candidate eval-
+uation.the purpose is to focus on the effect of the different parameters, and possibly
+derive which of them are the most relevant for the discovery of certain models and
+whether certain (combinations of) settings are preferable.
+6.1 experimental setup
+table 1 provides an overview of the event logs used in our experimentation. sepsis
+has a relatively high number of different trace variants, all of which have comparable
+frequencies with the most frequent trace making up only 3:33% of the event log. ac-
+tivities are repeated often within a trace, which must lead to looping behavior within
+a petri net with uniquely labeled transitions. rtfm is rather large, with a moderate
+variety of trace variants and activities. both for variants and activities some are very
+frequent while others are quite infrequent. teleclaims is an established artiﬁcial log
+useful for testing discovery of various control-ﬂow structures. with orders we can
+demonstrate the algorithms ability to discover complex control ﬂow structures, as well
+as the option to abstract from rare behavior. for each event log we perform 4200 runs
+of the algorithm with varying combinations of the different parameters, as speciﬁed in
+table 2. note, that we keep the order of place candidate traversal ﬁxed for all runs.
+6.2 results and evaluation
+for each model discovered we compute alignment-based ﬁtness, precision and sim-
+plicity as described in sec. 4. based on alignment-based ﬁtness and precision, we also
+present thef1-score, i.e., the harmonic mean of alignment-based ﬁtness and precision.
+table 1. list of logs used for the evaluation. the upper part lists real-life logs while the lower
+part shows artiﬁcial logs. logs are referred to by their abbreviations.
+log name abbreviation activities trace variants reference
+sepsis sepsis 16 846 [29]
+road trafﬁc fine management rtfm 11 231 [30]
+teleclaims teleclaims 11 12[25]
+order-handling orders 8 9[31]discovering process models while providing guarantees 13
+table 2. overview of the parameters settings used in our experimentation. the combinations
+result in 4200 runs for each event log. the values ranges were chosen based on a smaller set
+of preliminary experiments, aiming to investigate a wide range of parameter settings on the one
+hand, while on the other hand avoiding unnecessary complexity resulting from variation without
+notable impact. for example, for our inputs no places were discarded for jqj10000 . ford+
+we chose a very low and a very high value to evaluate whether it had any impact at all. finally,
+for the chosen event logs dcut= 5 has shown to be sufﬁcient to ﬁnd complex structures with the
+standard est-miner, i.e., increasing the traversed tree depth increases computation time but has
+no strong impact on model quality.
+parameter used values purpose
+ 0:3,0:4,0:5,0:6,0:7,
+0:8,0:9deﬁnes the minimal fraction of log traces that every place,
+as well as the ﬁnal petri net, must be able to replay.
+ 0:05,0:1,0:15,0:2,
+0:25used to deﬁne the allowed reduction in log traces re-
+playable bynwhen adding a place.
+adapt adaptnodelta ,
+adaptconstant ,
+adaptlinear,adaptsigmoidthe delta adaption function used to guide the heuristics.
+s 1,2,3,4,5 the steepness of the increase of the adaption function (rel-
+evant for adaptlinear andadaptsigmoid only).
+jqj 100,1000 ,10000 the maximal number of places stored in q.
+d+0,10 artiﬁcial tree depth to re-evaluate places in qafter end of
+tree traversal (relevant for adaptlinearandadaptsigmoid only).
+dcut 5 stop candidate traversal after the speciﬁed tree level.
+in fig. 7 an overview of the quality results of the 4200 models generated for each log
+is given. fitness and simplicity remain rather stable, with ﬁtness being generally high
+and simplicity values clustering around 0:5(which we consider a good value, recall
+def. 7). on the other hand, precision, and by extension the f1-score, vary a lot for the
+discovered models. this clearly indicates that the choice of parameters has a strong
+impact on this quality aspect.
+while we discovered only 7unique models for orders , there were 19unique mod-
+els found for rtfm ,27forteleclaims and140forsepsis . the quality results and
+frequencies of the 10most frequently discovered petri nets are given in fig. 8 (model
+ids1to10). additionally, we provide the same results for the models discovered by the
+inductive miner infrequent (imf) with default settings as implemented in prom [32],
+the models discovered by the est-miner with = 1:0(comparable to region theory
+results), as well as the model with the highest f1-score discovered over all runs.
+in figures 9, 10, 11 and 12 we present a selection of models for each log: the model
+discovered by imf, the model discovered by the est-miner with = 1:0, the most
+frequently discovered model and the model with the highest f1-score discovered by the
+experiments with our proposed approach.
+all models shown in fig. 9 were discovered for the orders log. for this rather
+simple event log, all models achieve relatively high scores with respect to the quality
+metrics. however, some notable differences in the expressed behavior can be observed
+in particular with respect to the activities send invoice, send reminder, pay andcancel
+order . according to the event log, in most cases execution of send invoice is eventually14 l. l. mannel, w. m. p. van der aalst
+fig. 7. overview of model quality results for all 4200 runs with varying parameters but ﬁxed
+candidate traversal order.
+followed either by pay(and then delivery) or by cancel order , but never both. in rare
+cases, payment occurs before sending the invoice. after sending the invoice, reminders
+can be sent repeatedly, until payment is received or the order is canceled. this behavior
+is fully expressed only by the model discovered using the est-miner with = 1:0,
+which is comparable to results produced by region-based approaches. since payment
+before sending the invoice is rare, users may prefer the other models which focus on
+behavior where payment arrives after sending the invoice. the model discovered by
+imf further deviates from the log by not allowing for repeated reminders (occurring in
+25 % of the traces), and enabling the cancellation of orders after payment. in contrast
+to the model discovered most frequently by our extended est-miner, the model with
+the highestf1-score does not contain the activity cancel order (occurring in 13:03%
+of traces) at all, resulting in slightly lower ﬁtness but notably increased precision.
+thesepsis event log exhibits many repetitions of activities and a comparatively
+high control-ﬂow variance, with 846trace variants in 1050 traces, the most frequent
+of which occurs only 35times. thus, the discovery of a model with simultaneously
+high ﬁtness and precision is challenging. fig. 10 presents a selection of discovered
+petri nets. the imf manages to discover groups of activities that occur in sequence,
+however, within these groups the activities are in parallel and mostly skipable, resulting
+a very low precision. the est-miner with = 1:0illustrates a disadvantage of requiring
+perfect ﬁtness: the resulting model allows for nearly all possible behaviors. for the most
+frequent model discovered by our extension, this problem becomes less severe and is
+signiﬁcantly reduced for the discovered model with the highest f1-score. this model
+manages to capture the main behavior hidden in the traces while ignoring infrequent
+activity behavior, achieving comparatively high precision.discovering process models while providing guarantees 15
+log metric est
+(τ = 0.1) 12345678910
+f1 0.64320.65310.67630.96380.67940.93710.75700.88160.92700.85400.77920.6757
+fitness 0.98201.00000.99400.93010.96420.96420.96030.78820.86400.87070.98090.9642
+precision 0.47820.48490.51251.00000.52450.91140.62481.00001.00000.83790.64630.5201
+simplicity 0.55260.68420.57140.50000.57140.53330.52000.46670.50000.50000.53330.5333
+frequency - -12711107 383367312243150150 3433
+f1 0.32150.32660.42640.46390.52050.57520.60860.48490.46720.68930.60360.4582 0.7836
+fitness 0.90601.00000.99420.98460.96030.96810.95600.96790.97810.92300.96350.9942 0.9115
+precision 0.19540.19520.27140.30340.35700.40910.44640.32350.30690.55000.43950.2977 0.6871
+simplicity 0.51060.78260.66670.59260.59260.59090.53850.58060.60870.45160.61540.6522 0.52
+frequency - -408354198187186180180150150120 52
+f1 0.94960.59930.93160.46970.38950.45360.62720.94690.93280.86210.82020.8825
+fitness 0.94901.00000.95381.00000.98890.98890.97330.92440.87400.94230.95720.8461
+precision 0.95030.42790.91050.30690.24250.29430.46270.97061.00000.79450.71750.9222
+simplicity 0.51720.52000.50000.54170.61900.59090.52000.52000.48150.52000.50000.4783
+frequency - -650507474440374356210182182150
+f1 0.93400.93190.92580.96640.95020.93740.93190.90960.9296
+fitness 0.96001.00000.99960.95620.92790.88221.00000.92790.9562
+precision 0.90940.87250.86220.97680.97351.00000.87250.89210.9044
+simplicity 0.50000.47620.50000.47370.50000.47060.47620.47370.4500
+frequency - -147214241000 225 6411 4highest 
+f1
+model 2
+model 6
+model 2rtfm (discovered 
+19 unique models)
+sepsis (discovered 
+140 unique 
+models)
+teleclaims 
+(discovered 27 
+unique models)
+orders (discovered 
+7 unique models)model id imf (default 
+settings)
+fig. 8. overview of the qualitative evaluation results of the imf (default settings), the est-miner
+with= 0 and the 10most frequently discovered models by the presented approach including
+their frequencies. the ﬁnal column indicates the model with the best f1-score (only for sepsis
+this is not contained in the most frequent models). a selection of models is presented for each
+event log in figures 9 to 12.
+inductive miner infrequent (default settings):
+est-miner (= 1:0):
+presented approach (most frequent):
+presented approach (highest f1):
+fig. 9. the petri nets discovered based on the orders log using the inductive miner infrequent
+(default settings), the est-miner with = 1:0, and model 1(most frequent) and model 2(highest
+f1-score) discovered with our runs of the presented approach.
+fig. 11 shows petri nets discovered from the rtfm log. considering the models
+discovered by imf and est-miner with = 1:0, we observe the same general tenden-16 l. l. mannel, w. m. p. van der aalst
+inductive miner infrequent (default settings):
+est-miner (= 1:0):
+presented approach (most frequent):
+presented approach (highest f1):
+fig. 10. the petri nets discovered based on the sepsis log using the inductive miner infrequent
+(default settings), the est-miner with = 1:0, and model 1(most frequent) and the model with
+the highestf1-score discovered with our runs of the presented approach.
+cies as for the previous logs. for the models discovered by our approach, we note that
+quite many activities are missing, meaning that they are not part of any replayable trace
+from the event log. the reason can be found by investigation of this particular event log,
+which describes two very distinct sub-processes, the more frequent of which consists of
+the activities still contained in the model. the activities of the infrequent sub-process
+related to the appeals have been ﬁltered to focus on the main process.discovering process models while providing guarantees 17
+inductive miner infrequent (default settings):
+est-miner (= 1:0):
+presented approach (most frequent):
+presented approach (highest f1):
+fig. 11. the petri nets discovered based on the rtfm log using the inductive miner infrequent
+(default settings), the est-miner with = 1:0, and model 1(most frequent) and model 2(highest
+f1-score) discovered with our runs of the presented approach.
+a set of process models discovered from the teleclaims log is presented in
+fig. 12. the models discovered by the imf and our approach express similar behav-
+ior, with the main difference being the representation of skipable activities: with all
+transitions being uniquely labeled, our approach has to rely on loop constructs rather
+than silent activities. the est-miner with = 1:0does not abstract from infrequent
+behavior, which in this case results in a perfectly ﬁtting but quite complex model.
+our results indicate that even minor gains in ﬁtness are usually accompanied by a
+major drop in precision. the models with the best f1-score are usually those with the
+highest precision value. from figures 9 to 12 we can observe that these models seem
+to abstract well from infrequent activity behavior, giving a clear representation of the18 l. l. mannel, w. m. p. van der aalst
+inductive miner infrequent (default settings):
+est-miner (= 1:0):
+presented approach (most frequent):
+presented approach (highest f1):
+fig. 12. the petri nets discovered based on the teleclaims log using the inductive miner
+infrequent (default settings), the est-miner with = 1:0, and model 1(most frequent) and
+model 6(highestf1-score) discovered with our runs of the presented approach.
+main process. however, models with higher ﬁtness may reveal complex control-ﬂow
+structures and interesting variations. the presented approach is able to return models
+anywhere on this scale between ﬁtness and precision based on the choice of parameters.
+while the quality metrics clearly indicate that our approach is able to discover mod-
+els balancing ﬁtness and precision while maintaining reasonable simplicity, the choice
+of parameters has a signiﬁcant impact that requires further investigation. we used deci-
+sion tree analysis to search for certain parameter settings that would result in the highest
+quality models as indicated by the f1-score. the results of this analysis are shown in
+table 3, where each line represents a set of parameter combinations that leads to the
+discovery of the best model.
+for the four event logs investigated in this paper, the most important parameters
+seem to beand. this is not surprising, since has a direct impact on which placesdiscovering process models while providing guarantees 19
+are available for addition to the petri net and is limiting the range of the adaption
+strategies, which include the use of s. notably, the artiﬁcial tree depth d+as well as
+jqjhave had no major impact on the discovery of any of the examined models and the
+sigmoid and linear delta adaption strategies are often interchangeable.
+some interdependencies between the parameters are expected, and seem to be con-
+ﬁrmed by the results in table 3. for example, when using the delta adaption functions
+adaptconstant andadaptnodelta , the steepness modiﬁer shas no impact. for the orders
+log there is an indication of an exceptionally low svalue working well with a high ar-
+tiﬁcial tree depth modiﬁer d+, and for low values requiring the use of to discover
+the best model. for event logs like the rtfm log and the orders log, which have a
+few very dominant trace variants, we seem to generally achieve good results for rather
+high values of . in contrast, for event logs with a high variety of traces as for example
+sepsis log, a low-value seems mandatory. most likely, the large variety of ﬁtting
+places allows for obtaining high precision, while our heuristics seems to successfully
+ensure the focus on the main behavior. however, more results are needed to validate
+such speculations.
+interestingly, the results from the sepsis log, which contains a high variety of
+traces, seem to conﬁrm our algorithms ability to discover the main behavior hidden
+in an event log even in the absence of main trace variants: for a low value of , e.g.
+= 0:3, the fraction of log traces replayable by the return petri net is indeed close
+to0:3, however, the alignment-based ﬁtness reliably remains above 0:9, indicating that
+most of the traces are close to being replayable. we can conclude that the returned
+model successfully expresses the core behavior of the process.
+to summarize, the results clearly show that high quality models balancing the dif-
+ferent quality aspects can be discovered. there is a signiﬁcant variance in some of
+the metrics, particularly precision, indicating that the settings of the algorithm have a
+notable impact. our preliminary investigation using decision trees shows, that certain
+parameter choices result in high quality models. it gives a ﬁrst indication about which
+parameters have a more notable impact and whether certain settings are more suitable
+for logs with certain properties. further experimentation needs to be performed to inves-
+tigate to which degree a generalization is possible. note, that the impact of the candidate
+traversal order has not been investigated yet, and may allow for further improvements.
+7 conclusion
+in this paper, we introduced an extension to the est-miner that returns a petri net which
+satisﬁes user-deﬁnable minimal ﬁtness requirements. the presented approach employs
+heuristics to efﬁciently select a suitable subset of the discovered places, while aiming
+towards high precision and simplicity. the algorithm is capable to discover complex
+control-ﬂow structures such as non-local dependencies, to deal with noise in the event
+log and to provide guarantees without over- or underﬁtting.
+our ﬁrst experiments, using four different event logs, clearly show that not only
+is it possible to discover high-quality models using the introduced approach, but also
+the heuristics applied have a signiﬁcant impact on the obtained petri net. based on the
+parameter settings, models with a very different focus with respect to ﬁtness, precision20 l. l. mannel, w. m. p. van der aalst
+table 3. overview of the parameter choices resulting in the discovery of the model with the
+highestf1-score. for each log we indicate how often this model has been discovered in our
+experimental runs and in which ﬁgure to ﬁnd it. for each parameter that our decision tree anal-
+ysis has revealed to be impactful, the possible values are indicated. each line corresponds to a
+set of parameter combinations, with the frequency of the model being discovered using these
+combinations given to the right.
+log and model  strategy sd+#combinations
+sepsis (fig. 10) 0:3 0:15 adaptconstant - - 30
+(discovered 0:3 0:25 adaptsigmoid [3;5]- 18
+52times)
+rtfm (fig. 11) [0:3;0:6][0:15;0:25] adaptconstant - - 360
+(discovered [0:4;0:6][0:2;0:25] adaptsigmoid ,adaptlinear [2;5]- 288
+1107 times) 0:6 - adaptnodelta - - 150
+[0:4;0:6] 0:15 adaptlinear [3;5]- 54
+teleclaims (fig. 12) [0:3;0:4][0:15;0:25] adaptconstant - - 180
+(discovered [0:3;0:4][0:2;0:25] adaptsigmoid [4;5]- 48
+356times) [0:3;0:4] 0:15 adaptlinear [3;4]- 24
+[0:3;0:4] 0:25 adaptlinear [4;5]- 24
+orders (fig. 9) [0:7;0:8][0:15;0:25] - [2,5] - 576
+(discovered [0:3;0:6][0:15;0:2]adaptsigmoid ,adaptconstant [2,5] - 384
+1424 times) [0:7;0:8] - adaptnodelta - - 120
+[0:7;0:8][0:15;0:25] - 110 72
+and the handling of infrequent behavior can be discovered. some parameters have a
+stronger effect than others and some parameter choices seem to be more suitable for
+logs with certain properties, which should be veriﬁed by further experimentation.
+next to an analysis of the running-time, future work includes further experimenta-
+tion to explore the generalization the preliminary results, as well as the impact of the
+candidate place traversal order and its interaction with the heuristics used. improve-
+ments or variations of the strategies are likely possible. it would be particularly inter-
+esting to investigate to which degree the approach can be used to prioritize non-standard
+quality aspects, for example related to user interests such as compliance or performance.
+the dead transitions removed from the model because they are no longer part of the
+replayable event log give rise to further possible extensions of the est-miner. when
+detected early on, they can be used to identify and cut off candidate subtrees consisting
+of dead places to improve the running time. further investigation into the cause of their
+removal my lead to better noise handling strategies to improve the quality of discov-
+ered models. finally, it would be interesting to investigate whether the presented place
+selection strategies can be adapted to improve other algorithms as well.
+acknowledgments: special thanks goes to tobias brockhoff for supporting the im-
+plementation and evaluation of the presented experiments. we thank the ministry of
+culture and science of the german state of north rhine-westphalia (mkw) and the
+excellence strategy of the federal government and the l ¨ander for supporting our re-
+search.discovering process models while providing guarantees 21
+references
+1. reisig, w.: understanding petri nets: modeling techniques, analysis methods, case stud-
+ies. springer berlin heidelberg (2013)
+2. desel, j., oberweis, a., reisig, w., rozenberg, g.: petri nets and business process manage-
+ment. saarbr ¨ucken: gesch ¨aftsstelle schloss dagstuhl (1998)
+3. desel, j., esparza, j.: free-choice petri nets. cambridge tracts in theoretical computer
+science. cambridge university press (1995)
+4. berthelot, g.: transformations and decompositions of nets. in: petri nets: central models
+and their properties, pp. 359–376. springer, berlin, heidelberg (1987)
+5. wen l. van der aalst, w.m.p., wang, j., sun, j.: mining process models with non-free-choice
+constructs. data mining and knowledge discovery 15(2), 145–180 (2007)
+6. leemans, s., fahland, d., van der aalst, w.: discovering block-structured process models
+from event logs - a constructive approach. application and theory of petri nets and con-
+currency (2013)
+7. badouel, e., bernardinello, l., darondeau, p.: petri net synthesis. text in theoretical com-
+puter science, eatcs series. springer (2015)
+8. lorenz, r., mauser, s., juh ´as, g.: how to synthesize nets from languages: a survey. in:
+proceedings of the 39th conference on winter simulation: 40 years! the best is yet to
+come, wsc ’07, pp. 637–647. ieee press, piscataway, nj, usa (2007)
+9. bergenthum, r., desel, j., lorenz, r., mauser, s.: process mining based on regions of lan-
+guages. proc. 5th int. conf. on business process management pp. 375–383 (2007)
+10. van der werf, j.m., van dongen, b., hurkens, c., serebrenik, a.: process discovery using
+integer linear programming. in: applications and theory of petri nets. springer, berlin,
+heidelberg (2008)
+11. van zelst, s., van dongen, b., van der aalst, w.: avoiding over-ﬁtting in ilp-based process
+discovery. in: business process management, pp. 163–171. springer international publish-
+ing, cham (2015)
+12. van zelst, s., van dongen, b., van der aalst, w.: ilp-based process discovery using hybrid
+regions. in: ataed@petri nets/acsd (2015)
+13. carmona, j., cortadella, j., kishinevsky, m.: a region-based algorithm for discovering petri
+nets from event logs. in: business process management, p. 358–373. springer (2008)
+14. darondeau, p.: deriving unbounded petri nets from formal languages. in: concur’98
+concurrency theory, pp. 533–548. springer, berlin, heidelberg (1998)
+15. bergenthum, r., desel, j., lorenz, r., mauser, s.: synthesis of petri nets from ﬁnite partial
+languages. fundam. inf. 88(4), 437–468 (2008)
+16. ehrenfeucht, a., rozenberg, g.: partial (set) 2-structures. acta informatica 27(4), 343–368
+(1990)
+17. carmona, j., cortadella, j., kishinevsky, m., kondratyev, a., lavagno, l., yakovlev, a.:
+a symbolic algorithm for the synthesis of bounded petri nets. in: k.m. van hee, r. valk
+(eds.) applications and theory of petri nets, pp. 92–111. springer berlin heidelberg, berlin,
+heidelberg (2008)
+18. kalenkova, a., carmona, j., polyvyanyy, a., la rosa, m.: automated repair of process mod-
+els using non-local constraints. in: application and theory of petri nets and concurrency,
+p. 280–300. springer-verlag, berlin, heidelberg (2020)
+19. mannel, l.l., van der aalst, w.m.p.: finding complex process-structures by exploiting the
+token-game. in: application and theory of petri nets and concurrency. springer nature
+switzerland ag (2019)
+20. van der aalst, w.m.p.: discovering the ”glue” connecting activities - exploiting monotonicity
+to learn places faster. in: it’s all about coordination - essays to celebrate the lifelong
+scientiﬁc achievements of farhad arbab, pp. 1–20 (2018)22 l. l. mannel, w. m. p. van der aalst
+21. garcia-valles, f., colom, j.: implicit places in net systems. proceedings 8th international
+workshop on petri nets and performance models pp. 104–113 (1999)
+22. berthomieu, b., botlan, d.l., dal-zilio, s.: petri net reductions for counting markings.
+corr abs/1807.02973 (2018)
+23. colom, j., silva, m.: improving the linearly based characterization of p/t nets. in: advances
+in petri nets 1990, pp. 113–145. springer, berlin, heidelberg (1991)
+24. mannel, l.l., bergenthum, r., van der aalst, w.m.p.: removing implicit places using re-
+gions for process discovery. in: proceedings of the international workshop on algorithms
+& theories for the analysis of event data (ataed) 2020, vol. 2625, pp. 20–32. ceur-
+ws.org
+25. van der aalst, w.: process mining: data science in action, 2 edn. springer, heidelberg
+(2016)
+26. carmona, j., van dongen, b., solti, a., weidlich, m.: conformance checking - relating
+processes and models. springer, cham (2018)
+27. adriansyah, a.: aligning observed and modeled behavior. ph.d. thesis, mathematics and
+computer science (2014)
+28. munoz-gama, j., carmona, j.: a fresh look at precision in process conformance. in: bpm,
+vol. 6336, pp. 211–226 (2010)
+29. mannhardt, f.: sepsis cases - event log (2016)
+30. de leoni, m., mannhardt, f.: road trafﬁc ﬁne management process (2015)
+31. van der aalst, w.m.p.: spreadsheets for bpm. business process management journal 24,
+105–127 (2010)
+32. van dongen, b., de medeiros, a., verbeek, h., weijters, a., van der aalst, w.: the prom
+framework: a new era in process mining tool support. in: applications and theory of petri
+nets 2005, pp. 444–454. springer, berlin, heidelberg (2005)

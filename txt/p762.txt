@@ -1,0 +1,548 @@
+discovering stochastic petri nets with arbitrary delay
+distributions from event logs
+andreas rogge-solti1and wil m.p. van der aalst2and mathias weske1
+1business process technology group,
+hasso plattner institute, university of potsdam, germany
+{andreas.rogge-solti,mathias.weske}@hpi.uni-potsdam.de
+2department of information systems, eindhoven university of technology,
+p.o. box 513, nl-5600 mb, eindhoven, the netherlands.
+w.m.p.v.d.aalst@tue.nl
+abstract. capturing the performance of a system or business process as accu-
+rately as possible is important, as models enriched with performance information
+provide valuable input for analysis, operational support, and prediction. due to
+their computationally nice properties, memoryless models such as exponentially
+distributed stochastic petri nets have earned much attention in research and indus-
+try. however, there are cases when the memoryless property is clearly not able to
+capture process behavior, e.g., when dealing with ﬁxed time-outs.
+we want to allow models to have generally distributed durations to be able to
+capture the behavior of the environment and resources as accurately as possible.
+for these more expressive process models, the execution policy has to be speciﬁed
+in more detail. in this paper, we present and evaluate process discovery algorithms
+for each of the execution policies. the introduced approach uses raw event execu-
+tion data to discover various classes of stochastic petri nets. the algorithms are
+based on the notion of alignments and have been implemented as a plug-in in the
+process mining framework prom.
+keywords: process mining, stochastic petri nets, generally distributed transitions
+1 introduction
+process mining has emerged as a promising technology to gain insights into the actual
+execution of business processes and has been successfully applied in hundreds of or-
+ganizations [ 1]. besides the discovery of process models, process mining can also be
+used to enrich existing models with information gathered from event logs. in particular,
+capturing activity durations and waiting times in the business process is necessary to gain
+insights about the performance of the process. further, these enriched models can be used
+as basis for prediction algorithms to estimate the time until completion of the process [ 1].
+estimating the remaining run time of business processes and its activities is an important
+management task, since it allows to improve the allocation of resources. it also increases
+the quality of results when clients inquire the status and expected completion of a given
+business process.2 a. rogge-solti, w. van der aalst, m. weske
+petri nets have been used widely in the business process domain, either as ﬁrst class
+modeling languages, or as basis for veriﬁcation purposes. there exist mappings for
+many workﬂow and business process modeling languages (e.g., bpmn, uml activity
+diagrams, bpel, and epcs) into petri nets [ 2], as they are able to capture the most
+important control ﬂow constructs.
+if we have historical observations of a given process, e.g., an event log with timing
+information, it is possible to extract stochastic performance data and add it to the model.
+these enriched models can be used in a number of use cases. besides answering questions
+such as “how many percent of the process instances take longer than 10 days?” , they
+can be used as basis for simulation, e.g., for what-if analysis. moreover, they can be
+used to get accurate predictions of the remaining time and o er operational support.
+current state-of-the-art performance mining techniques focus only on gathering mean
+and variance (assuming normally distributed durations) [ 3,4], or the ﬁring rate (assuming
+exponentially distributed durations) [ 5,6] of times. we are interested in automatically
+learning more ﬁne grained information and want to be able to capture deterministic
+time-outs, or irregularities, such as multi-modal distributions. this paper investigates
+performance mining techniques for generally distributed transition stochastic petri nets
+(gdt_spn) that do not restrict distributions to any shape.
+multiple execution policies exist for these models that need to be taken into ac-
+count [ 7]. in a nutshell, the problem addressed in this paper is to infer the stochastic
+parameters of a given petri net, using an event log, and an execution policy. we base
+our algorithms on the alignment technique originally developed for conformance check-
+ing [8]. our alignment-based approach is more robust than naïve replays of logs on the
+model, as it guarantees ﬁnding the globally best alignment based on a cost function that
+considers asynchronous parts of the replay.
+the paper is organized as follows. in section 2 preliminary deﬁnitions are provided.
+the main challenges and the performance mining algorithms addressing them are dis-
+cussed in section 3. a preliminary evaluation showing the capabilities to restore di erent
+kinds of models is presented in section 4. afterwards, related work is discussed in
+section 5. finally, conclusions are presented in section 6.
+2 preliminaries
+in order to establish a formal basis and to clarify the di culties and solution ideas, this
+section introduces the concepts and techniques used throughout this paper. first, the core
+concepts of event logs and petri nets are given.
+deﬁnition 1 (event log). an event log over a set of activities aand time domain td
+is deﬁned as l a;td=(e;c;;;;), where:
+–e is a ﬁnite set of events
+–c is a ﬁnite set of cases (process instances),
+–:e!a is a function assigning each event to an activity,
+–:e!td is a function assigning each event to a timestamp,
+–:e!c is a surjective function assigning each event to a case.
+–eeis the succession relation, which imposes a total ordering on the events
+in e.discovering spns with arbitrary delay distributions from event logs 3
+we use e2e1as shorthand notation for (e2;e1)2. we call the ordered sequence of
+events belonging to one case a “trace”. we assume that e2e1implies(e2)>(e1),
+i.e., the time ordering is respected.
+deﬁnition 2 (petri net). a petri net is a tuple pn =(p;t;f;m0)where:
+–p is a set of places,
+–t is a set of transitions,
+–f(pt)[(tp)is a set of connecting arcs representing ﬂow relations,
+–m02p!i n+
+0is an initial marking.
+over the years, various kinds of extensions to petri nets have been proposed in order
+to capture performance criteria. an overview of di erent important classes of stochastic
+petri nets can be found in [ 9]. for our purposes, we extend the widely known deﬁnition
+of generalized stochastic petri nets (gspns) provided in [ 10], by allowing durations of
+the timed transitions to be generally distributed. in terms of the categorization proposed
+in [9], we use spn with generally distributed transitions .
+deﬁnition 3 (gdt_spn). a generally distributed transition stochastic petri net is
+a seven-tuple: gdt_spn =(p;t;p;w;f;m0;d), where (p;t;f;m0)is the basic
+underlying petri net. additionally:
+–the set of transitions t=ti[ttis partitioned into immediate transitions tiand
+timed transitions t t
+–p:t!i n+
+0is an assignment of priorities to transitions, where 8t2ti:p(t)1
+and8t2tt:p(t)=0
+–w:ti!i r+assigns probabilistic weights to the immediate transitions
+–d:tt!dis an assignment of arbitrary probability distributions dto timed
+transitions, reﬂecting the durations of the corresponding activities.
+tatb
+tc
+tdt1
+t4t3
+w(t3)=0.7
+w(t2)=0.3p1 p2
+p5p3 p4
+p6p7 p8
+t2d(tc)=normal(9,2)d(tb)=uniform(3,14)
+d(td)=deterministic(10)d(ta)=lognormal(0,1)
+fig. 1: example gdt _spn model with two parallel branches, and a conﬂict between
+transitions tc, and td.
+an example gdt_spn model is depicted in fig. 1. here, all weights of transitions
+are 1, unless otherwise speciﬁed, e.g., the weight of the immediate transition leaving
+the loop t3is 0.7. immediate transitions ( t1,t2,t3,t4) are depicted as black bars and have
+priority 1. the timed transitions ( ta,tb,tc,td) are depicted as boxes and have priority 0.
+the distributions of the probabilistic delays of the transitions dare annotated in a4 a. rogge-solti, w. van der aalst, m. weske
+legend in the top left of the ﬁgure, e.g., transition tbhas a uniform distribution in
+the interval [3;14[. although the transition durations depicted in this example are of
+parametric shape, it is also possible to specify other distributions, e.g., densities based
+on nonparametric regression. note that even though the example model in fig. 1 is
+structured and free-choice, the approaches presented in this paper are also applicable for
+non-structured and non-free-choice models.
+the basic semantics of gspn models [ 10] are still valid for gdt_spn models used
+in this paper, i.e., only the enabled transitions of the highest priority are allowed to ﬁre in
+the current marking. this ensures that if immediate transitions are enabled, no timed tran-
+sition can ﬁre. as in gspn semantics, the choice between multiple enabled immediate
+transitions is resolved probabilistically in proportion of their weight parameters.
+next to the seven-tuple gdt _spn =(p;t;p;w;f;m0;d), an execution policy [ 7]
+has to be chosen to resolve conﬂicts between multiple enabled transitions and to decide
+upon the memory of transitions, i.e., if and how long they store the duration of time
+passed in enabled state. if more than one timed transition is enabled in a marking of a
+gdt_spn, the selection policy deﬁnes how the next transition is chosen.
+inpreselection mode, this choice is resolved based on the weights. when using
+therace policy, each enabled transition picks a random sample of its distribution and
+the one with the lowest sample ﬁres next. the memory policy deﬁnes what happens to
+the transitions that lose the race. there are three options, either i) resampling , which
+constitutes to losing all progress, ii) enabling memory , where each transition remembers
+its sampled duration until it becomes disabled or ﬁres, or iii) age memory , where
+transitions remember their sampled time, even through periods of disabling, until they
+eventually can ﬁre.
+the most common execution policies used for business processes are either race
+with enabling memory orrace with age memory . we do not impose restrictions upon
+the execution semantics in this paper, rather we provide algorithms to reconstruct
+gdt_spn models, assuming a particular execution policy. before that however, we
+need to introduce the notion of alignments [8,11], which we base our algorithms upon.
+2.1 cost-based alignments
+figure 2.a) shows two execution traces ( tr1,tr2) of the model depicted in fig. 1, such that
+each event in the trace corresponds to a transition in the net with matching subscript, e.g.,
+event bbelongs to transition tb. for this example, we assume that immediate transitions
+are invisible, i.e., they do not appear in the log, and all timed transitions are visible. this
+must not necessarily be the case in general, as there might be observable immediate
+transitions or invisible timed transitions as well. dealing with invisible timed transitions
+is out of scope of this paper, however. we denote invisible transitions in a model in
+the alignment with a symbol. note that trace tr2does not ﬁt well into the model, so
+we want to ﬁnd an optimal alignment between model and log. for this purpose, we
+reuse the methods developed by adriansyah et al. in [ 8], which results in a sequence of
+movements that replay the trace in the model. these movements are either synchronous
+moves ,model moves , orlog moves . figure 2.b) displays a perfect alignment for tr1that
+consists of synchronous, or invisible model moves only.discovering spns with arbitrary delay distributions from event logs 5
+(a) a small log:
+tr1:ha, b, d, c, b i
+tr2:hb, d, di
+(b) perfect alignment for trace tr1:
+log a bd cb
+modelabdcb
+tat1tbtdt2t4t1tctbt2t3(c) two possible alignments for trace tr2:
+(c.1)log b d d
+modela b d
+tat1tbtd t2t3
+(c.2)logbdd
+modelabddb
+tat1tbtdt2t4t1tctbt2t3
+fig. 2: event log and possible alignments for the traces.
+for trace tr2there exist multiple possible alignments, of which two are depicted in
+fig. 2.c). thesymbol represents no progress in the replay on either side, e.g., the ﬁrst
+step in the alignment in fig. 2.c.1) is a model move. in fact, for the model in fig. 1 there
+exist inﬁnite alignments, as the model contains a loop that could be traversed an arbitrary
+number of times, resulting in two additional model moves, and three invisible model
+moves per iteration. the cost based alignment approach in [ 8] makes sure that alignments
+containing unnecessary moves get penalized by higher cost and therefore excluded from
+the optimal alignments. alignments provide a deterministic ﬁring sequence in the model
+replaying the traces in an optimal way.
+3 mining gdt_spn models
+there are multiple di culties in mining gdt_spn models from event logs. first, we
+describe how the alignment technique introduced in section 2.1 helps dealing with noisy
+event logs, i.e., logs where events might be missing, be at unexpected positions, or be
+reﬂecting activities not captured in the model.
+3.1 first challenge: dealing with noisy logs
+in order to extract decision and timing information from logs and combine the extracted
+information with a petri net to get a gdt_spn model, each individual trace in the log
+needs to be aligned to the petri net. that is, the path in the model that was taken in
+the trace has to be identiﬁed. previous techniques to extend models with performance
+information, e.g. the work in [ 3] tries to ﬁnd the path through a model in a greedy way.
+typically, this is done by replaying the model and looking for the best next match(es)
+between enabled transitions and next events with a given look-ahead. in contrast, the
+cost-based alignment technique introduced in sect. 2.1, guarantees to ﬁnd one of the
+alignments that is optimal in the sense that it has the least number of asynchronous
+moves (given that all asynchronous moves are assigned equal costs).
+in fact, we add a small cost tbased on individual event counts to each transition tin
+the alignment, such that less frequent events and their corresponding transitions have a
+slightly higher cost than more frequent ones. this ensures that the alignment algorithm
+always favors the most frequent option, when there are multiple options to choose a path
+in the model. this is a simple heuristic that may pick the wrong alignment, but the best
+guess that can be made based on local frequency-based information. a more accurate
+option would be to leverage the whole alignment approach to consider the stochastic
+parameters of the model, which is out of scope of this paper.6 a. rogge-solti, w. van der aalst, m. weske
+the resulting alignments are only usable for our purposes, when most of the ob-
+served behavior actually ﬁts the model. if ﬁtness values are very low, a lot of information
+contained in the event log cannot be mapped to the model, and cannot be used for perfor-
+mance analysis. in this case, we add a preprocessing step before eliciting performance
+data. in this preprocessing step, the model needs to be adjusted to the log, which can be
+done by repairing the model , cf. techniques presented by fahland and van der aalst [ 12]
+to add optional subprocesses to models, or alternatively the work by buijs et al. [ 13]
+based on genetic mining.
+analyze ﬁtness
+between model
+and log
+ﬁtness
+very low?repair model
+with log to
+increase ﬁtness
+align model
+and logcollect performance
+information by
+replaying the traces
+on the model
+according to the
+alignmentsalignment
+for each
+trace in log gdt_spn
+modelconﬁguration:
+(execution policy,
+distribution types) event logpetri net
+modelinputs:
+output:yesno
+fig. 3: bpmn model showing the approach to elicit gdt_spn models.
+fig. 3 shows an overview of the elicitation approach proposed in this paper. the
+inputs to the approach are the petri net model reﬂecting the structural behavior of the
+process, and an event log containing the traces representing actual executed process
+cases. further, a conﬁguration is necessary, as gdt_spn models are ﬂexible in their
+execution semantics and transition distribution types that will be ﬁtted to the data. the
+ﬁtness between model and log can be analyzed by the technique described in [ 8] and
+implemented in the process mining framework prom. if the ﬁtness is under a user
+speciﬁed threshold, e.g., 0.7, ﬁrst repair techniques available in [ 12,13] are executed on
+the model to allow for the behavior observed in the log. then, each trace in the event
+log is aligned to the model to ﬁnd one of the optimal paths through the model. with the
+alignments, the collection of stochastic execution information according to the input
+conﬁguration is performed.
+3.2 second challenge: collecting the stochastic performance information
+with the alignments between model and the traces selected, the collection of performance
+information can proceed depending on the conﬁguration of the elicitation algorithm, i.e.,
+execution policies and distribution types. first, we discuss the common approach that is
+used regardless of the speciﬁc execution policy.
+the alignment makes sure that each event is assigned to at most one transition in the
+model. based on the alignments, we replay the traces on the model, as if in a simulation,
+but instead of sampling random values from the distributions, we use the observed values
+extracted from the event log and infer the most likely stochastic model that explains the
+observation best. this works well if we can gather all the information that would also be
+produced in a simulation, i.e., the sample values of the transition ﬁrings, and the ﬁring
+ratios for the markings. the di erent execution policies ( preselection /race and in case
+of arace policy also the memory policy) are complicating matters. for example, racesdiscovering spns with arbitrary delay distributions from event logs 7
+between simultaneously enabled transitions can only be observed indirectly: the sampled
+values of the losing transition of the race cannot be recovered in all cases. other reasons
+for missing information might be noise in the data, e.g., missing events.
+depending on the execution policy of the gdt_spn model, di erent approaches
+are used to collect the stochastic parameters of the model.
+global preselection policy with the global preselection policy, only one transition
+can perform work at once, leading to a serialized process execution. given this policy,
+we replay the traces in the model and collect in each visited marking for each enabled
+transition the number of times, the transition was picked. these numbers, when nor-
+malized, give us a ratio of the weights of the transitions in each marking. note that one
+transition can be enabled in multiple markings, i.e., a transition weight needs to fulﬁll
+multiple equations and there may be dependencies. hence, we solve an optimization
+problem to ﬁnd the joint assignment to the transition weights that minimizes the error in
+these equations of each marking. to achieve this, we implemented a gradient descent
+algorithm that ﬁnds the weight vector that minimizes the individual errors in the process
+mining toolkit prom3. the algorithm is guaranteed to converge (if the learning rate is
+suciently low) to a local optimum. since the cost function of the errors is convex by
+nature and has, similarly to linear regression, no local optima, it ﬁnds the best global
+assignment. note that if we would extend our model to capture marking dependent
+weights, we would not need to average the errors out, but could directly estimate the
+weights as the observed ratio of transition ﬁrings in each marking.
+the time di erences between events in the trace represent the duration of transition
+ﬁrings. since there is no parallel execution in global preselection, these transition
+durations can be read from the trace directly. however, special attention needs to be
+devoted to asynchronous moves in the alignment. the time di erence between transitions
+should only be collected, if the current move is synchronous and the previous is either
+also synchronous, or a log move. in other cases the di erence between the times of events
+are spanning multiple transitions in the model. if more than one of these transitions is
+timed, we can use this delay as upper bounds for all involved timed transitions on the
+path in the alignment between the two events.
+race selection policy in the race selection policy, we also replay the traces in the model
+according to the path dictated by the alignment. the challenge in the race selection
+policy is that we can only read the duration sample of the winning transition directly.
+that duration can however serve as a lower bound for the other transitions that lose their
+progress. depending on the memory policy this issue of non-retrievable samples is more
+or less severe.
+with the resampling memory policy, we only get exact samples for winning transi-
+tions. in the worst case, when a transition loses every race, we have only a lower bound
+on it’s distribution which makes inference on the actual shape or range of it’s values
+impossible. however, this is only a problem for transitions that rarely happen. note also
+that this policy is rarely used in practice, as it does introduce dependencies between
+3see the stochasticpetrinet package of prom (http://www.processmining.org )8 a. rogge-solti, w. van der aalst, m. weske
+parallel transitions, i.e., parallel transitions have to restart their work, because another
+transition was faster.
+of more practical relevance is the enabling-memory policy, which allows for transi-
+tions that lose a race against non-conﬂicting transitions to keep their progress. if we have
+both events for the transition enabling and the one ﬁring the transition, we can calculate
+the duration of the transition by simple subtraction between these two events. in this
+policy, we still cannot recover sample durations for transitions that lose a race against a
+conﬂicting transition, i.e., a transition that disables it. thus, we also have to deal with
+censored data for timed transitions in conﬂict with other transitions.
+last, the age-memory policy even allows to reconstruct the sample duration of timed
+transitions in conﬂict, if they are re-enabled, e.g., by another iteration of a loop. we
+need to collect all enabled periods and take their sum to reconstruct the originally
+sampled ﬁring duration. this is straightforward by using age variables for transitions
+and incrementing them by the time spent in enabled state during replay. note that even
+in the age-memory policy not all duration samples of conﬂicting transitions can be
+collected from the event log in general. recall that a transition does not necessarily
+become enabled again after being disabled by a conﬂicting transition.
+thus, we can treat all memory policies for the race policy equally, besides from
+subtle di erence in gathering the samples, i.e., points in time when transition clocks
+will be reset. in all cases we gather both accurate samples of the unknown distribution
+that we want to infer, and also lower bounds on the remaining samples, when another
+transition ﬁred ﬁrst. in general, we face the problem to infer the probability distribution
+of a random variable with randomly right-censored data. approaches to this problem
+are well-known in statistics, cf. the overview by padgett and mcnichols [ 14]. we use
+the method of kooperberg and stone [ 15] that ﬁts log-splines to censored data, and is
+available in r.4
+3.3 third challenge: dealing with special cases
+as claimed in the introduction, allowing for timeouts is one important aspect of business
+process modeling. therefore, the mining algorithm needs to be capable to detect deter-
+ministic durations in a model. in technical terms, once we have gathered the observed
+samples and censored samples, we can check, whether a transition is deterministic or not,
+by comparing the observed samples. if the samples are su ciently close, we deﬁne the
+transition to be deterministic. this can be made more robust against noise, by removing
+outliers before applying these rules. in the mined model, the deterministic value is
+estimated as the mean of the observed values.
+another quite important modeling construct are immediate transitions, which ﬁre
+immediately after they have been enabled, provided that they are selected amidst com-
+peting immediate transitions. we assumed immediate transitions to be invisible. but if
+corresponding events exist in the event log, the rule to identify these transitions is to set
+a threshold and check, whether all observed values are within 0 and that threshold. note
+that we cannot give a general rule, as it depends on the domain, e.g., the response time
+of systems, how large these thresholds should be.
+4see package logspline in r. ( http://www.r-project.org/ )discovering spns with arbitrary delay distributions from event logs 9
+4 evaluation
+to evaluate how well the algorithm works on data, it is necessary to compare its output,
+i.e., the discovered model, with the model that produced the behavior in the event log. in
+general however, the theoretical model behind the observable phenomena is not known.
+therefore, we rely on a simulation based approach. first, we need a gdt_spn model.
+there exist already algorithms that can discover less expressive performance models
+from data [ 5,4], which can serve as a starting point, or a hand-made model can be used.
+in this evaluation, we focus on the following two questions:
+–how many traces do we need to get reasonably accurate results?
+–how tolerant is the algorithm towards noise in the log?
+to gain insights into these questions, we ran the following experiment. first, multiple
+logs are simulated from the gdt_spn model depicted in fig. 1 with increasing trace
+count from 10 traces to 10000 traces. the simulated event logs, the underlying petri net
+(p;t;f;m0)of the gdt_spn model, and the given execution policy are passed as input
+to the discovery algorithm. the algorithm produces another gdt_spn model, which
+we compare with the original model.
+there are several ways to assess the accuracy of a model. to test for the bias that our
+method introduces in the model parameters, we calculate the mean absolute percentage
+error (mape) of the estimated 1.moment and the original 1.moment of each timed
+transition’s distribution. note that we omitted the ﬁrst transition tafrom the calculation,
+because we cannot calculate its duration, as there is no previous event with a timestamp
+in the log. weights are evaluated relatively to each other when selecting an immediate
+transition, and additionally in preselection mode also when selecting the next timed
+transition. therefore, we need to compare the weight ratios in each marking of the
+original and discovered model, where selection of the next transition is based on weights.
+because weights are evaluated relatively to each other, we normalize them ﬁrst, before
+we calculate the mape of the weights in each relevant marking.
+1050 500 50000510152025
+# of traces●
+●
+●
+●
+●
+●●●preselection
+race / resampling
+race / enabl. memory
+race / age memory
+(a) mape of weights
+1050 500 50000246810
+# of traces●
+●
+●
+●
+●● ● (b) mape of 1.moments
+(ignoring censored data)
+1050 500 500001234567
+# of traces●
+●
+●
+●
+●●●●preselection
+race / resampling
+race / enabl. memory
+race / age memory(c) mape of 1.moments
+(using censored data)
+fig. 4: e ects of trace size on restored model accuracy. mean average percentage
+error (mape) of weights and mape of 1.moments of inferred distributions for timed
+transitions of the model in fig. 1. number of traces drawn in log-scale.
+figure 4.a) shows the error of the transition weights between the original model and
+the inferred model from the log. note that weight errors of all race policies collapse,10 a. rogge-solti, w. van der aalst, m. weske
+as their weights are computed in the same way. however, the preselection policy has
+more constraints on the weights, and random behavior of small event logs prohibits
+discovering the true weights accurately. fig. 4.b) shows the mean average percentage
+error of the 1.moments, when a simple kernel density estimation is used for estimating
+the duration of timed transitions. as expected, the preselection execution policy does
+not su er from bias due to censored data. the race with resampling method is the most
+dicult to reconstruct, as many of the samples are discarded. the enabling memory
+policy has less bias, and in the age memory policy, the algorithm can restore most of the
+original sample durations. fig. 4.c) depicts the error that remains, when the log-spline
+density estimator [ 15] is used. note that this method considers censored data and can
+correct the bias well. it reduces the biases of the race execution policies signiﬁcantly.
+1.00.90.80.70.60.50103050
+fitness between log and model●●●●●●●●●●●●●●
+(a) mape of weights
+1.00.90.80.70.60.50204060
+fitness between log and model●●●●●●●●●●●●●●●preselection
+race / resampling
+race / enabl. memory
+race / age memory (b) mape of 1.moments
+(ignoring censored data)
+1.00.90.80.70.60.5020406080
+fitness between log and model●●●●●●●●●●●●●● ●preselection
+race / resampling
+race / enabl. memory
+race / age memory(c) mape of 1.moments
+(using censored data)
+fig. 5: mean average percentage errors between the model in fig. 1 and the reconstructed
+model with increasing amount of noise, i.e., reduced ﬁtness.
+for the second experiment, we keep the trace size at 1000 and run the discovery
+algorithms with logs of varying degrees of artiﬁcial noise, i.e., random addition and
+deletion of events. fig. 5 depicts the same measures as before, i.e., the mape of relative
+weights in the markings and the mape of the 1.moments of the distributions. observe,
+how in fig. 5.b) the mape of the 1.moments increases non-linearly with lower ﬁtness
+values. the quality starts dropping rapidly below a ﬁtness of 0.8 in this example. when
+dealing with noisy logs, the petri net models should be repaired ﬁrst in a preprocessing
+step, as described in sect. 3.
+as a concluding remark, we caution against drawing general conclusions from these
+preliminary evaluations. larger errors are expected for models with bigger state spaces.
+5 related work
+there exists already work on obtaining petri net models with stochastic performance
+characteristics from data. hu et al. propose a method to mine exponentially distributed
+spn models from workﬂow logs in [ 6] focusing on ﬁring rates of transitions. in contrast,
+our work allows for generally distributed ﬁring times. another, quite di erent approach
+was proposed by anastasiou et al. [ 5] and uses location data to elicit generalized stochas-
+tic petri net (gspn) [ 10] models for modeling ﬂows of customers. they ﬁt hyper-erlangdiscovering spns with arbitrary delay distributions from event logs 11
+distributions to transition durations representing waiting and service times and replace
+the corresponding transitions with a gspn subnet exhibiting the same characteristics of
+the hyper-erlang distribution. they consider every transition in isolation though, which
+poses no problems in serial processes but parallelism in the processes, especially multiple
+parallel transitions in conﬂict, are not covered in that approach.
+also attempts at eliciting non-markovian stochastic petri nets exist. leclercq et al.
+investigate how to extract models of normally distributed data in [ 4]. their work is
+based on an expectation maximization algorithm that they run until convergence. in
+comparison to our approach, they are not able to deal with missing data and do not
+consider di erent execution policies. reconstructing model parameters for stochastic
+systems has also been investigated by buchholz et al. in [ 16]. they address the problem
+to ﬁnd ﬁxed model parameters of a partially observable underlying stochastic process. in
+contrast to our work, the underlying process’s transition distributions need to be speciﬁed
+beforehand, while our aim is to infer also transition distributions of a gdt_spn model.
+in a similar setting, i.e., with incomplete information, wombacher and iacob estimate
+distributions of activities and missing starting times of processes in [17].
+in [3], rozinat et al. investigate how to gather information for simulation models, but
+rather try to identify data dependencies for decisions and mean durations and standard
+deviations and do manual replay, which is not guaranteed to ﬁnd an optimal alignment
+between model and log. the approach proposed in this paper is capable to deal with noise
+in a more robust way, by building on the notion of alignments [ 8,11], which identify an
+optimal path through the model for a noisy trace. in conclusion, we are not aware of
+existing work that allows for generally distributed duration distributions, and di erent
+execution policies. moreover, unlike existing approaches our approach is supported
+by a publicly available prom plug-in and can thus be combined with a wide range of
+control-ﬂow discovery approaches.
+6 conclusion
+this paper addresses the challenges that arise when mining performance characteristics
+for models that can capture distributions other than the memoryless distributions. unlike
+earlier work, the paper makes very little assumptions on the event data and underlying
+process to be mined. accurate models of process performance are crucial for what-if
+analysis, predictions, recommendations, etc.
+the stochastic model used in this paper extends the popular gspn modeling tech-
+nique. to analyze discovered gdt_spn models, we need to resort to simulation due to
+the expressiveness of the class of models considered. we discussed di erent execution
+policies of gdt_spn models and have shown how these di erent semantics can be
+taken into account when eliciting models. the preselection ﬁring policy is the simplest
+case, which can be learned without problems. all other cases need sophisticated den-
+sity estimation techniques that are able to cope with randomly right censored data. an
+implementation producing initial results is made available open source in the prom
+framework.
+our next steps include comparing these mined models with other approaches and
+compare the model accuracy based on a speciﬁc use case, such as predicting the duration12 a. rogge-solti, w. van der aalst, m. weske
+of a process. future work also includes extending the alignment approach to align event
+logs probabilistically to a given gdt_spn model, such that we can ﬁnd the alignment
+with the highest probability.
+references
+1.van der aalst, w.: process mining: discovery, conformance and enhancement of business
+processes. springer (2011)
+2. lohmann, n., verbeek, e., dijkman, r.: petri net transformations for business processes - a
+survey. in: transactions on petri nets and other models of concurrency ii. v olume 5460 of
+lncs. springer berlin heidelberg (2009) 46–63
+3.rozinat, a., mans, r.s., song, m., van der aalst, w.: discovering simulation models.
+information systems 34(3) (may 2009) 305–327
+4.leclercq, e., lefebvre, d., ould el mehdi, s.: identiﬁcation of timed stochastic petri net
+models with normal distributions of ﬁring periods. in: information control problems in
+manufacturing. v olume 13. (2009) 948–953
+5.anastasiou, n., horng, t., knottenbelt, w.: deriving generalised stochastic petri net
+performance models from high-precision location tracking data. in: v aluetools’11,
+icst (2011) 91–100
+6.hu, h., xie, j., hu, h.: a novel approach for mining stochastic process model from
+workﬂow logs. journal of computational information systems 7(9) (2011) 3113–3126
+7.marsan, m.a., balbo, g., bobbio, a., chiola, g., conte, g., cumani, a.: the e ect of
+execution policies on the semantics and analysis of stochastic petri nets. ieee transactions
+on software engineering 15(1989) 832–846
+8.adriansyah, a., van dongen, b., van der aalst, w.: conformance checking using cost-based
+fitness analysis. in: edoc 2011, ieee (2011) 55–64
+9.ciardo, g., german, r., lindemann, c.: a characterization of the stochastic process
+underlying a stochastic petri net. ieee transactions on software engineering 20(7) (1994)
+506–515
+10.marsan, m., conte, g., balbo, g.: a class of generalized stochastic petri nets for the
+performance evaluation of multiprocessor systems. acm tocs 2(2) (1984) 93–122
+11.van der aalst, w., adriansyah, a., van dongen, b.: replaying history on process models for
+conformance checking and performance analysis. in: wires: data mining and knowledge
+discovery. v olume 2., wiley online library (2012) 182–192
+12.fahland, d., van der aalst, w.: repairing process models to reﬂect reality. in: bpm.
+v olume 7481 of lncs., springer (2012) 229–245
+13.buijs, j.c., la rosa, m., reijers, h., van dongen, b., van der aalst, w.: improving business
+process models using observed behavior. in: post-proceedings of simpda 2012. lnbip,
+springer (2013) (to appear)
+14.padgett, w., mcnichols, d.t.: nonparametric density estimation from censored data. com-
+munications in statistics-theory and methods 13(13) (1984) 1581–1611
+15.kooperberg, c., stone, c.j.: logspline density estimation for censored data. journal of
+computational and graphical statistics 1(4) (1992) 301–328
+16.buchholz, r., krull, c., horton, g.: reconstructing model parameters in partially-observable
+discrete stochastic systems. in: analytical and stochastic modeling techniques and applica-
+tions. springer (2011) 159–174
+17.wombacher, a., iacob, m.e.: start time and duration distribution estimation in semi-structured
+processes. technical report, centre for telematics and information technology, university of
+twente (2012)

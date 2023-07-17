@@ -1,0 +1,531 @@
+decomposed process mining: the ilp case
+h.m.w. verbeek and w.m.p. van der aalst
+department of mathematics and computer science,
+eindhoven university of technology, eindhoven, the netherlands
+{h.m.w.verbeek,w.m.p.v.d.aaalst}@tue.nl
+abstract. over the last decade process mining techniques have matured and
+more and more organizations started to use process mining to analyze their op-
+erational processes. the current hype around “big data” illustrates the desire to
+analyze ever-growing data sets. process mining starts from event logs—multisets
+of traces (sequences of events)—and for the widespread application of process
+mining it is vital to be able to handle “big event logs”. some event logs are “big”
+because they contain many traces. others are big in terms of different activities.
+most of the more advanced process mining algorithms (both for process discov-
+ery and conformance checking) scale very badly in the number of activities. for
+these algorithms, it could help if we could split the big event log (containing
+many activities) into a collection of smaller event logs (which each contain fewer
+activities), run the algorithm on each of these smaller logs, and merge the results
+into a single result. this paper introduces a generic framework for doing ex-
+actly that, and makes this concrete by implementing algorithms for decomposed
+process discovery and decomposed conformance checking using integer linear
+programming (ilp) based algorithms. ilp-based process mining techniques pro-
+vide precise results and formal guarantees (e.g., perfect ﬁtness), but are known
+to scale badly in the number of activities. a small case study shows that we can
+gain orders of magnitude in run-time. however, in some cases there is tradeoff
+between run-time and quality.
+key words: process discovery, conformance analysis, big data, decomposition
+1 introduction
+the current attention for “big data” illustrates the spectacular growth of data and the po-
+tential economic value of such data in different industry sectors [1, 2]. most of the data
+that are generated refer to events , e.g., transactions in ﬁnancial systems, interactions in
+a social network, events in high-tech systems or sensor networks. the incredible growth
+of event data provides new opportunities for process analysis. as more and more ac-
+tions of people, organizations, and devices are recorded, there are ample opportunities
+to analyze processes based on the footprints they leave on event logs. in fact, we believe
+that the analysis of purely hand-made process models will become less important given
+the omnipresence of event data [3].
+process mining aims to discover ,monitor , and improve real processes by extracting
+knowledge from event logs readily available. starting point for any process mining task
+is an event log. each event in such an event log refers to an activity (i.e., a well-deﬁned2 h.m.w. verbeek and w.m.p. van der aalst
+step in some process) and is related to a particular case (i.e., a process instance ). the
+events belonging to a case are ordered and can be seen as one “run” of the process. it
+is important to note that an event log contains only example behavior , i.e., we cannot
+assume that all possible runs have been observed. in fact, an event log often contains
+only a fraction of possible behavior [3].
+petri nets are often used in the context of process mining. various algorithms em-
+ploy petri nets as the internal representation used for process mining. examples are
+the region-based process discovery techniques [4, 5, 6, 7, 8], the -algorithm [9], and
+various conformance checking techniques [10, 11, 12, 13]. other techniques use alter-
+native internal representations (c-nets, heuristics nets, etc.) that can easily be converted
+to (labeled) petri nets [3].
+in this paper, we present a generic framework for decomposing the following two
+main process mining problems:
+process discovery: given an event log consisting of a collection of traces, construct a
+petri net that “adequately” describes the observed behavior.
+conformance checking (or replay): given an event log and a petri net, diagnose the
+differences between the observed behavior (the event log) and the modeled behav-
+ior (the petri net) by replaying the observed behavior on the model.
+to exemplify the use of this framework, we have implemented a decomposed discov-
+ery algorithm and a decomposed replay algorithm on top of it that both use ilp-based
+techniques [8, 10]. we have chosen these ilp-based techniques as they provide formal
+guarantees and precise results. since ilp-based techniques scale badly in the number
+of activities, there is the desire to speed-up analysis through smart problem decomposi-
+tions.
+the remainder of this paper is organized as follows. section 2 brieﬂy introduces
+basic concepts like event logs and petri nets. section 3 presents the generic framework,
+which consists of a collection of objects (like event logs and petri nets) and a collection
+of algorithms (to import, export, visualize these objects, and to be able to create new
+objects from existing objects). section 4 introduces the speciﬁc ilp-based discovery
+and replay algorithms implemented using our generic framework. section 5 introduces
+a small case study, which shows that we can achieve better run-times, but that there are
+also tradeoffs between speed and quality. section 6 concludes the paper.
+2 preliminaries
+this section introduces basic concepts such as event logs, accepting petri nets, discov-
+ery algorithms, log alignments, and replay algorithms.
+2.1 event logs
+event logs are bags (or multisets) of event sequences (or traces). events in an event log
+may have many attributes (like the activity, the resource who executed the activity, the
+timestamp the execution was completed, etc.). in the context of this paper, we are onlydecomposed process mining: the ilp case 3
+table 1. activity log la
+1in tabular form.
+name trace frequency
+c1 ha1; a2; a4; a5; a6; a2; a4; a5; a6; a4; a2; a5; a7i 1
+c2 ha1; a2; a4; a5; a6; a3; a4; a5; a6; a4; a3; a5; a6; a2; a4; a5; a7i 1
+c3 ha1; a2; a4; a5; a6; a3; a4; a5; a7i 1
+c4 ha1; a2; a4; a5; a6; a3; a4; a5; a8i 2
+c5 ha1; a2; a4; a5; a6; a4; a3; a5; a7i 1
+c6 ha1; a2; a4; a5; a8i 4
+c7 ha1; a3; a4; a5; a6; a4; a3; a5; a7i 1
+c8 ha1; a3; a4; a5; a6; a4; a3; a5; a8i 1
+c9 ha1; a3; a4; a5; a8i 1
+c10 ha1; a4; a3; a5; a8i 1
+c11 ha1; a4; a2; a5; a6; a4; a2; a5; a6; a3; a4; a5; a6; a2; a4; a5; a8i 1
+c12 ha1; a4; a2; a5; a7i 3
+c13 ha1; a4; a2; a5; a8i 1
+c14 ha1; a4; a3; a5; a7i 1
+interested in the activity an event refers to and abstract from other information. for this,
+we introduce the notion of a classiﬁer , which maps every event onto its corresponding
+activity. as a result, we can map an entire trace onto an activity sequence, and an event
+log onto an activity log, where activity logs are bags of activity sequences.
+table 1 describes the activity log la
+1= [c1;c2;c3;c42;c5;c64;c7;c8;c9;c10;c11;
+c123;c13;c14]deﬁned over a1=fa1;:::;a 8g. activity sequence c6=ha1;a2;a4;a5;
+a8ioccurs 4 times in la
+1.
+in the remainder of this paper, we will still often use the term event log, but we will
+use it often in conjunction with a classiﬁer, which induces an activity log that will be
+used by the discovery and replay algorithms.
+2.2 accepting petri nets
+for discovery algorithms, labeled petri nets would sufﬁce. however, for replay algo-
+rithms, we also need information on the initial marking of the net and of its possible
+ﬁnal (or accepting) markings. for this reason, we introduce the concept of accepting
+petri nets, which correspond to labeled petri nets with an initial marking and a collec-
+tion of ﬁnal markings.
+for example, fig 1 shows an accepting petri net n1= (p1;t1;f1;l1;b1;1)over
+a1, whereb1= [p1]and1=f[p10]g. as a result of the labeling, the transitions t4,
+t6, andt9are invisible. the ﬁring sequence ht1;t2;t4;t5;t7;t10iruns from the initial
+marking to the only ﬁnal marking and generates the trace ha1;a2;a4;a5;a7i.
+2.3 discovery algorithms
+a discovery algorithm [9, 4, 5, 6, 7, 8] is an algorithm that takes an event log (with
+classiﬁer) as input, and generates an accepting petri net as output. it is typically as-
+sumed that the behavior of the resulting accepting petri net ﬁtsthe behavior as captured4 h.m.w. verbeek and w.m.p. van der aalst
+t1p2
+p3
+p4p5
+p6
+p7t2
+t4
+t5t7
+t6t10
+t11p1
+a1
+a4a5
+a6a2
+a3t9
+p8
+p9p10a7
+a8t3
+t8
+fig. 1. an example accepting petri net n1= (p1; t1; f1; l1;b;).
+by the event log in some way. however, also other quality dimensions like precision,
+generalization and simplicity need to be considered [3].
+2.4 log alignments
+log and trace alignments are used by the replay algorithms to match the trace at hand
+with a valid ﬁring sequence from the accepting petri net. for this reason, a trace align-
+ment contains a series of moves , which can be divided into three types:
+synchronous move: the trace and the net agree on the next action, as the next event
+(activity) in the trace matches an enabled transition in the net.
+log move: the next action is the next activity in the trace, which cannot be mimicked
+by the net.
+model move: the next action is an enabled transition in the net, which is not reﬂected
+by an event in the log.
+a trace alignment is valid if the sequence of activities in synchronous and log moves
+equals the trace, if all transitions in synchronous moves have the corresponding activity
+as label, and if the sequence of transitions in synchronous and model moves equals
+some valid ﬁring sequence in the net (which starts in the initial marking and ends in
+some ﬁnal marking). we cannot always guarantee this latter requirement (valid ﬁring
+sequence) when merging trace alignments. a trace alignment for which only the ﬁrst
+two requirements hold is called a weak trace alignment. a log alignment maps every
+trace of the log onto a trace alignment.
+2.5 replay algorithms
+a replay algorithm is an algorithm that takes an event log (with classiﬁer) and an ac-
+cepting petri net as input, and generates a log alignment as output. typically, a replay
+algorithm assigns costs to the different moves. these costs are conﬁgurable. however,decomposed process mining: the ilp case 5
+discovery
+algorithmreplay
+algorithmevent logevent log
+and accepting
+petri net
+accepting
+petri netlog
+alignmentlog alignmentevent log and
+accepting petri net event log
+accepting petri netcausal activity matrix
+causal activity graph
+activity clusters array
+event logs array
+accepting petri net array
+log alignment array
+accepting petri net
+log alignment
+divideconquer
+fig. 2. framework overview.
+in this paper we use the following default costs. synchronous moves have cost 0as
+these correspond to a perfect match. a log move costs 5and a visible model move
+costs 2. model moves corresponding to invisible transitions have cost 0(as these are
+not captured by the log) [10].
+3 generic divide and conquer framework
+this section introduces the generic framework for decomposed discovery and replay.
+key ingredients for the framework are: objects (matrices, graphs, cluster arrays, etc.)
+andalgorithms to process these objects (importing, exporting, visualizing, and creating
+a new object from existing objects) [14].
+figure 2 shows an overview of the framework, which contains many of the objects
+supported by the framework. the algorithms in the framework allow the user to cre-
+ate new objects from existing objects. the discovery and replay algorithms on the
+sides symbolize existing discovery and replay techniques that can be connected to the
+framework.
+3.1 objects
+to decompose an event log or an accepting petri nets into sublogs or subnets, we need
+to divide the set of activities into so-called clusters . then, we can create a sublog and
+a subnet for every cluster. there are different approaches that can be used to create an
+array of clusters. in this paper, we take a three-step approach:
+1. discover from the event log (or create from the accepting petri net) a causal activity
+matrix . this matrix mmaps every combination of two activities onto a real number
+in[ 1:0;1:0], wherem[a;a0]1:0means that we are quite sure that there is a
+causal dependency from atoa0,m[a;a0] 1:0means that we are sure that there6 h.m.w. verbeek and w.m.p. van der aalst
+is no causal dependency from atoa0, andm[a;a0]0:0means that we do not
+really know whether or not there is a causal dependency from atoa0.
+2. create a causal dependency graph from this matrix by taking the causal dependen-
+cies of which we are most certain.
+3. create an array of clusters from this graph using the technique as described in [14].
+after having obtained the clusters, we can decompose the event log and accepting
+petri net in an event log array and an accepting petri net array , where thei-th sublog
+and subnet correspond to the i-th cluster in the array.
+for the discovery case, we can then run the target discovery algorithm on every
+sublog, and merge the resulting subnets into a single accepting petri net.
+for the replay case, we can then replay every sublog on the corresponding subnet,
+and merge the resulting log alignments into a single log alignment. although this ap-
+proach provides various formal guarantees (e.g., the fraction of ﬁtting cases computed
+in this manner is exact [14]), there may be some complications:
+– experiments have shown [15] that replaying a sublog on a subnet which is obtained
+by removing all transitions that do not correspond to an activity in the cluster can
+take more time than replaying the original log on the original net. for this reason, the
+framework also supports subnets that are obtained by making all transitions that do
+not correspond to an activity in the cluster invisible . this also reduces the number of
+activities in the subnets, but keeps the structure of the net intact.
+– the current implementation of the replay algorithms uses integer costs. this is a
+problem, as we need to divide the costs of an activity evenly over the clusters where
+the activity appears (see [14]). if the activity appears in three clusters, how can we
+divide the costs of its log move ( 5) evenly over the clusters? for this reason, we
+introduce a cost factor in the framework. every cost in the replay problem will ﬁrst
+be multiplied by this factor, and the replay algorithms will run using these multiplied
+costs.
+3.2 algorithms
+all objects in the framework can be exported, imported, and visualized. furthermore,
+it is possible to create new objects from existing objects. some of the algorithms sup-
+ported in our framework:
+create accepting petri net: create an accepting petri net from a petri net.
+create activity clusters: create a (valid maximally decomposed [14]) activity cluster
+array from an accepting petri net.
+create clusters: create an activity cluster array from a causal activity graph.
+create matrix: create a causal activity matrix from an accepting petri net.
+determine activity costs: determine the cost factor for an activity cluster array.
+discover accepting petri nets: discover an accepting petri net array from an event log
+array using a (wrapped) existing discovery algorithm.
+discover clusters: discover an activity cluster array from an event log.
+discover matrix: discover a causal activity matrix from an event log.
+filter graph: filter a causal activity graph from a causal activity matrix.decomposed process mining: the ilp case 7
+filter log alignments: filter a log alignment array using an accepting petri net array.
+all uncovered transition are ﬁltered out.
+merge accepting petri nets: merge an accepting petri net array into an accepting petri
+net. one supported way to merge nets (the one used in this paper) is by copying all
+objects (transitions, places, arcs) into a new net, and then fuse all visible transitions
+with the same label. however, other ways to merge nets are also supported.
+merge log alignments: merge a log alignment array into a log alignment. the result
+will be a weak alignment. the supported way to merge alignments is to (1) accu-
+mulate costs and (2) ‘zip’ both alignments in such a way that in case of a conﬂict
+always the cheapest option is ‘zipped in’.
+replay event logs: replay an event log array on an accepting petri net array.
+split accepting petri net: create an accepting petri net array from an activity cluster
+array and an accepting petri net. the most straightforward supported way to split a
+net into subnets is by copying the net and removing all parts that do not correspond
+to the cluster at hand. however, as mentioned, this may result in excessive replay
+times. an alternative supported way is by copying the net and making all visible
+transitions that do not correspond to the cluster at hand invisible. this alternative
+way is used in this paper.
+split event log: create an event log array from an activity cluster array and an event
+log. the most straightforward supported way to split a log is by starting with an
+empty log and adding all events that correspond to the cluster at hand. however,
+this may introduce additional causal dependencies between exit and entry activities
+of loops. an alternative supported way is by copying the log and renaming all
+events that do not correspond to the cluster at hand with a special activity, say .
+this paper uses the ﬁrst way.
+please note that every one of these plug-ins may have its own set of parameters. some
+parameters will be mentioned (and given actual values) later on.
+3.3 implementation
+the entire framework and all algorithms have been implemented in the divideand-
+conquer package1of prom 62. for every framework object (like a causal activity
+matrix), this package does not only implement the object itself, but it also implements an
+import plug-in, an export plug-in, and at least one visualizer plug-in. every algorithm is
+implemented as a regular plug-in, and comes with variants for both the uitopia context
+(that is, the prom 6 gui) and the headless context (which allows the plug-ins to be used
+from scripts and the like).
+4 decomposed discovery and replay using ilp
+fig. 3 shows how the “discover with ilp using decomposition” plug-in has been im-
+plemented on top of the framework, using a petri net. in this petri net, the places corre-
+1thedivideandconquer package is available through https://svn.win.tue.nl/
+trac/prom/browser/packages/divideandconquer
+2prom 6 is available through http://www.promtools.org/prom68 h.m.w. verbeek and w.m.p. van der aalst
+spond to the framework objects, whereas the transitions correspond to framework plug-
+ins. the numbers in the plug-ins indicates the order in which the “discover with ilp
+using decomposition” plug-in invokes the framework plug-ins, where “merge clus-
+ters” (step 4) is an optional step that is only needed to merge all clusters into a single
+cluster. this optional step is only used to run the discovery algorithm on the entire event
+log, as ﬁltering the event log on a single cluster containing all activities would result in
+the same event log. this way, it is certain that the discovery plug-in used is similar in
+both the decomposed and the non-decomposed setting.
+however, there is one exception, one situation where the decomposed discovery
+uses a different setting than the regular discovery. the regular ilp-based discovery
+algorithm depends on the causal dependencies that are detected in an event log. for
+every casual dependency, it will search for a corresponding place [16]. as a result, if no
+causal dependency is detected from one activity to another, then the algorithm will not
+search for a place from the corresponding ﬁrst transition to the second. in the presence
+of loops, this may be problematic in the decomposed setting, especially if small clusters
+are involved. because of the loop, a transition a0that exits the cluster will typically be
+followed by a transition athat enters it. if in the cluster acan directly be followed by a0,
+no causal dependency between aanda0will be detected as acan be directly followed
+bya0and vice versa. for this reason, the decomposed discovery algorithm does not use
+these causal dependencies to search for places. instead, it uses a way of searching which
+is described as basic in [16].
+fig. 4 shows the same for the “replay with ilp using decomposition” plug-in. note
+that this plug-in is more complex than the “discover with ilp using decomposition”,
+which is mainly caused by the two catches on the replay mentioned earlier:
+1. it is better to obtain subnets by hiding external (to the cluster at hand) transitions.
+steps 6, 7 and 11 are the result of this. step 6 ﬁlters the subnets by hiding external
+transitions, whereas step 7 ﬁlters the subnets by removing external transitions. step
+11 uses the result of step 7 to ﬁlter the subalignments, which is required by step
+12, as merging the log alignments assumes that all external transitions have been
+removed from the subalignments.
+2. we need to scale up costs before the replay, and scale them down afterwards. step
+8 determines the cost factor, that is, the amount by which so scale up an down, step
+9 scales the costs up before replay, and step 10 scales them down again.
+except for the underlying ilp-based discovery algorithm (step 6 in fig. 3) and
+the underlying ilp-based replay algorithm (step 9 in fig. 4), all plug-ins have been
+implemented in the framework, that is, in the divideandconquer package. this
+includes the “discover with ilp using decomposition” and “replay with ilp using
+decomposition” plug-ins.decomposed process mining: the ilp case 9
+discover matrixclassiﬁer = classiﬁer
+miner = midi minerevent log
+causal activity matrix
+filter graphzero value = 0.5
+concurrency ratio = 0.005
+include threshold = 0.005
+causal activity graph
+create clustersinclude all = true
+check backward arc = false
+activity cluster array
+split event logclassiﬁer = classiﬁer
+remove empty traces = false
+filter = filter in
+event log array
+discover accepting petri netsclassiﬁer = classiﬁer
+miner = ilp miner
+transition bordered = false
+remove gamma = false
+accepting petri net array
+merge accepting petri netsplace bordered = false
+merge internal activities = false
+add wf places = false
+accepting petri netmerge clusters1
+2
+3
+(4)
+5
+6
+7filters in all events that
+correspond to the cluster
+fuses visible transitions
+with identical labels
+fig. 3. discover with ilp using decomposition.
+discover matrix
+classiﬁer = classiﬁer
+miner = midi minerevent log
+causal activity matrixfilter graph
+zero value = 0.5
+concur. ratio = 0.005
+include threshold = 0.005
+causal activity graphcreate clusters
+include all = true
+check bwd arc = false
+activity cluster array
+split event log
+classiﬁer = classiﬁer
+remove empty t’s = false
+filter = filter in
+event log array
+replay event logs
+classiﬁer = classiﬁer
+map = map
+replayer = ilp
+replay parameters = ...accepting petri net array
+convert to log alignmentclassiﬁer = classiﬁer
+map = map
+log alignment arraymerge clusterscreate matrix
+map = map
+miner = pn
+split accepting petri net
+include all clstr t’s = true
+strategy = replace+filter
+replayresultarray replaycostfactordetermine activity costsaccepting petri net
+filter log alignmentsreplace
+replace
+filter
+merge log alignmentsfilterfiltered
+classiﬁer = classiﬁer
+log alignment1a 1b
+2
+3
+(4)
+5 6+7
+8 9
+10
+11
+12see item 1 in text same as in fig. 3
+fig. 4. replay with ilp using decomposition.10 h.m.w. verbeek and w.m.p. van der aalst
+table 2. case study results.
+description event place nr. of time (in seconds) replay
+log search clusters average 95% interval costs
+regular discovery aligned causal 12245.72 2223.46 2267.99 n/a
+decomposed discovery aligned basic 34 97.33 95.92 98.74 n/a
+regular replay aligned n/a 1 12.04 11.86 12.22 0.00
+decomposed replay aligned n/a 11 12.83 12.68 12.97 0.00
+regular replay original n/a 1 92.75 91.57 93.94 14.49
+decomposed replay original n/a 11 68.37 67.84 68.90 9.39
+5 case study
+for the case study, we use an event log3based on the bpi challenge 2012 [17]. as the
+ilp discovery algorithm requires an event log that is free of noise, we have aligned the
+event log to the model that was used in [15]. this may sound artiﬁcial, but we feel that
+for testing the discovery this is justiﬁed, as one of the requirements of the original ilp
+discovery algorithm is that the log is free of noise. for testing the discovery, we will
+only use the aligned event log, for testing the replay, we will use both event logs. for
+sake of completeness, we mention that the aligned log contains 13;807traces, 383;836
+events, and 58activities.
+the case study was performed on a dell optiplex 9020 desktop computer with in-
+ter(r) core(tm) i7-4770 cpu @ 3.40 ghz processor, 16 gb of ram, running win-
+dows 7 enterprise 64-bit, service pack 1, and using revision 13851 of the divide-
+andconquer package.
+table 2 shows the results of the case study. for the decomposed plug-ins in this
+table, the times reported are the times it takes the entire plug-in (all steps in fig. 3 or
+fig. 4) to ﬁnish after the user has provided the required additional information, like
+the classiﬁer. for the regular plug-ins, the times reported are the times it takes only the
+discovery (only step 6 in fig. 3) or only the replay (only step 9 in fig. 4) to ﬁnish.
+5.1 discovery
+regular discovery (without decomposition) using the ilp miner takes about 37:5min-
+utes, whereas decomposed discovery takes only 1:5minutes (using 34clusters). both
+result in the same accepting petri net, which shows that the decomposed discovery
+clearly outperforms the regular discovery for this case.
+as a side note, we mention that we have also ran the regular discovery on the aligned
+log using the basic place search (cf. section 4). this run took just under 3hours ( 178
+minutes), and resulted in a so-called ﬂower model [3]. this indicates that this way of
+searching for places in the ilp discovery algorithm is not suitable for regular discovery,
+as it takes a long time and yields bad results.
+3the event logs used for this case study can be downloaded from
+https://svn.win.tue.nl/trac/prom/browser/documentation/
+divideandconquerdecomposed process mining: the ilp case 11
+5.2 replay
+regular replay takes about 12seconds for the aligned event log, resulting in no costs,
+and takes 1:5minutes for the original event log, resulting in 14:49costs.4in contrast, the
+decomposed replay takes about 12seconds for the aligned event log, using 11clusters
+and resulting in no costs, and takes about 68seconds for the original event log, using
+also11clusters but resulting in 9:39costs. note that decomposed replay by deﬁnition
+provides a lower bound for the alignment costs (due to local optimizations) [14]. how
+good the lower bound is depends on the decomposition.
+so, the decomposed replay is faster on the regular event logs, but may result in only
+a lower bound of the actual answer ( 9:39instead of 14:49for the original event log).
+6 conclusions
+this paper introduced a generic framework for decomposed discovery and replay. the
+framework is based on objects (matrices, graphs, arrays, etc.) required for the decom-
+posed discovery and replay, and a collection of algorithms to create these objects, either
+from ﬁle or from existing objects. the framework can be used for any decomposed
+discovery and replay technique.
+to illustrate the applicability of the generic framework, we showed how the ilp-
+based discovery and replay algorithms can be supported by it. the resulting ilp-based
+discovery is straightforward, but the resulting ilp-based replay algorithm is more com-
+plex because of efﬁciency and implementation issues. both ilp-based process discov-
+ery and conformance checking are supported by our framework.
+for the bpi2012 challenge log, the ilp-based decomposed discovery algorithm
+has shown to be much faster than the regular discovery algorithm, while resulting in the
+same model. for the same log, the ilp-based replay algorithm has shown to be faster,
+but resulting in a less accurate answer. clearly, there is often a tradeoff between running
+times and quality.
+at the moment, the framework only supports a limited set of discovery and replay
+algorithms. as an example, only the -algorithm and the ilp-based algorithm are sup-
+ported as discovery algorithms. in the near future, we plan to extend this set to include
+other complex algorithms, like, for example, the evolutionary tree miner and the induc-
+tive miner.
+furthermore, the current framework is currently restricted to using a maximal de-
+composition of a net (or an event log). a coarser decomposition may be faster, as the
+algorithm may run faster on a single slightly larger cluster instead of on a collection
+of small clusters. the approach supports any valid decomposition; therefore, we are
+looking for better techniques to select a suitable set of clusters. experiments show that
+it is possible to create clusters that provide a good trade-off between running times and
+quality.
+4please note that, by changing the cost structure as suggested in [14], we can accumulate costs
+when merging subalignments into a single alignment. however, we do not have a way yet to
+accumulate ﬁtness when merging subalignments. for this reason, we restrict ourselves to costs
+here.12 h.m.w. verbeek and w.m.p. van der aalst
+references
+1. manyika, j., chui, m., brown, b., bughin, j., dobbs, r., roxburgh, c., byers, a.h.: big
+data: the next frontier for innovation, competition, and productivity. technical report,
+mckinsey global institute (june 2011)
+2. hilbert, m., l ´opez, p.: the world’s technological capacity to store, communicate, and
+compute information. science 332(6025) (april 2011) 60–65
+3. aalst, w.m.p.v.d.: process mining: discovery, conformance and enhancement of business
+processes. 1st edn. springer publishing company, incorporated (2011)
+4. aalst, w.m.p.v.d., rubin, v ., verbeek, h.m.w., dongen, b.f.v., kindler, e., g ¨unther, c.w.:
+process mining: a two-step approach to balance between underﬁtting and overﬁtting. soft-
+ware and systems modeling 9(1) (2010) 87–111
+5. bergenthum, r., desel, j., 0001, r.l., mauser, s.: process mining based on regions of
+languages. in alonso, g., dadam, p., rosemann, m., eds.: bpm. v olume 4714 of lecture
+notes in computer science., springer (2007) 375–383
+6. sol ´e, m., carmona, j.: process mining from a basis of state regions. in: proceedings of the
+31st international conference on applications and theory of petri nets. petri nets’10,
+berlin, heidelberg, springer-verlag (2010) 226–245
+7. carmona, j., cortadella, j., kishinevsky, m.: a region-based algorithm for discovering
+petri nets from event logs. in: business process management (bpm2008). (2008) 358–
+373
+8. werf, j.m.e.m.v.d., dongen, b.f.v., hurkens, c.a.j., serebrenik, a.: process discovery
+using integer linear programming. fundam. inform. 94(3-4) (2009) 387–412
+9. aalst, w.m.p.v.d., weijters, a.j.m.m., maruster, l.: workﬂow mining: discovering process
+models from event logs. ieee transactions on knowledge and data engineering 16(2003)
+2004
+10. adriansyah, a., dongen, b.f.v., aalst, w.m.p.v.d.: conformance checking using cost-
+based fitness analysis. in chi, c., johnson, p., eds.: ieee international enterprise comput-
+ing conference (edoc 2011), ieee computer society (2011) 55–64
+11. mu ˜noz-gama, j., carmona, j.: a fresh look at precision in process conformance. in hull,
+r., mendling, j., tai, s., eds.: business process management (bpm 2010). v olume 6336 of
+lecture notes in computer science., springer-verlag, berlin (2010) 211–226
+12. mu ˜noz-gama, j., carmona, j.: enhancing precision in process conformance: stability, con-
+ﬁdence and severity. in: cidm, ieee (2011) 184–191
+13. rozinat, a., aalst, w.m.p.v.d.: conformance checking of processes based on monitoring
+real behavior. inf. syst. 33(1) (march 2008) 64–95
+14. aalst, w.m.p.v.d.: decomposing petri nets for process mining: a generic approach. dis-
+tributed and parallel databases 31(4) (2013) 471–507
+15. verbeek, h.m.w., aalst, w.m.p.v.d.: decomposing replay problems: a case study. in
+moldt, d., ed.: pnse+modpe. v olume 989 of ceur workshop proceedings., ceur-
+ws.org (2013) 219–235
+16. wiel, t.v.d.: process mining using integer linear programming. master’s thesis, eind-
+hoven university of technology, department of mathematics and computer science (2010)
+http://alexandria.tue.nl/extra1/afstversl/wsk-i/wiel2010.pdf.
+17. dongen, b.f.v.: bpi challenge 2012 (2012) http://dx.doi.org/10.4121/uuid: 3926db30-f712-
+4394-aebc-75976070e91f.

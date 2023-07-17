@@ -1,0 +1,868 @@
+handling duplicated tasks in process discovery by
+reﬁning event labels
+xixi lu1, dirk fahland1, frank j.h.m. van den biggelaar2, wil m.p. van der aalst1
+1eindhoven university of technology, the netherlands
+2maastricht university medical center
+fx.lu,d.fahland,w.m.p.v.d.aalst g@tue.nl
+ff.vanden.biggelaar g@mumc.nl
+abstract. processes may require to execute the same activity in different stages
+of the process. a human modeler can express this by creating two different task
+nodes labeled with the same activity name (thus duplicating the task). however,
+as events in an event log often are labeled with the activity name, discovery al-
+gorithms that derive tasks based on labels only cannot discover models with du-
+plicate labels rendering the results imprecise. for example, for a log where “pay-
+ment” events occur at the beginning and the end of a process, a modeler would
+create two different “payment” tasks, whereas a discovery algorithm introduces
+a loop around a single “payment” task. in this paper, we present a general ap-
+proach for reﬁning labels of events based on their context in the event log as a
+preprocessing step. the reﬁned log can be input for any discovery algorithm. the
+approach is implemented in prom and was evaluated in a controlled setting. we
+were able to improve the quality of up to 42% of the models compared to using a
+log with imprecise labeling using default parameters and up to 87% using adap-
+tive parameters. moreover, using our reﬁnement approach signiﬁcantly increased
+the similarity of the discovered model to the original process with duplicate labels
+allowing for better rediscoverability. we also report on a case study conducted for
+a dutch hospital.
+1 introduction
+real-life processes may require that the same activity occurs at different stages or
+branches of the process [1–4]. a human modeler would use different nodes in a model
+(e.g., different transitions in a petri net) labeled with the same activity to express differ-
+ent occurrences of an activity in the process. we call each node labeled with an activity
+atask. thus, there could be many tasks referring to the same activity, which are known
+asduplicated tasks . in a log, events are usually labeled with activity names instead of
+tasks. as a result, two different events with the same activity label may originate from
+the same task or from different tasks, i.e., the labeling in the event log is imprecise .
+process discovery aims at creating an accurate representation of the real process
+from an event log helping users to understand the executed process [3,5]. however, most
+existing discovery algorithms assume the labels of events to be precise and consider for
+each label as one task represented by a single task node in the model. in case of event
+logs with imprecise labels, these discovery algorithms tend to return over-generalizedrc2
+c1b2 x2 c3
+x1 b1d
+rxb
+cd
+(c) model 𝑀𝑙𝑎𝑏focus of the paper
+problem: 
+label refinement
+5discovery
+(e) model 𝑀𝑟𝑒t1 = < r c b x cd  >
+t2 = < r x b c d>
+t3 = < r x c b d>(b)imprecise log 𝐿𝑙𝑎𝑏
+< r c2 b2 x2  c3 d>
+< r x1b1c1 d>
+< r x1c1b1 d>(d) refined log 𝐿𝑟𝑒(a) the original system 𝑆
+discoveryb
+xrc registration x
+dp0 p1p2 p3
+p5 p6cp4
+b
+cp8p7
+p10p9dischargeconsultation consultation
+consultationblood testblood test x-ray 
+x-rayfig. 1: the imprecise label problem settings and the running example.
+models that allow much more behavior than in the event log [2, 3]. such models may
+be misleading or even incorrect, obstructing users to use the models for understanding
+the real processes or performing accurate process analysis. a better solution would be
+to discover models where two tasks carry the same label, i.e., duplicate tasks [1, 2].
+we exemplify the problem using an example shown in fig. 1. the original system
+(a) has ﬁve activities “ r”, “d”, “c”, “b” and “ x” and ten tasks; activities “ c”, “b” and
+“x” occur at multiple different tasks, which result in an imprecise log (b), in which
+the events only refer to activities “ c”, “b” and “ x” rather than the different tasks in the
+system. using a standard discovery algorithm, we discover for the imprecise log (b) an
+imprecise model (c) that states “ b” could be skipped and has a loop that allows “ c” and
+“x” to be executed an arbitrary number of times, even though every trace in the log has
+an event labeled “ b” and only one event labeled “ x”. overall, model (c) is imprecise
+as it contains many behaviors neither seen in the log (b), nor in the original system
+(a). reﬁning the labels of events could yield the reﬁned log (d), from which a reﬁned
+model (e) can be discovered that corresponds to the original model (a) while using the
+same discovery algorithm. however, the trivial reﬁnement where each event gets its
+own unique label is not desired as it would lead to models that overﬁt the event log.
+thus, our goal is to reﬁne an imprecise log in such a way that a discovery algorithm
+ﬁnds a better model which is more precise and closer to the original model.
+in this paper, we investigate the problem of imprecise labels of events for process
+discovery and propose an approach to resolve the problem through log preprocessing.
+in particular, we introduce an approach for reﬁning labels and relabeling events in the
+log such that any existing or future process discovery algorithm can infer duplicated
+tasks from the reﬁned labels. as the optimal reﬁned log or model may be unknown, our
+approach aims at adding more alternative representations of a process into the solution
+space of process discovery algorithms to help users ﬁnd better models systematically.
+our approach has three steps: (1) identify one or multiple candidates for imprecise
+event labels; then reﬁne imprecise labels (2) across traces and (3) within traces. here,
+we leverage previous work on trace matching technique which groups events based on
+similarities in their context [6]; dissimilar groups of events are labeled differently.
+the approach is implemented in prom3and has been evaluated in a controlled
+setting and in a real life case study. in the controlled experiment, we investigated how
+well our approach can detect and reﬁne labels in imprecise event logs generated from a
+large set of synthetic process models with duplicated tasks. we analyzed model quality
+3http://www.promtools.org/with respect to the event log and the similarity to the original model. for 87% of the
+processes having duplicated tasks outside of loops, our approach automatically reﬁned
+imprecise logs so that a discovery algorithm returned a more precise model. for pro-
+cesses having duplicated tasks in a loop, label reﬁnement improved precision for 61%
+of the imprecise logs.
+in the remainder, we ﬁrst discuss related work in sect. 2. in sect. 3, we recall the
+concepts used for deﬁning the problem, the measures used in the evaluation, and the
+methods used in the approach. in sect. 4, we formalize problems and aims. sect. 5
+explains the proposed approach. the evaluation results are presented in sect. 6, and
+sect. 7 concludes the paper.
+2 related work
+process model elements labeling or relabeling. many studies have investigated the
+problem of labeling or relabeling process elements (e.g., activities, ﬂow relations) in
+process models [7, 8]. these works assume that a collection of structurally correct pro-
+cess models is available and use additional domain knowledge or other semantically
+correct labels to then suggest or revise the incorrect labels of elements in these models.
+here, we assume no models to be available and operate solely on event logs, in order
+to discover structurally correct models. one then may apply [7, 8] on the discovered
+models to revise and improve their labels.
+process discovery and duplicated tasks. process discovery algorithms aim at discov-
+ering “good” models from an event log to help users to understand real-life processes.
+most existing discovery algorithms map each unique event label to one task, making
+it impossible to discover processes with two tasks with the same label. some discov-
+ery algorithms can reﬁne labels during model construction to some extent [1, 2, 4, 5, 9].
+however, these internal mechanism to handle duplicated tasks can not be used in other
+discovery algorithms. moreover, these algorithms have other limitations such as they
+do not guarantee sound models or ﬁtting models. to be able to beneﬁt from current and
+future progress in process discovery techniques [10, 11], we propose to reﬁne labels in
+the event log itself, which then can be used by any process discovery algorithm.
+trace clustering and clone detection. as duplicated tasks may also manifest them-
+selves as multiple variants of executing a set of activities within the same process,
+trace clustering was proposed as a way to distinguish these variants [12, 13]. however,
+clustering techniques always consider entire traces and thus also unnecessary duplicate
+tasks which are the same in all variants. in [14], the authors proposed a top-down ap-
+proach that clusters the traces, discovers models for each cluster separately and uses
+clone detection to ﬁnd tasks that are the same in all variants, preventing unnecessary
+duplicating tasks [15]. however, trace clustering techniques are unable to distinguish
+two events having the same label within a trace or a variant [12]. in this paper, we aim
+at tackling both problems.
+data quality and noise/deviation filtering. imprecise labels could also be seen as
+data quality problem, i.e., events having incorrect labels. to the best of our knowledge,no existing work investigated this problem from this point of view. other existing work
+on log preprocessing such as noise/deviation ﬁltering would change input logs, both
+structurally and behaviorally, e.g., by removing events [6]. such changes would also
+affect ﬁtness of the discovered model with respect to the original log as a process dis-
+covery algorithm can only guarantee ﬁtness for the ﬁltered log. in this paper, we propose
+to not change the event log but only the labeling of events, which help us to preserve
+ﬁtness if the discovery algorithm has such a guarantee.
+model quality of discovered models. dozens criteria and measures have been pro-
+posed for assessing the quality of discovered models, which may be discussed in three
+categories. measures that evaluate the quality of the model using the input log often
+consider ﬁtness, precision, and generalization [3, 5]; we use the ﬁtness deﬁned in [16]
+and precision in [17]. in the context of controlled experiments, the quality of a discov-
+ered model can be evaluated against the original system in terms of how much of the
+behavior of the system can be reproduced by the discovered model and how precise the
+model describes the system [18]. when evaluating the quality of model irrespective of
+the log, then soundness and simplicity are often considered [5, 19]. in the next section,
+we further discuss the measures used in this paper.
+3 preliminaries
+in this section, we present (1) the input for our approach, (2) the quality measures used,
+and (3) the key concepts of a technique for ﬁnding events with a similar context.
+event, label, and event log. letebe the universe of unique events, i.e., the set of all
+possible event identiﬁers. a trace 2eis a ﬁnite sequence of events. an event log
+c=f1;2;;ngeis a set of traces. here we assume no event appears twice
+in the same trace nor in different traces. we use ecfor the set of events in log c. let
+abe a set of activities and ca log. a labeling function l:ec!ais surjective and
+assigns to each event e2eca label l(e) =a2a. we call l= (c;l)alabeled event
+logover activities a.
+process discovery and model quality. letl= (c;l)be a labeled log over a. a
+discovery algorithm dreturns a model m(i.e.d(l) =m) such that the activities a(m)
+occurring in model marea, i.e.,a(m) = a. the quality of the discovered model
+d(l) = mmay be evaluated in two ways. first, with respect to the input log l, the
+logﬁtness (l;m)andlogprecision (l;m)of the model can be computed, for which we
+use the measures deﬁned in [16] and [17], respectively. both return a value between 0
+and 1: if logﬁtness (l;m) = 1 , every trace in the log can be replayed by the model
+perfectly. when logprecision (l;m)is close to 1, most (alternative) behavior allowed
+by the model is also observed in the log.
+in addition, we compare the discovered m=d(l)to the original system in terms of
+system recall andsystem precision to evaluate the generalization and discoverability of
+our approach. let sbe the system that generated l. the system recall sysrecall (s;m;l)
+and system precision sysprecision (s;m;l)of the discovered model are computed ac-
+cording to [18]. for example, in fig. 1(b), after executing events “ r” and “ x” in trace t2,
+tasks “ b” and “ c” are enabled in the original system; in model (c), “ b” and “ c” but also“x” are enabled, which has 100% recalled all enabled activities in the system but is less
+precise (an additional “ x” not enabled in the system); a trace model would only allow
+“b” (the next event in the trace), which is precise but has bad recall. note that the recall
+with respect to system thus also captures the aforementioned generalization quality [5].
+furthermore, note that the system precision is different from the log precision, as the
+system could be imprecise with respect to the log (when the log is incomplete), but
+system is always precise with respect to to itself.
+similar events, mapping, and cost function. we build on existing concepts [6] to
+identify events that carry the same label but occur in different contexts. let ;0be two
+traces. a mapping(;0)ee0betweenand0is a binary, injective relation;
+(e;e0)2(;0)is amatched pair . we write(;0)for the set of events having not
+match in(;0), i.e.(;0)=fe2ej:9 e02e0: (e;e0)2(;0)g[f e02
+e0j:9 e2e: (e;e0)2(;0)g. in this paper, we assume for all (e;e0)2(;0),
+l(e) =l(e0).
+17c r d c x b
+d r x c b
+neighborsdistance = 4
+distance = 3
+ similar = matched
+dissimilar  = no matche1 e2e3 e4 e5e6e7e8 e9 e11e10
+fig. 2: an example of a map-
+ping between two traces.given any two traces and0, there are many
+possible mappings between them. an optimal map-
+ping that maximizes the pairs of mapped events with
+large similarity in their context can be selected using a
+cost function with three weighted components: (1) the
+differences in the (direct or indirect) neighbors of the
+matched pairs (using cost matched ), (2) the differences
+in the distances between a matched pair (e;e0)and
+other matched pairs (using cost struc), and (3) the non-
+matched events e2(using cost nomatch ). formally,
+cost(;0;) =wmp
+(e;e0)2cost matched (e;e0;) +
+wsp
+(e;e0)2cost struc(e;e0;) +wnp
+e2cost nomatch (e), in which wm;ws;wnare
+the weights for the components. fig. 2 shows an example of a mapping between traces
+t1andt2of log llabof fig. 1 (see [6] for a detailed explanation). as the traces and0
+are ﬁnite, one may simply enumerate all possible mappings between two traces, com-
+pute the cost of each mapping, and select the optimal ones. in [6], a greedy algorithm
+is proposed to ﬁnd a locally optimal mapping in polynomial time. the results of this
+paper have been obtained with the greedy variant.
+4 problem deﬁnition and analysis
+in this section, we ﬁrst formally deﬁne our research problem and then discuss the related
+complications and our design decisions. in essence, given an imprecisely labeled log
+l= (c;la)over the set of activities a, we would like to return a more reﬁned labeling
+function l bfor the events ecin order to help a discovery algorithm ﬁnd better models.
+deﬁnition 1 (reﬁned labeling function). for a labeled log l aover the set of labels
+a, the log l bover an arbitrary set of labels b is a reﬁned log iff (1) they have the same
+traces, i.e., l a= (c;la);lb= (c;lb), and (2) for each two events e ;e02ec, e and e0
+can only have the same label according to l b, if they also have the same label by l a, i.e.,
+(lb(e) =lb(e0)))(la(e) =la(e0)). we call l bareﬁned labeling function for l a.note that the model mbdiscovered from lbhas a different set of activity labels
+(i.e.,a(mb) =b) than the model madiscovered from la(i.e.,a(ma) =a). however,
+for comparing maandmbw.r.t. various measures, both models should have the same
+set of activities. to allow for this comparison, we introduce some notions that allow
+replacing the reﬁned labels bofmbwith the original labels in a. each reﬁned log
+lb= (c;lb)ofla= (c;la)induces the label abstraction function:b!a
+with=s
+e2eflb(e)7!la(e)g. the inverse  1(a) =fb2bj(b) = aggives
+the set of reﬁned labels for original label a2a. note that(lb(e)) = la(e)for all
+events e2e. for example, in fig. 1, the reﬁned log lreofllabinduces the abstraction
+=fr!r;c1!c;c2!c;c3!c;b1!b;b2!b;x1!x;x2!x;d!dg, label
+cis reﬁned into the set  1(c) =fc1;c2;c3g.
+using, we can abstract model mbby replacing each label binmbwith(b).
+let(mb)denote the resulting model. lemma 1 then follows immediately from the
+deﬁnitions.
+lemma 1 ( mband(mb)have the same behaviors). let l abe an event log and l b
+be a reﬁned log of l a. let m bbe a model discovered from l bsuch that each trace of l b
+is a trace of m b. letbe the label abstraction induced by l b. then each trace of l ais
+a trace of(mb).
+throughwe can now compare models maand(mb)respectively discovered
+from both original log laand reﬁned log lband formally deﬁne our problem.
+problem deﬁnition. letllab= (c;l)be an (imprecisely) labeled event log over the
+set of activities a. let sdenote the system model that generated llabwitha(s) = a.
+given discovery algorithm d, letmlab=d(llab)be the model discovered on the labeled
+log. we would like to ﬁnd a reﬁned labeling function l0oflthat with induced label
+abstractionsuch that for the reﬁned log lre= (c;l0)and the discovered, abstracted
+model mre=(d(lre))over a, the following properties hold:
+1) fitness and precision of mreimproves over mlabw.r.t. the given labeled log:
+–logprecision (mre;llab)logprecision (mlab;llab)and
+–logﬁtness (mre;llab)logﬁtness (mlab;llab)
+2) recall and precision of behavior of mreshould be higher than mlabw.r.t. s, i.e.,
+–sysprecision (s;mre;llab)sysprecision (s;mlab;llab)and
+–sysrecall (s;mre;llab)sysrecall (s;mlab;llab)
+when the system sis unknown, we consider our third aim as providing different
+reﬁned labeling functions that satisfy the ﬁrst requirement which allows users to explore
+different representations of the input log.
+related issues and design decisions. we discuss three complications related to the
+research problem to motivate our design decisions and assumption. first, there is a
+large combinatorial number of possible solutions, since in principle any label can be
+reﬁned into an arbitrary number of reﬁned labels. in addition, we have no criteria nor
+metrics that deﬁne when a reﬁnement is optimal for the algorithm d. this depends
+on the discovery algorithm used. furthermore, when the system is unknown, the same
+process may have different equally good representations depending on the stakeholder,
+the context, and decisions made in the formalization of the model. since one can notdeduce the optimal log nor the optimal model, we have to base the decisions for reﬁning
+event labels on the behavioral structure of the event log and some basic principles and
+heuristics we discuss later.
+the second complication is posed by the discovery algorithms and measures used
+for evaluation. ideally, a more precise log would result in a more precise model, inde-
+pendent of the discovery algorithm and the measures we applied. however, this is not
+the case. a discovery algorithm may return a less precise model while the log is more
+reﬁned (for example to avoid overﬁtting). therefore, we decided to propose a backup
+plan. if logprecision (mre;llab)<logprecision (mlab;llab), we simply return the log
+with its imprecise labeling. this guarantees that at least using the reﬁned log would not
+lead to discovering a model worse than using the imprecise log.
+finally, in this paper, we assume the discovered model is sound and ﬁtting for the
+following reasons. most state-of-art measures assume a ﬁtting log when evaluating the
+quality of a model. we observed in our own experiments that the measures become
+rather unreliable and difﬁcult to compare or to understand the improvements when the
+models are not sound and ﬁtting. moreover, as ﬁtness is deﬁned in terms of the number
+of events that can be replayed by a model and we are not adding or removing any
+events (which would have direct inﬂuence on the ﬁtness), changes in ﬁtness are merely
+a quality of the discovery algorithms used. for example, if the algorithm guarantees to
+return a ﬁtting model, relabeling events would not change this property.
+5 approach
+we decompose the label reﬁnement problem into three subproblems. first, we identify
+one or multiple labels as candidates for imprecise labels. then, we consider a group of
+traces that have similar behavior to be a variant of the process and reﬁne the imprecise
+label candidates (horizontally) into different variants and (vertically) within a variant.
+fig. 3 shows an overview of the three subproblems using an example.
+5.1 detecting imprecise labels
+the ﬁrst step is to identify one or multiple candidates for imprecise labels. this step
+helps to limit the search scope to those events that have an imprecise label and to avoid
+splitting non-duplicated tasks. furthermore, it helps to consolidate the context informa-
+tion of events with imprecise labels. one may also consider all labels, however, this
+may unnecessarily complicate the label reﬁnement process.
+formally, we deﬁne the problem as follows. let l= (c;la)be a labeled event log
+andathe set of labels used. we would like to identify a subset of labels a0aand
+consider them as candidates for imprecise labels. in other words, the labels in ana0are
+precise labels, and there is no need to reﬁne them, i.e., for e2ecandla(e) =a2ana0,
+any reﬁned labeling function lboflawith itsimplies lb(e) =a, and 1(a) =fag.
+there are many different ways to detect imprecise labels. we discuss two methods
+(used in the evaluation) and consider other possibilities as future work. the optimal case
+is to have an oracle that returns the truly imprecise labels as candidates. for example,refining labelsa b c t
+s a b a b c t
+s a b a b c t
+s a ab t
+s a c t
+s a c t s a b c t
+s a b a b c  t
+s a b a b c  t
+s a ab       t
+s a c          t
+s a c          t{a, b, c}
+ s a b        c t
+s a b a b c t
+s a b a b c t 
+sa ab        t
+s a c            t
+s a c            t 
+s a1a2b1t
+sa3c1t
+sa3c1t 
+1. detect
+imprecise 
+labels2. refine
+labels 
+horizontally3. refine
+labels
+verticallyimprecise logone or multiple 
+imprecise label candidateshorizontal clusters 
+of eventsvertical clusters 
+of eventsgeneral framework 
+s a0 b0            c0 t
+s a0 b0a0b0c0 t
+s a0 b0 a0b0c0 t
+11s a0 b0 c0 t
+s a0 b0a0 b0 c0 t
+s a0 b0 a0 b0 c0 t
+s a1a2b1t
+s a3c1t
+s a3c1t “precise” logfig. 3: the proposed approach for reﬁning imprecise label as log preprocessing.
+domain experts indicate a particular label to be imprecise. in the remainder, we refer to
+this as oracle detection (od).
+besides having an oracle, we propose an automated method that uses properties of
+inductive miner (im) [11]. im systematically parses an event log and ﬁnds a locally
+optimal “subprocess” recursively. if im fails to ﬁnd an accurate subprocess, it returns
+a generic subprocess that can replay any trace over the events in the corresponding
+sublog (i.e., a local “ﬂower loop”). in this paper, we consider this type of subprocess to
+be imprecise. we choose to select the smallest imprecise subprocess (i.e., local “ﬂower
+loop”) and return the activity labels in the subprocess as imprecise label candidates. for
+instance, applying im on the running example, im returns a process model of fig. 1(c)
+containing a ﬂower loop with activity labels c,bandx, and this setfc;b;xgis returned
+as candidates for imprecise labels. we use the im detection (imd) to refer to this
+method. in principle, any subprocess or multiple subprocesses can be selected.
+5.2 intermediate step - matching events
+after ﬁnding imprecise label candidates, we propose an intermediate step before reﬁn-
+ing these labels. the objective of this intermediate step is to identify similarities be-
+tween events across traces. similar events should carry the same reﬁned label whereas
+dissimilar events should carry a different label.
+in essence, the procedure for computing the similarity of events of different traces
+uses the existing trace matching technique of sect. 3 and goes as follows. given a
+labeled log l= (c;l), for each two traces ;02c, we ﬁnd an optimal mapping
+;02ee0between their events for a given cost function. this way we get the
+distance between any two traces and0ascost(;0;;0). this distance can be
+normalized w.r.t. the highest cost maxcost =max;02ccost(;0;;0).
+to obtain the distance between any two events, we project the normalized distance
+between traces onto the individual pairs of events. formally, we construct an undirected
+weighted graph g= (ec;r;l;w)where nodes ecare the events of l= (c;l)with
+labeling l. for each pair (;0)of traces in land a best matching ;0and for each
+pair(e;e0)2;0of events, we add the edge (e;e0)torwith weight w(e;e0) =
+cost(;0;;0)=maxcost . note that in ga single event may have many weighted
+edges describing how close it is to the most similar event in other traces. when mapping
+the costs from pairs of traces to pairs of events in g, any edge between events with a
+precise label a(i.e., a62a0) gets cost 0. this way, we will enforce that these labels arec r d c x b
+d r x c be6e7 e8 e9 e10 e11
+e12 e13 e14 e16 e15r d c x b e1 e2 e3 e4 e5
+d r x b c e17 e18 e19 e21 e20trace t0
+trace t1
+trace t2
+trace t30.5 0.5 0.5
+0.5 0.5 0.50 0
+00
+00 0.7 0.7 0.7c2 r d c2 x2 b2
+d r x1 c1 b1e6 e7 e8 e9 e10 e11
+e12 e13 e14 e16 e15r d c2 x2 b2 e1 e2 e3 e4 e5
+d r x1 b1 c1 e17 e18 e19 e21 e200.5 0.5 0.5
+0.5 0.5 0.50 0
+00
+00horizontal refinement zv= 0.6
+c3 r d c2 x2 b2
+d r x1 c1 b1e6 e7 e8 e9 e10 e11
+e12 e13 e14 e16 e15r d c2 x2 b2 e1 e2 e3 e4 e5
+d r x1 b1 c1 e17 e18 e19 e21 e200.5 0.5 0.5
+0.5 0.5 0.50 0
+00
+00vertical refinement zf= 0.4 (a) (b) (c)fig. 4: a graph of labeled events with weighted edges denoting the dissimilarity (a),
+for which the labels are reﬁned horizontally (b) and then vertically (c).
+not reﬁned. the higher the cost between two events, the more likely that they receive
+different labels. searching for a mapping with least cost ensures we group the most
+similar events and give them together the same label during reﬁnement. fig. 4(a) shows
+an example of a weighted graph of events for an imprecise log that consists of four
+traces. note that the graph is incomplete; the mappings between t0andt2,t1andt3, and
+t0andt3are not shown for the sake of simplicity.
+5.3 reﬁning labels horizontally across variants
+we can now identify variants within a process by grouping events across traces based
+on their similarity. the reason for distinguishing variants is the following. if two very
+different variants of a part of the process are considered together, a discovery algorithm
+may return a more general structure than exists in reality. consider for example the two
+traces=h:::;c;b;x;:::iand0=h:::;x;b;c;:::i. one may consider them a single
+variant and return for example a model with activities b,candxin parallel (i.e. can be
+executed in any order). however, an alternative would be having a precise model that
+only allows these two variants. the “optimal” model depends on the particular case.
+when the original model for the system is unknown, we cannot claim one of them is
+better, therefore we simply want to add the alternative with both variants to the solution
+space of existing discovery algorithms allowing user to explore both representations.
+label reﬁnement allows us to achieve this systematically.
+the similarity measure enables us to be ﬂexible when considering which variants to
+split by introducing a variant threshold zv. we say, two traces and0arein the same
+variant , written0iff their normalized cost(;0;;0)=maxcostzvor there
+exists00with000. note thatis an equivalence relation where two very
+dissimilar traces may become equivalent if there is a “chain” of similar traces between
+them. thus, two events e2;e020that have imprecise labels (i.e., l(e);l(e0)2a0)
+are in the same variant iff0. in our graph g, we materialize (dis-)similarity by
+removing any edge (e;e0)with weight w(e;e0)>zv. as all mappings between events of
+the same two traces and0carry the same weight, all events of a trace are kept in the
+same variant. note that edges between the events that carry precise labels have weight
+0 and are not split into multiple variants.
+for example, setting the variant threshold for the event distance graph gof fig. 4(a)
+to 0.6 yields the graph g0of fig. 4(b) showing two variants in the part of the process
+involving labels c;b;x. labels randdare not reﬁned into multiple variants.5.4 reﬁning labels vertically within variant
+after reﬁning labels horizontally to distinguish different variants, there can still be mul-
+tiple events carrying the same label within a single variant indicating either a loop or
+different tasks. assuming in 50% of cases activity cis executed once and in the other
+50% of the cases, cis executed twice, we could infer that there are two ctasks (one
+optional), or just one ctask in a loop. in the following, we again use label reﬁnement to
+add both alternatives to the solution space.
+for reﬁning labels within a single variant, we assume the following characteristics
+of a proper loop: when the number of iterations increases, the probability of execut-
+ing this iteration decreases. for example, one may always execute the ﬁrst iteration,
+whereas the second iteration is only executed in 20% of the cases. in contrast, a dupli-
+cated task in a sequence would show similar numbers of executions in all traces of the
+same variant.
+based on this assumption, we introduce an unfolding threshold parameter zf. for
+each imprecise label candidate a2a0, let g1
+a, ..., gm
+abe the connected components
+ofgin which all events have label a.gi
+aandgj
+aare in the same variant iff for any
+two events ei2gi
+aandej2gj
+a,eiandejare in the same variant (see sect. 5.3).
+for example, fig. 4(c) highlights for imprecise label cthe three connected compo-
+nents g1
+c=fe2;e7g,g2
+c=fe10g,g3
+c=fe15;e19g, in which g1
+candg2
+cin the same
+variant. next, let #gi
+adenote the average position of the events of #gi
+ain their re-
+spective traces. let g1
+a...gk
+abe in the same variant ordered by #gi
+a. let maxsize =
+max 1ikgi
+abe the size of largest component (w.r.t. its events). for 1ik, if
+i= 1orgi
+avfmaxsize , then all events in gi
+aget a new label, otherwise gi
+aget the
+label of the events of gi 1
+a. for example, for imprecise label c, for the two connected
+components g1
+c=fe2;e7gandg2
+c=fe10gthat are in the same variant, #g1
+c= 2,
+#g2
+c= 5, and maxsize = 2. therefore, if the unfolding threshold v fis 0.6, then the
+events in g2
+cget the same label as the events in g1
+c. ifvfis 0.4, then both g1
+candg2
+c
+each get a new label.
+6 experimental evaluation and case study
+we implemented the techniques of sect. 5 in the process mining toolkit prom and con-
+ducted controlled experiments and a real-life case study to evaluate our approach. plu-
+gins and experiments are available in the tracematching package of prom. we ﬁrst
+explain the experimental setup and then discuss the result.
+experimental setup. the experimental setup is shown in fig. 5. we randomly gener-
+ated block structured models as systems with nnumber of visible tasks. each system
+hasktasks that have the same activity label (here we consider just one duplicated la-
+bel). for each system, we generate one imprecisely labeled log llab= (c;llab)of a 1000
+cases each. from the imprecise log llab, we discover mlab=d(llab). for the same log,
+we also apply our approach of sect. 5 to obtain a reﬁned log lre= (c;lre)(note that
+(lre) = llab), for which we discover model mre. two algorithms are used: im [11],
+i.e.,mre;im=(dim(lre)), and ilp [10], i.e., mre;ilp=(dilp(lre)). the quality of
+each of the models is compared with the corresponding model mlabfor evaluating tocompute model qualities
+label 
+refinement
+l_lab
+generator
+system s, 
+in which k number of 
+transitions have 
+the same label
+l_re
+m_lab
+m_re
+d
+d
+ qualities of 
+m_lab (lb)
+qualities of
+m_re
+d = im, ilp
+model qualities = log_fitness , log_precision , 
+sys_fitness , sys_precisionimprovedfor sys _recall and sys _precision
+for log _fitness and log _precisionfig. 5: an overview of the experimental design.
+the refined models (c)(e) shows that the duplicated tasks were rediscovered 
+in their respective positions, but unable to identify the concurrency between
+two consecutive duplicated tasks.
+(a) syste m
+(b)𝑀𝑙𝑎𝑏𝐼𝑀
+log_precision improved by 0.55
+sys_precision improved by 0.68
+syst_recall is 1
+log_precision improved by 0.58
+sys_precision improved by 0.51
+syst_recall is 1(d)𝑀𝑙𝑎𝑏𝐼𝐿𝑃(c)𝑀𝑟𝑒𝐼𝑀
+(e)𝑀𝑟𝑒𝐼𝐿𝑃𝑡1𝑡2
+𝑡3𝑡4bb
+bb
+bb b b b
+bb b bb
+fig. 6: original model with duplicate tasks (a), results of im on imprecise log (b)
+and on reﬁned log (c), same for ilp (d) and (e).
+what extent our aims has been achieved. in all experiments, the same cost conﬁguration
+is used for matching events. to speed up the experiments, the events that have precise
+labels, i.e. l(e) =l(e0)62a0, are matched naively based on their labels and ordering in
+their respective traces. all models, logs and results can be downloaded4.
+exp.1) when imprecise labels are not in a loop, what are the improvements? in
+this experiment, we used the default parameters: the variant threshold zvis 0.05 and the
+unfolding threshold zfis 0.60 for all models. we generated for size n= [10;15;20]200
+models (600 models in total). for each model, there are k= 4 transitions having the
+same label and that are not in a loop.
+we show two examples of the reﬁned models compared to their imprecise models in
+fig. 6 and fig. 7 to illustrate our results: fig. 6 shows an improvement in logprecision
+of more than 0.50 and fig. 7 an improvement of 0.10. in fig. 6, the original model
+(a) has four duplicated tasks labeled “ b”; applying im and ilp on the imprecise log
+respectively results in discovering an imprecise model (b), which has a ﬂower subpro-
+cess consisting of 5 activities, or an imprecise model (d), which has two unconnected
+4doi: 10.4121/uuid:ea90c4be-64b6-4f4b-b27c-10ede28da6b6
+orhttps://svn.win.tue.nl/repos/prom/documentation/tracematching/bpm2016.ziplog_precision improved by 0.10, 
+sys_precision improved by 0.22, sys_recall = 1
+(a) system
+78(b)𝑀𝑙𝑎𝑏𝐼𝑀the refined model (c) shows that the large 
+flower loop in (b) is unfolded by correctly 
+identifying the duplicated task t1 , but 
+unable to completely rediscover t2, t3and t4. 
+𝑡1𝑡2𝑡3
+𝑡4
+(c)𝑀𝑟𝑒𝐼𝑀aaa
+a
+aa aafig. 7: original model (a), result of im on imprecise log (b) and on reﬁned log (c).
+88
+50321128157112
+15016888119143
+050100150200
+10 15 20 10 15 20
+ilp im(a) number of logs 
+refined (imd)
+true false
+71
+31 2514 12 11 6139
+54
+34 11 8 4
+050100150200250300
+(0,
+0.1](0.1,
+0.2](0.2,
+0.3](0.3,
+0.4](0.4,
+0.5](0.5,
+0.6](0.6,
+0.7](0.7,
+0.8](0.8,
+0.9](0.9,
+1.0](b) frequency of improvements in 
+log_precision (imd)
+ilp im
+191151
+123
+49
+5 13576104132
+72
+050100150200
+[0,
+0.5](0.5,
+0.6](0.6,
+0.7](0.7,
+0.8](0.8,
+0.9](0.9,
+1.0)[1.0](c) shift in system f1 -score 
+(imd)
+#m_lab #m_re
+fig. 8: number of reﬁned log (a), frequency of improvements in log precision (b)
+and shifts in system scores (c).
+activities; on the reﬁned log, for both ilp and im, the reﬁned models (c) and (e) shows
+that the four duplicated tasks were correctly discovered in their respective positions in
+the process, however, our approach is unable to identify the concurrency between two
+consecutive duplicated tasks t2and and t3in (a).
+overall, fig. 8(a) shows the number of systems for which our approach was able to
+ﬁnd a reﬁnement for its log that leads to discovering a better model with a higher log
+precision, while using automated detection of imprecise labels (imd). in general, in
+35% (420 of 1200) of the logs, we were able to ﬁnd a reﬁnement with default parameters
+using imd; using domain knowledge (od) increased this number by 3%. for 42% of
+the reﬁned logs, im discovered an improved model, which is 14% more than for ilp.
+fig. 8(b) shows the histogram of frequencies of actual logprecision improvements
+using imd. as can be seen, for both ilp and im, our approach is able to help discover
+models with signiﬁcant improvements. for ilp, the approach was able to ﬁnd for 99 out
+of 600 models an improvement between 0.1 and 0.7 (using od, this number increased
+by 9%); similar for im, 111 out of 600 reﬁned models had such an improvement (using
+od, this number is increased by 20%). the average log precision is increased by 0.15.
+fig. 8(c) shows the absolute f1-score (which is the harmony average of sysprecision
+andsysrecall ) for mlab(discovered on imprecise logs) versus mre(discovered on the
+successfully reﬁned logs using im and ilp); our reﬁnement clearly shifts the f1-score
+towards 1. when using automated detection (imd), 16% (67 out of 420) of the im-
+proved logs were reﬁned in such way that f1-score becomes 1, which indicates that
+the resulting model have exactly the same alternative behavior as the original system187 174 16013 26 40
+050100150200
+10 15 20
+im(a) number of logs refined 
+(od & adaptive) 
+false
+true305
+92
+5735239 0 0 0 0
+050100150200250300
+(0,
+0.1](0.1,
+0.2](0.2,
+0.3](0.3,
+0.4](0.4,
+0.5](0.5,
+0.6](0.6,
+0.7](0.7,
+0.8](0.8,
+0.9](0.9,
+1.0](b) freq. of improvements in 
+log_precision (od & adaptive)
+im
+0 175151163
+116
+150 1 3363117203
+104
+050100150200
+[0.0,
+0.5](0.5,
+0.6](0.6,
+0.7](0.7,
+0.8](0.8,
+0.9](0.9,
+1.0)[1.0](c) shift in system f1 -score
+(od & adaptive) 
+#m_lab
+#m_refig. 9: the same types of result as fig. 8 when using adaptive parameters.
+117 127 12383 73 77
+050100150200
+10 15 20
+im(a) number of logs refined 
+(od & adaptive & in loop) 
+false
+true254
+3015 20 2811 7 2 0 0
+050100150200250300
+(0,
+0.1](0.1,
+0.2](0.2,
+0.3](0.3,
+0.4](0.4,
+0.5](0.5,
+0.6](0.6,
+0.7](0.7,
+0.8](0.8,
+0.9](0.9,
+1.0](b) freq. of improvements in 
+log_precision (od & adaptive & in loop) 
+im
+01696122
+80
+53
+0 075698
+77 6564
+050100150200
+[0.0,
+0.5](0.5,
+0.6](0.6,
+0.7](0.7,
+0.8](0.8,
+0.9](0.9,
+1.0)[1.0](c) shift in system f1 -score 
+(od & adaptive & in loop) 
+#m_lab
+#m_re
+fig. 10: the same types of result as fig. 8, if a duplicated task is found in a loop.
+enabled by the log (using od we obtain 77 out of 516). performance-wise, the average
+running time for computing one reﬁned log varies between 8 and 14 sec. depending on
+the model size.
+exp.2) inﬂuence of our parameters. next, we investigated whether adjusting parame-
+ters improves the quality of label reﬁnement and whether such parameters can be found
+automatically for each model. for this, we repeated the above experiment for im and
+od and changed variant threshold (from 0.08 to 0.00 in steps of 0.01) and unfolding
+threshold (from 0.00 to 0.60 in steps of 0.10). we stopped when getting a log where mre
+had higher log precision than mlab. the average running time for computing one such
+reﬁned log has increased to between 53 and 111 sec. depending on the model size.
+fig. 9(a) shows the number of imprecise logs improved, (b) shows the actual im-
+provements in logprecision , and (c) shows the f1-scores of sysrecall andsysprecision .
+it is worthwhile to note that, using the adaptive parameters, for 87% of the imprecise
+logs, we were able to reﬁne the log helping im discover a better model. the average
+log precision is increased by 0.12. compared to the 46% (when using default param-
+eters and od), the number is increased by more than 89%. another notable result is
+that the number of mrethat has an increase in logprecision between 0.2 and 0.7 is also
+increased by 72.2% compared to the default parameter. this states for over one out of
+ﬁve logs, the adaptive approach is able to ﬁnd a rather signiﬁcant improvement, if the
+imprecise labels are not in a loop.
+we manually inspected the models that could not be improved by using adjusted
+parameters. we found that this mostly concerned models that either have a large loop or
+have duplicated tasks concurrent to many other tasks. the difference in the correspond-
+ing components (i.e. such loops increase the cost of structure and such concurrency81
+(a) 𝑀𝑟𝑒𝐼𝑀= system
+(b)𝑀𝑙𝑎𝑏𝐼𝑀 the original model (a) has the second duplicate task in a loop. 
+without refinement a large flower loop is discovered (b). using 
+our approach refines labels so that model (a ) is rediscovered.log_precision improved by 0.67, 
+sys_precision improved by 0.79, 
+sys_recall = 1
+tttfig. 11: original model with duplicate tasks and rediscovered by im on reﬁned log
+(a), result of im on imprecise log (b).
+increases the cost of neighbors) becomes dominant in the cost returned by trace match-
+ing, resulting in splitting the imprecise labels wrongly even though the matching may
+be correct.
+exp.3) what if imprecise labels appear in a loop? we again generated 600 models,
+200 for each n= 10;15;20. we used od and set k= 2 transitions that have impre-
+cise label: one inside and one outside of a loop. we used adaptive parameter selection
+and im as discovery algorithm. fig. 10 shows the results. in 60.5% of the models,
+the approach could ﬁnd an improvement (32% less compared to the results when no
+duplicated task is in a loop), which indicates that the approach has more difﬁculties
+to distinguish imprecise labels in loops. another interesting result is that although the
+approach could improve fewer logs, the improvements achieved were considerable in
+some cases; 20 models have increased log precision by more than 0.5. fig. 11 shows an
+example of the model discovered using the reﬁned log, which rediscovered the original
+model fig. 11(a).
+inspecting the models, we observe that the approach is able to to distinguish loops
+if an imprecise transition toutside of a loop is followed by an imprecise transition
+inside of a loop. we found three patterns where our approach failed: (1) distinguishing
+a second iteration of a loop from a choice for a duplicate activity, (2) distinguishing a
+duplicate activity at the end of a loop body from one immediately after the loop, (3) one
+duplicate activity is concurrent to another duplicate activity within a loop. we plan to
+address these issues in our future work.
+real-life case study. we conducted a case study involving a healthcare process. the
+log was provided by maastricht university medical center (mumc+), a large academic
+hospital in the netherlands. we used existing approaches to ﬁlter the known deviating
+cases and events. the cleaned hospital log contains 1039 cases and 6213 events having
+ﬁve distinct labels. since the log still contains imprecise labels and misses some events,
+applying the inductive visual miner (ivm) yields an imprecise model with two self
+loops, as shown in fig. 12(a). using the default parameter, the approach was unable to
+reﬁne the log. therefore, we took an iterative approach.
+we ﬁrst reﬁned events labeled with “surgery”, i.e., the imprecise label candidate is
+“surgery”. in the second and third iteration we reﬁned events labeled with “consulta-
+tion”. the resulting model shows the sequential behavior expected by domain experts.iteration 1 : 
+refine “surgery” events
+iteration 2 : 
+refine “consultation” events
+iteration 3 : 
+refine “consultation” events
+“1stsurgery” (~59 days 
+after the last 
+test or consultation)3 types of measurements and measurement result consultation 
+“after surgery 
+consultation” (~8 days 
+after the surgery)“2ndsurgery” 
+(~14 days after 
+1stsurgery or last 
+consultation)(a)
+(b)
+(c)
+(d)fig. 12: real-life log obtained from a dutch hospital that was reﬁned our approach;
+the resulting model better reﬂects reality and can be used to diagnose performance.
+an interesting result is that after reﬁning the labels, the discovered model is now suit-
+able for computing performance. for example, a domain expert stated that within 2
+months after the measurements, the ﬁrst surgery should be executed, and the model
+shows on avg. 59 days. after the ﬁrst surgery, a post-surgery consultation should take
+place within a week, and the model shows on avg. 8 days. if a second surgery should
+take place, then it should be performed after two weeks, and the model shows on avg.
+14 days. note that such performance diagnostics are difﬁcult to obtain using the model
+discovered from the imprecise log fig. 12(a).
+7 discussion and conclusion
+in this paper, we investigated the problem of imprecise labels and proposed a fresh look
+at the problem from a log preprocessing point of view. we used context and structural
+information of events in a log to ﬁnd dissimilar groups of events that have the same
+label and reﬁned their labels accordingly.
+the results of our evaluation provide interesting insights. when imprecise labels
+are not in a loop, our approach is able to improve logs by reﬁning labels in 35% of
+the cases using a default parameter, which increased to 87% if the parameter is auto-
+matically adapted to the log and the discovery algorithm. if one imprecise label is in
+a loop, we could still improve 61% of the logs. the case study demonstrated that the
+approach can be used iteratively (i.e., reﬁning labels in multiple steps) in practice to
+obtain more accurate and precise models. interestingly, such a model can be used to de-
+rive reliable performance diagnostic. future research aims at investigating and tackling
+the limitations of the approach found during the experiments.references
+1. herbst, j.: a machine learning approach to workﬂow management. in: proceedings 11th
+european conference on machine learning. (2000) 183–194
+2. van der aalst, w.m.p., rubin, v ., verbeek, h.m.w., van dongen, b.f., kindler, e., g ¨unther,
+c.w.: process mining: a two-step approach to balance between underﬁtting and overﬁtting.
+software and system modeling 9(1) (2010) 87–111
+3. de weerdt, j., de backer, m., vanthienen, j., baesens, b.: a multi-dimensional quality
+assessment of state-of-the-art process discovery algorithms using real-life event logs. infor-
+mation systems 37(7) (2012) 654–676
+4. vanden broucke, s.k.l.m.: advances in process mining: artiﬁcial negative events and other
+techniques. phd thesis, ku leuven (2014)
+5. buijs, j.c.a.m., van dongen, b.f., van der aalst, w.m.p.: quality dimensions in process
+discovery: the importance of ﬁtness, precision, generalization and simplicity. int. j. coop-
+erative inf. syst. 23(1) (2014)
+6. lu, x., fahland, d., van den biggelaar, f.j.h.m., van der aalst, w.m.p.: detecting deviating
+behaviors without models. in: bpm 2015, workshops, springer (2015) (accepted)
+7. pittke, f., richetti, p.h.p., mendling, j., bai ˜ao, f.a.: context-sensitive textual recommenda-
+tions for incomplete process model elements. in: bpm 2015, proceedings. (2015) 189–197
+8. koschmider, a., ullrich, m., heine, a., oberweis, a.: revising the vocabulary of business
+process element labels. in: caise 2015, proceedings. (2015) 69–83
+9. de medeiros, a.k.a., weijters, a.j.m.m., van der aalst, w.m.p.: genetic process mining:
+an experimental evaluation. data min. knowl. discov. 14(2) (2007) 245–304
+10. van zelst, s.j., van dongen, b.f., van der aalst, w.m.p.: ilp-based process discovery using
+hybrid regions. in: proceedings of the international workshop on algorithms & theories for
+the analysis of event data, ataed 2015. (2015) 47–61
+11. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured process
+models from event logs - a constructive approach. in: application and theory of petri nets
+and concurrency, 2013. proceedings. (2013) 311–329
+12. greco, g., guzzo, a., pontieri, l., sacc `a, d.: discovering expressive process models by
+clustering log traces. ieee trans. knowl. data eng. 18(8) (2006) 1010–1027
+13. de weerdt, j., vanden broucke, s.k.l.m., vanthienen, j., baesens, b.: active trace clus-
+tering for improved process discovery. ieee trans. knowl. data eng. 25(12) (2013) 2708–
+2720
+14. garc ´ıa-ba ˜nuelos, l., dumas, m., la rosa, m., de weerdt, j., ekanayake, c.c.: controlled
+automated discovery of collections of business process models. inf. syst. 46(2014) 85–101
+15. la rosa, m., dumas, m., ekanayake, c.c., garc ´ıa-ba ˜nuelos, l., recker, j., ter hofstede,
+a.h.m.: detecting approximate clones in business process model repositories. inf. syst. 49
+(2015) 102–125
+16. van der aalst, w.m.p., adriansyah, a., van dongen, b.f.: replaying history on process mod-
+els for conformance checking and performance analysis. wiley interdisciplinary reviews:
+data mining and knowledge discovery 2(2) (2012) 182–192
+17. munoz-gama, j.: conformance checking and diagnosis in process mining. phd thesis,
+universitat polit `ecnica de catalunya (2014)
+18. van der aalst, w.m.p., de medeiros, a.k.a., weijters, a.j.m.m.: process equivalence: com-
+paring two process models based on observed behavior. in: bpm 2006, proceedings. (2006)
+129–144
+19. van der aalst, w.m.p., van hee, k.m., ter hofstede, a.h.m., sidorova, n., verbeek, h.m.w.,
+v oorhoeve, m., wynn, m.t.: soundness of workﬂow nets: classiﬁcation, decidability, and
+analysis. formal asp. comput. 23(3) (2011) 333–363

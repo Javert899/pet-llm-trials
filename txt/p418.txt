@@ -1,0 +1,1043 @@
+getting rid of the or-join in business process
+models
+j. mendling
+vienna university of
+economics and business administration,
+austria,
+jan.mendling@wu-wien.ac.atb.f. van dongen
+department of computer science,
+eindhoven university of technology,
+the netherlands.
+b.f.v.dongen@tm.tue.nlw.m.p. van der aalst
+department of computer science,
+eindhoven university of technology,
+the netherlands.
+w.m.p.v.d.aalst@tm.tue.nl
+abstract — in practice, the development of process-aware infor-
+mation systems suffers from a gap between conceptual business
+process models and executable workﬂow speciﬁcations. because
+of this gap, conceptual models are hardly reused as execution
+templates. in this paper, we address the notorious “or-join prob-
+lem” that is partly responsible for this gap. at the conceptual level
+people frequently use or-joins. however, given their non-local
+semantics, or-joins cannot be mapped easily onto executable
+languages. in particular, we present a new approach to map a
+conceptual process model with or-joins (expressed in terms of
+an epc) onto an executable model without or-joins (expressed
+in terms of a petri net). although we used an epc process model
+as a running example, the approach is equally applicable to
+other process modeling languages that offer or-joins as (e.g.
+bpmn). moreover, the resulting petri net can be mapped onto
+other execution languages such as bpel. all of this has been
+implemented in the context of the prom framework.
+i. i ntroduction
+in recent years, business process modeling is increasingly
+used for the development of process-aware information sys-
+tems (pais) [16] on an enterprise scale. in this context,
+business process models can serve (1) as a conceptual repre-
+sentation of the system such as in case of the sap reference
+model [19], or (2) as a speciﬁcation of an executable workﬂow
+process, if web service compositions are deﬁned, for example,
+with bpel [4]. while both these modeling scenarios should
+smoothly work together in theory, it can be observed that
+there is a gap in practice (see e.g. [29, p.141]) such that
+conceptual models are hardly reused in the implementation
+phase. a better integration of both application scenarios is not
+only desirable for streamlining the design process, but also
+for a more consistent business evaluation of processes that are
+executed by workﬂow systems.
+there are several explanations for the gap between concep-
+tual process modeling and executable workﬂow speciﬁcation:
+the divergent terminology of business analyst and systems
+engineers, the different degree of technical detail, and the
+heterogeneous modeling tools that are used. these issues have
+in common that they can be soothed, at least partially, by
+training people, standardizing terms and concepts, or specify-
+ing interfaces. beyond that there is one speciﬁc problem that
+is of a theoretical nature: several business process modeling
+languages, such as event-driven process chains (epc) [18]
+or bpmn [27], offer an or-join synchronization element thatcannot be directly transformed to most executable languages.
+the reason is the non-local semantics of the or-join.
+in figure 1, activity actis preceded by an or-join ( _
+denotes an or in epc notation). this means that it can only
+be executed if there is at least one input and no more inputs
+can arrive. the black dot on the arc labeled bin figure 1
+is called a token and indicates that the or-join is activated.
+as sketched, more tokens can arrive via the other two input
+arcs of the or-join. the token on arc ccan travel to fand
+the token on arc gcan travel to m. therefore, actcannot be
+executed yet. suppose, that the token on cmoves to f. then
+the or-join still blocks, waiting for the token on arc g. if the
+token on gmoves to m,actcan be executed. moreover, even
+if the token on gmoves to korl(i.e., the token “exits” the
+path to the or-join), then actcan be executed. in the latter
+case, the or-join only consumes two tokens because it can
+be sure that a third token will not arrive via input arc m.
+because of the tricky non-local semantics, the or-join is
+not supported by most execution languages. many systems use
+a petri-net-like execution engine not allowing for or-joins.
+even bpel engines that support dead path elimination (cf.
+[23]) can only handle or-join behavior in acyclic ﬂow activi-
+ties. engines that provide full support for the or-join (e.g. the
+yawl engine [2]) may run into performance problems when
+there are many non-trivial or-joins. due to these reasons,
+process models with or-joins often require substantial rework
+before they can be used in workﬂow systems. since or-joins
+tend to be included in every third epc model [24, p.205], this
+is a serious limitation. therefore, it is desirable to automate
+the removal of or-joins for execution.
+in this paper, we present a rigorous and automatic approach
+a
+fig. 1. non-local semantics of the or-joinfor getting rid of the or-join in conceptual process models
+without changing the semantics. we use epcs a conceptual
+modeling language and petri nets as an execution language
+to illustrate the procedure. however, it must be noted that
+the approach is similarly applicable if, for example, bpmn is
+used as a conceptual language and bpel as an implementation
+language. in particular, we combine a recent epc semantics
+deﬁnition with tools for petri net synthesis. our contribu-
+tion in this context is the innovative combination of these
+complementary theories and the provision of respective tool
+support within the prom framework. against this background,
+the paper is structured as follows. in section ii, we intro-
+duce event-driven process chains (epcs). furthermore, we
+illustrate the calculation of the reachability graph for an epc
+and present its implementation within the prom framework.
+in section iii, we give an overview of petri net synthesis
+and demonstrate how the tool petrify by cortadella et al.
+[11] is used to build a petri net from an epc with or-joins.
+section iv discusses our approach in the light of related work,
+in particular on transformation of process models with or-
+joins. finally, section v concludes the paper.
+ii. e vent -driven process chains (epc s)
+this section uses an example to introduce the epc notation
+and syntax. then, section ii-c discusses the formalization of
+epc semantics, followed by section ii-d which presents a
+prom plug-in for calculating the reachability graph.
+a. introductory epc example
+the event-driven process chain (epc) is a business process
+modeling language for the representation of temporal and
+logical dependencies of activities in a business process (see
+[18]). epcs offer function type elements to capture activities
+of a process and event type elements describing pre-conditions
+and post-conditions of functions. furthermore, there are three
+kinds of connector types including and (symbol ^), or
+(symbol _), and xor (symbol £) for the deﬁnition of com-
+plex routing rules. connectors have either multiple incoming
+and one outgoing arc (join connectors) or one incoming
+and multiple outgoing arcs (split connectors). as a syntax
+rule, functions and events have to alternate, either directly or
+indirectly when they are linked via one or more connectors.
+furthermore, or- and xor-splits after events are not allowed,
+since events cannot make decisions. control ﬂow arcs are used
+to link these elements.
+the informal (or intended) semantics of an epc can be
+described as follows. the and-split activates all subsequent
+branches in concurrency. the xor-split represents a choice
+between one of alternative branches. the or-split triggers one,
+two or up to all of multiple branches based on conditions. in
+both cases of the xor- and or-split, the activation conditions
+are given in events subsequent to the connector. accordingly,
+splits from an event to multiple functions are forbidden with
+xor and or as the activation conditions do not become clear
+in the model. the and-join waits for all incoming branches
+to complete, then it propagates control to the subsequent epc
+loan is 
+requested 
+record loan 
+request 
+request is 
+recorded 
+conduct risk 
+assessment 
+negative risk 
+assessment 
+positive risk 
+assessment requester is 
+new client check client 
+assessment 
+set up loan 
+contract analyze 
+requirements 
+requirements 
+are analyzed loan contract 
+is set up 
+sign loan 
+contract 
+loan contract 
+is completed positive client 
+assessment negative client 
+assessment 
+reject loan 
+request 
+loan request 
+is rejected epc symbols 
+event 
+function 
+connectors 
+control flow 
+offer further 
+products 
+offering 
+completed fig. 2. epc for a loan request process [26]
+element. the xor-join merges alternative branches. the or-
+join synchronizes all active incoming branches. this feature is
+called non-locality, since the state of all transitive predecessor
+nodes has to be considered.
+figure 2 shows an epc model for a loan request process
+as described in n¨uttgens and rump [26]. the start event
+loan is requested signals the start of the process and the
+precondition to execute the record loan request function. after
+the postcondition request is recorded , the process continues
+with the function conduct risk assessment after the xor-join
+connector. the subsequent xor-split connector indicates a
+decision. in case of a negative risk assessment , the function
+check client assessment is performed. the following second
+xor-split marks another decision: in case of a negative client
+assessment , the process ends with a rejection of the loan
+request; in case of a positive client assessment theconduct
+risk assessment function is executed a second time under
+consideration of the positive client assessment. if the risk
+assessment is not negative, there is another decision pointto distinguish new clients and existing clients. in case of an
+existing client, the set up loan contract function is conducted.
+after that, the and-split indicates that two activities have
+to be executed: ﬁrst, the sign loan contract function, and
+second the offer further products function. if the client is
+new, the analyze requirements function has to be performed
+in addition to setting up the loan contract. the or-join waits
+for both functions to be completed if necessary. if the analyze
+requirements function will not be executed in the process, it
+continues with the function offer further products immediately,
+otherwise it synchronizes the two branches.
+b. epc syntax
+in this section, we deﬁne the syntax of epcs in line with
+the previous introduction and the presentation in [24].
+deﬁnition ii.1. (epc) a ﬂat epc = (e; f; p; c; l; a )
+consists of four pairwise disjoint and ﬁnite sets e; f; c; p ,
+a mapping l:c! fand; or; xor g, and a binary relation
+aµ(e[f[c)£(e[f[c)such that
+–an element of eis called event .e6=;.
+–an element of fis called function .f6=;.
+–an element of cis called connector .
+–the mapping lspeciﬁes the type of a connector c2c
+asand,or, orxor.
+–adeﬁnes the control ﬂow as a coherent, directed graph.
+an element of ais called an arc. an element of the
+union n=e[f[cis called a node .
+in order to allow for a more concise characterization of
+epcs, notations are introduced for preset and postset nodes,
+for incoming and outgoing arcs, and for various subsets.
+deﬁnition ii.2. (preset and postset of nodes) letnbe a set
+ofnodes andaµn£na binary relation over ndeﬁning the
+arcs. for each node n 2n, we deﬁne ²n=fx2nj(x; n)2
+agas its preset , and n²=fx2nj(n; x)2agas its postset .
+deﬁnition ii.3. (incoming and outgoing arcs) letnbe
+a set of nodes andaµn£na binary relation over n
+deﬁning the arcs. for each node n 2n, we deﬁne the set of
+incoming arcs nin=f(x; n)jx2n^(x; n)2ag, and the
+set of outgoing arcs nout=f(n; y)jy2n^(n; y)2ag.
+deﬁnition ii.4. (paths and connector chains) letepc =
+(e; f; p; c; l; a )be a ﬂat epc and a; b2nbe two
+of its nodes. a path a ,!brefers to the existence of
+a sequence of epc nodes n1; : : : ; n k2nwith a=
+n1andb=nksuch that for all i21; : : : ; k holds:
+(n1; n2); : : : ; (ni; ni+1); : : : ; (nk¡1; nk)2a. this includes
+the empty path of length zero, i.e., for any node a:a ,!a. if
+a6=b2nandn2; : : : ; n k¡12c, the path ac,!bis called
+connector chain . this includes the empty connector chain, i.e.,
+ac,!bif(a; b)2a.
+deﬁnition ii.5. (subsets) for any epc = (e; f; p; c; l; a ),
+we deﬁne the following (implicit) subsets of nodes and arcs:
+–es=fe2ej j²ej= 0^ je²j= 1gbeing the set of
+start-events,
+eint=fe2ej j²ej= 1^ je²j= 1gbeing the set ofintermediate-events, and
+ee=fe2ej j²ej= 1j ^e²j= 0gbeing the set of
+end-events.
+–j=fc2cj j²cj>1andjc²j= 1gas the set of join-
+and
+s=fc2cj j²cj= 1 andjc²j>1gas the set of
+split-connectors.
+–cand=fc2cjl(c) =andgbeing the set of and-
+connectors,
+cxor=fc2cjl(c) =xorgbeing the set of xor-
+connectors, and
+cor=fc2cjl(c) =orgbeing the set of or-connectors.
+–as=f(x; y)2ajx2esgas the set of start-arcs,
+aint=f(x; y)2ajx =2es^y =2eegas the set of
+intermediate-arcs, and
+ae=f(x; y)2ajy2eegas the set of end-arcs.
+several notions of syntactical correctness have been pro-
+posed, see [24]. we use a rather small set of requirements in
+order to provide semantics for a large set of epcs.
+deﬁnition ii.6. (syntactically correct epc) anepc =
+(e; f; p; c; l; a )is called syntactically correct, if it fulﬁlls
+the requirements:
+1)epc is a directed and coherent graph such that
+8n2n9e12es;e22eee1,!n ,!e2.
+2)there is at least one start node and one end node in an
+epc:jesj ¸1^ jeej ¸1.
+3)events have at most one incoming and one outgoing arc:
+8e2ej²ej ·1^ je²j ·1.
+4)functions have exactly one incoming and one outgoing
+arcs:8f2fj²fj= 1^ jf²j= 1.
+5)connectors are splits or joins, i.e., 8c2c(j²cj= 1^
+jc²j ¸1)_(j²cj ¸1^ jc²j= 1) .
+in the remainder we assume epcs to be syntactically
+correct.
+c. epc semantics
+several semantical deﬁnitions have been proposed for epcs,
+seekindler [20] for an overview and a theoretical framework.
+in this paper, we use a recent formalization of epc semantics
+as proposed by mendling and van der aalst [25], that has some
+desirable properties compared to earlier approaches. still, our
+general approach is equally applicable if other formalizations
+such as the ones presented in [2], [20] are considered.
+the principal idea of the semantics by mendling and van
+der aalst lends some concepts from langner, schneider, and
+wehler [21], and adapts the idea of boolean nets with true
+and false tokens in an appropriate manner. the reachability
+graph, that we will formalize later, depends on the state and
+the context of an epc. the state of an epc is basically an
+assignment of positive and negative tokens to the arcs. positive
+tokens signal which functions have to be carried out in the
+process, negative tokens indicate which functions are to be
+ignored. in order to signal or-joins that it is not possible to
+have a positive token on an incoming branch, we deﬁne thecontext of an epc. the context assigns a status of wait or
+dead to each arc of an epc. a wait context indicates that it is
+still possible that a positive token might arrive; a dead context
+status means that no positive token can arrive anymore. for
+example, xor-splits produce a dead context on those output
+branches that are not taken and a wait context on the output
+branch that receives a positive token. a dead context at an
+input arc is utilized by an or-join to determine whether it has
+to synchronize with further positive tokens or not. in contrast
+to petri nets, we distinguish the terms marking andstate .
+deﬁnition ii.7. (state and context) for an epc =
+(e; f; c; l; a ), the mapping ¾:a! f¡ 1;0;+1gis called
+astate of an epc . the positive token captures the state as
+it is observed from outside the process. it is represented by a
+black circle. the negative token depicted by a white circle with
+a minus on it has a similar semantics as the negative token
+in the boolean nets formalization. arcs with no state tokens
+on them have no circle depicted. furthermore, the mapping
+·:a! fwait; dead gis called a context of an epc . a wait
+context is represented by a wand a dead context by a dnext
+to the arc.
+deﬁnition ii.8. (marking of an epc) for a syntactically cor-
+rectepc the mapping m:a! f¡ 1;0;+1g£fwait; dead g
+is called a marking . the set of all markings mepc of an epc
+is called marking space with mepc =a£ f¡ 1;0;+1g £
+fwait; dead g. the projection of a given marking mto a subset
+of arcs sµais referred to as ms. if we refer to the ·-
+or the ¾-part of m, we write ·mand¾m, respectively, i.e.,
+m(a) = (¾m(a); ·m(a)).
+the propagation of context status and state tokens is ar-
+ranged in a four phase cycle: (1) dead context, (2) wait
+context, (3) negative token, and (4) positive token propagation.
+whether a node is enabled and how it ﬁres is illustrated in
+figure 3. a formalization of the transitions for each phase is
+presented in [24].
+1)in the ﬁrst phase, all dead context information is prop-
+agated in the epc until no new dead context can be
+derived.
+2)then, all wait context information is propagated until
+no new wait context can be derived. it is necessary to
+have two phases (i.e., ﬁrst the dead context propagation
+and then the wait context propagation) in order to avoid
+inﬁnite cycles of context changes (see [24]).
+3)after that, all negative tokens are propagated until no
+negative token can be propagated anymore. this phase
+cannot run into an endless loop (see [24]).
+4)finally, one of the enabled nodes is selected and prop-
+agates positive tokens leading to a new iteration of the
+four phase cycle.
+the transition relations of the four phases have been for-
+mally deﬁned in [24]. they provide the intermediate results
+for calculating the reachability graph.d. reachability graph calculation
+initial and ﬁnal markings are the start and end points for
+calculating the reachability graph of an epc. we deﬁne the
+sets of initial and the ﬁnal markings similar to the deﬁnition
+byrump [28]. an initial marking is an assignment of positive
+or negative tokens to all start arcs while all other arcs have no
+token, and in a ﬁnal marking only end arcs may hold positive
+tokens.
+deﬁnition ii.9. (initial marking of an epc) letepc =
+(e; f; c; l; a )be a syntactically correct epc and mepc its
+marking space. iepcµmepc is deﬁned as the set of all
+possible initial markings, i.e., m2iepc if and only if1:
+²9as2as¾m(as) = +1 ,
+²8as2as¾m(as)2 f¡ 1;+1g,
+²8as2as·m(as) =wait if¾m(as) = +1 and
+·m(as) =dead if¾m(as) =¡1, and
+²8a2aint[ae·m(a) =wait and¾m(a) = 0 .
+deﬁnition ii.10. (final marking of an epc) letepc =
+(e; f; c; l; a )be a syntactically correct epc and mepc its
+marking space. oepcµmepc is deﬁned as the set of all
+possible ﬁnal markings, i.e., m2oepc if and only if:
+²9ae2ae¾m(ae) = +1 , and
+²8a2as[aint¾m(a)·0.
+in this context, a marking m0is called reachable2from
+another marking mif and only if, after applying the phases
+of dead and wait context and negative token propagation on
+m, there exists a node nwhose ﬁring in the positive token
+propagation phase produces m0. this is denoted by mn!m0.
+the notation m!m0indicates that there is some nsuch
+thatmn!m0. furthermore, we write m1¿!mqif there is a
+ﬁring sequence ¿=n1n2:::nq¡1that produces from marking
+m1the new marking mqwithm1n1!m2; m2n2!:::nq¡1!mq.
+if there exists a sequence ¿such that m1¿!mq, we write
+m1¤!mq. accordingly, we deﬁne the reachability graph rg
+as follows.
+deﬁnition ii.11. (reachability graph of an epc) let
+epc = (e; f; c; l; a )be a syntactically correct epc, n=
+e[f[cits set of nodes, and mepc its marking space.
+then, the reachability graph rgµmepc£n£mepc of
+an epc contains the following nodes and transitions:
+(i)8m2iepcm2rg.
+(ii)(m; n; m0)2rg if and only if mn!m0.
+the calculation of rgrequires an epc and a set of initial
+markings iµiepc as input. for several epcs from practice,
+such a set of initial markings will not be available. in this
+case, one can easily calculate the set of all possible initial
+markings. algorithm 1 uses an object-oriented pseudo code
+notation to deﬁne the calculation. in particular, we assume
+thatrg is an instance of the class reachabilitygraph ,
+1note that the marking is given in terms of arcs. intuitively, one
+can think of start events holding positive or negative tokens. however, the
+corresponding arc will formally represent this token.
+2a formalization of reachability is given in [24].(c)
+(e)(a) (b) d
+d
+d
+d
+ddd
+(g) d
+d
+d(d)d d(f)d
+d
+(h)
+ddd d
+dd d
+dddw w
+w w
+w
+w
+w
+w
+w www
+w
+w
+w
+w
+w
+w(a)
+(b)
+(c)
+(d)d d
+ddd(a)
+(b)(f) w
+dw
+w
+w
+dw
+w
+(c)w w
+w d(e)w
+dw
+w
+(d)w
+sw
+ww
+wdw
+ww
+w
+dw
+ww
+dw
+w
+w w
+w d(a)
+(b)d
+wd
+d
+d
+wd
+d(c)d d
+d w(d)d
+wd
+d
+d
+wd
+dd d
+d w1) dead context propagation 
+2) wait context propagation 
+4) positive state propagation 
+3) negative state 
+propagation fig. 3. propagation of context and state in four phasesalgorithm 1 pseudo code for calculating the reachability graph of an epc
+require: epc = (e; f; c; l; a ); iµiepc
+1:rgã ;
+2:tobepropagated ãi
+3:propagated ã ;
+4:while tobepropagated 6=;do
+5:currentmarking ãtobepropagated:pop ()
+6:oldmarking ãcurrentmarking:clone ()
+7:currentmarking:propagatedeadcontext (epc )
+8:currentmarking:propagatewaitcontext (epc )
+9:currentmarking:propagatenegativetokens (epc )
+10: nodenewmarking ãcurrentmarking:propagatepositivetokens (epc )
+11: propagated:add (oldmarking )
+12: for all (node; newmarking )2nodenewmarkings do
+13: rg:add (oldmarking; node; newmarking )
+14: ifnewmarking = 2propagated then
+15: tobepropagated:push (newmarking )
+16: end if
+17: end for
+18:end while
+19:return rg
+propagated an instances of class set, and tobepropagated
+an instance of class stack that provides the methods pop()
+andpush(). furthermore, currentmarking ,oldmarking ,
+andnewmarking are instances of class marking that
+provides the methods clone ()to return a new, but
+equivalent marking, propagatedeadcontext (epc ),
+propagatewaitcontext (epc ), as well as method
+propagatenegativetokens (epc )to change the marking
+according to the transitions of the respective phase, i.e., to
+determine max d; max w, and max¡1of the current marking.
+finally, propagatepositivetokens (epc )returns a set of
+(node; marking )pairs including the node that can ﬁre and
+the marking that is reached after the ﬁring.
+in lines 1-3, the sets rg andpropagated are initialized
+with the empty set, and the stack tobepropagated is ﬁlled
+with all initial markings of the set i. the while loop be-
+tween lines 4-18 calculates new markings for the marking
+that is on top of the stack tobepropagated . in particular,
+currentmarking receives the top marking from the stack
+(line 5) and it is cloned into the oldmarking object (line
+6). in lines 7-9, the propagations of dead and wait context
+and of negative tokens are applied on currentmarking .
+then, in line 10, the pairs of nodes and new markings
+that can be reached from the old marking are stored in
+the set nodenewmarking . after that, the old marking
+is added to the propagated set (line 11). in lines 12-17,
+for each pair of node and new marking, a new transition
+(oldmarking; node; newmarking )is added to rg. if a
+new marking was not yet propagated, it is pushed on top of
+thetobepropagated stack (lines 14-16). using a stack, the
+reachability graph is calculated in a depth-ﬁrst manner. finally,
+in line 19, rg is returned.based on the previous algorithm, we have implemented a
+conversion plug-in for the prom (pro cess m ining) framework
+[7], [15]. this conversion plug-in calculates the reachability
+graph of an epc and displays it as a transition systems.
+figure 4 shows the reachability graph of the example epc
+that is generated by using the plug-in. the densely connected
+part looking like a diamond in the center of the reachability
+graph stems from two concurrent paths of the epc after the
+and-split. these paths are eventually synchronized by an or-
+join. this or-join can be found as the label or14 on two
+arcs exiting from the diamond at the bottom. since prom can
+import a variety of epc interchange formats, the reachability
+graph calculation can be easily used for existing models.
+iii. p etri netsynthesis
+in this section, we present the second step of our approach.
+in this step, a petri net is synthesized from the reachability
+graph resulting from the ﬁrst step. to do this we use the
+“theory of regions” [12], [14], [17]. however, we ﬁrst
+introduce petri nets in more detail.
+a. petri nets
+a petri net consists of two modeling elements, namely
+places and transitions . these elements are the nodes of a
+bipartite graph, partitioned into places and transitions. when a
+petri net is represented visually, we draw transitions as boxes
+and places as circles. a transition typically corresponds to
+either an activity which needs to be executed, or to a “silent”
+step that takes care of routing. places are typically used to
+deﬁne the preconditions and postconditions of transitions. in
+this paper, we do not show the labels of places, since they do
+not correspond to active elements of a petri net.s_+21 
+s_ +6
+s_ +9
+s_ +8
+s_ +7
+s_+11 s_+10 
+s_+28 
+s_+25 s_+24 
+s_+ 17 s_+3_+4
+s_+ 4 _+ 1 7 s_+14_+3
+s_ +14_+17 s_+ 1 3_+4 s_ +26_+3
+s_ + 2 6_+17 s_ + 2 3_+3 s_+13 _+14 
+s_+ 2 6_+13 s_+14_ +22 s_ + 2 3_+17 
+s_+13_ +23 s_ + 26 _+22 
+s_+23_+22 s_ + 26 _+ 1 5 
+s_ + 1 5_+23 
+s_+23_+0_+1
+s_+12_+23_ +1 s_ +0_+16 
+s_+12_ +16 s_+20_ + 0
+s_ + 1 2_+20 s_+26_+0_+1
+s_+26_+12_ +1s_+15_ + 1 4 
+s_+14_+0_+1
+s_+12_ + 14 _+ 1s_+22_ +4
+s_+15_ + 4
+s_+4_+0_+1
+s_+12_+4_+ 1s_ + 13 
+s_+22 
+s_+15 
+s_+0_+1
+s_+12_ +1s_+27 
+s_ + 19 s_+18 
+s_+ 2 s_+29 
+s_+5record loan req uest 
+requ est is record ed 
+xor7
+con du ct risk assessment 
+xor9 xor9
+negative risk assessment xor21 xor21 
+xor15 and 2
+xor15 
+req uester is n ew clien t 
+req uester is new clien t 
+positive risk assessmen t an alyze req uirements 
+x or1 5 
+x or1 5 req uirements are an alyzed 
+positive risk assessment an alyze requ irements 
+analy ze requiremen ts 
+set u p loan  con tract req uiremen ts are an alyzed 
+positive risk assessmen t 
+p ositive risk assessment set up loan contract req uirements are an alyzed 
+requ irements are analy zed 
+loan contract is set up set u p loan  con tract 
+loan  con tract is set u p 
+an d0
+sign loan contract 
+or1 4 
+or14 offer fu rther p rod ucts 
+sign loan  contract 
+sign loan  contract offer fu rther p rod ucts requ irements are analy zed and 0
+requ iremen ts are analy zed 
+sign loan contract 
+req uirements are an alyzed analy ze req uiremen ts 
+loan  con tract is set u p 
+analy ze requ iremen ts 
+and 0
+analy ze requ iremen ts sign loan  contract 
+analy ze req uiremen ts xor15 requ ester is new client 
+set up  loan contract 
+requester is n ew client 
+loan contract is set up 
+req uester is n ew clien t 
+and 0
+req uester is n ew clien t 
+sign loan  contract 
+requ ester is new client positive risk assessment 
+set up  loan con tract 
+loan contract is set up 
+and0
+or1 4 sign loan  contract 
+or14 check client assessment 
+xor1 6 x or16 
+n egative clien t assessment 
+positive client assessment xor7
+reject loan  requ est fig. 4. reachability graph of the epc for the loan request processr egion 1
+re gion 2s_+21 
+s _+6
+s _+9
+s _+8
+s_+7
+s_ + 1 1 s_+ 1 0 
+s_ + 2 8 
+s_+25 s_+ 2 4 
+s_ + 1 7 s_+3_+4
+s_+4 _+ 1 7 s_+14_+3
+s_+14_ + 1 7 s_+13 _+ 4 s_+ 2 6_+3
+s_ + 2 6_+17 s_+23_+3 s_+13 _+ 1 4 
+s_+26_+13 s_+14 _+22 s_+23 _+17 
+s_+13_ + 2 3 s_+26_+22 
+s_+23_+22 s_+26_+15 
+s_+15_+23 
+s_+23_ +0_+1
+s_+12_ +23_+1 s_+0_+16 
+s_+12 _+16 s_+ 2 0_+0
+s_+12 _+20 s_ + 2 6_+0_+1
+s_+26_+12 _+1s_+15_ + 1 4 
+s_+14_+0_ + 1
+s_+12 _+ 1 4_+1s_ + 22 _+4
+s_+15_+4
+s_ + 4 _+ 0 _+1
+s_ + 1 2_+4_+1s_+13 
+s_ + 22 
+s_+15 
+s_+ 0 _+1
+s_+12_ + 1s_ + 2 7 
+s_+19 s _+ 1 8 
+s_+2 s_+29 
+s _+5record loan req uest 
+req uest is record ed 
+xor7
+con duct risk assessmen t 
+xor9 xor9
+n egative risk assessment xor2 1 xor2 1 
+xor1 5 an d2
+x or1 5 
+requ ester is n ew client 
+requ ester is n ew clien t 
+p ositive risk assessmen t an alyze req uirements 
+xor1 5 
+xor1 5 requ iremen ts are an alyzed 
+positive risk assessm en t an alyze requ iremen ts 
+analyze requ iremen ts 
+set u p loan contract requ iremen ts are an alyzed 
+positive risk assessment 
+p ositive risk assessment set u p loan  contract requiremen ts are an alyzed 
+requ iremen ts are an alyzed 
+loan contract is set u p set up loan contract 
+loan contract is set u p 
+and 0
+sign loan  con tract 
+or14 
+or1 4 offer further p rod ucts 
+sign loan  con tract 
+sign  loan contract offer further products requ iremen ts are an alyzed an d0
+req uirements are analy zed 
+sign loan  contract 
+req uirements are analy zed an alyze requ iremen ts 
+loan contract is set u p 
+an alyze requ iremen ts 
+and 0
+an alyze requ iremen ts sign loan  con tract 
+an alyze requ irements x or15 req uester is new client 
+set u p loan  con tract 
+requ ester is n ew clien t 
+loan contract is set u p 
+req uester is new client 
+an d0
+req uester is new client 
+sign loan contract 
+req uester is n ew clien t positive risk assessment 
+set up loan contract 
+loan contract is set u p 
+an d0
+or1 4 sign  loan contract 
+or1 4 ch eck client assessment 
+x or16 xor1 6 
+negative client assessmen t 
+p ositive clien t assessment xor7
+reject loan req uest reg ion 3fig. 5. reachability graph of the epc for the loan request process, showing three of its regionstransitions and places are connected through directed arcs
+in such a way that the places and transitions make up the
+partitions in a bipartite graph (no place is connected to a place
+and no transition is connected to a transition). the places that
+are in the pre-set of a transition are called its input places and
+the places in the post-set of a transition its output places.
+to denote the state of a process execution the concept of
+tokens is used. a token is placed inside a place to show that
+a certain condition holds. each place can contain arbitrarily
+many of such tokens. when a transition execution occurs (in
+other words, a transition ﬁres), one token is removed from
+each of the input places and one token is produced for each
+of the output places. note that this restricts the behavior in
+such a way that a transition can only occur when there is at
+least one token in each of the input places. the distribution
+of tokens over the places is called a state , better known as
+marking in petri net jargon.
+b. theory of regions
+the theory of regions was developed to transform state-
+based models , such as transition systems or reachability
+graphs, to petri nets , in such a way that the behavior of the
+resulting petri net exactly corresponds to the original state-
+based model. for this purpose, the concept of regions was
+introduced in [17], where these regions served as intermediate
+objects, between a transition system on the one hand and a
+petri net on the other hand. the process of going from a state-
+based model to a petri net, is called synthesis .
+before we formalize the concept of a region, we ﬁrst provide
+an insight into their meaning using our example of figure 4.
+a region represents a collection of states, such that (1) if a
+certain transition aenters the region, then all transitions aenter
+the region and (2) if a certain transition bexits a region, then
+all transitions bexit the region. figure 5 shows this concept
+using the reachability graph of figure 4. it shows three regions,
+namely:
+1)region 1 contains only one state such that all transitions
+record loan request enter the region and all transitions
+request is recorded exit the region,
+2)region 2 contains two states such that all transitions
+xor9 enter the region and all transitions xor21 and
+negative risk assessment exit the region,
+3)region 3 contains ﬁve states, such that all transitions
+positive risk assessment enter the region and all transi-
+tions set up loan contract exit the region. furthermore,
+the transitions requester is new client ,analyze require-
+ments andrequirements are analyzed appear both inside,
+as well as outside the region, but they do not cross the
+region (i.e. enter or exit the region).
+regions, such as the three examples but also all others,
+have a special meaning in the state-based model, i.e., they
+show causal dependencies between the transitions. consider
+for example region 3. from that region, it becomes clear that
+after you perform a positive risk assessment , you at some point
+perform set up loan contract . however, in the mean time, many
+other transitions may occur. using this type of reasoning, acollection of regions can be translated into a petri net which
+models the exact behavior of the state-based model.
+deﬁnition iii.1. (region) letts= (s;¤;!)be a state-
+based model ( sis the set of states, ¤the set of transitions and
+!the transition relation, i.e., the labelled transitions between
+states).3we say that rµsis a region of tsif and only if
+for all (p; ®; q );(p0; ®; q0)2! holds that:
+²ifp2randq62rthenp02randq062r, i.e., all
+transitions labeled ®exitthe region, and we say that r
+is apre-region of®,
+²ifp62randq2rthenp062randq02r, i.e., all
+transitions labeled ®enter the region, and we say that r
+is apost-region of®.
+²if(p2r) = (q2r)then(p02r) = (q02r), i.e., all
+transitions labeled ®do not cross the region.
+it is easy to see that there are two trivial regions, i.e., ; µs
+andsµsare regions. the collection of all regions of a
+transition system tsis called <(ts). a region r2 <(ts)
+is said to be minimal if and only if for all r0½rwith
+r06=;holds that r062 <(ts), i.e., none of its subsets is
+also a region. the set of all minimal regions is denoted by
+<min(ts). furthermore, it is important to note that regions
+do not depend on one label ®, i.e., they always depend on the
+entire set of labels in the transition system.
+c. synthesis of epc reachability graph
+as we explained before, the intuition behind a region is
+that it represents a causal dependency between the transitions
+that enter the region and the transitions that exit the region,
+and hence for petri net synthesis, a region corresponds to a
+petri net place and a transition corresponds to a petri net
+transition . thus, the main idea of the synthesis algorithm is
+the following: for each transition tin the state-based model a
+transition labelled with tis generated in the petri net. for each
+minimal region ria place piis generated4. the ﬂow-relation
+of the petri net is constructed as follows. for each transition
+tthat enters region ri, there is an edge from ttopiin the
+petri net and for every transition tthat exits ri, there is an
+edge from pitotin the petri net.
+the petri net synthesized from state space generated by the
+epc is given in figure 6. the incoming place of the transition
+request is recorded corresponds to region 1 in figure 5.
+region 3 of figure 5 corresponds to the place between positive
+risk assessment andset up loan contract in the petri net.
+the ﬁrst papers on the theory of regions only dealt
+with a special class of state-based models called elementary
+transition systems [5], [6], [14]. region 2 of figure 5 is
+an example of a situation that is not allowed in such an
+elementary transition system. the state s+ 10 has two
+outgoing transitions, both labeled xor21 . since they both result
+in different states, they cannot represent the same transition,
+3note that any reachability graph deﬁnes a state-based model ts.
+4by using only minimal regions, the resulting number of places is
+minimized.and the algorithms implemented in petrify therefore split these
+two transitions into xor21 andxor21. 1.
+in general, the class of elementary transition systems is
+very restricted and the state spaces we derive from our epcs
+only by coincidence fall into the class of elementary transition
+systems. fortunately, in the papers of cortadella et al. [12],
+a method for handling anystate-based model was presented.
+this approach uses labeled petri nets , i.e., different transitions
+can refer to the same event. for this approach it has been
+shown that the reachability graph of the synthesized petri net
+isbisimilar to the initial state-based model.
+petrify has been embedded in our prom framework. there-
+fore, in prom one can seamlessly convert an epc into a
+reachability graph and then into a petri net. moreover, prom
+also allows for the automatic translation of the resulting petri
+net to other notations such as epcs, yawl, bpel, etc.
+iv. r elated work
+several researchers and practitioners tried to bridge the gap
+between conceptual process modeling and workﬂow execution
+by deﬁning model transformations. in particular, mappings
+from epcs to petri nets were deﬁned in [1], [9], [13], [21].
+the problem of these mappings is that they are only applicable
+for different subclasses of epcs, and that they do not preserve
+the behavior in the general case. our approach builds on an
+epc semantics deﬁnition that is not restricted to a subclass.
+furthermore, we use the theory of regions to derive a petri
+net that is bisimilar to the original model. this petri net can
+be deployed with several existing workﬂow engines.
+we refer to [14] and [17] for the synthesis of safe petri nets
+and [6] for more general cases. in these papers, the initial input
+describing the behavior of the process is given in the form of
+transition systems (where the events are known but the states
+are anonymous). typically, in process mining, the observed
+behavior is not complete (as it is in a transition system) and it
+is not known, which process executions lead to which states
+(black box).
+the application of the theory of regions in the context of
+process mining has been addressed in [3], where the authors
+address process mining in a software engineering setting. one
+of the challenges faced there is to ﬁnd state information in
+event logs. in [3], the authors propose several ways of doing
+so. furthermore, their approach is implemented in prom by
+making a link between the event logs of prom and a well-
+known tool tailored towards the application of the theory of
+regions, called petrify [11].
+finally, it is worth mentioning that regions have been
+used in many different settings, e.g., for the synthesis and
+veriﬁcation of asynchronous circuits [10] or for the veriﬁcation
+of security properties [8].
+v. c onclusions
+in this paper, we presented an approach to close the gap
+between conceptual process models with or-joins, typically
+used in the early design phase, and petri-net-based workﬂow
+models in the execution phase. this approach builds on an
+request  i s  
+recorded record loan  
+request 
+x or7
+conduct  risk 
+ass essm ent 
+x or9 x or9. _1
+negat i v e r i s k 
+ass e s sm ent 
+c he c k client 
+ass e s sm ent x or9._1
+x or9po s itiv e  c l ient  
+ass e s sm ent 
+negat i v e c li ent  
+ass e s sm ent 
+rej ect  loan 
+requ es t x or21._1
+x or21 
+and2
+x or15 
+reque s t e r  is 
+new  clien t 
+analy z e 
+requirement s 
+requirement s 
+a r e  analy z ed pos i t iv e risk  
+ass essm ent 
+set  up  loan 
+cont ract 
+loan contr a c t  
+is set  up 
+an d0 or14
+sign lo an 
+cont ract off er furt her 
+product s fig. 6. petri net for the loan request process
+innovative combination of a recent formalization of process
+models with or-joins and the theory of regions for the synthe-
+sis of petri nets. in contrast to related work on transformations
+between process models, our approach yields a petri net that
+exactly mimics the behavior of the original model. although
+we used an epc model as a running example, the approach
+is equally applicable for other process modeling languages
+that offer or-joins as, for example, bpmn. moreover, we
+can convert the resulting petri net to other notations such as
+bpel, epcs, yawl, etc.all of this has been implemented in the context of the prom
+framework, i.e., we have developed (1) a tool to construct
+reachability graphs based on epcs with or-joins to overcome
+many of the semantical problems described in literature, (2)
+a tool to convert reachability graphs into petri nets based on
+petrify, and (3) various conversions to transform petri nets
+into epcs, bpel speciﬁcations, and yawl models and vice
+versa.
+in future research, we aim to provide a more direct mapping
+from epcs to petri nets based on insights from our approach.
+in particular, we want to investigate in how far reduction rules
+as deﬁned in [22] can be used for the transformation task.
+references
+[1]w.m.p. van der aalst. formalization and veriﬁcation of event-driven
+process chains. information and software technology , 41(10):639–650,
+1999.
+[2]w.m.p. van der aalst and a.h.m. ter hofstede. yawl: yet another
+workﬂow language. information systems , 30(4):245–275, 2005.
+[3]w.m.p. van der aalst, v . rubin, b.f. van dongen, e. kindler, and
+c.w. g ¨unther. process mining: a two-step approach using transition
+systems and regions. bpm center report bpm-06-30, bpmcenter.org,
+2006.
+[4]a. arkin, s. askary, b. bloch, f. curbera, y . goland, n. kartha, c.k.
+liu, s. thatte, p. yendluri, and a. yiu. web services business process
+execution language version 2.0. wsbpel-speciﬁcation-draft-01, oasis,
+september 2005.
+[5]e. badouel, l. bernardinello, and p. darondeau. the synthesis problem
+for elementary net systems is np-complete. theoretical computer
+science , 186(1-2):107–134, 1997.
+[6]e. badouel and p. darondeau. theory of regions. in w. reisig and
+g. rozenberg, editors, lectures on petri nets i: basic models , volume
+1491 of lecture notes in computer science , pages 529–586. springer-
+verlag, berlin, 1998.
+[7]p. barborka, l. helm, g. k ¨oldorfer, j. mendling, g. neumann, b.f.
+van dongen, h.m.w. verbeek, and w.m.p. van der aalst. integration
+of epc-related tools with prom. in m. n ¨uttgens and f.j. rump and
+j. mendling, editor, proceedings of the 5th gi workshop on business
+process management with event-driven process chains (epk 2006) ,
+pages 105–120, vienna, austria, december 2006. german informatics
+society.
+[8]n. busi and r. gorrieri. a survey on non-interference with petri
+nets. in j. desel, w. reisig, and g. rozenberg, editors, lectures on
+concurrency and petri nets , volume 3098 of lecture notes in computer
+science , pages 328–344. springer, 2004.
+[9]r. chen and a. w. scheer. modellierung von prozessketten mittels petri-
+netz-theorie. heft 107, institut f ¨ur wirtschaftsinformatik, saarbr ¨ucken,
+germany, 1994.
+[10] j. cortadella, m. kishinevsky, a. kondratyev, l. lavagno, and
+a. yakovlev. a region-based theory for state assignment in speed-
+independent circuits. ieee trans. on cad of integrated circuits and
+systems , 16(8):793–812, 1997.
+[11] j. cortadella, m. kishinevsky, a. kondratyev, l. lavagno, and
+a. yakovlev. petrify: a tool for manipulating concurrent speciﬁcations
+and synthesis of asynchronous controllers. ieice transactions on
+information and systems , e80-d(3):315–325, march 1997.
+[12] j. cortadella, m. kishinevsky, l. lavagno, and a. yakovlev. deriving
+petri nets from finite transition systems. ieee transactions on
+computers , 47(8):859–882, august 1998.
+[13] j. dehnert and w.m.p. van der aalst. bridging the gap between busi-
+ness models and workﬂow speciﬁcations. international j. cooperative
+inf. syst. , 13(3):289–332, 2004.
+[14] j. desel and w. reisig. the synthesis problem of petri nets. acta
+informatica , 33(4):297–315, 1996.[15] b.f. van dongen, a.k. alves de medeiros, h.m.w. verbeek, a.j.m.m.
+weijters, and w.m.p. van der aalst. the prom framework: a new
+era in process mining tool support. in g. ciardo and p. darondeau,
+editors, application and theory of petri nets 2005 , volume 3536 of
+lecture notes in computer science , pages 444–454. springer-verlag,
+berlin, 2005.
+[16] m. dumas, w.m.p. van der aalst, and a.h.m. ter hofstede. process-
+aware information systems: bridging people and software through
+process technology . wiley & sons, 2005.
+[17] a. ehrenfeucht and g. rozenberg. partial (set) 2-structures - part 1
+and part 2. acta informatica , 27(4):315–368, 1989.
+[18] g. keller, m. n ¨uttgens, and a.-w. scheer. semantische prozessmod-
+ellierung auf der grundlage “ereignisgesteuerter prozessketten (epk)”.
+heft 89, institut f ¨ur wirtschaftsinformatik, saarbr ¨ucken, germany, 1992.
+[19] g. keller and t. teufel. sap(r) r/3 process oriented implementation:
+iterative process prototyping . addison-wesley, 1998.
+[20] e. kindler. on the semantics of epcs: resolving the vicious circle.
+data & knowledge engineering , 56(1):23–40, 2006.
+[21] p. langner, c. schneider, and j. wehler. petri net based certiﬁcation
+of event driven process chains. in j. desel and m. silva, editor,
+application and theory of petri nets , volume 1420 of lecture notes
+in computer science , pages 286–305, 1998.
+[22] k.b. lassen and w.m.p. van der aalst. workﬂownet2bpel4ws:
+a tool for translating unstructured workﬂow processes to readable
+bpel. in r. meersman and z. tari et al., editors, on the move to
+meaningful internet systems 2006, otm confederated international
+conferences, 14th international conference on cooperative information
+systems (coopis 2006) , volume 4275 of lecture notes in computer
+science , pages 127–144. springer-verlag, berlin, 2006.
+[23] f. leymann and w. altenhuber. managing business processes as an
+information resource. ibm systems journal , 33(2):326–348, 1994.
+[24] j. mendling. detection and prediction of errors in epc business
+process models . phd thesis, vienna university of economics and
+business administration, 2007.
+[25] j. mendling and w.m.p. van der aalst. formalization and veriﬁcation of
+epcs with or-joins based on state and context. in j. krogstie, a.l.
+opdahl, and g. sindre, editors, proceedings of the 19th conference
+on advanced information systems engineering (caise 2007) , volume
+4495 of lecture notes in computer science , pages 439–453, trondheim,
+norway, 2007. springer-verlag.
+[26] m. n ¨uttgens and f.j. rump. syntax und semantik ereignisgesteuerter
+prozessketten (epk). in j. desel and m. weske, editor, proceedings
+of promise 2002, potsdam, germany , volume 21 of lecture notes in
+informatics , pages 64–77, 2002.
+[27] omg, ed. business process modeling notation (bpmn) speciﬁcation.
+final adopted speciﬁcation, dtc/06-02-01, object management group,
+february 2006.
+[28] f.j. rump. gesch ¨aftsprozessmanagement auf der basis ereignisges-
+teuerter prozessketten - formalisierung, analyse und ausf ¨uhrung von
+epks . teubner verlag, 1999.
+[29] a.-w. scheer, o. thomas, and o. adam. process aware information
+systems: bridging people and software through process technology ,
+chapter process modeling using event-driven process chains, pages
+119–146. wiley publishing, 2005.

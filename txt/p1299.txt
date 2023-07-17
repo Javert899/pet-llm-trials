@@ -1,0 +1,1273 @@
+aligning observed and modelled behaviour by
+maximizing synchronous moves and using milestones
+vincent bloemena,, sebastiaan van zelstb,c, wil van der aalstc,b,
+boudewijn van dongend, jaco van de pole,a
+auniversity of twente, enschede, the netherlands
+bfraunhofer fit, sankt augustin, germany
+crwth aachen university, aachen, germany
+deindhoven university of technology, eindhoven, the netherlands
+euniversity of aarhus, aarhus, denmark
+abstract
+given a process model and an event log, conformance checking aims to relate the
+two together, e.g :to detect discrepancies between them. for the synchronous
+product net of the process and a log trace, we can assign dierent costs to
+a synchronous move, and a move in the log or model. by computing a path
+through this (synchronous) product net, whilst minimizing the total cost, we
+create a so-called optimal alignment { which is considered to be the primary
+target result for conformance checking. traditional alignment-based approaches
+(1) have performance problems for larger logs and models, and (2) do not pro-
+vide reliable diagnostics for non-conforming behaviour (e.g :bottleneck analysis
+is based on events that did not happen). this is the reason to explore an alter-
+native approach that maximizes the use of observed events. we also introduce
+the notion of milestone activities, i.e :unskippable activities, and show how the
+dierent approaches relate to each other. we propose a data structure, that
+can be computed from the process model, which can be used for (1) computing
+alignments of many log traces that maximize synchronous moves, and (2) as
+a means for analysing non-conforming behaviour. in our experiments we show
+the dierences of various alignment cost functions. we also show how the per-
+formance of constructing alignments with our data structure relates to that of
+the state-of-the-art techniques.
+keywords: process mining, conformance checking, alignments, alignment cost
+function, transitive closure graph, milestone events
+corresponding author
+email address: v.bloemen@utwente.nl (vincent bloemen)
+preprint submitted to information systems june 5, 20191. introduction
+modern information systems allow us to track, often in great detail, the
+behaviour of the process it supports. moreover, instrumentation and/or pro-
+gram tracing tools allow us to track the behavioural prole of the execution
+of enterprise-level software systems [16, 15]. such behavioural data is often re- 5
+ferred to as an event log, which can be seen as a set of log traces, i.e :sequences
+of observed events in the system. however, it is often the case, due to noise
+or under/over-specication, that the observed behaviour does not conform pre-
+cisely to a valid process instance, i.e :it deviates from its intended behaviour as
+specied by its reference model. 10
+in the eld of process mining [24] there are three main branches: process
+discovery ,conformance checking , and enhancement of processes, using event
+data recorded during process execution. in process discovery, we aim to discover
+process models based on traces of executed event data. in conformance checking,
+we assess to what degree a process model (potentially discovered) is in line with 15
+recorded event data. finally, in process enhancement, we aim at improving or
+extending the process model based on facts derived from event data.
+conformance checking [8] assesses to what degree the event log and model
+conform to each other. early conformance checking techniques [22] are based
+on simple heuristics and, therefore, may yield ambiguous/unpredictable results. 20
+alignments [25, 2] were introduced to overcome the limitations of early confor-
+mance checking techniques. alignments map observed behaviour onto behaviour
+described by the process model. as such, we identify four types of relations be-
+tween the model and the event log in an alignment:
+1. a log move , in which we are unable to map an observed event, recorded 25
+in the event log, onto the execution of an action in the reference model.
+2. a model move , in which an action is described by the reference model, yet
+this is not reected in the event log.
+3. a synchronous move , in which we are able to map an event, observed in
+the event log, to a corresponding action described by the reference model. 30
+4. a silent move , in which the model performs a silent or invisible action
+(denoted with ). we are unable to observe such actions.
+consider the example model of a simple le reading system given in figure 1
+and the trace =ha;d;b;di. an alignment for the model and is given by0
+(top right in figure 1). here, the upper-part depicts the trace and the bottom- 35
+part depicts an execution path described by the model, starting at state [p0]
+and ending at state [p5]. the rst pair, ( a;t0), represents a synchronous move,
+in which both the log and the path in the model describe the execution of an a
+activity (open le). the next pair, ( d;), is a log move where the logged trace
+describes the execution of a dactivity that is not mapped to an activity in the 40
+model. the skip () symbol is used to represent such a mismatch. observe
+that the model remains in the same state. this is continued by a model move
+in which the model executes a cactivity, which is not recorded in the trace, i.e :
+(;t2). finally, the alignment ends with two synchronous moves.
+2p0p1
+p2p3
+p4p5
+a: open let0 b: parse let1
+c: incr. countert2 d: close let3
+e: le not foundt40=adbd
+acbd
+t0 t2t1t3
+1=b
+e
+t4
+2=b
+abcd
+t0t1t2t3
+figure 1: example process model (in petri net formalism) for a simple le reading system
+and an alignment for the trace =ha;d;b;di(0). for the trace =hbi, two optimal
+alignments are given using the standard- ( 1) and proposed ( 2) cost functions.
+an optimal alignment is an alignment that minimizes a given cost function. 45
+typically, each type of move gets a non-negative value. the cost of an alignment
+is simply the sum of the costs of its individual moves. the most common way
+to do this is to assign a cost of 1 to both model and log moves and a cost 0 to
+synchronous and silent moves. in practice, the a* shortest path algorithm [1]
+is often used for computing optimal alignments using the aforementioned cost 50
+function as a distance function in its search graph.
+in this paper, we argue that the standard cost function is not always the best-
+suited function for computing alignments. consider the model in figure 1 again,
+together with the trace 0=hbi. an optimal alignment using the standard cost
+function would result in 1. considering that event bis observed behaviour, 55
+i.e:the system logged \parse le", it is illogical to map this behaviour with a
+path in the model indicating that the le was not found. in case we set up
+the cost function such that the number of synchronous moves are maximized,
+an optimal alignment would result in 2. one may prefer this function, as it
+provides a more sensible explanation for the logged behaviour. 60
+we formalise the relation between the event log and the process model, and
+show how dierent cost functions aect the resulting alignments. regarding
+the cost-function where we maximize synchronous moves, we employ a data
+structure, called a milestone transitive closure graph (mtcg), that can be
+computed from the reference model. note that the mtcg needs to be computed 65
+only once and can be used to align all traces in the log. we propose an algorithm
+for computing alignments, which exploits the structure and is comparable with
+the state-of-the-art when computing alignments for small models and many log
+traces.
+1.1. contributions 70
+this paper is an extended version of our earlier work [6]. we extend the
+work with the following contributions.
+milestones. we introduce the notion of milestone activities , which are events on
+which the log and the model must agree, i.e :if the event occurs in the log trace,
+it must be synchronized with the model. there may be several reasons for intro- 75
+ducing milestone activities. milestone activities need to be observed and cannot
+3be skipped. they serve as minimal requirements for an alignment, avoiding that
+an arbitrary path is taken. to illustrate the concept, reconsider figure 1 and
+assume activity eto be a milestone activity, i.e :disallow alignments to include
+the pair (;t4). now, the standard cost function (with milestones) would also 80
+result in the desired alignment as the shortcut through the model is now un-
+available. an interesting result is that in some scenarios, milestones can make it
+impossible to align a trace with a model (i.e :in case an alignment must include
+the milestone activity as a model move).
+milestones help to address a major limitation of the cost function that maxi- 85
+mizes synchronous moves, which occurs when the process model contains a large
+cycle. we discuss this in section 3 and show that milestones can be used to pre-
+vent such cycles from being traversed carelessly (by marking a particular event
+on the cycle as a milestone). we extend the transitive closure graph to also
+include milestones, and call it a milestone transitive closure graph (mtcg) 90
+and show how alignments can be computed.
+to evaluate our approach, we analyse dierences between alignments with
+and without milestones on a set of generated models and log traces, and show
+how their computation times are aected on a set of industrial models with
+many log traces. 95
+transitive closure graph for analysing non-conforming behaviour. we also con-
+sider the mtcg from a diagnostic point of view. visualizing alignments by
+projecting them on the reference model or its corresponding marking graph
+may not always be desired. an issue is that model moves are not observed in
+the log trace, but are `generated' in the diagnostics. when fabricating events 100
+that did not really happen (i.e :model moves), timestamps need to be created.
+this may lead to misleading results. by mapping alignments on a mtcg we
+only depict synchronous moves, i.e :only moves that really happened, which are
+easier to interpret and trust. we discuss the advantages and disadvantages of
+this method. 105
+2. preliminaries
+we assume that the reader is familiar with the basics of automata theory
+and petri nets (otherwise, we refer to [24]). a sequence or trace is an ordered
+list of events, which we denote by =h0;1;:::;jj 1i. two sequences are
+concatenated using the operation. given a sequence and a set of elements s, 110
+we refer tonsas the sequence without any elements from s, e.g:ha;b;b;c;a;fin
+fb;fg=ha;c;ai. for two sequences 1and2, we call1asubsequence of2
+(denoted with 1v2) if1is formed from 2by deleting elements from 2
+without changing its order, e.g :hc;a;tivha;c;r;a;t;ei. similarly, 1@2
+implies that 1is a strict subsequence of 2, thus1contains fewer elements 115
+than2.
+amultiset (or bag) is an unordered set that may contain multiple instances of
+the same element. for example, [ a2;b;c3] is a multiset in which aoccurs 2 times
+(we represent multiple occurrences of an element in superscript). two multisets
+4are combined with a ]operation, e.g :[a2;b;c3]][b;c2;d2] = [a2;b2;c5;d2]. we 120
+will use multisets to represent markings and event logs. in gures, we use a
+more concise notation to denote multisets, e.g :we may write [ a2;b;c3] asa2bc3.
+given a set of elements s, we denote the set of all possible multisets as b(s),
+and its power-set by 2s.
+traces are sequences 2, for which each element is called an event and 125
+is contained in the alphabet , also called the set of events. we globally dene
+the alphabet , which does not contain the skip event ( ) nor the invisible
+action or silent event ( ). an event log e2b() is a multiset of traces.
+2.1. petri nets
+petri nets are a mathematical formalism that allow us to describe processes, 130
+they allow us to represent parallel behaviour in a relatively compact manner.
+consider figure 1 which is a simple example of a petri net. the petri net
+consists of places , visualized as circles, that allow us to express the state (or
+marking ) of the petri net. furthermore, it consists of transitions , visualized as
+boxes, that allow us to manipulate the state of the petri net. it is not allowed 135
+to connect a place with another place nor a transition with another transition.
+thus, from a graph-theoretical perspective, a petri net is a bipartite graph.
+denition 1 (petri net, marking) .apetri net is dened as a tuple n =
+(p;t;f;;;m0;mf)such that:
+p is a nite set of places , 140
+tis a nite set of transitions such that p\t =;,
+f(pt)[(tp)is a set of directed arcs, called the ow relation ,
+is a set of activities, with = [fg,
+: t!is alabelling function for each transition,
+m02b(p)is the initial marking of the petri net, 145
+mf2b(p)is the nal marking of the petri net.
+amarking is dened as a multiset of places, denoting where tokens reside
+in the petri net. for instance, in figure 1, p0contains a token (represented by
+a black dot), and the marking [p0] represents the initial marking. a transition
+t2tcan be red if, according to the ow relation, all places directing to 150
+tcontain a token. after ring a transition, one token is removed from these
+places and all places with an incoming arc from treceive a token. it may be
+possible for a place to contain more than one token.
+denition 2 (marking graph) .the corresponding marking graph orstate-
+space for a petri net n = ( p;t;f;;;m0;mf)is given by the deterministic 155
+automaton mg = (q;;;q 0;qf), such that:
+5qb(p)is the (possibly innite) set of vertices in mg, which corre-
+sponds to the set of reachable markings from m 0(obtained from ring
+transitions),
+(qtq)is the set of edges in mg, i.e :(m;t;m0)2i there is 160
+at2tsuch that m0is obtained from ring transition tfrom marking m,
+q0=m0is the initial state of the graph,
+qf=mfis the nal state of the graph.
+given an edge e= (m;t;m0)2with(t) =a, we write(e)to denote(t).
+we use the notation ma  !m0to represent an edge efor which(e) =a1. the 165
+source and target markings of edge eare respectively denoted by src(e)and
+tgt(e), thus we have src(e) =m, and tgt(e) =m0. we refer to the transition
+ofebytrans (e) =t.
+denition 3 (path, language) .given a petri net nand its corresponding
+marking graph mg = (q;;;q 0;qf), a sequence of edges =he0;e1;:::;eni2 170
+is called a path innif it forms a trace on the marking graph of n:src(e0) =
+m0^tgt(en) =mf^80i<n:tgt(ei) =src(ei+1). the set of all paths in n
+is denoted by paths (n). we overload notation and write ()for referring to
+the sequence of labels visited in , i.e: () =h(e0);(e1);:::; (en)i(there
+may be dierent paths and0such that() =(0), due to e.g :multiple 175
+transitions with the same label). we dene the languagelof a petri net n
+byl(n) =f()j2paths (n)g. by extension, we also call a sequence
+of transitions !2ta path if there is a path =he0;e1;:::;enisuch that
+!=htrans (e0);trans (e1);:::; trans (en)i, and we dene (!)to equal().
+denition 4 (trace to petri net) .given a trace =h0;1;:::;n 1i2, 180
+its corresponding petri net is dened as n= (p;t;f;;;m0;mf)with
+p=fp0;p1;:::;pn;pn+1g,
+t =ft0;t1;:::;tng,
+f=f(p0;t0);(p1;t1);:::; (pn;tn)g[f (t0;p1);(t1;p2);:::; (tn;pn+1)g,
+=s
+0i<nfig,80i<n:(ti) =i, 185
+m0=p0, and m f=pn+1.
+2.2. alignments
+with alignments we map observed behaviour from an event log onto the
+behaviour that is described in the reference model. an alignment is represented
+by a sequence of log-model pairs. 190
+1there may be multiple distinct edges that are represented by ma  !m0.
+6denition 5 (alignment) .let2be a log trace and let nbe a petri net
+model such that n = ( p;t;f;;;m0;mf), for which we obtain the mark-
+ing graph mg = (q;;;q 0;qf). we refer to as the alphabet containing
+skips: = [fg (and =2). we dene tas the set of transi-
+tions and the skip event: t= t[fg . now, let 2(t)be a 195
+sequence of log-model pairs. for =h(0
+0;1
+0);(0
+1;1
+1);:::; (0
+jj 1;1
+jj 1)i, we
+dene`as the log trace events, i.e : `=h0
+0;0
+1;:::;0
+jj 1infg andmas
+the events for the path through the model, by m=h1
+0;1
+1;:::;1
+jj 1infg .
+we refer to the corresponding sequence of actions from mby(m), i.e:
+(m) =h(m
+0);(m
+1);:::; (m
+jj 1)i. we callanalignment if the following 200
+conditions hold:
+1.`=(the activities of the log-part, equals to ),
+2.(m)2l(n)(mforms a path in n),
+3.8a2;8b2t :a6=(b))(a;b)=2(illegal moves are not allowed),
+4. (;)=2, (the `empty' move may not exist in ). 205
+denition 6 (alignment cost) .let2(t)be an alignment for 2
+and the petri net n. the cost function maps elements of onto alignment
+costs of individual moves, c: (t)!(r0[f1g ), and we overload c
+for assigning costs to alignments; c: (t)!(r0[f1g ), such that
+c() =pjj 1
+i=0c(i). 210
+we call an alignment under cost function casuccessful alignment ifc()6=
+1, otherwise, if c() =1, we callafailed alignment . we call a successful
+alignmentoptimal i@0:c(0)<c(), i.e:there does not exist an alignment
+0with a smaller cost.
+denition 7 (standard cost function) .the standard cost function cstis de-
+ned for an alignment pair (`;m)2(t)as follows (assuming small
+">02):
+cst(`;m) =8
+>>><
+>>>:" ` =andm2tand(m) = 
+silent move)
+0`2andm2tand(m) =` 
+synchronous move
+1`2andm= 
+log move
+1`=andm2tand(m)6= 
+model move
+.
+in the standard cost function, we penalize log- and model moves equally. 215
+synchronous moves are the preferred choice in alignments, since they are free.
+we note that silent moves also have a small cost, which is there in case there
+2the value for "is chosen such that cycles are prevented and an acyclic path with costs of
+0 and"(upper-bounded by the longest acyclic path in the marking graph) is preferred over
+a single 1-cost move. if a larger value is chosen for ", more 1-cost moves may be taken in
+optimal alignments as a result. however, we assume that this is undesired and therefore set
+a suciently low value for "in our experiments.
+7p0 p1
+large process start endreset
+figure 2: example petri net for which the csynccost function yields undesired results.
+are so-called -cycles in the model ( transitions in the model that compose a
+cycle in the marking graph). an alignment could otherwise contain an innite
+sequence of silent moves, by continuously traversing these -cycles. 220
+3. maximizing synchronous moves and milestones
+the standard cost function from denition 7 is the most commonly used
+cost function in literature [24, 28, 3, 1], though note that any cost function
+could be used (e.g :see [13] for an alternative). the standard cost function
+may lead to undesired results, as illustrated by the example from figure 1. we 225
+consider a new cost function that maximizes the number of synchronous moves,
+since it explains as many log moves as possible. we propose the alternative cost
+function as follows.
+denition 8 (max-sync cost function) .we dene the max-sync cost function
+csync for an alignment pair as follows (assuming small ">02):
+csync(`;m) =8
+>>><
+>>>:" ` =andm2tand(m) = 
+silent move
+0`2andm2tand(m) =` 
+synchronous move
+1`2andm= 
+log move
+" ` =andm2tand(m)6= 
+model move
+.
+this cost function only penalizes log moves, which as a consequence causes an
+optimal alignment to minimize the number of log moves and thus maximize the 230
+number of synchronous moves. the "cost for model moves further lters optimal
+alignments to only include shortest paths through the model that maximize
+synchronous moves.
+an advantage of the max-sync cost function over the standard cost function
+is that observed behaviour is not sacriced for shorter paths through the model 235
+(as figure 1 illustrates). a disadvantage is that in order to maximize the number
+of synchronous moves, it may be possible that many model moves are required,
+especially in case the model contains cycles. consider for example the petri
+net model depicted in figure 2. we are always able to synchronize all observed
+behaviour by executing the loop, i.e :thereset activity. by simply taking the 240
+reset transition one can traverse the model again to nd a particular event, and
+report the steps to reach it as model moves. therefore, we introduction the
+notion of milestone activities.
+83.1. milestones
+to mitigate the problem with undesired alignments, we dene a milestone 245
+as a label that may not be chosen in model moves. note that we do not assign
+an innite cost to log moves with milestone actions.
+denition 9 (milestones) .given a petri net n = ( p;t;f;;;m0;mf)and
+a cost function c, milestones are labels y, such that a new cost function
+c0is formed, which sets the cost for all model moves with a milestone label to
+innity, i.e:
+8(`;m)2(t) :c0(`;m) =(
+1 if`=,m2t, and(m)2y
+c(`;m)otherwise.
+consider the example model in figure 2 and assume we compute an align-
+ment with the csynccost function. if we choose the reset action to be a milestone,
+then the reset is only scheduled if it synchronizes with a log move. therefore, 250
+an optimal alignment includes exactly as many reset actions in the model as
+there are in the log. note that this is not necessarily the case if we employ a
+dierent cost function.
+an interesting consequence of having milestones in the model, is that not
+every alignment is a successful one. if we assign the start action in figure 2 as 255
+a milestone, and align it with a log trace that does not contain a start event,
+then the alignment cost would be innite and therefore we call the alignment
+failed .
+3.2. relating the model and event log
+given a petri net model n and an event log e 2b(), we distinguish four 260
+cases based on the languages that they describe. by distinguishing the relative
+granularities of n and e we dene cases of alignment problems as follows.
+c1:12e: (922l(n) :1=2); the majority of log traces cor-
+respond to paths in the model. then, these traces can be mapped
+onto the model by only using synchronous and silent moves, which is 265
+optimal for cstandcsync.
+c2:12e: (922l(n) :1v2); the majority of log traces corre-
+spond to subsequences of paths in the model. then, these traces can
+be mapped onto the model without using any log moves. the exam-
+ple model from figure 1 for =hbiis such an instance. we argue 270
+thatcsyncprovides better alignments in such instances as cstmay
+avoid synchronization in favour of shorter paths through the model.
+c3:12e: (922l(n) :2v1); for the majority of log traces there
+is a path through the model that forms a subsequence of the log trace.
+then, these traces can be mapped onto the model without using any 275
+model moves. here, csyncand to some extent cstcan arguably lead
+to bad results as model moves may be taken to synchronize with
+`undesired' behaviour.
+9c4: none of the properties hold. all move types may be necessary for
+alignments. we regard this as a standard scenario. depending on 280
+the use case, either cstorcsynccould be preferred (which we discuss
+in section 5.1),
+we note that each of these cases could also be considered on a trace level,
+where e.g:we could have an event log that strictly contains log traces of the form
+c1 and c3. aside from c4, we consider cases c2 and c3 as common instances 285
+in practice, as logging software often causes either too many or too little events
+to be logged or in case the model is over/underspecied. discrepancies then
+show whether the model is of the right granularity. that is, assuming that the
+model is correct, i.e :the model itself may also describe incorrect behaviour. we
+note that it is also possible to hide certain activities in the model or log before 290
+alignment. this is however not trivial, especially if there are (slight) deviations
+in the log such that the alignment problem does not t c2 or c3 exactly any
+more.
+when considering instances that exactly t case c2 or c3, we are able to
+construct alignments by respectively removing all log or model moves from the 295
+product of the model and log. we dene the cost functions caddandcremto
+be variants of cstsuch that model and log moves respectively have a cost of 1.
+note that the resulting alignments for caddandcremwill still be successful for
+case c3 and c2 respectively. we argue that this results in a better `alignment
+quality' and reduces the time for its construction. 300
+4. preprocessing reference models
+when constructing an alignment under the csynccost function, we disregard
+the cost for model moves to a certain extent. the goal is to nd a path through
+the model that maximizes the number of synchronous moves. we achieve this
+by searching for a subsequence in the log trace that is also included in the 305
+language of the reference model. by computing the transitive closure of the
+model's marking graph, we nd all paths and subsequences of paths through
+the model. we extend the structure from [6] to include milestones, which we
+call a milestone transitive closure graph , or mtcg. given a log trace, we can
+use dynamic programming to search for the maximum-length subsequence that 310
+is replayable in the mtcg. from this subsequence, we construct a path through
+the marking graph and obtain an optimal alignment.
+4.1. milestone transitive closure graph (mtcg)
+we construct an mtcg as described in denition 10. here, -edges are
+added for every edge in the marking graph, except for milestone edges (which 315
+cannot be skipped), such that, in case there are no milestones, every marking
+is reachable via -steps from the initial marking set. after determinization, for
+every path pin the original marking graph the mtcg contains a path p0such
+that(p0) =(p). in case there are no milestones, the mtcg also contains
+10every pathp0for which(p0)v(p) holds, that is, any subsequence of a path's 320
+labels can be formed in the mtcg.
+denition 10 (milestone transitive closure graph) .given a marking graph
+mg= (q;;;q 0;qf)and a set of milestones y, we rst construct an extended
+marking graph mg0= (q;;0;q0;qf), with
+0=[f 
+src(e);;tgt(e)
+je2^(e)=2yg:
+amilestone transitive closure graph (mtcg) m= (q;;;q0;qf)is de-
+ned as the result of determinizing mg0. this can be achieved via a standard
+determinization algorithm [23]. the idea of a determinization algorithm is to
+perform-closures such that all unobserved behaviour is contracted to a single 325
+state. the initial state is formed by combining all reachable markings using only
+transitions (which consists of all markings in our case). then, the successors
+of markings from this state are computed and combined for each label, followed
+by-closures on the successor states. this process is performed iteratively until
+no new successor states are found, such that 330
+q2q,
+ = nfg,
+(qq),
+q0q, and
+qf=ffjf2q^qf2fg. 335
+for an edge e2 we also use the notation src(e) and tgt(e) to respectively
+refer to the source and target marking sets in the mtcg. given an mtcg
+m, paths over mare dened analogously to paths over marking graphs (see
+denition 3) and we use paths (m) andl(m) to respectively denote the set of
+all paths in mand the language of m. 340
+in figure 3, we give an example of an mtcg with milestones bandd. let
+us rst consider the example without milestones. because the marking graph
+consists of a single strongly connected component, every marking becomes reach-
+able from every other marking. therefore, if we compute its mtcg without
+any milestones, we obtain a single state with a self-loop for each label. trivially, 345
+all paths and subsequences of paths are preserved in this structure, however,
+this is rather useless in practice.
+if we add the milestones banddto the model, we obtain a more interesting
+mtcg. an observation is that the initial state is no longer an accepting one, as
+we can only reach the [p5] marking by ring a band adaction. other events 350
+can still be skipped, however, hence we can directly take a baction from the
+initial state to q2, but taking an eaction is not allowed. as a result, we ensure
+that paths through the mtcg may not skip milestone actions, and are forced
+to take these actions if there is no alternative path to reach a nal state.
+11p0
+p1 p2
+p3 p4
+p5at0
+bt1 ct2
+dt3et4p0
+p1p2
+p2p3 p1p4
+p3p4
+p5a
+b c
+c b
+de
+p0 p1p2
+p2p3p1p4
+p3p4p5q0
+a,b,c,d,ep0
+p1p2
+p1p4q0
+p1p2
+p1p4q1
+p2p3
+p3p4q2
+p3p4q3p0
+p1p2
+p1p4
+p5q4
+p1p4q5a b
+cb
+ccd
+dbe
+a
+cb
+figure 3: from left to right, a petri net with milestone activities bandd, its corresponding
+marking graph, its corresponding mtcg without milestones, and the mtcg with milestones.
+all highlighted edges and transitions represent milestone activities.
+4.2. searching for optimal subsequences 355
+given a log trace , we use the mtcg of a model to obtain a subsequence
+of the log trace ^ v, such that ^ fully synchronizes with the model. from the
+construction of the mtcg we have the following property.
+lemma 1 (paths in an mtcg synchronize with the model) .given a marking
+graph mg and its corresponding mtcg m. ifis a path in m, then there 360
+exists a path 0in mg such that ()v(0).
+proof. this follows from the construction of an mtcg. an mtcg mis formed
+from a marking graph mg by addingactions to existing edges. therefore,
+the only additional behaviour that mhas compared to mgis to replace visible
+actions byactions in its paths. hence, any path in mforms a subsequence of 365
+a path in mg, i.e:82paths (m);902paths (mg) :()v(0).
+we use the result of lemma 1 to search for a subsequence of a log trace
+that can fully synchronize with the model. for instance in the example of
+figure 4 (without milestones), consider a log trace =hf;d;e;bi. note
+that this does not form a path through the model. the fevent can be red 370
+fromq0, after which the mtcg is in state q10. from this state, it is not
+possible to perform any other event from log trace. a better choice is to skip
+thefevent (which results in a log move) and form the subsequence hd;ei,
+as highlighted3. we call the maximum-length subsequence ^ from a log trace
+3note that after performing the daction in the mtcg, in the petri net we have not yet
+12p0
+p1 p2 p3
+p4 p5 p6
+p7at0 bt1
+ct2 dt3 et4
+ft5 gt6p0
+p1p2 p2p3
+p2p4p1p5p3p5p2p6
+p4p5 p5p6
+p7a b
+c d d e
+d c e d
+f gp0p1p2
+p2p3p2p4
+p1p5p3p5
+p2p6p4p5
+p5p6p7q0
+p1p2
+p2p4
+p1p5
+p4p5
+p7q1p2p3
+p3p5
+p2p6
+p5p6
+p7q2
+p2p4
+p4p5
+p7q3p1p5
+p4p5
+p7q4
+p3p5
+p5p6
+p7q5
+p2p6
+p5p6
+p7q6
+p4p5
+p7
+q7p5p6
+p7
+q9
+p7
+q10p1p5
+p3p5
+p4p5
+p5p6
+p7q8a b
+c d d e
+d c e d
+f gd
+g,f
+gfe ce
+gggc
+fff
+figure 4: example petri net model (left), its corresponding marking graph (middle) and
+milestone transitive closure graph (right, without milestones) with the sequence hd;eihigh-
+lighted.
+amaximum tting subsequence if ^also forms a path through the mtcg, as 375
+dened in denition 11.
+denition 11 (maximum tting subsequence) .given a sequence (log trace)
+2and an mtcg m= (q;;;q0;qf), then ^vis amaximum tting
+subsequence if and only if ^2l(m)^8^0v: ^02l(m))j^jj^0j.
+given a log trace and an mtcg m= (q;;;q0;qf), we construct a 380
+maximum tting subsequence ^ by using dynamic programming to search for a
+subsequence of that forms a maximum-length path in m. a straightforward
+implementation of this is by a 2d array ( jjjqj) of sequences. we then iterate
+over each element ifrom the log trace and track the paths in mthat are formed
+by choosing to include ior deciding to skip it (in case it is not a milestone). 385
+subsequently we return the largest sequence that ends in a nal state.
+once we have found the maximum tting subsequence ^ for a given model
+and log trace, we still have to determine which model moves should be applied
+to form a path through the original model. this is achieved by using the mtcg
+and mg, by traversing backwards through ^ as we show in algorithm 1. 390
+we assume a maximum tting subsequence ^ 6=hi(we have a failed align-
+ment if ^=hi). we rst construct a path mfpfrom the subsequence ^ (line 3),
+in the example from figure 4 with ^ =hd;ei(see also figure 5 for an illustra-
+tion of the path construction process) this is mfp=h(q0;d;q8);(q8;e;q9)i.
+made the choice to re either an aor abtransition; we implicitly make the decision to re
+thebtransition after choosing the eevent.
+13then in line 4, a backward search procedure ( backwardspath ) is called to search 395
+for a pathpin the marking graph from an e-edge to the nal marking ([p7]).
+the backwardspath procedure takes a target marking m, labelaand search
+spacesas arguments. a sequence wis maintained to process unvisited mark-
+ings fromsand a mapping f:q!([f?g ) is used for reconstructing
+the path. starting from the target marking m(which isw0), the procedure 400
+searches for edges edirecting towards min line 17-19 such that src(e) is ins
+and not already visited. for every found edge e, its source is appended to w
+(to be considered in a future iteration) and src(e) is mapped to efor later path
+reconstruction.
+following iterations of the for loop in line 12-19, consider a predecessor wi405
+ofmand search for edges directing to wi. in this way, the search space is
+traversed backwards in a breadth-rst manner, resulting in shortest paths to m.
+in line 13-16, the backwardspath procedure checks whether there is an edge
+m0a  !wifor somem0(or an edge q0a0
+ !wifor arbitrary a0in casea=?)
+and if so, constructs a path towards min line 15 which is then returned. in the 410
+example, the path h([p3p5];e;[p5p6]);([p5p6];g;[p7])iwill be returned for the
+rst backwardspath call.
+after the rst backwardspath call, the main function iterates backwards
+over all remaining edges from mfp(line 5-6) to create paths between ^ iand
+^i+1, which are inserted in the path in front of p. finally, in line 7 a path from 415
+the initial marking q0towards the rst label ^ 0is inserted before pto complete
+the path (here the label is set to ?to search for q0in the backwardspath call).
+algorithm 1: path construction from a maximum tting subsequence ^ 
+1func pathconstr (m= (q;;;q0;qf);mg= (q;;;q0;qf);^=h^0;^1;:::; ^ni)
+2 // construct path mfp on mtcg such that (mfp) = ^
+3 mfp:=h(q0;^0;s);(s;^1;s0);:::; (s00;^n;s000)is.t.80in:mfpi2
+4p:=backwardspath (mg;qf;^n;tgt(mfpn))// path ^ntoqfonmg
+5 fori:=n 1;i0;i:=i 1do// add paths from ^ito^i+1
+6p:=backwardspath (mg;src(p0);^i;tgt(mfpi))p
+7 return backwardspath (mg;src(p0);?;q0)p// add path from q0to^0
+8func backwardspath (mg= (q;;;q0;qf);m2q;a2([f?g );sq)
+9w:=hmi// sequence of unvisited markings in the backward search
+108m2s:f[m] :=?// mapping from markings to edges; f:q!([f?g )
+11i:= 0
+12 whilei<jwjdo// continue for all markings in w
+13 if9m02q;a02 : (m0;a0;wi)2^(a0=a_(a=?^m0=q0))then
+14 p:=h(m0;a0;wi)i// found path from a(or initial marking)
+15 while tgt(pjpj 1)6=mdop:=pf[tgt(pjpj 1)]
+16 returnp// shortest path from a(orq0) tom
+17 foralle2:src(e)2(snw)^tgt(e) =wido
+18 w:=w hsrc(e)i// add predecessor markings of mtow
+19 f[src(e)] :=e// direct the source markings towards m
+20 i:=i+ 1
+21 returnhi// no path from a(orq0) is found (should never occur)
+14p1p2p1p5
+p2p4p2p6
+p3p5p4p5
+p5p6p7p1p5p4p5
+p5p6p7p0
+p2p3 p3p5 p5p6
+p7b^0=d ^1=e
+gq0
+q8 q9
+=fdeb
+bdeg
+t1t3t4 t6
+figure 5: path construction using algorithm 1 on the example from figure 4 for a maximum
+tting subsequence ^ =hd;eivhf;d;e;bi. markings in the grey region are not part of
+the path. the resulting alignment is shown on the right.
+in the example, we compute the path h([p3p5];e;[p5p6]);([p5p6];g;[p7])iin
+line 4, then after line 5-6 we insert the path h([p2p3];d;[p3p5])i, and in line 7
+we insert the path from the initial state q0= [p0],h([p0];b;[p2p3])i, to create
+the complete minimal-length path pin the marking graph such that ^ v(p),
+i.e:
+p=h([p0];b;[p2p3]);([p2p3];d;[p3p5]);([p3p5];e;[p5p6]);([p5p6];g;[p7])i:
+alignment. the alignment can be reconstructed by marking all events in the
+maximum tting subsequence as synchronous moves, by marking the remaining 420
+labels in the log trace as log moves, and inserting the model and silent moves
+(as computed by algorithm 1) at the appropriate places. regarding milestones,
+these cannot be taken as model moves, e.g :when constructing a path, because
+all milestone edges are explicitly present in the mtcg. therefore, a milestone
+action is only taken if it is part of the maximum tting trace. if the maximum 425
+tting trace is empty, we have a failed alignment.
+4.3. limitations
+we note that the mtcg algorithm does not exactly compute an alignment
+for the cost function csync. the backwards bfs does ensure a shortest path
+through the model from the initial to the nal marking while synchronizing 430
+with the maximum tting subsequence. however, there might exist a dierent
+maximum tting subsequence that leads to an alternative path through the
+model with a lower total cost (i.e :fewer model moves). this can be repaired by
+computing the alignments for all maximum tting subsequences. if we consider
+a variant cost function c0
+sync, where silent- and model moves have cost 0, then 435
+the mtcg algorithm does compute an optimal alignment.
+if the marking graph contains cycles, the corresponding markings get con-
+tracted to a single state in the mtcg with a self-loop for each activity in the
+cycle (as shown in figure 3), which may be prevented by adding milestones.
+the algorithm does prevent alignments to unnecessarily traverse cycles in the 440
+model (and thus self-loops in the mtcg).
+arguably, a limitation of our approach is that the user has to decide which
+activities should be marked as milestones. we remark that this process could
+15easily be automated, by e.g :selecting activities on cycles as milestones to prevent
+cycles from being collapsed (as in e.g :figure 3). 445
+because each state in the mtcg consists of a subset of markings, there
+may be exponentially more states in the mtcg than there are markings in the
+marking graph. the construction of the mtcg relies on full knowledge of the
+marking graph, thus the mtcg cannot be constructed when the marking graph
+is of innite size. as a result, this would suggest that the mtcg algorithm is 450
+mainly applicable for small-sized models (in combination with many log traces),
+and it may be ineective for large models. however, since the size of the petri
+net model is not a clear indicator for the size of its marking graph, we may have
+small models with a large marking graph and vice versa.
+5. experiments 455
+the implementation for the mtcg algorithm is available in the
+maxsyncalignments package from the prom 6.8 toolset and the results for
+the experiments are available at https://github.com/utwente-fmt/maxsync-
+bpm2018. the corresponding models and event logs used in the experiments
+are available at https://data.4tu.nl/repository/uuid:5f168a76-cc26-42d6-a67d- 460
+48be9c978309.
+for the experiments, we considered two types of alignment problems. on
+the one hand, a large reference model accompanied by an event log consisting of
+a single log trace, and on the other hand a smaller reference model accompanied
+by an event log containing many traces. all experiments were performed on an 465
+intelrcoretmi7-4710mq processor with 2.50ghz and 7.4gib memory. for all
+experiments, we used a timeout of 60 seconds.
+in section 5.1 we investigate dierences between the alignments resulting
+from using the standard- and max-sync cost functions, and the number of mile-
+stones. we also investigate the specic alignment problems for which events 470
+are only added or removed from log traces, i.e :cases c2 and c3 as discussed in
+section 3.2. for all the above experiments we used generated petri net models,
+each accompanied by a single log trace, for which we added various amounts of
+noise.
+in section 5.2 we also look at (small-scale) models that are accompanied 475
+by many log traces to compare the performance of the mtcg algorithm with
+related work. we compared our algorithm with the a* algorithm from [1] and
+the recent incremental alignment algorithm from van dongen [26]. however,
+we note that for the computation time comparison, the incremental alignment
+algorithm performs practically the same as the a* algorithm, as the experi- 480
+ments consist of many relatively small log traces. we therefore only present the
+results from the incremental algorithm. all algorithms have been implemented
+in prom [30]. for each alignment computation we used a single thread4.
+4we consider multi-threaded experiments not as useful in this scenario, as the log traces can
+e.g:be divided over the dierent threads such that the alignments are computed independently.
+16table 1: average number of move types per alignment. comparison between alignments
+generated using the cstandcsynccost functions. the numbers show averages, e.g :the value of
+2.3 in the top-left corner denotes the average number of log moves for all computed alignments
+for which 10% noise is added, using the cstcost function.
+moves noise added (add, remove, swap) number of activities average
+10% 30% 50% 70% 25 50 75
+cstcsynccstcsynccstcsynccstcsynccstcsynccstcsynccstcsynccstcsync
+log 2.3 1.3 6.5 3.6 9.4 5.4 10.9 6.3 4.7 3.2 8.9 4.6 8.4 4.5 7.0 4.0
+model 2.0 15.7 4.6 30.9 5.8 35.3 6.2 38.1 3.3 10.7 5.6 39.1 5.4 50.2 4.5 29.4
+sync 28.5 29.6 20.9 23.7 16.8 20.8 14.5 19.1 13.8 15.4 23.2 27.5 29.4 33.3 20.6 23.6
+silent 17.3 24.4 14.7 30.4 13.6 35.3 12.8 35.1 10.0 13.3 16.2 39.6 21.6 51.6 14.7 31.0
+5.1. experiments using generated models and singleton event logs
+model generation. using the ptandloggenerator [12] we generated petri net 485
+models with process operators and additional features set to their defaults;
+where the respective probabilities for sequence, xor, parallel, loop, or are set
+to 45%, 20%, 20%, 10%, and 5%. the additional features for the occurrence of
+silent and duplicate activities, and long-term dependencies were all set to 20%.
+to examine how alignments scale (the distribution of move types) we ranged 490
+the average number of activities from 25, 50, and 75, resulting in respectively
+110, 271, and 370 transitions on average. for these settings, we generated 30
+models (thus 90 in total) and generated a single log trace per model. for this log
+trace we added 10%, 30%, 50%, and 70% noise in three dierent ways (thus 12
+noisy singleton logs are created); by (1) adding, removing and swapping events 495
+(resembling case c4), (2), by only adding events (resembling case c3), and (3)
+by only removing events (resembling case c2). in total there are 1,080 noisy
+singleton logs. we rst consider noise of type (1).
+alignment dierences for cstandcsync.in table 1 we compare the resulting
+alignments for the dierent cost functions. when comparing the overall results 500
+ofcstandcsync(rightmost column), we observe that csyncuses about 43% fewer
+log moves, which are added as synchronous moves. however in doing so, more
+than six times as many model moves are required.
+when looking at an increase in the amount of noise, the relative dierence
+between the number of log moves remains the same, while this dierence in 505
+model moves slightly drops. when increasing the number of activities from 25
+to 75, we observe an increase in the number of model moves for csyncfrom 3.2
+times to 9.3 times as many compared to cst. this only results in a few more
+synchronized moves than an alignment for a cstcost function returns. the
+dierence between log moves from csyncandcststays relatively the same for 510
+increasing activities.
+we conclude that, while csyncdoes result in more synchronized moves than
+cst, the number of additional model moves increases when the amount of noise,
+or the number of activities grows. as a result, the alignments resulting from
+csyncandcstbecome more diverse for larger models. 515
+alignment problems that only add or remove events. in table 2, we compare
+the resulting alignments for adding or removing events. when inspecting the
+17table 2: average number of move types per alignment. comparison between alignments
+generated using the cstandcsync cost functions for alignment problems, where noise only
+consist of adding ( add) or removing ( rem) events. the cost functions caddandcremare
+variations on cstsuch that model and log moves respectively have a cost of 1.
+moves log events added ( add) log events removed ( rem)
+10% 30% 50% 10% 30% 50%
+cstcsynccaddcstcsynccaddcstcsynccaddcstcsynccremcstcsynccremcstcsynccrem
+log 3.1 2.0 3.1 7.5 5.1 7.6 10.6 7.4 10.8 0.3 0.0 0.0 1.0 0.0 0.0 2.5 0.0 0.0
+model 0.0 13.1 0.0 0.1 21.6 0.0 0.2 23.1 0.0 3.0 3.3 3.3 6.3 7.7 7.7 8.0 11.9 11.9
+sync 29.4 30.5 29.4 26.5 28.9 26.4 24.1 27.4 23.9 30.3 30.7 30.7 21.0 22.0 22.0 13.9 16.4 16.4
+silent 16.3 23.6 16.2 15.5 31.0 15.4 14.0 30.0 13.8 18.4 18.5 18.5 16.0 16.7 16.7 13.2 16.0 16.0
+table 3: average number of move types per alignment. comparison between alignments for
+thecsynccost function on models that have either 2 or 5 randomly chosen milestones. failed
+denotes the percentage of failed alignments.
+noise added (add, remove, swap) number of activities average
+10% 30% 50% 70% 25 50 75
+milestones 2 5 2 5 2 5 2 5 2 5 2 5 2 5 2 5
+failed 2% 6% 4% 14% 8% 22% 12% 27% 4% 20% 10% 16% 4% 14% 6% 17%
+log 1.5 1.6 2.7 3.1 3.6 4.6 4.2 5.2 2.6 2.9 2.9 3.6 2.7 2.7 2.7 3.1
+model 2.2 2.0 4.2 3.2 5.4 3.9 5.8 4.3 2.8 2.0 4.3 3.6 6.2 4.7 4.0 3.1
+sync 19.6 19.6 15.2 14.0 11.9 10.8 9.4 9.1 10.7 10.8 15.5 14.7 18.7 16.5 13.9 13.4
+silent 12.4 12.0 11.5 10.6 10.8 9.6 10.1 9.4 8.5 8.2 11.1 10.0 18.5 16.3 11.2 10.5
+addcase, we nd that, in contrast to csync,cstalready avoids model moves
+for the most part, which is as we expected. moreover, there are only small
+dierences between alignments from cstandcadd. forcsync, many model moves 520
+may be chosen to increase the number of synchronous moves. these additional
+synchronous moves are arguably not part of the `desired' alignment since they
+require a large detour through the model.
+when removing events from the log trace, the cstcost function is only partly
+able to describe the removal of events as it still chooses log moves. the csync 525
+cost function does not take any log moves as this maximizes the number of
+synchronous moves, making it equal to crem. when comparing cstandcsync, we
+argue that for the addcase, thecstcost function better represents a `correct'
+alignment and for the remcasecsyncis better suited. for all cases, the eects
+become larger when the amount of noise is increased. 530
+inuence of milestones on alignments. the results from table 3 show how mile-
+stones aect alignments, and can be compared with the results from table 1
+for 0 milestones. the milestones were selected randomly (uniformly distributed
+over the activities). an interesting result is that even though we use the csync
+cost function, the number of model moves remains relatively low for both 2 and 535
+5 milestones. for the alignments with milestones we observe that the number of
+activities does not signicantly aect the ratio of failed alignments, even though
+a larger model should make it easier to `avoid' a milestone. we do observe a
+rather clear correlation between the increasing amount of noise and the ratio
+of failed alignments. a possible explanation for this is that more noise in the 540
+log increases the probability that a milestone activity is removed. as expected,
+18having more milestones results in a larger alignment failure ratio.
+when comparing the alignments resulting from the 2 and 5 milestone ver-
+sions, we discover that these are remarkably similar. the largest dierence is
+in the number of model moves, which is slightly lower for 5 milestones, which 545
+makes sense as we put a more severe restriction on which model moves can
+be taken. in general, only a few milestones are sucient for mitigating the
+downsides of csync, as large detours through the model are now likely avoided.
+5.2. experiments using event logs with more traces
+we now consider smaller models on which we align many log traces. for our 550
+experiments, we selected 9 instances from the 735 industrial business process
+petri net models from nancial services, telecommunications and other domains,
+obtained from the data sets presented in fahland et al. [11].
+for our selection, we picked the 9 most interesting cases: the top models
+with the most number of places and transitions in the petri net models, the 555
+largest number of markings and edges in the marking graph, the largest number
+of states and edges in the mtcg (for which we were able to compute the mtcg
+within 60 seconds), and models for which the computation of the marking graph
+and mtcg took longest (within 60 seconds).
+for each model, we generated a set of 10, 100, and 1,000 log traces and 560
+added 30% noise by adding, removing, and swapping events. we also investigate
+the eects of having 0, 2, or 5 milestones. we compare the performance of the
+mtcg algorithm with the incremental algorithm from [26] using a single thread.
+note that in our experiments, we only consider the csynccost function, as the
+mtcg algorithm is not applicable to the cstcost function. 565
+results. the results are presented in table 4. for the incremental algorithm we
+clearly see a computation time that is proportional to the log size. however, for
+the mtcg algorithm this is not the case. the computation time for aligning
+10 log traces is practically the same when 1,000 log traces are aligned5. this
+shows us that after computing the mtcg as a precomputation step (which is 570
+included in the time and takes up most of it), actually aligning log traces takes
+very little time.
+however, for the models b, c, and e, the mtcg is not able to compute
+alignments within 60 seconds, even for 10 log traces. here, the size of the
+mtcg becomes too large. for each of the models for which mtcg timed 575
+out, the algorithm reported having explored more than 200,0000 dierent sets
+of markings (a set of marking forms a single state in the mtcg). this results
+from models that express concurrency or branching behaviour. every allowed
+order for executing events in the model is tracked in the mtcg by storing all
+corresponding intermediate states (marking sets) that may be visited. 580
+5in some cases we can even observe that mtcg performs faster for 100 traces than for
+10 traces. however, this is caused by the randomness that is inherent to program execution.
+19table 4: comparison of computation times for aligning small models with a large number of
+log traces using our mtcg algorithm and the incremental algorithm from [26]. all times are
+in milliseconds. for every log trace we applied 30% noise by adding, removing and swapping
+events. here, mis the model name and jpjandjtjdenote the number of places and transitions
+in the model, respectively. the number of log traces is given by jlogjandjfailjis the number
+of failed alignments. a toindicates that the algorithm timed out (i.e :requires more than
+60 seconds to compute).
+0 milestones 2 milestones 5 milestones
+mjpj jtj jlogjmtcg incrjfailjmtcg incrjfailjmtcg incr
+10 723 288 2 465 346 7 327 138
+a 35 26 100 658 1,615 30 316 1,291 65 159 630
+1000 772 14,217 248 383 13,893 689 200 4,392
+10 to 23 2 764 17 6 68 6
+b 13 9 100 to 224 37 728 142 79 80 35
+1000 to 2,161 325 1,196 1,487 763 161 438
+10 to 102 1 to 113 10 54 2
+c 23 17 100 to 1,016 37 to 778 77 59 182
+1000 to 11,018 343 to 8,966 696 130 3,289
+10 310 82 0 127 60 0 29 55
+d 40 26 100 344 612 9 128 928 9 52 563
+1000 475 6,834 105 180 8,084 105 123 5,282
+10 to 281 1 to 232 7 119 47
+e 25 17 100 to 1,576 39 to 1,343 78 163 266
+1000 to 15,175 366 to 11,926 790 285 2,745
+10 602 260 0 174 274 3 131 796
+f 59 43 100 575 1,891 0 171 1,731 34 142 2,331
+1000 596 19,490 0 213 18,752 288 178 18,198
+10 576 2,980 0 611 3,387 3 184 1,510
+g 123 81 100 575 29,136 0 638 22,235 29 201 18,992
+1000 690 to 0 721 to 285 253 to
+10 260 74 4 122 37 7 38 28
+h 38 18 100 271 503 28 130 310 58 40 171
+1000 293 4,540 256 156 2,911 583 93 1,677
+10 103 62 3 15 55 9 6 6
+i 24 18 100 109 488 31 19 327 80 9 103
+1000 136 4,598 269 43 3,513 751 29 1,023
+in particular for model g, we observe that the incremental algorithm already
+takes quite some time to compute alignments for 10 log traces, and times out
+for 1,000 traces. the mtcg algorithm is for this model signicantly faster in
+computing alignments. an interesting aspect of this model is that, while the
+number of places and transitions is high, there is almost no branching in the 585
+process. the model has a few branching points, followed by long sequential
+processes. arguably, this is a dicult situation for an on-the-y algorithm such
+as the incremental algorithm or a*, as it may have to explore a large subprocess
+before realizing that a dierent choice at the start of the process would lead to a
+better alignment. here, the mtcg remains reasonably small and for alignment 590
+computations we do not have to decide which path to take. we note that other
+approaches exist that address the limitation of exploring a large state-space, e.g :
+decomposition techniques [14, 19, 18], which may also be interesting to combine
+2010ha;bi
+10ha;ci
+10hb;cip0 p1 p2 p3
+a b c10 10 10
+20 20 20 20 20 20p0p1
+p2p3p1
+p2p3
+p2p3 p330
+20
+10a(20)
+b(10)
+c(10)b(10) c(0) c(10)
+20ha;b;ci
+10hip0 p1 p2 p3
+a b c10 10 10
+20 20 20 20 20 20p0p1
+p2p3p1
+p2p3
+p2p3 p33010
+a(20)
+b(20)
+c(20)b(0) c(0) c(0)
+20
+figure 6: two event logs (left) with their conforming and non-conforming behaviour displayed
+on a petri net (middle) and its corresponding mtcg (right). the petri net based visualization
+fails to show dierences between the two markedly dierent event logs. the mtcg shows
+the dierences much better.
+with our technique.
+another interesting result is that the computation time decreases for both 595
+algorithms when we increase the number of milestones. the model becomes
+more constrained (we may not allow for particular model moves), hence there
+are fewer paths to explore in the model's state-space.
+overall, we observe that for 10 log traces, the incremental algorithm is
+favourable in terms of performance, but mtcg outperforms it from 100 log 600
+traces and beyond. of course, the mtcg algorithm may only compute align-
+ments for the csynccost function (with the inclusion of milestones), while the
+incremental algorithm (and a*) can compute alignments for arbitrary cost func-
+tions.
+6. mtcg for analysing non-conforming behaviour 605
+once alignments have been computed for a model and a set of log traces,
+we aim to obtain actionable insights from these alignments. for a single log
+trace, we can simply map the alignment on the petri net or marking graph.
+however, this approach is not applicable for multiple alignments on a single
+model. instead, two common ways of visualizing alignments are to (1) only 610
+depict the alignments, e.g :colour-coded for more convenient inspection, and (2)
+to map the alignments on the model such that the count or ratio of synchronized
+versus model moves is depicted on the model [8].
+in figure 6 (left and middle), we show how two sets of log traces are aligned
+on a petri net model. we count the number of times that a particular transition 615
+is taken as a synchronous move (e.g :the arc denoting 20 from p0to a) and the
+number of times that a transition is skipped in the log, forming a model move
+(e.g:the arc from p0to p1). this approach provides insights in the observed
+211ha[0];b[5];d[15]i
+1ha[0];c[10];d[15]i
+1ha[0];b[5];c[10];d[15]ip0
+p1 p2
+p3 p4
+p5a[0]t0
+b[5]t1 c[10]t2
+d[15]t33
+3 3
+2 2
+2 2
+3 3
+31[12.5] 1[2.5]p0 p1p2
+p1p4p2p3
+p3p4 p5
+p1p2
+p1p4p2p3
+p3p4 p5
+p2p3
+p3p4p5p1p4
+p3p4p5
+p3p4
+p5
+p53
+a(3)[0]
+b(0) c(0)
+d(0)b(2)[5] c(1)[10]
+d(0)c(1)[10]
+d(1)[15]b(0)
+d(1)[15]
+d(1)[15]
+3
+figure 7: an event log with timestamps for each event (left) displayed on a petri net (middle)
+and its corresponding mtcg (right). while the mtcg visualization only shows the observed
+events, the petri net version needs to create time stamps for the generated model moves.
+behaviour with respect to the model, e.g :each transition is red an equal number
+of times and skipped in one third of the cases. 620
+in figure 7 we show how an event log with timing information is aligned to
+a petri net model. here, the timestamps are given for each event (e.g :b[5]),
+which are integrated into the model. in the mtcg we can clearly see how much
+time each event takes. this is also mostly true for the petri net visualization.
+however, whenever an event is skipped in the model, we need to generate a
+model move along with a timestamp. for the rst log trace, we could have
+constructed the following alignment:
+=a[0] b[5] d[15]
+a[0] c[2.5] b[5] d[15]
+t0 t2 t1 t3
+where c[2.5] is a generated model action, with a timestamp that is the average
+of the time for the two neighbouring events (i.e :0+5
+2). this approach may seem
+logical, but produces useless information. we could have also constructed an
+alignment in which events b and c are swapped, which leads to a dierent
+timestamp for c. 625
+drawbacks of mapping alignments on the model. there are some drawbacks to
+this approach. as we show in the picture, the results for two distinct event
+logs result in the same diagnostic information. observe that a model move is a
+generated event. hence, when applicable, all accompanying data for this event
+(e.g:the timestamp denoting when the event occurred) is generated as well, 630
+while in practice the event did not take place at all. by displaying model moves
+22we are eectively trying to `ll the gap' between two synchronous moves, while
+in fact we observed that there is no gap to ll.
+depicting only synchronous moves. a useful property of the mtcg is that it
+allows us to represent all synchronous moves in an alignment, without having 635
+to generate articial model moves to `ll in the gaps'. consider the rightmost
+illustrations from figure 6. here we only depict which moves in the model
+can be synchronized with the log traces. in the top image, we clearly see how
+the traceha;ciis depicted. and, since we do not create articial moves, the
+bottom illustration only depicts the 20 ha;b;citraces (thehitraces remain 640
+in the initial state). of course, here it is still possible to contrive examples in
+which two distinct event logs result in the same diagnostics, but the mtcg
+structure does mitigate that eect to some extent. the drawback is that for
+larger models it may become infeasible to represent alignments on a mtcg,
+simply because the graph becomes too big. 645
+7. related work
+one of the earliest works in conformance checking was from cook and
+wolf [10]. they compared log traces with paths generated from the model.
+one technique to check for conformance is token-based replay [22]. the idea
+is to `replay' the event logs by trying to re the corresponding transitions, while 650
+keeping track of possible missing and remaining tokens in the model. however,
+this technique does not provide a path through the model. when traces in
+the event log deviate a lot, the petri net may get ooded with tokens and the
+tokens do not provide good insights any more. however, token-based replay is
+faster to compute when compared to alignments, and it has been implemented 655
+in commercial tools like celonis.
+alignments were introduced [25, 1] to overcome the limitations of the token-
+based replay technique. alignments formulate conformance checking as an op-
+timization problem, i.e :minimizing the alignment cost-function. since its in-
+troduction, alignments have quickly become the standard technique for confor- 660
+mance checking along with the a* algorithm for computing alignments [1, 29].
+in earlier work [5] we presented an algorithm for computing alignments that
+relies on the symbolic computation of the marking graph. we showed that it is
+well-suited for large models, but its set-up time makes it not useful in computing
+alignments for many log traces [6]. however, our algorithm is able to eciently 665
+handle a large number of log traces (albeit for small-scaled models).
+for larger models, techniques have also been developed to decompose the
+petri net in smaller subprocesses [19]. for instance, fragments that have a
+single-entry and single-exit node (sese) represent an isolated part of the model.
+this way, localizing conformance problems becomes easier in large models [18]. 670
+it would be interesting to combine the mtcg algorithm with such decomposed
+models. another approach is to combine the dierent log traces in a trie or
+directed acyclic automaton [20]. while we have not studied this in-depth, we
+23argue that this approach may combine well with the mtcg alignment proce-
+dure, as it allows us to compute multiple alignments at once. when combining 675
+the model with (a sample of) the event log, one may be able to approximate the
+part of the marking graph that is actually visited (as in [17]). while sacric-
+ing optimality, such an approach may improve the applicability of conformance
+checking techniques.
+a sub-eld of alignments is to compute a prex-alignment for an incom- 680
+plete log trace. this is useful for analysing processes in real-time instead of
+a-posteriori. several techniques exist for computing prex-alignments [1, 27].
+the mtcg approach that we introduced in this paper could also be suitable for
+computing prex-alignments. burattin and carmona [7] introduced a technique
+similar to the mtcg approach, in which the marking graph is extended with 685
+additional edges to allow for deviations. however, it cannot guarantee optimal-
+ity as a single successor marking is chosen per event, while instead we consider
+all possible successors and can, therefore, better adapt for future events.
+when alignments are approximated, often only part of the state-space is
+considered, which may lead to overly optimistic results. this led to the concept 690
+ofanti-alignments [9]. this is a trace that deviates as much as possible from
+the observed behaviour, with the goal to compensate for the optimistic view.
+recent work by bauer et al. [4] introduces a statistical approach for conformance
+checking with large quantities of event data. the idea is to only check for a small
+fraction (obtained by trace sampling) of the data and approximate the remaining 695
+results. while being an approximation, impressive results have been obtained.
+an important (and arguably often neglected) aspect of conformance checking
+is to determine whether the detected discrepancies originate from the model or
+the event log. rogge-solti et al. [21] developed a framework that incorporates
+a `trust value' to describe the quality of the model or event log, which can be 700
+applied to more accurately reect the results to reality.
+in a more general setting, conformance checking is related to nding a longest
+common subsequence , computing a di, or computing minimal edit distances .
+here, the problem is translated to searching for a string bfrom a regular lan-
+guagelsuch that the edit distance of band an input word is minimal [31]. 705
+8. conclusion
+in this paper, we considered a max-sync cost function that instead of mini-
+mizing discrepancies between a log trace and the model, maximizes the number
+of synchronous events. we empirically evaluated the dierences with the stan-
+dard cost function and compared the alignment computation times. the use of 710
+the max-sync cost function also lead to a new algorithm for computing align-
+ments.
+we observed that, in general, a considerable amount of model moves may
+be required to add a few additional synchronous moves, when comparing max-
+sync with the standard cost function. however, when alignment problems are 715
+structured such that log moves are on a lower granularity than the model, a
+24max-sync cost function is more applicable. moreover, we introduce the notion
+of milestones, i.e :unskippable actions in the model. milestones may be used to
+rene the model or guide the alignment computation. for instance, we observed
+that combining the max-sync cost function with a few milestones prevents align- 720
+ments to take long deviations through the model. we consider milestones to
+be valuable in general as they allow a user to lter traces and steer alignment
+computations however he or she pleases.
+on industrial models with many log traces, we showed that our new algo-
+rithm, which uses a preprocessing step on the model to compute a so-called 725
+milestone transitive closure graph or mtcg, is quite dierent to the state-of-
+the-art techniques for computing alignments. while it does not scale well for
+large models, it is able to handle many log traces with ease.
+we conclude that the max-sync cost function as well as our mtcg structure
+and algorithm, are complementary to the standard techniques, as it provides a 730
+alternative views that may be preferable in some contexts. we also showed
+the added value of milestones, for improving and adapting the max-sync costs.
+finally, we also show that we may use the mtcg structure for analysing non-
+conforming behaviour, such that we do not rely on constructing articial model
+moves. 735
+an interesting direction for future work is to focus on extending the applica-
+bility of the mtcg algorithm. when combined with a decomposition strategy,
+we may be able to compute alignments for signicantly larger models. we may
+also consider approaches to reduce the number of visible actions in the model,
+by removing ones that are not interesting, and thereby reducing the size of the 740
+model. this way, diagnostic information can be represented more clearly.
+acknowledgement
+this work is supported by the 3tu.bsr project.
+references
+[1] arya adriansyah. aligning observed and modeled behavior . phd thesis, 745
+eindhoven university of technology, the netherlands, 2014.
+[2] arya adriansyah, natalia sidorova, and boudewijn f. van dongen. cost-
+based tness in conformance checking. in 11th international conference on
+application of concurrency to system design, acsd 2011 , pages 57{66.
+ieee computer society, 2011. 750
+[3] arya adriansyah, boudewijn f. van dongen, and wil m. p. van der aalst.
+memory-ecient alignment of observed and modeled behavior. technical
+report, 2013.
+[4] martin bauer, han van der aa, and matthias weidlich. estimating process
+conformance by trace sampling and result approximation. in proceedings 755
+25of the 17th international conference on business process management,
+bpm 2019 , pages 1{16, 2019.
+[5] vincent bloemen, jaco van de pol, and wil m. p. van der aalst. symbol-
+ically aligning observed and modelled behaviour. in proceedings of the
+18th international conference on application of concurrency to system 760
+design, acsd 2018 , pages 50{59. ieee computer society, 2018.
+[6] vincent bloemen, sebastiaan j. van zelst, wil m. p. van der aalst,
+boudewijn f. van dongen, and jaco van de pol. maximizing synchro-
+nization for aligning observed and modelled behaviour. in proceedings of
+the 16th international conference on business process management, bpm 765
+2018, volume 11080 of lecture notes in computer science , pages 233{249.
+springer, 2018.
+[7] andrea burattin and josep carmona. a framework for online conformance
+checking. in revised papers of the business process management work-
+shops, bpm 2017 international workshops , volume 308 of lecture notes 770
+in business information processing , pages 165{177. springer, 2017.
+[8] josep carmona, boudewijn f. van dongen, andreas solti, and matthias
+weidlich. conformance checking - relating processes and models .
+springer, 2018.
+[9] thomas chatain and josep carmona. anti-alignments in conformance 775
+checking - the dark side of process models. in fabrice kordon and
+daniel moldt, editors, proceedings of the 37th international conference on
+the application and theory of petri nets and concurrency, petri nets
+2016, volume 9698 of lecture notes in computer science , pages 240{258.
+springer, 2016. 780
+[10] jonathan e. cook and alexander l. wolf. software process validation:
+quantitatively measuring the correspondence of a process to a model.
+acm transactions on software engineering and methodology , 8(2):147{
+176, 1999.
+[11] dirk fahland, c edric favre, jana koehler, niels lohmann, hagen v olzer, 785
+and karsten wolf. analysis on demand: instantaneous soundness checking
+of industrial business process models. data & knowledge engineering ,
+70(5):448{466, 2011.
+[12] toon jouck and beno^ t depaire. ptandloggenerator: a generator for
+articial event data. in proceedings of the bpm demo track 2016 , volume 790
+1789 of ceur workshop proceedings , pages 23{27, 2016.
+[13] marie koorneef, andreas solti, henrik leopold, and hajo a. reijers. au-
+tomatic root cause identication using most probable alignments. in re-
+vised papers of the 2017 business process management workshops , volume
+308 of lecture notes in business information processing , pages 204{215. 795
+springer, 2017.
+26[14] wai lam jonathan lee, h. m. w. verbeek, jorge munoz-gama, wil m. p.
+van der aalst, and marcos sep ulveda. recomposing conformance: closing
+the circle on decomposed alignment-based conformance checking in process
+mining. information science , 466:55{91, 2018. 800
+[15] maikel leemans and wil m. p. van der aalst. process mining in soft-
+ware systems: discovering real-life business transactions and process mod-
+els from distributed systems. in proceedings of the 18th international
+acm/ieee international conference on model driven engineering lan-
+guages and systems, models 2015 , pages 44{53. ieee computer society, 805
+2015.
+[16] cong liu, boudewijn f. van dongen, nour assy, and wil m. p. van der
+aalst. component behavior discovery from software execution data. in
+proceedings of the 2016 ieee symposium series on computational intel-
+ligence, ssci 2016 , pages 1{8. ieee, 2016. 810
+[17] jorge munoz-gama and josep carmona. a fresh look at precision in pro-
+cess conformance. in richard hull, jan mendling, and stefan tai, editors,
+proceedings of the 8th international conference on business process man-
+agement, bpm 2010 , volume 6336 of lecture notes in computer science ,
+pages 211{226. springer, 2010. 815
+[18] jorge munoz-gama, josep carmona, and wil m. p. van der aalst. single-
+entry single-exit decomposed conformance checking. information systems ,
+46:102{122, 2014.
+[19] artem polyvyanyy, jussi vanhatalo, and hagen v olzer. simplied com-
+putation and generalization of the rened process structure tree. in 820
+revised selected papers of the 7th international workshop on web ser-
+vices and formal methods, ws-fm 2010 , volume 6551 of lecture notes in
+computer science , pages 25{41. springer, 2010.
+[20] daniel reiner, raaele conforti, marlon dumas, marcello la rosa, and
+abel armas-cervantes. scalable conformance checking of business pro- 825
+cesses. in proceedings of the international conference on on the move to
+meaningful internet systems, otm 2017 , volume 10573 of lecture notes
+in computer science , pages 607{627. springer, 2017.
+[21] andreas rogge-solti, arik senderovich, matthias weidlich, jan mendling,
+and avigdor gal. in log and model we trust? a generalized confor- 830
+mance checking framework. in marcello la rosa, peter loos, and oscar
+pastor, editors, proceedings of the 14th international conference on busi-
+ness process management, bpm 2016 , volume 9850 of lecture notes in
+computer science , pages 179{196. springer, 2016.
+[22] anne rozinat and wil m. p. van der aalst. conformance checking of pro- 835
+cesses based on monitoring real behavior. information systems , 33(1):64{
+95, 2008.
+27[23] thomas sudkamp. languages and machines : an introduction to the the-
+ory of computer science . addison-wesley longman publishing co., inc.,
+1988. 840
+[24] wil m. p. van der aalst. process mining: data science in action . springer,
+2016.
+[25] wil m. p. van der aalst, arya adriansyah, and boudewijn f. van don-
+gen. replaying history on process models for conformance checking and
+performance analysis. wiley interdisciplinary reviews: data mining and 845
+knowledge discovery , 2(2):182{192, 2012.
+[26] boudewijn f. van dongen. eciently computing alignments - using the
+extended marking equation. in proceedings of the 16th international con-
+ference on business process management, bpm 2018 , volume 11080 of
+lecture notes in computer science , pages 197{214. springer, 2018. 850
+[27] sebastiaan j. van zelst, alfredo bolt, marwan hassani, boudewijn f. van
+dongen, and wil m. p. van der aalst. online conformance checking: relat-
+ing event streams to process models using prex-alignments. international
+journal of data science and analytics , 2017.
+[28] sebastiaan j. van zelst, alfredo bolt, and boudewijn f. van dongen. tun- 855
+ing alignment computation: an experimental evaluation. in proceedings
+of the international workshop on algorithms & theories for the analysis of
+event data, ataed 2017 , volume 1847 of ceur workshop proceedings ,
+pages 6{20. ceur-ws.org, 2017.
+[29] sebastiaan j. van zelst, alfredo bolt, and boudewijn f. van dongen. com- 860
+puting alignments of event data and process models. transactions on
+petri nets and other models of concurrency , 13:1{26, 2018.
+[30] erik verbeek, joos c. a. m. buijs, boudewijn f. van dongen, and wil
+m. p. van der aalst. xes, xesame, and prom 6. in selected extended
+papers of information systems evolution - caise forum 2010 , volume 72 865
+oflecture notes in business information processing , pages 60{75. springer,
+2010.
+[31] robert a. wagner. order-n correction for regular languages. communi-
+cations of the acm , 17(5):265{268, 1974.
+28

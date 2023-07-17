@@ -1,0 +1,680 @@
+detecting deviating behaviors without models
+xixi lu1, dirk fahland1, frank j.h.m. van den biggelaar2, wil m.p. van der aalst1
+1eindhoven university of technology, the netherlands
+2maastricht university medical center
+fx.lu,d.fahland,w.m.p.v.d.aalst g@tue.nl
+ff.vanden.biggelaar g@mumc.nl
+abstract. deviation detection is a set of techniques that identify deviations from
+normative processes in real process executions. these diagnostics are used to de-
+rive recommendations for improving business processes. existing detection tech-
+niques identify deviations either only on the process instance level or rely on
+a normative process model to locate deviating behavior on the event level. how-
+ever, when normative models are not available, these techniques detect deviations
+against a less accurate model discovered from the actual behavior, resulting in
+incorrect diagnostics. in this paper, we propose a novel approach to detect devia-
+tion on the event level by identifying frequent common behavior anduncommon
+behavior among executed process instances, without discovering any normative
+model. the approach is implemented in prom and was evaluated in a controlled
+setting with artiﬁcial logs and real-life logs. we compare our approach to existing
+approaches to investigate its possibilities and limitations. we show that in some
+cases, it is possible to detect deviating events without a model as accurately as
+against a given precise normative model.
+1 introduction
+immense amounts of event data have been recorded across different application do-
+mains, reﬂecting executions of manifold business processes. the recorded data, also
+called event logs orobserved behavior , show that real-life executions of process in-
+stances often deviate from normative processes [12]. deviation detection, in the context
+ofconformance checking , is a set of techniques that check process conformance of
+recorded executions against a normative process and identify where observed behav-
+ior does not ﬁt in and thus deviates from the normative process model [1]. accurately
+detecting deviating behavior at the event level is important for ﬁnding root causes and
+providing diagnostic information. the diagnosis can be used to derive recommenda-
+tions for improving process compliance and performance [13].
+existing techniques for detecting deviations, such as alignment-based techniques
+[1], require a normative process in the form of a process model. however, normative
+models are often not available, especially in ﬂexible environments. for instance, in
+healthcare, each patient often follows a unique path through the process with one-of-
+a-kind deviations [11]. a solution is to discover a model from an event log. the dis-
+covered model is assumed to describe the normative behavior, and then conformance
+checking techniques discern where the log deviates. however, the quality of deviationdetection depends heavily on the discovered model, which again depends on the discov-
+ery algorithm used and the design decisions made in the algorithm. when an event log
+shows high variety (for example, containing multiple process variants), discovering one
+normative process almost always results in underﬁtting models, rendering them useless
+for detecting deviations.
+in this paper, we consider the problem of detecting deviations without discovering
+a normative process model. we limit our scope to only detecting deviating events ; we
+deﬁne deviations as additional behavior observed in an event log but not allowed in
+the normative process; other deviations, such as steps of the normative process that are
+skipped, are not considered in this paper. we present a new technique to detect deviating
+events by computing mappings between events, which specify similar and dissimilar
+behavior between process instances. the more they that agree on a certain behavior, the
+less such a behavior is a deviation. we use this information to classify deviations.
+the approach has been implemented as prom plugin and was evaluated using ar-
+tiﬁcial logs and real life logs. we compared our approach to existing approaches to
+investigate the possibility and the limitations of detecting deviations without a model.
+we show that the approach helps identify deviations without using a normative process
+model. in cases where dependencies between events can be discovered precisely, it is
+possible to detect deviating events as accurately as when using a given precise norma-
+tive model. in other cases, when deviating events happen frequently and in patterns, it
+is more difﬁcult to distinguish them from the conforming behavior without a normative
+model. we discuss ideas to overcome these problems in our approach.
+in the remainder, we ﬁrst discuss related work in sect. 2, including input for our
+approach. sects. 3-5 explain our method in more depth: in sect. 3, we deﬁne and explain
+the relevant concepts, e.g. similar and dissimilar behavior, mapping, and cost function;
+sect. 4 presents two algorithms to compute mappings; sect. 5 discusses how to use
+mappings for detecting deviations. the evaluation results are presented in sect. 6, and
+sect. 7 discusses the limitations and concludes the paper.
+2 related work
+we consider an event log as input for our approach for detecting deviations. in addition,
+we discuss related work more in detail in this section.
+event logs and partial orders. anevent log is a collection of traces , each of
+which is a sequence of events describing the observed execution for a case. most pro-
+cess mining techniques use an event log as input. recently, research has been conducted
+to obtain partial orders over events, called partially ordered traces, and use them instead
+to improve process mining [6,9]. the work in [9] discussed various ways to convert se-
+quential traces into partially ordered traces and has shown that such a conduct improves
+the quality of conformance checking when the as-is total ordering of events is unreli-
+able. the approach proposed in this paper can handle partial orders as inputs, which we
+refer to as execution graphs . two types of partial order [9] are used in this paper: data
+based partial order over events, i.e. two events are dependent if they access the same
+data attributes; and time based partial order over events, i.e. two events are dependent
+if they have different time stamps.outlier detection and deviance mining. existing outlier detection approaches
+have a different focus and are not applicable to our problem. these approaches ﬁrst
+converting executions of cases to items of features and then using classiﬁcation or clus-
+tering techniques [7]. however, they only identify deviating cases (thus items) and omit
+deviation on the event level (an analogy to classical data mining would be detecting a
+deviating value in a item for one feature) and are often unable to handle the situation
+in which a multitude of cases contain deviation. one different stream, known as de-
+viance mining , classiﬁes cases as normal or deviant, independent of their control-ﬂow
+execution, but rather based on their performance (e.g. whether throughput time of a
+case is acceptable) [10]. our approach is inspired by and similar to a log visualization
+technique known as trace alignment [3]. however, this visualization technique does not
+classify deviations but simply visualizes the mappings between traces to a user.
+conformance checking. a state-of-art conformance checking technique is known
+as(model-log) alignment [1,9], which computes a most similar run of a given normative
+model with respect to each input trace. events observed in traces that have no matching
+behavior in such a run are classiﬁed as deviating events, also known as log moves.
+however, the current cost function used by the approach is rather simple and static. for
+example, it is unable to distinguish consecutive events sharing the same event class. in
+addition, a precise model is required to identify deviations accurately, which might be
+unavailable and difﬁcult to discover, whereas our approach does not require models.
+process discovery and trace clustering. process discovery algorithms aim to
+discover structured process models using an event log [4, 8], but still face various dif-
+ﬁculties [5]. when event logs are highly unstructured and contain deviating behavior,
+discovery algorithms often fail to ﬁnd the underlying structure and return spaghetti
+models due to overﬁtting. some discovery algorithms aim to be noise/deviation robust
+but often result in returning over-generalized or underﬁtted models. to discover better
+models, one may preprocess event logs using, for example, trace clustering. syntactic-
+based trace clustering [5] is a set of techniques that focus on clustering traces in such
+a way that structured models can be discovered as different variant of the normative
+model. in our evaluation, we compare our approach to [1, 2, 5, 8, 9] more in depth.
+3 mappings - similarities and dissimilarities between executions
+in this section, we introduce the key concepts used in this paper and explain how simi-
+larity anddissimilarity between executions of cases helps identify deviations.
+execution graphs and neighbors. for describing execution of a case, we use an exe-
+cution graph . an execution graph is a directed acyclic graph g= (e;r;l): the nodes
+eare the events recorded for the case, the edges rare the relations between the events,
+and the function lassigns to each event its event type. each event is unique and has a
+set of attributes; one event belongs to one single execution graph. fig. 1 shows two ex-
+ecution graphs. on the right of fig. 1, e8;e9;e10are considered concurrent because, for
+example, they have the same timestamps [9]. let ebe an event in an execution graph.
+k-predecessors np
+k(e)denotes the set of events from which (1) there is a path in the
+execution graph to eand (2) the length of the path is at least 1 and at most k; similar fork-successors ns
+k(e). in addition, we call the set of events for which there is no path to or
+from etheconcurrences nc(e)ofe. moreover, for e02nc(e), we deﬁne the distance
+dist g(e;e0) = 0 , in contrast to the traditional graph theory.
+example neighbors
+a a f b dc
+a a g
+dc
+be7e8
+e9
+e10e11e12
+e1 e3 e2 e4e5e6s e1-predecessors of e31-successors of e3
+2-predecessors of e32-successors of e31-successors of e81-predecessors of e8concurrences of e8
+s e1-neigbhors of e81-neigbhors of e3
+2-neigbhors of e3events (vertices)
+relations (edges)ss
+eedummy starts
+dummy ends
+fig. 1: two examples of execution graphs.the k-neighbors n k(e)of
+eis a 3-tuple composed of
+the k-predecessors , the con-
+currences and the k-successors
+ofe. for example, as shown
+in fig. 1, n1(e8) = (fe7g;
+fe9;e10g;fe11g).
+deviations, mappings and sim-
+ilarity. we consider deviations
+as non-conforming behavior that consists of observed events in an execution graph.
+the assumption is that such deviating events occur much less frequently and occur in
+a highly dissimilar context, e.g. have dissimilar neighbors and locations, since they are
+not speciﬁed in the normative process. in addition, it would be difﬁcult to ﬁnd the events
+in other cases that are similar and comparable to these deviating events. therefore, we
+compute similar behavior and dissimilar behavior between each two execution graphs
+as a mapping : the similar behavior is formed by all pairs of events that are mapped
+to each other, whereas events that are not mapped are dissimilar behavior . formally,
+amapping(g;g0)between two execution graphs is a set of binary, symmetric rela-
+tions between their events, in which each event is only mapped to one other event.
+fig. 2 exempliﬁes a mapping between the two execution graphs shown in fig. 1. for
+instance, the mapping in fig. 2 speciﬁes that e3ande8are not mapped, and therefore,
+according to this particular mapping, they are dissimilar and show discrepancies be-
+tween the two cases. we use to refer to the set of events that are not mapped, i.e.
+(g;g0)=fe2ej:9 e02e0: (e;e0)2g[f e02e0j:9 e2e: (e;e0)2g3.
+based on a mapping, we also obtain similar neighbors anddissimilar neighbors
+surrounding two events and are able to compare the events more accurately. a pair
+of events are more similar, if they share more similar neighbors. for example, using
+a mapping, we can derive the similar predecessors and the dissimilar predecessors
+of two paired events (e;e0). we refer to the dissimilar predecessors as dnp
+k(e;e0;),
+where the kindicates the k-predecessors . the same applies to the set of dissimilar
+successors dns
+k(e;e0;)anddissimilar concurrences dnc(e;e0;). fig. 2 shows an
+example: because events e5ande11have respectivelyfe3;e4gandfe7;e8;e9;e10g
+as their 2-predecessors , of which e4ande10are paired, therefore dnp
+2(e5;e11;) =
+fe3;e7;e8;e9g. the pair (e5;e11)has two dissimilar successors e6ande12, but no
+dissimilar concurrences as shown in fig. 2. hence, dns
+2(e5;e11;) =fe6;e12g, and
+dnc(e5;e11;) =?.
+cost function and cost conﬁgurations. to evaluate a mapping, we deﬁne a cost func-
+tionthat assesses the similarity between paired events in the mapping. a mapping that
+captures more similar behavior is assigned with a lower cost. the mappings with the
+minimal cost are the optimal mappings . the cost function is shown in equation 1 and
+3we omit gandg0for bothandwhere the context is clear.comprises three components cost matched ,cost strucandcost nomatch that assess a mapping
+as follows. for each pair of events (mapped to each other) in a mapping, cost matched
+andcost strucassess their local similarity andglobal similarity , respectively. moreover,
+cost nomatch assigns a penalty to the mapping for each event that is classiﬁed to be dis-
+similar (i.e. not mapped). for each component, we assign a weight, i.e. wm,ws,wn.
+cost(g;g0;) =wmcost matched (g;g0;) +wscost struc(g;g0;)
++wncost nomatch (g;g0;)(1)
+example mapping & distinct neighbors
+a a f b dc
+a a g
+dc
+be7e8
+e9
+e10e11 e12e1 e3 e2 e4e5e6s e
+s efe5e6
+a
+a g b cb
+e7e8e10
+e9e11
+e12edce3
+e4
+ea
+dissimilar predecessors between 
+𝑒5and 𝑒11according to 𝜆,i.e. 𝐷𝑁𝑘𝑝(𝑒5,𝑒11,𝜆)𝐷𝑁𝑘𝑠(𝑒5,𝑒11,𝜆)
+𝐷𝑁𝑐(𝑒5,𝑒11,𝜆)
+not mappedmapped 
+fig. 2: an example of a mapping specifying similar
+and dissimilar behavior.the function cost matched , de-
+ﬁned in equation 2, helps to as-
+sess the similarity between two
+events regarding their proper-
+ties and their local execution
+contexts (in this case their la-
+bels and their neighbors). the
+more similar, the lower the cost.
+thus, a higher cost is assigned
+to prevent two locally dissimilar
+events being mapped to each other. in this paper, we only allow two events with the
+same label to be mapped to each other, i.e. cost(l(e);l(e0)) = 0 ifl(e) = l(e0), other-
+wise inﬁnite.
+cost matched (g;g0;) =p
+(e;e0)2cost(l(e);l(e0))
++jdnp
+k(e;e0;)j+jdns
+k(e;e0;)j+jdnc(e;e0;)j(2)
+in addition, the function cost struc(g;g0;) =p
+(p;p0);(e;e0)2jdist g(p;e) distg0(p0;e0)j
+2
+helps to assess how similar two events are with respect to their positions in the global
+context of execution graphs. the more similar their positions in the global context, the
+lower cost; the cost is high if they are in very different stages of execution graphs.
+futhermore, we deﬁne the function cost nomatch (g;g0;) =p
+e2cn+jnk(e)j,
+which assigns a cost to events that are not mapped and helps to asses when not to map
+an event. for example, a higher cost is assigned to a not-mapped event if it is important
+and should be mapped. we use the number of neighbors of an event to indicate the
+importance in addition to a basic cost cnof not matching an event.
+the ﬁnal cost of a mapping depends on the k(deﬁning the neighbors) and the four
+weights wm,ws,wnandcn. a 5-tuple composed of these ﬁve numbers is called a cost
+conﬁguration of the cost function. the mappings with the minimal cost between two
+execution graphs according to a conﬁgured cost function are the optimal mappings .
+4 algorithms for computing mappings
+for computing mappings between execution graphs, we propose two algorithms: one
+uses backtracking with a heuristic function and guarantees the return of the optimal
+mappings; the other provides no guarantees but runs in polynomial time.backtracking and heuristic function. the backtracking algorithm uses a heuristic
+function to prune our search space. the heuristic function is similar to the cost func-
+tion and reuses cost matched ,cost struc, and cost nomatch . the same conﬁguration as the cost
+function is required to guarantee the lower bound property.
+example heuristic
+a a f b dc
+a a g
+dc
+be7e8
+e9
+e10e11 e12e1 e3 e2 e4e5e6s e
+s efe5e6
+aa g bc b
+e7e8 e10
+e9e11e12d ce3 e4 ee
+a
+estimated optimal situation
+(𝑒5,𝑒11,𝜆𝑠𝑜𝑓𝑎𝑟)
+no mapping so far
+fig. 3: an example of an incomplete map-
+ping and the estimated lowerbound cost.the algorithm starts with an empty
+mapping between two cases and then in-
+ductively computes the cost of the next
+decision, i.e. to consider two events sim-
+ilar or not, using the heuristic function.
+after making a decision to map two
+events, a part of the similar and dissimilar
+neighbors of the two events is known, ac-
+cording to the mapping so far, for which
+the heuristic function uses cost matched to
+compute the cost. for the neighbors not yet mapped, the heuristic function estimates
+the cost by predicting an optimal situation of a future complete mapping. the optimal
+situation means that a maximal set of possibly similar neighbors , i.e. the neighbors that
+have the same label and are not mapped yet, becomes similar neighbors . maximizing
+the set of possibly similar neighbors minimizes the set of possibly dissimilar neighbors
+(impossible to become similar neighbors in the future) and thus gives us a lower bound
+of the unknown part of the cost. formally, we perform label multiset subtraction of not
+mapped neighbors to estimate the lower bound.
+fig. 3 illustrates an incomplete mapping that states e4ande10are similar and e9
+is dissimilar (i.e. sofar=fe4!e10;e9!?g ). if we decide that e5ande11are
+similar (thus mapping e5toe11), we obtain their similar neighbors e4ande10and
+dissimilar neighbor e9according to the mapping so far. we also identify the possibly
+similar neighbors e 3ande8(both labeled with cand not mapped yet), and possibly
+dissimilar neighbors e7,e6ande12. thus, the cost returned by cost matched is 1 and the
+estimated additional future cost is 3. the cost of structure returns 2because the distance
+from stoe5is 5, which differs from the distance of 3 between sande11.
+the running time of the back tracking algorithm is o(2n), if each graph contains n
+events all with unique labels, because for each event, there is a choice between mapping
+the event or not. in the worst case when all events have the same label, the running time
+iso((n+ 1)!) .
+greedy algorithm. the second algorithm we propose is greedy and runs in polyno-
+mial time. the greedy algorithm makes the current optimal choice to map two events or
+not. the quality of the algorithm depends heavily on the ordering of the choice that is
+made. the idea is to start with ﬁnding the “most important and unique” event e (which
+has the least probability to be a deviating event or to be matched to another deviat-
+ing event); then, select, for e, the current most similar event, if any. as the mapping
+becomes more complete, the cost returned by the heuristic function resembles more ac-
+curately the cost returned by the cost function, which helps the algorithm to make more
+difﬁcult choices later.
+for formalizing this “importance and uniqueness”, we introduce the concept of a
+k-context and its frequency as an example. a k-context c k(e)of an event econsistsof the label of e, the labels of its k-predecessors, the labels of its concurrences, and
+the labels of its k-successors. fig. 4 shows three 3-contexts with label a(on the right)
+based on the four execution graphs on the left. for example, c3(e5) = c3(e25) =
+c3(e35) = ( a;[b;c;d];[];[f;e]). the absolute frequency of a k-context of an event e
+is the number of events that have the exact same k-context and is formally deﬁned as
+follows. let gdenote a set of execution graphs. for each event eineofg2g, the
+absolute frequency of a k-context isfreqg(ck(e)) =p
+g2gj fe02ejck(e) =
+ck(e0)gj. for example, freq fig. 4(a;[b;c;d];[];[f;e]) = 3 . a context having a high
+absolute frequency indicates that there is a large set of events sharing the same context
+and can be mapped to each other.
+to compute a good mapping between two given execution graphs, the greedy algo-
+rithm ﬁrst sorts the nodes (i.e. events) based on the absolute frequencies of their context,
+and then simply starts with the “most important” node according to the ordering, and
+selects the best match for this node using the heuristic function introduced in the pre-
+vious section. this process of making choices is repeated, and the algorithm simply
+works through the nodes linearly. therefore, the running time of the greedy algorithm
+is quadratic in terms of the number of events.
+5 deviation detection using mappings
+we use the mappings to compute representative execution graphs (regs) of cases and
+use them to locate uncommon behavior and identify deviations. a regcan be seen as
+an aggregation of a cluster of similar execution graphs and represents one variant of
+process execution. each node of a regrepresents a set of similar events; the number
+of events a node represent indicates the commonness of this behavior among cases of
+thereg. similarly, each edge depicts a set of similar relations between the events. fig. 5
+shows three regs. as can be seen, a regresembles a directly follows graph with unfolded
+duplicated labels and shows executions of its cases, but the commonness of the nodes
+can also be used for detecting deviations and visualizing their positions.
+fig. 5 also shows the process of aggregating execution graphs into a regwhich we
+refer to as fusion . we compute regsof cases by fusing execution graphs among which all
+mappings are consistent regarding all behavior . in other words, the mappings between
+a set of execution graphs are consistent when all of them agree with each other about
+the similar behaviors. formally, assuming a set of execution graphs is given, and 
+denotes the set of all mappings between them: isconsistent iff.is transitive, i.e.
+for all (e;e0);(e0;e00)2)(e;e00)2. the consistency of guarantees that the
+a a f b dc
+e1 e3 e2 e4e5e6s e
+a a f b cd
+e21 e23 e22 e24e25e26s e
+a a f d cb
+e31 e33 e32 e34e35e36s e
+a a g c bd
+e41 e43 e42 e44e45e46s esa
+dc eab g3-contexts of (a)
+absolute freq. = 3
+absolute freq. = 1dc eab fdcb
+absolute freq. = 4
+fig. 4: 3-contexts and
+their absolute frequency.
+faabb
+ddeagv1v2
+v3
+v7v4v5
+v6aa g
+m1m2
+m3
+m7m5fgg n1n2
+n3
+n7n4n5
+n6ab
+ac
+adccaaab
+aaaaaa aaac
+aaadfig. 5: fusion process: two regs fused into one regordering of fusing a set of similar events (e.g. e;e0;e00) is irrelevant (thus commutative
+and associative). fig. 5 illustrates a fusion of two regs representing four cases. the
+nodes m1andv1are fused into n1, meaning that the mappings between them all agree
+that the four events are similar. the same holds for the rest of the nodes. now, assume
+that, according to a mapping, one of the events of m1is actually similar to one of the
+events of v4instead of v1, then the two regs will not be fused. we apply this principle
+incrementally by simply fusing the two most similar (groups of) cases indicated by the
+cost of their mappings. the algorithm returns a set of regs that can no further be fused.
+deviations are assumed to be uncommon behavior. if the number of events that a
+node nin a regrepresents is low, it indicates that the behavior rarely occurs among
+the cases that are similar. if this number is below a certain threshold trelative to the
+maximum number of events represented by another node that has the same label in the
+same reg, we classify this node nto be uncommon and the events of nto be deviating.
+for example, assuming we have the regon the right of fig. 5 and tis60%, then the
+events of nodes n5andn6are classiﬁed as conforming since they represent the maxi-
+mum number of events with respect to their labels gandf, respectively, whereas the one
+ofn4is only 50% of the maximum as 2 of 4 (represented by node n1). thus, the events
+ofn4are classiﬁed as deviating. another example, if the two regs shown on the left of
+fig. 5 were not fused due to inconsistency and tis60%, then all events are classiﬁed
+as normal behavior; the same for any regthat only represents one execution graph.
+6 evaluation and results
+the proposed deviation detection approach is implemented in the process mining toolkit
+prom4. we conducted controlled experiments to compare our approach to existing ap-
+proaches and discuss the results in this section.
+experimental setup. we compared our approach to other techniques on how accu-
+rately deviating events are detected as shown in fig. 6. given a log with each event
+labeled as deviant or conforming, our approach and existing approaches classify each
+of the events as deviating or conforming. events correctly classiﬁed as deviations (based
+on the labels) are considered true positives (tp) . similarly, false positives (fp) are con-
+forming events that are incorrectly classiﬁed as deviations; false negatives (fn) are de-
+viating events that are incorrectly classiﬁed as conforming events; true negatives (tn)
+are correctly classiﬁed as conforming events. based on this, we compute the accuracy
+score (abbreviated to acc)5, i.e. acc= (tp+tn)=(tp+tn+fp+fn). for example,
+achieving an accuracy score of 0.9 after classifying 10 events means one of the events
+is incorrectly classiﬁed as deviating (fp) or conforming (fn).
+we compared the accuracy of our approach to three existing methods shown in
+fig. 6: (1) classify deviations by checking conformance [1] against the given normative
+model; (2) discover a normative model and then apply conformance checking using the
+discovered model; (3) ﬁrst cluster traces to discover a more precise normative model for
+4both the plugins and the experiments can be found in the tracematching package of the prom.
+5in this paper, we only discuss the accuracy score. however, one may use the confusion matrix and compute the f1 score of
+event identiﬁcation or swap the confusion matrix to compute the f1 score of deviation identiﬁcation. we have computed
+all three, and they have shown similar results.(3) 
+(this paper ) (2) (1) 
+ conformance [1], [8]
+discover [7]
+ conformance [1]
+cluster /classify
+[4],[10]
+discover 
+[7]
+conformance
+[1]
+match traces
+ fuse traces
+classify dev . 
+events
+compute 
+measurements
+artificial
+events deviations
+classified as deviationsevents in a log 
+tpfn tnfp 
+real -life
+add 
+deviations
+use (1) to 
+assign labelsfig. 6: experiment design: comparing our approach to existing approaches
+each process variant, and then check conformance for each cluster of traces against the
+corresponding variant model. for conformance checking, we use alignments [1,9]. the
+inductive miner (iminf) [8] with ﬁlter (from 0.2 to 1.06) is used for discovering models
+and the best result is chosen. for clustering, we used the actitrac (4 clusters) [5] and
+the generic edit distance (ged with 4 and 10 clusters) [2] with standard settings.
+we ran this experiment on 1 artiﬁcial and 2 real-life logs. in an artiﬁcial setting,
+an artiﬁcial normative model was used to generate a perfect log. for each trace in the
+perfect log, we then randomly add kdevdeviating events to derive a log with deviations
+labeled. the artiﬁcial hospital process model in [9] was used for generating event logs.
+the generated logs contain 1000 cases, 6590 events, and data-based relations between
+events which are used to derive the execution graphs.
+for the two real-life logs, i.e. the mumc and the municipality (gov) logs, we
+acquired their normative process model and used alignments to label deviating events
+(thus (1) achieves an accuracy of 1). the labeled real-life logs are then used to compare
+our approach to (2) and (3). the mumc data set provided by maastricht university
+medical center (a large academic hospital in the netherlands) contains 2832 cases and
+28163 events. the municipality log7contains 1434 cases and 8577 events.
+results. in the following, we show results organized in the forms of experiments.
+experiment 1: how does our approach perform in comparison to (1), (2) and (3), and
+what is the effect of different conﬁgurations? fig. 7 shows the accuracy scores (on
+the y-axis) of our algorithms along different conﬁgurations (on the x-axis)8. for other
+approaches, the accuracy scores remain constant (i.e. the horizontal lines) along our
+conﬁgurations. interestingly, using the right conﬁguration (highlighted by boxes), the
+backtracking algorithm is able to detect deviating events more accurately than sequen-
+tial alignments (1) against the normative model. this is due to the situation in which
+two events of the same event type executed consecutively. from these two events, se-
+quential alignments cannot ﬁnd the deviating event, whereas our cost function uses
+the neighbors and their relative position in a global structure to distinguish them. both
+backtracking and greedy have higher accuracies than (2) and (3). another observation
+is that a conﬁguration has a strong inﬂuence on the accuracy scores since the score
+ﬂuctuates along the x-axis. we observe that no weight has a dominant effect on the ac-
+6using ﬁlter from 0.0 to 0.2, iminf returns a ﬂower model which is the same as classifying all events as conforming.
+7http://dx.doi.org/10.4121/uuid:a07386a5-7be3-4367-9535-70bc9e77dbe6
+8for each case, we added one deviating event resulting in a log with 13.2% deviating events. repeating this ﬁve times, we
+show the average accscores.0.80.820.840.860.880.90.920.940.960.981
+12121212121212121212121212121212
+1 2 1 2 1 2 1 2 1 2 1 2 1 2 1 2
+3 5 3 5 3 5 3 5
+1 2 1 2
+1 2avg. accuracy of 5 runs
+configurationsavg. accuracy : backtracking v.s. greedy using threshold
+between 40 -100 and partial orders
+avg. of accuracy - backtracking
+- filter2
+avg. of accuracy - greedy -
+filter2
+𝑊𝑀: 1-2
+𝑊𝑁: 1 -2
+𝐶𝑁: 3,5
+𝑊𝑆: 1-2
+k : 1 -2ged (10 clusters):0.894
+ged (4 clusters) :0.892
+actitrac:0.876
+imi:0.867allevt: 0.868seq.alignment: 0.958
+po.alignment: 0.915backtracking
+greedyfig. 7: avg. accuracy scores using data
+and compared to existing approaches.
+0.80.820.840.860.880.90.920.940.960.981
+12121212121212121212121212121212
+1 2 1 2 1 2 1 2 1 2 1 2 1 2 1 2
+3 5 3 5 3 5 3 5
+1 2 1 2
+1 2avg. accuracy of 5 runs
+configurations:avg. accuracy between threshold: 30 -50
+using seq. tracesavg. of accuracy - backtracking
+- filter2
+avg. of accuracy - greedy -
+filter2
+𝑊𝑀: 1-2
+𝑊𝑆: 1-2
+𝐶𝑁: 3,5
+k : 1 -2
+𝑊𝑁: 2ged (10 clusters):0.894
+ged (4 clusters) :0.892
+actitrac:0.876
+imi:0.867allevt: 0.868seq.alignment: 0.958
+po.alignment: 0.915backtracking
+greedy
+seq.alignment: 0.958
+po.alignment: 0.915backtracking
+greedyfig. 8: avg. accscores using the sequen-
+tial ordering.
+curacy. some of the conﬁgurations that achieve the highest accuracies are the following:
+k= 1;cn= 3;wm=wnws, e.g. ws=wm=wn= 1(we write [k1m1n1c3s1] as
+a shorthand).
+experiment 2: what is the effect of using sequential orders instead of partial orders
+on the scores? fig. 8 (similar to fig. 7) shows the accscores of our approach using
+sequential ordering. the accscores in fig. 8 show a decrease in backtracking if sequen-
+tial ordering is used instead of data-based partial orders. however, we still observe that
+our approach can perform better than partially ordered alignments [9] and (2) and (3).
+interestingly, the greedy approach shows that it is less sensitive for the input format;
+accuracy is, for some conﬁgurations, even higher when using sequential traces.
+experiment 3: what is the effect of different deviation levels? the effects of increasing
+the number of deviations from 13:2%up to 43:1%(by increasing kdev) on the accuracy
+of identifying deviating events are shown in fig. 9. for the backtracking and the greedy
+approach, we used conﬁguration [k1m1n1s1c3]and conﬁguration [k2m2n1s1c5]
+based on the previous results. as can be seen, backtracking [k1m1n1s1c3]with t=
+100performs as well as (1) using sequential alignments. also, as expected, using the
+same conﬁguration but with a lower threshold t= 40 , the approach classiﬁes fewer
+events as deviating and therefore is less accurate when the level of deviation increases.
+experiment 4: performance and scalability. we compute the average running time of
+the approach of 5 runs while increasing the average number of events per trace from
+6.59 to 10.59. the running time of the greedy algorithm increased only by 78%, from
+0.18 min (11.8 sec.) to 0.32 min (19.2 sec.), whereas the backtracking shows an ex-
+ponential increase from 2.7 min to more than 3 hours, which is more than 10000%.
+the average running time of using actitrac together with discovery and alignments
+increased from 0.016 min to 0.172 min, showing an increase of 975%. for ged, the
+average running time increased by 800%, from about 0.010 min to 0.090 min.
+experiment 5: different models and real-life logs. for the two real-life logs, the re-
+sults are shown in fig. 10. for the mumc data set, existing approaches perform better
+than our approach. actitrac achieves the best accuracy and is about 0.02 higher than0.50.550.60.650.70.750.80.850.90.951
+10.0% 15.0% 20.0% 25.0% 30.0% 35.0% 40.0% 45.0%avg. accuracy of 5 runs
+deviation levelb1 b2 g seqa allevt
+im_inf actit ged4 ged10
+b1 = k1m1s1n1c3 t100 (po) backtrac.
+b2 = k1m1s1n1c3 t40 (po) backtrac.
+g = k2m2s1n1c5 t50 (po) greedyfig. 9: effect of deviation level on back-
+trac. v.s. greedy with selected settings.
+0.717
+0.752
+0.796
+0.819
+0.796
+0.795
+0.803
+0.804
+0.817
+0.803
+0.804
+0.5000.5500.6000.6500.7000.7500.8000.8500.9000.9501.000
+f0.2
+opt
+f0.2
+opt
+4_f0.2
+4_opt
+10_f0.2
+10_opt
+opt
+[k1m2s1n1c5]
+[k1m1s1n1c3]
+imactitrac ged tramaccuracy -gov 0.606
+0.753
+0.615
+0.763
+0.592
+0.750
+0.582
+0.745
+0.744
+0.720
+0.737
+0.500.550.600.650.700.750.800.850.900.951.00
+f0.2
+opt
+f0.2
+opt
+4_f0.2
+4_opt
+10_f0.2
+10_opt
+opt
+[k1m2s1n1c5]
+[k1m1s1n1c3]
+imactitrac ged tramaccuracy -mumcfig. 10: accuracy of different ap-
+proaches on real life logs.
+our approach. surprisingly, discovering an imprecise model that allows all activities to
+be executed in any order was better than applying our approach. for the gov data set,
+our approach achieves the second best accuracy with 0.002 lower than the actitrac
+method. most other approaches perform worse than when classifying all events as con-
+forming behavior. this is due to an event class which occurs frequently in the log and
+all occurrences are deviations. techniques (2) based on discovery only are unable to
+detect these deviations.
+7 discussion and conclusion
+in this paper, we investigated the problem of detecting deviating events in event logs. we
+compared existing techniques, which either use or construct a normative model to detect
+deviations via conformance checking, with a new technique that detects deviations from
+event logs only. the result of our evaluation shows four interesting observations.
+firstly, when the deviations are less structured and the dependencies between events
+are precise, we can detect deviations as accurately as performing conformance checking
+using a precise normative model. this indicates that our cost function is indeed able
+to distinguish individual events and accurately identify similar and dissimilar behavior.
+however, we also observe that the accuracy of our approach depends heavily on the way
+the cost function is conﬁgured. some possible solutions to ease choosing a conﬁguration
+could be: (1) normalizing the cost function (e.g. one divided by each components);
+(2) having predeﬁned criteria or conﬁgurations such as “matching as many events as
+possible”; (3) showing visual mappings between events, allowing the users to select the
+right ones, and ranking conﬁgurations accordingly.
+another interesting observation is that, using the cost function, the backtracking
+algorithm performs worse than the greedy approach for sequential traces. this may
+suggest that the current deﬁnition of neighbor and structure is too rigid for sequential
+ordering of concurrent events. one may consider the union of predecessors, concur-
+rences and successors as the neighbor of an event, instead of distinguishing them.
+we also observer that when deviations are frequent and more structured, our ap-
+proach achieves slight lower accuracy than existing approaches. however, all approachesperformed rather poorly on the real life data sets. one way to improve this is to conduct
+“cross checking” between different process variants using the mappings between regs
+to ﬁnd frequent deviations that occur in one variant but not in others. still, all current
+approaches have difﬁculty in detecting very frequent deviations, when no normative
+model is available, as shown by the results for gov data sets.
+a interesting challenge is to use mappings for detecting other deviations such as
+missing events. detecting some events are missing may be simple (e.g. frequent but
+incomplete nodes in regs), whereas the deduction of the exact events that are missing
+only from an event log appears to be much more difﬁcult. in any cases, it is possible to
+implement many other deviation classiﬁers using regs, or to use the computed costs of
+mappings as a measure of similarity for clustering traces and detecting deviating traces
+instead of events. future research will be aimed at investigating these possibilities, dif-
+ferent cost functions, and the use of regs for improving process discovery.
+references
+1. van der aalst, w.m.p., adriansyah, a., van dongen, b.f.: replaying history on process
+models for conformance checking and performance analysis. wiley interdisc. rew.: data
+mining and knowledge discovery 2(2), 182–192 (2012)
+2. bose, r.p.j.c., van der aalst, w.m.p.: context aware trace clustering: towards improving
+process mining results. in: proceedings of the siam international conference on data min-
+ing, sdm 2009, april 30 - may 2, 2009, sparks, nevada, usa. pp. 401–412 (2009)
+3. bose, r.p.j.c., van der aalst, w.m.p.: process diagnostics using trace alignment: opportu-
+nities, issues, and challenges. inf. syst. 37(2), 117–141 (2012)
+4. carmona, j., cortadella, j.: process discovery algorithms using numerical abstract domains.
+ieee trans. knowl. data eng. 26(12), 3064–3076 (2014)
+5. de weerdt, j., vanden broucke, s.k.l.m., vanthienen, j., baesens, b.: active trace clus-
+tering for improved process discovery. ieee trans. knowl. data eng. 25(12), 2708–2720
+(2013)
+6. fahland, d., van der aalst, w.m.p.: simplifying discovered process models in a controlled
+manner. information systems 38(4), 585–605 (2013)
+7. ghionna, l., greco, g., guzzo, a., pontieri, l.: outlier detection techniques for process
+mining applications. in: foundations of intelligent systems, 17th international symposium,
+ismis 2008, toronto, canada, may 20-23, 2008, proceedings. pp. 150–159 (2008)
+8. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured process
+models from event logs containing infrequent behaviour. in: bpm workshops 2013, beijing,
+china, august 26, 2013. pp. 66–78 (2013)
+9. lu, x., fahland, d., van der aalst, w.m.p.: conformance checking based on partially ordered
+event data. bpm workshops 2014 (2014)
+10. nguyen, h., dumas, m., rosa, m.l., maggi, f.m., suriadi, s.: mining business process
+deviance: a quest for accuracy. in: coopis, and odbase 2014, amantea, italy, october
+27-31, 2014, proceedings
+11. rebuge, a., ferreira, d.: business process analysis in healthcare environments: a method-
+ology based on process mining. information systems 37(2) (2012)
+12. suriadi, s., wynn, m.t., ouyang, c., ter hofstede, a.h., van dijk, n.j.: understanding pro-
+cess behaviours in a large insurance company in australia: a case study. in: advanced
+information systems engineering. pp. 449–464. springer (2013)
+13. yang, w., hwang, s.: a process-mining framework for the detection of healthcare fraud and
+abuse. expert syst. appl. 31(1), 56–68 (2006)

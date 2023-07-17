@@ -1,0 +1,3250 @@
+recomposing conformance: closing the circle on decomposed alignment-based
+conformance checking in process mining
+wai lam jonathan leea, h.m.w. verbeekb, jorge munoz-gamaa, wil m.p. van der aalstb, marcos sep ´ulvedaa
+adepartment of computer science, school of engineering, pontiﬁcia universidad cat´ olica de chile, (chile)
+barchitecture of information systems group, department of mathematics and computer science, eindhoven university of technology, (the netherlands)
+abstract
+in the area of process mining, e cient conformance checking is a hot topic. several process mining vendors are in the process of
+implementing conformance checking in their tools to allow the user to check how well a model ﬁts an event log. current approaches
+for conformance checking are monolithic and compute exact ﬁtness values but this may take excessive time. alternatively, one can
+use a decomposition approach, which runs much faster but does not always compute an exact ﬁtness value.
+this paper introduces a recomposition approach that takes the best of both: it returns the exact ﬁtness value by using the de-
+composition approach in an iterative manner. results show that similar speedups can be obtained as by using the decomposition
+approach, but now the exact ﬁtness value is guaranteed. even better, this approach supports a conﬁgurable time bound: “give me
+the best ﬁtness estimation you can ﬁnd within 10 minutes.” in such a case, the approach returns an interval that contains the exact
+ﬁtness value. if such an interval is su ciently narrow, there is no need to spend unnecessary time to compute the exact value.
+keywords: conformance checking, process mining, business processes management
+1. introduction
+process mining is a relatively young research discipline that
+sits between business process management (bpm) and data
+science [1]. traditionally, bpm focuses on process models
+and the design, execution, control, measurement and optimiza-
+tion of business processes rather than dealing with the gener-
+ated event data [2]. on the other hand, data-oriented analysis
+such as data mining and machine learning looks at particular
+decisions or patterns and normally does not consider end-to-
+end processes [3]. by adapting data oriented analysis tech-
+niques to improving processes, process mining is the missing
+link between the two disciplines. more and more event data are
+made available with the increase use of information systems
+[4]. information systems such as erp (enterprise resource
+planning) systems (sap, oracle, etc) and bpm (business pro-
+cess management) systems (pegasystems, bizagi, appian, ibm
+bpm, etc) support processes in di erent organizations. event
+data from the event logs of information systems can be ordered
+to describe instances of the underlying process such that each
+event can be related to an activity and belongs to a particular
+case of the process. in essence, these event logs can be seen as
+“footprints” left behind by the execution of the process. process
+mining uses these event logs as a starting point to “discover,
+monitor and improve real processes” [3].
+corresponding author: jorge munoz-gama
+vicu ˜na mackenna 4860, 7820436 macul (chile)
+email addresses: walee@uc.cl (wai lam jonathan lee),
+h.m.w.verbeek@tue.nl (h.m.w. verbeek), jmun@uc.cl (jorge
+munoz-gama), w.m.p.v.d.aalst@tm.tue.nl (wil m.p. van der aalst),
+marcos@ing.puc.cl (marcos sep ´ulveda)there are three main areas in process mining [3]. firstly, pro-
+cess discovery takes an event log and produces a model through
+dierent discovery algorithms. secondly, conformance check-
+ingcompares an existing process model with an event log of
+the same process. thirdly, enhancement extends and improves
+an existing process model using information from the recorded
+event logs. in this paper we focus on conformance checking .
+there are many reasons for performing conformance checking.
+for example, it is related to the auditing and compliance of
+business processes [3]. in businesses, certain boundaries on
+how thing should be done are set by di erent stakeholders, e.g.
+managers, government and others. audits are carried out to as-
+certain that these boundaries are being enforced, whether they
+are laws set by the government or company procedures decided
+by top level management. by facilitating the comparison of
+the executed events observed in real-life and the established
+rules for process execution, it is clear that conformance check-
+ing in process mining can support and help to automate audits
+[5, 6, 7]. on the other hand, the company may also want to
+know whether the set procedures are meeting the requirements
+of reality. by identifying deviations between the event log and
+the process model, conformance checking can help with pro-
+cess re-design and modiﬁcation of the bpm lifecycle [2]. fi-
+nally, conformance checking is also a key actor at the other pro-
+cess mining areas. for example, conformance checking is used
+to compare existing discovery algorithms [8], to recommend
+discovery techniques [9], or to be incorporated as a part of the
+discovery method [10, 11, 12].
+conformance checking has become a topic of extreme in-
+terest, not only academic but also commercially, where sev-
+eral process mining commercial tools such as celonis andlana
+preprint submitted to information sciences june 3, 2017labs have recently incorporated preliminary conformance anal-
+ysis. there are several existing conformance checking tech-
+niques [13], but most of the recent works use alignment-based
+approaches due to their robustness and detailed view on devi-
+ations [14, 15, 16, 13, 17]. unlike previous approaches based
+on token-game heuristics [18], alignment-based conformance
+provides an optimal analysis on the conformance. in essence,
+alignment-based conformance checking aligns the events of a
+particular case with the closest matching path permitted by the
+process model. these alignments give an evaluation of the over-
+all conformance between the observed events (the reality) and
+the process model. moreover, deviations between the observed
+behavior and the modeled behavior can be pinpointed at the
+level of events, e.g., the identiﬁcation of a particular activity
+that is required by the process model but is missing from the
+actual execution of the process. this conformance information
+is later used to improve the process model to be a more faithful
+representation of the reality (e.g., to be used for simulation), or
+to take speciﬁc actions over the execution of the process (e.g.,
+extra security measures to avoid protocol violations in a hospi-
+tal [19]).
+the volume of data continues to grow and events logs are
+becoming larger as signiﬁed by the term “big data” [4, 20].
+this has raised the need to make alignment-based conformance
+checking more scalable, i.e., information systems are recording
+more event data and are supporting larger and more complex
+processes. for example, boeing jet engines can produce ten ter-
+abytes of operational information every thirty minutes and wal-
+mart is logging one million customer transactions per hour [21].
+case studies of process mining in organizations have raised
+various challenges with respect to the performance of existing
+alignment-based conformance checking techniques when they
+are applied to larger and more complex processes. process min-
+ing commercial tools also su er from this limitation, or directly
+apply shortcuts and best-e ort strategies, losing the optimally
+guarantee of the alignments. one of the most promising re-
+search lines is to decompose alignment problems. rather than
+aligning the overall process and the overall event log, the two
+are decomposed into subprocesses and sublogs, and alignment
+is performed on these smaller subcomponents. if a deviation is
+found at one of the subcomponents, then it is clear that there
+is a deviation in the overall component. otherwise, the overall
+process and the overall log are perfectly ﬁtting. as such, align-
+ment problems can be decomposed and distributed over a net-
+work of computers. experimental results based on large scale
+applications of decomposition techniques have shown signiﬁ-
+cant improvements in performance, especially in computation
+time [22].
+existing decomposition techniques have tackled the original
+problem in two di erent ways. one is the computation of con-
+formance at the decomposed subcomponents level [22, 23, 24],
+where instead of solving the overall problem, it focuses on iden-
+tifying local conformance issues at individual subcomponents.
+the other is the approximation of the overall conformance be-
+tween the process and the log, such as pseudo-alignments [25]
+or approximate alignments [26]. this means that there is still
+a gap in the application of decomposition techniques for theexact overall conformance between a process and a log. this
+paper covers this gap by proposing an approach to turn opti-
+mal decomposed pseudo-alignments into optimal proper align-
+ments. this approach creates a full circle approach for decom-
+posed alignment (‘there and back again’), and makes it possible
+to solve alignment-based conformance problems that current
+techniques cannot handle. importantly, our approach can bal-
+ance quality and computation time. for example, in the experi-
+mental section of the paper, we demonstrate our approach on a
+real-life dataset (bpic2012) for which the existing state-of-the-
+art monolithic conformance checking approach is not feasible
+while our proposed approach can compute an almost perfect
+approximation of the overall conformance in reasonable time,
+obtaining information about the speciﬁc problems of the model.
+as such, we extend the applicability of decomposition tech-
+niques by computing the overall conformance of a process and
+a log. this means that performance gains from decomposition
+techniques can be obtained whilst retaining the quality of the
+result in reﬂecting the overall conformance. as the main con-
+tributions of the paper:
+we formalize new properties in decompositions of pro-
+cesses and logs. these properties will later extend the
+conditions under which decomposition techniques can be
+applied to compute the overall conformance (section 3.1).
+we also present a new conformance metric to facilitate the
+aggregation of conformance results from subcomponents
+to an overall conformance result (section 3.2).
+applying the formalized properties and the new confor-
+mance metric, we show the conditions under which con-
+formance results from subcomponents can be aggregated.
+these conditions relax the current perfect ﬁtness require-
+ment and permit aggregation in the presence of deviations
+between the process and the log (section 3.3 and sec-
+tion 3.4).
+with the new aggregation conditions, we present a novel
+decomposed conformance checking method – recompos-
+ing conformance – to compute the overall conformance
+between a process and a log (section 4).
+sometimes, exactness is not the top priority. we also mod-
+ify the exact recomposing conformance method to com-
+pute an interval as an approximation of the overall ﬁtness
+between a process and a log (section 5).
+the two methods are implemented as one conﬁgurable
+conformance checking approach. the performance gains
+from the proposed methods are demonstrated through ex-
+tensive experimental results using both synthetic and real-
+life datasets (section 6).
+2. preliminaries
+this section introduces basic concepts related to process
+models, event logs, and their conformance.
+22.1. basic notation
+deﬁnition 1 (multisets) .let x be a set, a multiset of x is a
+mapping m :x!n.b(x)denotes the set of all multisets over
+x. let m and m0be multisets of x. m contains m0, denoted
+mm0, if and only if8x2xm(x)m0(x). the union of m and
+m0is denoted m +m0, and is deﬁned by 8x2x(m+m0)(x)=
+m(x)+m0(x). the di erence between m and m0is denoted m 
+m0and is deﬁned by8x2x(m m0)(x)=(m(x) m0(x))max 0.
+note that ( m m0)+m0=monly holds if mm0. for sets
+xandx0such that x0x, we consider every set x0to be an
+element ofb(x), where8x2x0x0(x)=1 and8x2xnx0x0(x)=0.
+deﬁnition 2 (projection on sequences and multisets) .let x be
+a set, let x0x be a subset of x, let 2xbe a sequence
+of x, and let m2b(x)be a bag of x. with x0we denote
+the projection of on x0, e.g.hx;x;y;y;y;zifx;zg=hx;x;zi.
+with mx0we denote the projection of m on x0, e.g. [x2;y3;
+z]fx;zg=[x2;z].
+deﬁnition 3 (function domains and ranges) .let f2x9x0
+be a (partial) function. with dom (f)x we denote the set of
+elements from x that are mapped onto some value in x0by f .
+with rng (f)x0we denote the set of elements in x0that are
+mapped onto by some value in x, i.e., rng (f)=ff(x)jx2
+dom(f)g.
+deﬁnition 4 (functions on sequences and multisets) .let f2
+x9x0be a (partial) function, let 2xbe a sequence of
+x, and let m2b(x)be a bag of x. with f ()we denote the
+application of f on all elements in , e.g., if dom (f)=fx;zg,
+then f (hx;x;y;y;y;zi=hf(x);f(x);f(z)i. with f (m)we denote
+the application of f on all elements in m, e.g., if dom (f)=fx;
+zg, then f ([x2;y3;z])=[f(x);f(x);f(z)].
+2.2. petri nets
+as previously mentioned, processes are depicted using pro-
+cess models. there are many di erent process modeling lan-
+guages, e.g., the business process modeling notation (bpmn),
+event-driven process chains (epcs), uniﬁed modeling lan-
+guage (uml) activity diagrams, yet another workﬂow lan-
+guage (yawl) and others [2]. in this paper, we use petri nets
+to present our ideas [27], as this is the most often-used process
+modeling notation in process mining. we stress that process
+models denoted using petri nets can be translated to models us-
+ing other process modeling languages and that the presented
+ideas can be adapted for other process modeling languages.
+deﬁnition 5 (petri net) .a petri net is a tuple n =(p;t;f)
+with p the set of places, t the set of transitions, p \t=;
+and f =(pt)[(tp)the set of arcs, which is sometimes
+referred to as the ﬂow relation.
+places are typically visualized by circles, whereas transitions
+are typically visualized by squares (or rectangles). consider the
+petri net n1=(p1;t1;f1) in figure 1. n1has the set of places
+p1=fp1;p2;:::; p19g, the set of transitions t1=ft1;t2;:::; t18g
+and the set of arcs f1=f(p1;t1);(t1;p2);:::; (t18;p19)g.the state of a petri net is called a marking , and corresponds
+to a multiset of places. a marking is typically visualized by
+putting as many so-called tokens (black dots) at a place as the
+place occurs in the marking. for example, a possible marking
+of the net n1is [p2;p32] which is visualized by one token at
+place p2and two tokens at place p3.
+deﬁnition 6 (marking) .let n =(p;t;f)be a petri net. a
+marking m is a multiset of places, i.e. m 2b(p)
+letn=(p;t;f) be a petri net. for a node n2p[t(a
+place or a transition), n=fn0j(n0;n)2fgdenotes the set of
+input nodes andn=fn0j(n;n0)2fgdenotes the set of output
+nodes .
+a transition t2tisenabled by a marking mif and only
+if each of its input places tcontains at least one token in m,
+that is, if and only if mt. an enabled transition may ﬁre
+by removing one token from each of the input places tand
+producing one token at each of the output places t. the ﬁring of
+an enabled transition tin marking mis denoted as ( n;m)[ti(n;
+m0), where m0=(m t)+tis the resulting new marking.
+a marking m0isreachable from a marking mif and only if
+there is a sequence of transitions =ht1;t2;:::; tni2tsuch
+that80i<n(n;mi)[ti+1i(n;mi+1) with m0=mandmn=m0.
+for example, ( n1;[p1])[i(n1;[p2;p17]) with the sequence =
+ht1;t4;t7;t8;t11;t12;t15iat the petri net n1in figure 1.
+deﬁnition 7 (labeled petri net) .alabeled petri net n =(p;t;
+f;l)is a petri net (p;t;f)with labeling function l 2t9ua
+whereuais some universe of activity labels. let v=ha1;a2;
+:::;ani2u
+abe a sequence of activities. (n;m)[vb(n;m0)
+if and only if there is a sequence 2tsuch that (n;m)[i(n;
+m0)and l ()=v.
+a transition tis called invisible if and only if it is not mapped
+to any activity label by the labeling function, that is, if and only
+ift<dom(l). otherwise, transition tis visible and corresponds
+to an observable activity a=l(t).
+consider the labeled petri net n1=(p1;t1;f1;l1) in fig-
+ure 1. it has a labeling function l1that maps transition t1onto
+activity label a,t2onto b, etc. note that t10<dom(l1), hence
+this transition is a silent transition.
+(n1;[p1])[vb(n1;[p19]) for the sequence v=ha;c;f;m;d;
+g;h;j;k;n;p;qisince ( n1;[p1])[i(n1;[p19]) with=ht1;t3;
+t6;t10;t14;t4;t7;t8;t11;t12;t15;t17;t18iandl1()=v. note that
+since t10is not mapped to any activity label, it is not observable
+inv.
+in the context of process mining, the focus is mainly on pro-
+cesses with an initial state and a well-deﬁned ﬁnal state. for the
+netn1, we are interested in complete ﬁring sequences, starting
+from marking [ p1] and ending at marking [ p19]. the notion of
+a system net is deﬁned to include the initial and ﬁnal marking.
+deﬁnition 8 (system net) .a system net is a triplet sn =(n;i;
+o)where n =(p;t;f;l)is a labeled petri net, i 2b(p)is the
+initial marking, and o 2b(p)is the ﬁnal marking. usnis the
+universe of system nets .
+the net sn1=(n1;i1;o1) in figure 1 is a system net. it
+has an initial marking i1=[p1] and a ﬁnal marking o1=[p19].
+3p1 t1t3t2 t5
+t6t9 t13
+t14
+t17
+t15
+t12t7
+t8t4b e i l
+m f c
+dg
+n
+k hp4 p8 p12
+p16
+p17p18p13 p9 p5
+p2
+p3p6 p10 p14
+p15 p11 p7p q
+p19t18
+t16oa
+jt10
+t11
+a = start bank transfer
+b = open overseas bank form
+c = open local bank form
+d = start veriﬁcation
+e = enter oversea bank code
+f = enter local bank codeg = enter sender account
+h = enter receiver account
+i = foreign currency conversion
+j = verify sender account
+k = verify receiver account
+l = update oversea bank formm = update local bank form
+n = complete veriﬁcation
+o = redo bank transfer
+p = ﬁnish bank transfer
+q = send bank transferfigure 1: running example: the system net sn1that contains the (labeled) petri net n1
+this system net models a bank transfer process in which a client
+makes a bank transfer from one account (sender account) to
+another account (receiver account). the receiver account can
+be of a local bank or an overseas bank.
+consider the visible sequence v=ha;b;e;i;l;d;g;h;j;k;n;
+p;qi. this sequence describes the activities that are executed
+for a bank transfer to an overseas bank account. it is initiated
+with activity a(start bank transfer ) and is ended with activ-
+ityq(send bank transfer ). for an overseas bank transfer, the
+bank employee has to open a new overseas bank form, enter the
+overseas bank code, convert the transfer amount into the foreign
+currency and ﬁll in the bank form with the converted amount.
+the bank employee also has to verify both the sender and re-
+ceiver account before making the transfer. the completion of
+the bank form and the account veriﬁcation can be done con-
+currently as shown in sn1. inv, the bank form is completed
+(h:::;b;e;i;l;:::i) before the account veriﬁcation ( h:::;d;g;h;
+j;k;:::i).
+deﬁnition 9 (system net notations) .let sn =(n;i;o)2u sn
+be a system net with n =(p;t;f;l).
+tv(sn)=dom(l)is the set of visible transitions in sn.
+av(sn)=rng(l)is the set of corresponding observable
+activities in sn.
+tu
+v(sn)=ft2tv(sn)j8t02tv(sn)l(t)=l(t0))t=t0gis the
+set of unique visible transitions in sn (such that no other
+transition has the same visible label).
+au
+v(sn)=fl(t)jt2tu
+v(sn)gis the set of corresponding
+unique observable activities in sn.for a given system net, the set of visible traces starting from
+marking ito marking ois projected onto observable activities
+yields set(sn).
+deﬁnition 10 (traces) .let sn =(n;i;o)2u snbe a system
+net.(sn)=fvj(n;i)[vb(n;o)gis the set of visible
+traces starting in marking i and ending in marking o. f(sn)=
+fj(n;i)[i(n;o)gis the corresponding set of complete ﬁring
+sequences.
+for the system net sn1in figure 1, (sn1)=fha;b;
+e;i;l;d;g;j;h;k;n;p;qi;ha;c;f;m;d;g;j;h;k;n;p;qi;:::gand
+f(sn1)=fht1;t2;t5;t9;t13;t4;t7;t11;t8;t12;t15;t17;t18i;ht1;t3;
+t6;t10;t14;t4;t7;t11;t8;t12;t15;t17;t18i;:::g. due to the loop in-
+volving transition t16there is an inﬁnite number of visible traces
+and complete ﬁring sequences.
+the union of two system nets is deﬁned for composing and
+decomposing of process models.
+deﬁnition 11 (union of nets) .let sn =(n;i;o)2u snwith
+n=(p;t;f;l)and sn0=(n0;i0;o0)2u snwith n0=(p0;t0;
+f0;l0)be two system nets.
+l002(t[t0)9uawith dom (l00)=dom(l)[dom(l0),
+l00(t)=l(t)if t2dom(l), and l00(t)=l0(t)if t2dom(l0)n
+dom(l)is the union of l and l0.
+n[n0=(p[p0;t[t0;f[f0;l00)is the union of n and
+n0.
+sn[sn0=(n[n0;i+i0;o+o0)is the union of systems
+nets sn and sn0.
+42.3. event logs
+event logs serve as the starting point for process mining. an
+event log is a multiset of traces . each trace describes a par-
+ticular case, i.e., a process instance, in terms of the activities
+executed.
+deﬁnition 12 (trace, event log) .let au abe a set of activ-
+ities. a trace 2ais a sequence of activities. an event log
+l2b(a)is a multiset of traces.
+in this simple deﬁnition of an event log, an event refers to
+just an activity. often event logs store additional information
+about events such as resources, timestamps or additional data
+elements recorded with the event log. in this article, we abstract
+from such information, but the results presented can easily be
+extended to event logs containing additional information.
+l1=[1=ha;b;e;i;l;d;g;j;h;k;n;p;qi20;
+2=ha;c;f;m;d;g;j;k;h;n;p;qi5;
+3=ha;e;i;l;d;g;j;h;k;n;p;qi5]
+l2=[4=ha;c;f;m;d;g;j;h;k;n;p;qi20;
+5=ha;b;e;i;l;d;j;g;h;k;n;p;qi5;
+6=ha;b;e;i;l;d;g;h;n;j;k;p;qi5]
+figure 2: running example: event logs l1andl2
+consider the event logs l1andl2in figure 2. both event
+logs have three distinct traces. l1contains 30 traces, with 20
+1traces, 52traces and 5 3traces. l2contains 30 traces
+with 204traces, 55traces and 5 6traces. note that an
+event log is a multiset of traces as a distinct trace (like 1) can
+occur multiple times.
+the projection function xas introduced earlier also directly
+applies to event logs. for example, consider the event log l1
+in figure 1, l1fa;b;eg=[ha;b;ei20;hai5;ha;ei5] and l1fa;bg=
+[ha;bi20;hai10]. for a log l3=[hi] with an empty trace, the
+projection l3fa;b;eg=[hi] returns a log with an empty trace.
+these projected event logs are referred to as sublogs and the
+traces in sublogs are referred to as subtrace.
+2.4. alignment-based conformance checking
+the main idea of conformance checking is to compare the
+observed behavior of an event log l2b(a) with the modeled
+behavior of the related model, i.e. the related system net sn=
+(n;i;o).
+there are four commonly accepted quality dimensions for
+comparing a model and a log: (1) ﬁtness, (2) precision, (3) sim-
+plicity and (4) generalization [28]. a model has good ﬁtness if
+it can mimic the behaviour of the event log. yet a ﬁtting model
+is not necessarily a good model. for example, a “ﬂower model”
+(a model that has only transitions and no places to constrain the
+behavior) is able to replay all the traces in the event log and al-
+lows sequences that are not seen in the event log. such a modeldoes not contain any knowledge on the process other than its
+activities and is unlikely to be of much use. a model is precise
+if it does not allow “too much” behaviour. a model that lacks
+precision is underﬁtting. on the other hand, a model that does
+not allow any behaviour other than the traces in the the event
+log is unlikely to be a good model. an event log often does
+not contain all the possible runs of the process. generalization
+means that a model should not be overﬁtting. lastly, the sim-
+plicity dimension refers to occam’s razor; a model should be
+as simple as possible. in the remainder, we will focus on ﬁt-
+ness. however, the ideas presented are also applicable to the
+other quality dimensions, e.g. precision by counting escaping
+arcs [17] and generalization [15].
+a
+b
+e
+l
+d
+g
+i
+a
+b
+e
+l
+d
+g
+i
+t1
+t2
+t5
+t13
+t4
+t7
+t9
+k
+n
+h
+p
+q
+k
+n
+h
+p
+q
+t12
+t15
+t8
+t17
+t18
+j
+t11
+j
+1
+=
+a
+c
+f
+m
+d
+g
+
+t1
+t3
+t6
+t14
+t4
+t7
+t10
+h
+n
+k
+p
+q
+t8
+t15
+t17
+t18
+j
+t11
+2
+=
+a
+c
+f
+m
+d
+g
+
+h
+n
+p
+q
+j
+a
+
+e
+l
+d
+g
+i
+a
+b
+e
+l
+d
+g
+i
+t1
+t2
+t5
+t13
+t4
+t7
+t9
+k
+n
+h
+p
+q
+k
+n
+h
+p
+q
+t12
+t15
+t8
+t17
+t18
+j
+t11
+j
+3
+=
+t12
+k
+
+
+figure 3: alignments for event log l1
+in alignment-based conformance checking, ﬁtness is mea-
+sured by alignments between the traces in the event log and the
+visible traces of the process model. consider the alignments
+of the three traces in the event log l1in figure 3. for each
+alignment, the top row corresponds to the trace in the event log,
+the middle row corresponds to the visible trace in the models,
+whereas the bottom row corresponds to the corresponding ﬁring
+sequence in the model.
+if an activity in the model cannot be mimicked by an activity
+in the log, then a (“no step”) appears in the top row. simi-
+larly, if an activity in the log cannot be mimicked by an activity
+in the model, then a (“no step”) appears in the bottom row.
+note that we use the symbol as the surrogate activity label for
+invisible transitions.
+for example, the fourth column of 2indicates that the net
+sn1has ﬁred transition t10, which is an invisible transition, and
+that the log trace 2could not mimic this ﬁring. the ninth
+column indicates that the the activity kwas performed in the
+log trace2, but that the net sn1could not mimic this. these
+columns containing point to deviations between model and
+log.
+amove is a pair ( a;m) where the ﬁrst element arefers to
+the activity in the log and the second element mrefers to the
+transition in the net.
+5deﬁnition 13 (legal moves) .let l2b(a)be an event log
+and let sn =(n;i;o)2u snbe a system net with n =(p;t;
+f;l). a lm=f(a;(a;t))ja2a^t2t^l(t)=ag[f(;
+(a;t))ja2a^t2t^l(t)=ag[f(;(;t))ja2a^t2
+t^t<dom(l)g[f(a;)ja2agis the set of legal moves . the
+function2alm!a[fgprovides the activity (possibly )
+associated with a move: for all t 2t and a2a,(a;(a;t))=a,
+(;(a;t))=a,(;(;t))=, and(a;)=a.
+an alignment is a sequence of legal moves. this means that,
+after removing all symbols, the top row corresponds to a log
+trace and the bottom row corresponds to a ﬁring sequence in the
+net from marking ito marking o. the middle row corresponds
+to a visible trace after also removing all symbols.
+deﬁnition 14 (alignment) .let l2b(a)be an event log with
+au a, letl2l be a log trace and m2f(sn)a com-
+plete ﬁring sequence of system net sn. an alignment ofland
+mis a sequence 2a
+lmsuch that the projection on the ﬁrst
+element (ignoring any ) yieldsland the projection on the
+last element (ignoring any ) yieldsm.
+a
+c
+f
+m
+d
+g
+
+t1
+t3
+t6
+t14
+t4
+t10
+h
+k
+t8
+j
+0
+2
+=
+a
+c
+f
+m
+d
+
+
+h
+
+t12
+k
+
+
+n
+p
+q
+t15
+t17
+t18
+n
+p
+q
+t7
+t11
+g
+j
+
+
+figure 4: alternative alignment for trace 2
+given a log trace and a model, there could be multiple or inﬁ-
+nite number of alignments. consider trace 2in event log l1in
+figure 2. one possible alignment is 2at figure 3 while another
+could be0
+2at figure 4. it is clear that 2is a better alignment
+as it better matches the log trace with the model trace. in gen-
+eral, costs can be assigned to di erent types of moves so that an
+optimal alignment with the lowest costs can be computed.
+deﬁnition 15 (cost of alignment) .the cost function 2
+alm!qassigns costs to legal moves. the cost of an align-
+ment2a
+lmis the sum of all costs: ()=p
+(a;m)2(a;m).
+moves where the log and the model agree have no costs, i.e.
+(a;(a;t))=0 for all a2a. a move in the model also has
+no costs if the transition is invisible, i.e. (;(;t))=0 if
+t<dom(l). a move in the model has a cost of (;(a;t))>0
+ifl(t)=aanda2a. similarly, a move in the log has a cost of
+(a;)>0. in this paper, we assume a standard cost function
+1that assigns unit costs: 1(a;(a;t))=0,1(;(;t))=0 and
+1(;(a;t))=1(a;(;t))=1 for all a2a. for example,
+1(1)=1(4)=0,1(2)=1(5)=1(6)=2 and1(3)=
+1.
+deﬁnition 16 (optimal alignment) .let l2b(a)be an event
+log with a u aand let sn2 u snbe a system net with
+(sn),;.forl2l, an alignment betweenland a complete
+ﬁring sequence of the system net m2f(sn)is optimal
+if the associated misalignment costs are lower or equal to
+the costs of any other possible alignment 0.
+(l;sn)2a!a
+lmis a deterministic mapping that
+assigns any log trace lto an optimal alignment.
+a
+c
+f
+m
+d
+g
+
+a
+c
+f
+m
+d
+g
+
+t1
+t3
+t6
+t14
+t4
+t7
+t10
+k
+n
+h
+p
+q
+k
+n
+h
+p
+q
+t12
+t15
+t8
+t17
+t18
+j
+t11
+j
+4
+=
+a
+b
+e
+l
+d
+j
+i
+t1
+t2
+t5
+t13
+t4
+t9
+h
+n
+
+p
+q
+t8
+t15
+t17
+t18
+g
+t7
+5
+=
+a
+b
+e
+l
+d
+
+i
+h
+n
+p
+q
+g
+a
+b
+e
+l
+d
+g
+i
+t1
+t2
+t5
+t13
+t4
+t7
+t9
+j
+k
+n
+
+p
+t12
+t17
+h
+t8
+6
+=
+t12
+k
+j
+k
+t11
+q
+a
+b
+e
+l
+d
+g
+i
+k
+p
+h
+q
+t18
+t11
+j
+t15
+n
+
+figure 5: alignments for event log l2
+consider the system net sn1in figure 1 and the event logs l1
+andl2in figure 2. the alignments 1,2, and3in figure 3 are
+possible optimal alignments for the traces in l1and their cor-
+responding ﬁring sequences in the system net sn1. the align-
+ments4,5, and6in figure 5 are possible optimal alignments
+for the traces in l2and their corresponding ﬁring sequences in
+the same system net.
+with an optimal alignment betweenlandsn, we can
+quantify ﬁtness by comparing its associated misalignment costs
+with the costs of a default alignment.
+deﬁnition 17 (fitness metric) .let l2 b(a)be an event
+log and let sn =(n;i;o)2 u snbe a system net with
+n=(p;t;f;l). let l2t!a be such that l(t)=l(t)
+if t2dom(l)and l(t)=if t<dom(l). letl2l be
+a log trace. let move m(sn)=minm2f(sn)p
+t2m(;(l(t);
+t))be the minimal costs of an alignment between an empty log
+trace and a complete ﬁring sequence of the system net. let
+move l(l)=p
+a2l(a;)be the costs of an alignment be-
+tweenland an empty model trace.
+ﬁt(l;sn;)=1 ((l;sn))
+move m(sn)+move l(l)
+the ﬁtness of the event log l is computed as follows:
+ﬁt(l;sn;)=1 p
+l2l((l;sn))
+jljmove m(sn)+p
+l2lmove l(l)
+this is a relative ﬁtness metric presented in many confor-
+mance related papers [16, 14, 15]. the metric normalizes the
+misalignment costs associated to by the costs of the extreme
+6case, a default alignment where all the steps in the log trace are
+aligned as log moves and all the steps of the minimum model
+trace are aligned as model moves. using an optimal alignment
+=(l;sn), the ﬁtness metric computes a value between 0
+and 1. a trace that perfectly ﬁts the system net would yield a
+ﬁtness value of 1 and a trace that does not ﬁt the system net at
+all would yield a ﬁtness value of 0.
+consider the trace 3in figure 2 and the net sn1in fig-
+ure 1. assuming that the optimal alignment 3=(3;sn1)
+in figure 3 is used, the ﬁtness of 3andsn1isﬁt(3;sn1;
+1)=1 1
+12+12=23
+240:958. the ﬁtness of the event log l1and
+sn1isﬁt(l1;sn1;1)=1 020+25+15
+1230+1320+125+125=1 15
+740=
+145
+1480:980. recall that the cost function as a function is
+deﬁned for multisets. this means that the cost function is ap-
+plied to a trace multiple times if there are multiple cases with
+the trace.
+3. total border agreement and decomposing exact ﬁtness
+alignment-based conformance checking can be time con-
+suming. this is because the time needed for computing con-
+formance and optimal alignments is heavily inﬂuenced by the
+size of the net and the log, as well as by the complexity of the
+underlying process. one of the ways to tackle this limitation
+is through decomposition techniques. the alignment problem
+can be decomposed by splitting the overall net and the overall
+log into subcomponents (subnets and sublogs) and then solv-
+ing this set of smaller problems. under the assumption that the
+complexity of the alignment algorithm is signiﬁcantly worse
+than linear, solving multiple small alignment problems is often
+faster than solving one large alignment problem. in addition,
+the set of decomposed alignment problems can be distributed
+over a network of computer nodes to further reduce computa-
+tion time.
+however, existing decomposition techniques have limited
+applicability in computing the overall conformance between the
+net and the log at the alignment level, i.e., computing confor-
+mance using optimal alignments between the net and log traces.
+following the decomposition of the overall net and the overall
+log, existing decomposition techniques only guarantee that the
+aggregation of conformance results from subcomponents will
+reﬂect the exact overall conformance if there is perfect ﬁtness
+between the net and the log [24]. this has led to the focus
+on using decomposition to identify problematic sections of the
+process.
+as previously mentioned, there are many scenarios where
+the precise alignments or costs are required. this motivates
+our work on extending the conditions under which the confor-
+mance results from subcomponents can be aggregated to reﬂect
+the exact overall conformance. in this section, we present the
+core ideas that will extend the applicability of decomposition
+techniques in computing the overall conformance. these ideas
+will be later used in two novel alignment-based conformance
+checking methods to compute an exact or an interval overall
+conformance result.3.1. border activities
+in [24] the author presented the concept of valid decompo-
+sition of a petri net. a decomposition of a petri net is valid
+if each place and invisible transition resides in just one subnet.
+moreover, if there are multiple transitions with the same label,
+they should reside in the same subnet. only unique visible tran-
+sitions can be shared among di erent subnets.
+deﬁnition 18 (valid decomposition [24]) .let sn2u s nbe
+a system net with labeling function l. d =fsn1;sn2;:::;
+snngu snis a valid decomposition if and only if the following
+properties are fulﬁlled:
+sni=(ni;ii;oi)is a system net with ni=(pi;ti;fi;li)
+for all 1in.
+li=ltifor all 1in.
+pi\pj=;for all 1i<jn.
+ti\tjtu
+v(sn)for all 1i<jn.
+sn=s
+1insni.
+d(sn)is the set of all valid decompositions of sn.
+for example, the decomposition d1in figure 6 is a valid
+decomposition of the system net sn1, that is, d12d(sn1).
+the system nets in d1are referred to as the subnets of sn1.
+given a valid decomposition, an activity may be shared by
+multiple subnets. we deﬁne these activities as the border ac-
+tivities of the decomposition. this overlapping property will
+be used later as a common ground between subcomponents in
+order to obtain an overall result from local results.
+deﬁnition 19 (border activities) .let sn =(n;i;o)2u sn
+be a system net with n =(p;t;f;l). let d =fsn1;sn2;:::;
+snng2d (sn)be a valid decomposition of sn. for all 1
+in, sni=(ni;ii;oi;) is a subnet with ni=(pi;ti;fi;
+li). a b(d)=fl(t)j 91i<jnt2ti\tjgis the set of border
+activities of the valid decomposition d.
+for an activity a2rng(l), sn b(a;d)=fsnijsni2d^a2
+av(sni)gis the set of subnets that contain a as an observable
+activity.
+due to the properties of a valid decomposition, a border
+activity can only be an activity that has a unique label, i.e.,
+ab(d)au
+v(sn). for example, the valid decomposition d1
+in figure 6 has the set of border activities of fa;b;c;d;l;m;n;o;
+pg.
+in addition, non-unique activities will appear in precisely one
+subnet, i.e., for all a2av(sn)nau
+v(sn) it holds thatjsnb(a;
+d)j=1. on the other hand, unique activities may appear in
+multiple subnets, i.e., for all a2au
+v(sn) it holds thatjsnb(a;
+d)j1. border activities are unique activities that appear in
+multiple subnets, i.e., for all a2ab(d) it holds thatjsnb(a;
+d)j>1.
+for example with the valid decomposition d1in figure 6,
+snb(a;d1)=fsn1
+1;sn2
+1;sn3
+1gas the border activity ais shared
+by the subnets sn1
+1,sn2
+1andsn3
+1.
+7p1
+t1
+a
+t3
+t2
+b
+c
+sn5
+1
+t16
+o
+t4
+d
+p3
+t16
+o
+sn2
+1
+sn3
+1
+sn1
+1
+sn4
+1
+p2
+t3
+t2
+t5
+t6
+t9
+t10
+t13
+t14
+b
+e
+i
+l
+m
+f
+c
+p4
+p8
+p12
+p13
+p9
+p5
+t15
+t11
+t12
+t8
+t4
+d
+g
+n
+k
+h
+p6
+p10
+p14
+p15
+p11
+p7
+sn7
+1
+sn8
+1
+t13
+t14
+l
+m
+p16
+t15
+n
+p17
+sn9
+1
+t17
+p
+q
+p19
+t18
+t16
+o
+p18
+t17
+p
+t17
+p
+t1
+a
+t1
+a
+sn6
+1
+j
+t7figure 6: components resulting from a possible valid decomposition d1of the system net sn1
+a
+a
+t1
+1
+3
+=
+
+b
+t2
+a
+a
+t1
+2
+3
+=
+e
+l
+i
+e
+l
+i
+t5
+t13
+t9
+
+b
+t2
+4
+3
+=
+a
+a
+t1
+3
+3
+=
+d
+d
+t4
+5
+3
+=
+6
+3
+=
+g
+g
+t7
+k
+h
+k
+h
+t12
+t8
+j
+t11
+j
+d
+d
+t4
+n
+n
+t15
+p
+p
+t17
+7
+3
+=
+n
+p
+n
+p
+t15
+t17
+8
+3
+=
+9
+3
+=
+q
+q
+t18
+p
+p
+t17
+l
+l
+t13
+figure 7: subalignments between the trace 3=ha;e;i;l;d;g;j;h;k;n;p;qiin
+event log l1and the valid decomposition d1in figure 6
+3.2. decomposed fitness
+let us consider trace 3=ha;e;i;l;d;g;j;h;k;n;p;qiand
+the system net sn1in figure 1. under a decomposition, the
+optimal subalignments 1
+3;:::;9
+3can be obtained by ﬁrst pro-
+jecting3onto the subnets sn1
+1;:::; sn9
+1in figure 6 and later
+aligning each subtrace with the corresponding subnet as shown
+in figure 7.
+a
+a
+t1
+1
+1
+=
+b
+b
+t2
+a
+a
+t1
+2
+1
+=
+3
+1
+=
+a
+a
+t1
+d
+d
+t4
+4
+1
+e
+l
+i
+e
+l
+i
+t5
+t13
+t9
+b
+b
+t2
+=
+5
+1
+=
+g
+g
+t7
+k
+n
+h
+k
+n
+h
+t12
+t15
+t8
+j
+t11
+j
+d
+d
+t4
+6
+1
+=
+p
+p
+t17
+7
+1
+=
+l
+l
+t13
+p
+p
+t17
+8
+1
+=
+n
+n
+t15
+p
+q
+p
+q
+t17
+t18
+9
+1
+=
+figure 8: subalignments between the trace 1=ha;b;e;i;l;d;g;j;h;k;n;p;qi
+in event log l1and valid decomposition d1in figure 6
+all moves in alignments 1
+3,3
+3,6
+3,7
+3,8
+3and9
+3are syn-
+chronized. alignment 5
+3is an empty alignment. alignments
+2
+3and4
+3both have a model move involving transition t2with
+the label b. similarly, optimal subalignments for the traces 1
+and2are shown in figures 8 and 9 respectively.
+a naive approach to aggregate the results per subcomponent,
+would be to sum up all the misalignment costs of the subalign-
+ments under the standard cost function. for 1
+3;2
+3;:::;9
+3, we
+a
+t1
+1
+2
+=
+a
+c
+t3
+c
+a
+t1
+2
+2
+=
+a
+d
+t4
+d
+a
+t1
+3
+2
+=
+a
+4
+2
+=
+5
+2
+=
+g
+t7
+h
+k
+t8
+j
+t11
+g
+h
+j
+t12
+k
+
+
+d
+t4
+d
+6
+2
+=
+f
+m
+
+t6
+t14
+t10
+f
+m
+
+c
+t3
+c
+n
+t15
+n
+n
+p
+t15
+t17
+n
+p
+p
+t17
+p
+m
+t14
+m
+7
+2
+=
+8
+2
+=
+p
+q
+t17
+t18
+p
+q
+9
+2
+=figure 9: subalignments between the trace 2=ha;c;f;m;d;g;j;k;h;n;p;qi
+in event log l1and valid decomposition d1in figure 6
+would get a total of 2. however the misalignment costs as-
+sociated to the optimal overall alignment 3is 1 as shown in
+figure 3. the wrong result is produced because border activ-
+ities appear in multiple subnets and therefore moves involving
+these transitions will be counted multiple times when their as-
+sociated costs are simply aggregated. we would like the result
+computed using 1
+3;:::;9
+3to equal the optimal cost computed
+using a overall alignment such as 3. hence, we use the adapted
+cost function presented in [24], to avoid counting moves that in-
+volve border activities multiple times.
+deﬁnition 20 (adapted cost function [24]) .let d =fsn1;sn2;
+:::;snng 2 d (sn)be a valid decomposition of some system
+net sn and 2alm!qa cost function. the adapted cost
+functiond2alm!qfor decomposition d is deﬁned as
+follows:
+d(a;m)=8>><>>:(a;m)
+jsnb((a;m);d)jif(a;m),;
+(a;m) otherwise:
+the costs of each legal move is divided by the number of
+subnets in which the corresponding activity may appear, for ex-
+ample,d(a;)=(a;)
+jsnb(a;d)j. this avoids counting misalign-
+ment costs of the same legal move multiple times. for exam-
+ple, consider the set of subalignments 1
+3;:::;9
+3in figure 7,
+jsnb(b;d1)j=jfsn2
+1;sn4
+1gjandjsnb(d;d1)j=jfsn3
+1;sn6
+1gj.
+for the adapted standard cost function d1,d1(;(b;t2))=1
+2
+andd1(d;(d;t4))=0. the aggregated cost of 1
+3;:::;9
+3is 1,
+8i.e. identical to the costs of the overall optimal alignment 3as
+shown in figure 3.
+having deﬁned the adapted cost function, the ﬁtness values
+associated with the optimal subalignments per sublog and sub-
+net can then be aggregated. this gives a decomposed ﬁtness
+metric.
+deﬁnition 21 (decomposed ﬁtness metric) .let l2b(a)be
+an event log and let sn =(n;i;o)2u snbe a system net with
+n=(p;t;f;l).
+let d =fsn1;sn2;:::; snng2d (sn)be a valid decompo-
+sition of sn. for all 1in, sni=(ni;ii;oi)is a subnet
+with an observable activity set ai
+v=av(sni).
+for a log trace l2l,i
+l=laivis the projection of l
+on the activity set of subnet sni.
+ﬁtd(l;sn;)=1 p
+i2f1;:::;ngd((i
+l;sni))
+move m(sn)+move l(l)
+for an event log l, its decomposed ﬁtness metric is computed
+as follows:
+ﬁtd(l;sn;)=1 p
+l2lp
+i2f1;:::;ngd((i
+l;sni))
+jljmove m(sn)+p
+l2lmove l(l)
+in the decomposed ﬁtness metric, the misalignment costs of
+each subalignment are ﬁrst aggregated using the adapted cost
+function. afterwards, the total is normalized using the same
+value as the undecomposed relative ﬁtness metric so that both
+metric values are normalized in the same manner.
+let us consider again the trace 3=ha;e;i;l;d;g;j;h;k;n;
+p;qiand the valid decomposition d1in figure 6. assuming
+that for sn1
+1;:::; sn9
+1,gives the subalignments 1
+3;:::;9
+3as
+shown in figure 7. the decomposed ﬁtness metric between the
+trace and the subnets is computed as ﬁtd1(3;sn1;1)=23
+24
+0:958. this is identical to the ﬁtness value for the overall trace
+and the overall net.
+similarly, the formula can be applied to the log. let the three
+subalignments shown in figure 8, figure 9 and figure 7 be the
+optimal subalignments that correspond to the traces 1,2and
+3. the decomposed ﬁtness value of the event log l1andsn1
+isﬁtd1(l1;sn1;1)=1 020+25+(1
+2+1
+2)5
+1230+1320+125+125=145
+1480:980.
+this is again identical to the ﬁtness value for the overall log
+and the overall net. as such, the approach has decomposed
+the conformance checking problem whilst providing a confor-
+mance value for the overall log and net as output. however, this
+is not always the case, and cannot be generalized for the gen-
+eral case but only for cases satisfying speciﬁc properties. these
+properties relate to alignment moves corresponding to border
+activities.
+3.3. total border agreement
+as mentioned earlier, the decomposed ﬁtness does not al-
+ways match the overall ﬁtness metric in the general case. that
+is because the legal moves involving a particular activity may
+dier from one subnet to another. let us consider the trace
+a
+t1
+1
+6
+=
+a
+b
+t2
+b
+a
+t1
+2
+6
+=
+a
+a
+t1
+3
+6
+=
+a
+d
+t4
+d
+b
+t2
+b
+4
+6
+=
+e
+l
+i
+t5
+t13
+t9
+e
+l
+i
+5
+6
+=
+g
+t7
+j
+k
+n
+
+t12
+h
+t8
+g
+k
+h
+t11
+j
+t15
+n
+
+6
+6
+=
+d
+t4
+d
+8
+6
+=
+p
+t17
+p
+t15
+n
+n
+p
+t17
+p
+7
+6
+=
+l
+t13
+l
+p
+t17
+q
+p
+q
+t18
+9
+6
+=figure 10: subalignments between the trace 6=ha;b;e;i;l;d;g;h;n;j;k;p;
+qiin event log l2and valid decomposition d1in figure 6
+6=ha;b;e;i;l;d;g;h;n;j;k;p;qiand the valid decomposi-
+tion d1in figure 6. a set of optimal subalignments between
+the trace and the subnets is shown in figure 10. according to
+the system net sn1in figure 1, transition t15with label nis to
+be executed after transitions t11with label jandt12with label k;
+in the trace 6,t15is executed before t11andt12. this results in
+a log move of activity nat the fourth position and a model move
+of transition t15with label nat the seventh position of alignment
+6
+6.
+as activities jandkare not present in the subnet sn8
+1, the
+move in the log and the move in the model are synchronized
+for transition nat alignment 8
+6. therefore, the moves involv-
+ing border activity nare not identical between subalignments
+6
+6and8
+6; the moves involving border activity nin the two sub-
+alignments are not in agreement. in this case, the decomposed
+ﬁtness metric would not result in a value that is equal to the
+ﬁtness value of the overall log and the overall net.
+to compute the exact ﬁtness value, a speciﬁc property must
+be satisﬁed: sequences of moves involving the same border ac-
+tivity have to be in agreement across all subalignments. we
+deﬁne that property as border agreement of subalignments and
+we formalize it as follows:
+deﬁnition 22 (border agreement) .let l2b(a)be an event
+log and let sn =(n;i;o)2u snbe a system net with n =(p;
+t;f;l).
+let d =fsn1;sn2;:::; snng2d (sn)be a valid decompo-
+sition of sn. for all 1in, sni=(ni;ii;oi)is a subnet
+with an observable activity set ai
+v=av(sni).
+for a border activity a 2ab(d), let a lm=f(a;(a;t));(;(a;
+t));(a;)gbe the set of legal moves for activity a, where t 2t
+such that l (t)=a.
+let sni2snb(a;d)be a subnet that has the border activity
+a. for a log trace l2l,i
+l=laivis the projection of lon
+the activity set of sni.i2a
+lmdenotes an optimal alignment
+between the sublog trace i
+land some complete ﬁring sequence
+of a subnet i
+m2f(sni).
+for all subnets sni2d and the respective projected sub-
+tracesi
+l,1;:::;nare their decomposed alignments. 1;:::;
+nare under border agreement on a border activity a 2ab(d)
+if, and only if, ialm=jalm, for all sni;snj2snb(a;d).
+the subalignments of a log trace l2l are under total bor-
+der agreement (t.b.a.) if, and only if, there is border agreement
+on all the border activities in 1;:::;nwhere the border agree-
+ment on each border activity is achieved one by one following
+9the order of their occurrences across 1;:::;n. this means
+border agreement is achieved starting with the ﬁrst occurring
+border activity in subnet sni2d which contains the initial
+marking i of net sn.
+given the properties of a sequence, there is border agreement
+if the following three conditions are satisﬁed:
+1.ialmhas an equal number of moves as jalm.
+2.ialmhas the same move types as jalm, i.e. ifialmhas
+one log move, then jalmmust also have one log move.
+3. the order of moves in ialmandjalmare the same.
+note that if the subalignment iis empty then the projection
+of the subalignment will also be an empty sequence.
+for example, there is total border agreement between the
+valid decomposition d1in figure 6 and the log trace 3=ha;
+e;i;l;d;g;j;h;k;n;p;qi. as shown by the corresponding sub-
+alignments in figure 7, all the moves corresponding to each
+border activity are under border agreement.
+on the other hand, the subalignments of the trace 6=ha;b;
+e;i;l;d;g;h;n;j;k;p;qiare not under total border agreement.
+the moves involving border activity nin subalignment 6
+6is a
+log move followed by a model move which does not “agree”
+with the synchronous move in subalignment 8
+6.
+3.4. properties of decomposed ﬁtness
+we now formalize the properties of the decomposed ﬁtness
+metric with consideration to the border agreements of subalign-
+ments, i.e., if the total border agreement is not satisﬁed, the de-
+composed ﬁtness metric corresponds only with an upper bound
+of the overall metric; when the total border agreement is satis-
+ﬁed, the decomposed ﬁtness matches exactly the overall ﬁtness.
+this results will be used in sections 4 and 5 as part of the pro-
+posed conformance methods.
+we ﬁrst show that the metric is an upper bound to the ﬁtness
+metric computed using the full alignment between the overall
+log and model. the proof is based on theorem 3 in the earlier
+paper [24].
+theorem 1 (upper bound for decomposed ﬁtness metric) .let
+l2b(a)be an event log and let sn =(n;i;o)2u snbe a
+system net with n =(p;t;f;l). letl2l be a log trace.
+let d =fsn1;sn2;:::; snng2d (sn)be a valid decompo-
+sition of sn.
+ﬁt(l;sn;)ﬁtd(l;sn;)
+for the log l,
+ﬁt(l;sn;)ﬁtd(l;sn;)
+proof. theorem 3 in [24] proves that the sum of the misalign-
+ment costs associated with subalignments of the traces in a log,
+once discounted by the number of subnets that share the ac-
+tivities related to the moves, represents a lower bound on the
+misalignment costs of the overall log and net. this is due to
+the possible local improvements at each subalignment. since a
+lower misalignment cost yields a higher ﬁtness value (perfectﬁtness equals to 1), the decomposed ﬁtness metric is an upper
+bound to the trace ﬁtness metric and the decomposed log ﬁtness
+metric is an upper bound to the log ﬁtness metric.
+consider again the set of subalignments 1
+6;:::;9
+6as shown
+in figure 10. due to the local improvement with activity nat
+subalignment 8
+6, the decomposed ﬁtness value computed us-
+ing this set of subalignments is higher than the ﬁtness value of
+the one computed with the overall alignment under the ﬁtness
+metric: ﬁtd1(6;sn1;1)=1 1
+2+1
+2
+12+13=24
+25=0:96>ﬁt(6;
+sn1;1)=1 1+1
+12+13=23
+25=0:92.
+consider the sets of subalignments for the traces, 4;5;6
+in the log l2at figure a.26, a.27, and 10. due to the local im-
+provement with activity nat subalignment 8
+6, the decomposed
+log ﬁtness value is higher than the log ﬁtness value: ﬁtd1(l;
+sn1;1)0:979>ﬁt(l;sn1;1)0:973.
+however, under total border agreement, we can prove that the
+decomposed ﬁtness value from the set of subalignments cor-
+responds to the exact ﬁtness value computed with the overall
+alignment. this applies to the decomposed log ﬁtness value as
+well. we extend the properties of the decomposed ﬁtness met-
+ric to include the capability of computing a conformance result
+that corresponds to an exact overall ﬁtness value regardless of
+the conformance level.
+theorem 2 (exact value for decomposed ﬁtness metric under
+total border agreement) .let l2 b(a)be an event log and
+letl2l be a log trace. let sn =(n;i;o)2 u snbe a
+system net and let d =fsn1;sn2;:::; snng2d (sn)be a valid
+decomposition of sn. for all 1in, sni=(ni;ii;oi)is
+a subnet with an observable activity set ai
+v=av(sni).1
+l;:::;
+n
+lare the subtraces from the projection of lonto the activity
+sets of sn1;:::; snnsuch thati
+l=laiv.iis an optimal
+subalignment between i
+land some complete ﬁring sequence
+of the corresponding subnet i
+m2f(sni).
+let1;:::;nbe the set of subalignments and let them be
+under total border agreement. the decomposed ﬁtness metric
+computed using this set of subalignments equals the relative
+ﬁtness metric computed with the overall alignment between l
+and sn:
+ﬁt(l;sn;)=ﬁtd(l;sn;)
+for the log l, if for all the log traces in l, their correspond-
+ing set of subalignments is under total border agreement,
+ﬁt(l;sn;)=ﬁtd(l;sn;)
+proof. the paper [25] presents a stitching function that merges
+a set of subalignments into an optimal alignment if all the legal
+moves from the subalignments can be stitched together with-
+out conﬂict and a trace pseudo-alignment otherwise. we prove
+by contradiction that under total border agreement, the set 1;
+:::;ncan always be stitched together as an optimal alignment
+without conﬂict.
+suppose that 1;:::;nis a set of subalignments and are un-
+der total border agreement but cannot be stitched together with-
+out conﬂict. first we note that the set of subalignments are
+10comprised of only legal moves and therefore it must be that
+there is a stitching conﬂict for particular moves between the
+subalignments.
+let ( al;m)2almbe a move involved in the ﬁrst conﬂict
+as1;:::;nare being stitched together. as for a conﬂict we
+need another move, and hence another subnet, we know that
+jsnb((al;m);d)j>1. therefore, the activity (al;m) must be
+a border activity. under total border agreement, all subalign-
+ments for this activity are the same across all subalignments.
+therefore, there cannot be a conﬂict.
+furthermore, since border agreement is achieved according
+to the occurrence order of the border activities across the sub-
+alignments, 1;:::;ncan be stitched together without occur-
+ring any conﬂicts.
+as a result, 1;:::;ncan always be merged into an op-
+timal alignment between and a complete ﬁring sequence
+m2f(sn). with the merged optimal alignment , the
+sum of misalignment costs associated with 1;:::;nunder the
+adapted cost function equals the misalignment cost of . there-
+fore, the decomposed ﬁtness value with 1;:::;nequals the
+ﬁtness value with .
+the decomposed log ﬁtness metric compares the sum of the
+misalignment costs from the sets of subalignments with the sum
+of the worst-case scenario costs for all the log traces. since
+the set of subalignments corresponding to each log trace is un-
+der total border agreement, all sets of subalignments can be
+merged into optimal alignments. this means that the sum of
+the misalignment costs under the adapted cost function equals
+the sum of optimal misalignment costs associated with all the
+log traces. the decomposed log ﬁtness value equals the log
+ﬁtness value.
+as previously shown, the event log l1has the exact same
+value under both the decomposed ﬁtness metric and the unde-
+composed ﬁtness metric at about 0.980.
+we now propose two novel alignment-based conformance
+checking methods that use the results from theorem 1 and 2.
+4. recomposing method for exact decomposed ﬁtness
+as previously mentioned, the main contribution of this pa-
+per is to make decomposition techniques more applicable in
+computing the overall conformance between a net and log. we
+now use the border properties formalized in the last section in
+a novel method to compute the overall conformance between a
+net and a log: recomposing conformance .
+similar to many existing decomposition techniques, the net
+is decomposed into subnets by activities and the log is projected
+onto the subnets to create sublogs. alignment is then performed
+on each pair of subnet and sublog. each of the sublogs can
+be analyzed in parallel, and together with the reduced size and
+complexity of the net, the approach obtains a signiﬁcant per-
+formance gain in time [22, 23, 29, 30, 31]. following the per
+subcomponent computation, the results are aggregated if there
+was agreement on the border. otherwise, some disagreeingsubnets are “recomposed” to get a more coarse-grained decom-
+position of the net, in which the disagreeing subnets have be-
+come a single subnet. as a result they cannot disagree anymore.
+traces whose conformance results disagreed on the border pre-
+viously are recomputed under the new decomposition. this it-
+erative process is repeated until completion. figure 11 shows
+an overview of the summarized method. in this paper, we apply
+this approach to decompose the relative ﬁtness metric, but note
+that it can be extended to the other dimensions in conformance
+as well.
+4.1. decomposed ﬁtness metric
+as illustrated in figure 11, the ﬁrst step of the approach is to
+decompose the system net. this enables the performance gain
+in the conformance checking process. the decomposition of the
+system net has to fulﬁll the properties of a valid decomposition,
+ﬁrst deﬁned in [24].
+following the initial decomposition, the log is projected onto
+the subnets of the decomposition to get the sublogs for align-
+ment.
+the alignment of subnets and sublogs and the computation
+of the decomposed ﬁtness metric are marked as step two and
+three of the algorithm in figure 11. decomposed ﬁtness val-
+ues of subalignments computed under total border agreement
+are recorded. afterwards, their associated traces are taken out
+of the process and are marked as completed. as for the re-
+maining traces, we resolve their border agreement problems by
+selectively “recomposing” subnets by their matching border ac-
+tivities on which they disagree.
+4.2. subnet recomposition
+as illustrated in step ﬁve in figure 11, the existing set of
+subnets are recomposed as a new set of subnets. recomposing
+subnets by their matching border activities resolves any border
+agreement problems associated with the recomposed border ac-
+tivities as it ceases to be shared between multiple subnets. “re-
+composition” can be done on single or multiple border activi-
+ties and di erent selection criteria can be used to select the bor-
+der activities. for example, recomposing the subnets by multi-
+ple border activities is likely to resolve more border agreement
+problems than if the subnets were to be recomposed on only
+one border activity. however, there would be less performance
+gain under the multiple border activities selection approach as
+the resulting subnets would be larger and more complex.
+for the sake of simplicity, in this paper we consider select-
+ing the single activity that has the highest number of border
+agreement problems. this selection criteria resolves the most
+problematic border activity at each recomposition. following
+the valid decomposition in figure 6, for event log l2, there is a
+border agreement issue with trace 6=ha;b;e;i;l;d;g;h;n;j;
+k;p;qion activity n. at the recomposition, activity nis identi-
+ﬁed and selected since it is the activity with the highest number
+of border agreement issues as shown in figure 12. retrieval
+of all the subnets that have the selected border activity is done
+by the shared function deﬁned in deﬁnition 19. these subnets
+are then merged, after which the set of recomposed subnets is a
+new valid decomposition of the system net.
+11figure 11: overview of the exact decomposed conformance metric
+t1t2t3 t13t14t15 t4 t17 t16
+000 005 0 00
+figure 12: vector showing the number of border agreement problems at each
+border activity for event log l2
+theorem 3 (recomposition results in valid decomposition) .
+let sn =(n;i;o)2u snbe a system net with n =(p;t;f;l).
+let d =fsn1;sn2;:::; snng2d (sn)be a valid decomposi-
+tion of sn.
+let a2ab(d)be a border activity that is shared between
+jsnb(a;d)jsubnets in d. recomposing sn1;sn2;:::; snnon
+border activity a joins all the subnets in sn b(a;d)on the ac-
+tivity a. following the recomposition, which leads to a new de-
+composition d0,jsnb(a;d0)j=1and a <ab(d0)i.e., a ceases
+to be a border activity.
+let a0ab(d)be a subset of the border activities of d. let
+d0be the recomposition of d on a0, i.e., decomposition d0is
+recomposed on all activities a 2a0.
+d02u sni.e., d0is a valid decomposition of sn.
+proof. recomposing sn1;sn2;:::; snnon a particular border
+activity a2a0joins the set of subnets snb(a;d) on activity a
+into one single subnet sn+=ssnb(a;d).sn+has the same
+set of edges as snb(a;d) has. therefore, d0=(dnsnb(a;d))[fsn+gis a partitioning of the edges in sn. given that
+there was no creation of a new transition or a new place in the
+recomposition to sn+, it follows trivially that d0is a valid de-
+composition. the recomposition on any remaining border ac-
+tivities a02a0nfagcan be done in the same manner, and hence
+also yields a valid decomposition.
+4.3. iterative conformance checking
+with the new valid decomposition from the recomposed sub-
+nets, traces whose subalignments have had border agreement
+problems can be rechecked. speciﬁcally, the set of traces are
+projected onto the new valid decomposition to form a new
+sublog which then repeats the steps of conformance checking
+and decomposed ﬁtness metric computation with the decom-
+position. recomposition and conformance checking can be re-
+peated until the decomposed ﬁtness metric of all traces are com-
+puted under total border agreement.
+at completion, the set of alignments and the decomposed ﬁt-
+ness value of the log are returned as output. this ﬁtness value
+corresponds to the exact ﬁtness value of the overall log and
+overall net.
+while it can be crucial to have an exact ﬁtness value of the
+overall log and net, in some scenarios an interval value may
+suce. this is addressed in the next section.
+12figure 13: overview of the interval decomposed conformance metric
+5. recomposing method for interval decomposed ﬁtness
+in some conformance checking scenarios, it may be su cient
+to have an interval ﬁtness value of the overall log and the over-
+all net. for example, in the selection of candidates of genetic
+algorithms for the creation of a new generation of models, an in-
+terval value of each candidate model might already be su cient
+to decide whether or not it should be kept. in addition, not re-
+quiring an exact ﬁtness value can increase performance gain as
+there can potentially be less iterations of the recomposition and
+checking steps. moreover, we note that while recomposition
+guarantees that any border agreement problems at the merged
+border activities will be gone in the next conformance checking
+iteration, new border agreement problems may arise at other
+border activities which had no problems previously. lastly, it
+is possible that there are a few traces whose decomposed ﬁt-
+ness value cannot be computed under total border agreement
+for many iterations or unless the overall trace and the overall
+net are used. as shown in figure 13, the exact decomposed
+conformance algorithm is modiﬁed to compute an interval de-
+composed ﬁtness value.
+5.1. interval decomposed ﬁtness conformance
+as proven in theorem 1, the decomposed ﬁtness metric is
+an upper bound to the ﬁtness metric of the overall log and the
+overall net. using this property, an interval can be computed
+such that the ﬁtness value of the overall log and the overall net
+is within the interval.deﬁnition 23 (decomposed ﬁtness interval) .let l2b(a)be
+an event log and let sn =(n;i;o)2u snbe a system net with
+n=(p;t;f;l). letl2l be a log trace.
+let d =fsn1;sn2;:::; snng2d (sn)be a valid decompo-
+sition of sn.
+ﬁtint
+d(l;sn;)=[ﬁtlow
+d(l;sn;);ﬁtd(l;sn;)]
+ﬁtlow
+d(l;sn;)deﬁnes the lower bound of the decomposed
+ﬁtness interval such that it equals the decomposed ﬁtness metric
+if the optimal subalignments 1;:::;n(wherei=(i
+l;sni))
+are under total border agreement (t.b.a.):
+cost d(l;sn;)=8>><>>:p
+i2f1;:::;ngd((i
+l;sni)) if under t.b.a. ;
+move m(sn)+move l(l)otherwise:
+ﬁtlow
+d(l;sn;)=1 cost d(l;sn;)
+move m(sn)+move l(l)
+the decomposed ﬁtness interval of the event log l is com-
+puted as follows:
+ﬁtint
+d(l;sn;)=[ﬁtlow
+d(l;sn;);ﬁtd(l;sn;)];
+ﬁtlow
+d(l;sn;)=1 p
+l2lcost d(l;sn;)
+jljmove m(sn)+p
+l2lmove l(l)
+13consider the subalignments for the trace 6=ha;b;e;i;l;
+d;g;h;n;j;k;p;qiin figure 10. due to the border agreement
+problem with activity n, the decomposed ﬁtness interval for
+the trace is ﬁtint
+d1(6;sn1;1)[0;0:962]. the decomposed
+ﬁtness interval for event log l2is computed as ﬁtint
+d1(l2;sn1;
+1)[0:815;0:979]. we note that for both the trace 6and
+the log l2, their ﬁtness values are within the respective in-
+tervals: ﬁt(6;sn1;1)=0:9232[0;0:962] and ﬁt(l2;sn1;
+1)=0:9732[0:815;0:979].
+theorem 4 (overall is within the interval) .let l2b(a)be
+an event log and let sn =(n;i;o)2u snbe a system net with
+n=(p;t;f;l).
+let d =fsn1;sn2;:::; snng2d (sn)be a valid decompo-
+sition of sn. for all 1in, sni=(ni;ii;oi)is a subnet
+with an observable activity set ai
+v=av(sni).
+for a log trace l2l,i
+l=laiis the projection of lon
+the activity set of subnet sni.
+ﬁt(l;sn;)2ﬁtint
+d(l;sn;)
+for log l,
+ﬁt(l;sn;)2ﬁtint
+d(l;sn;)
+proof. we prove the theorems by cases.
+forsn1;:::; snn, let1;:::;nbe the optimal subalign-
+ments where i=(i
+l;sni) is the optimal subalignment of
+i
+landsni. there are two cases.
+case 1:1;:::;nare under total border agreement
+ﬁtint
+d(l;sn;)=[ﬁtd(l;sn;);ﬁtd(l;sn;)]. by theo-
+rem 2, the ﬁtness of the overall trace and net equals the decom-
+posed ﬁtness metric. hence the overall ﬁtness value is within
+the interval.
+case 2:1;:::;nare not under total border agreement
+ﬁtint
+d(l;sn;)=[0;ﬁtd(l;sn;)]. as shown in theorem
+1, the decomposed ﬁtness metric computes an upper bound of
+the ﬁtness value for the overall trace and net. furthermore, the
+lowest ﬁtness value of a trace with respect to the system net is
+0. hence the overall ﬁtness value is within the interval.
+for the decomposed log ﬁtness interval, the upper bound of
+the interval is the decomposed log ﬁtness which has been shown
+to be an upper bound to the exact overall log ﬁtness in theo-
+rem 1. the lower bound of the interval uses the total misalign-
+ment costs of the subalignments under the adapted cost function
+if there is total border agreement. otherwise, it defaults to the
+worst-case scenario cost. theorem 2 proved that the exact mis-
+alignment cost is obtained if the set of subalignments is under
+total border agreement. this means that the sum of misalign-
+ment cost is an upper bound to the overall misalignment costs
+and therefore the lower bound of the decomposed log ﬁtness
+interval is a lower bound to the exact overall log ﬁtness value.
+hence, the exact overall log ﬁtness is within the decomposed
+log ﬁtness interval.
+as previously shown, the ﬁtness value for the log l2,ﬁt(l2;
+sn1;1)0:973 is within its decomposed ﬁtness intervalﬁtint
+d1(l2;sn1;1)[0:815;0:979]. to compute the interval de-
+composed metric, traces are exempted from the computation of
+an exact decomposed ﬁtness value through trace reject and ter-
+mination conditions.
+5.2. trace reject and termination conditions
+as previously mentioned, it is possible that there are a few
+problematic traces which cannot be checked within a short time.
+as such, trace reject and termination conditions can be used to
+conﬁgure the balance between result quality and computation
+time.
+letl2b(a) be an event log and let sn=(n;i;o)2u sn
+be a system net with n=(p;t;f;l). let d=fsn1;sn2;:::;
+snng2d (sn) be a valid decomposition of sn. for all 1i
+n,sni=(ni;ii;oi) is a subnet with an observable activity set
+ai
+v=av(sni).
+for a log trace l2l,i
+l=laiis the projection of
+lon the activity set of subnet sni. for 1in,iis a
+subalignment between subnet sniand subtrace i
+l.1;:::;n
+is the set of subalignments corresponding to l.
+following the computation of the decomposed ﬁtness metric
+in step three of figure 13, traces that are computed under to-
+tal border agreement are added to the accepted traces multiset
+c2b(a) such that lc. due to the number of border agree-
+ment issues or alignment time, traces that are not computed un-
+der total border agreement may be added to the rejected traces
+multiset r2 b(a) such that lr. otherwise, traces are
+added to the to-be-aligned multiset b2b(a) such that lb.
+let the recomposition algorithm be at its kth iteration.
+for tracel, if its corresponding set of subalignments 1;
+:::;nis not under total border agreement, the trace is added to
+multiset rif,
+the number of border agreement issues of subalignments
+1;:::;nis greater than the given threshold x2n, i.e.,
+jfa2ab(d)j91i<jnifag,jfaggj>x.
+the time spent on aligning a subtrace i
+lwith a subnet sni
+is higher than the given threshold y2q, e.g. a threshold
+ofy=1 millisecond per subalignment.
+a rejected trace 0
+l2fl2ljr(l)>0gis not checked in
+future iterations. the criteria for the trace reject conditions can
+be adjusted to reﬂect the trade-o between result quality and
+computation time. a decomposed ﬁtness interval is computed
+if9l2lr(l)>0, i.e., at least one trace is rejected.
+at the end of each iteration, termination conditions are ex-
+amined to decide whether to proceed to the next iteration of
+the algorithm. if termination conditions are met, the decom-
+posed ﬁtness interval ﬁtint
+d(l;sn;) is returned. these termina-
+tion conditions are deﬁned on the log level. the termination
+conditions are as follows:
+all log traces have been either aligned under total border
+agreement or have been rejected, i.e., c+r=l.
+surpassing the overall time threshold z2qfor confor-
+mance checking, e.g., if more than z=1 minute is needed
+in the conformance checking process.
+14having aligned a target percentage of traces 0 v1 in
+the log under total border agreement, i.e.,p
+l2lc(l)p
+l2ll(l)v.
+for example, if more than v=0:9=90% of the traces in
+the event log have been aligned under total border agree-
+ment.
+the overall ﬁtness interval value 0 w1 is narrow
+enough, i.e., ﬁtd(l;sn;) ﬁtlow
+sn(d;l;)w. for exam-
+ple, if the interval range is less than w=0:1.
+the maximum number of iterations m2nis reached, i.e.,
+km. for example, if k=100 iterations have been done.
+as illustrated in figure 13, if the termination conditions are met
+in step four, the algorithm terminates and returns a decomposed
+ﬁtness interval value ﬁtint
+d(l;sn;) and the alignments of traces
+whose decomposed ﬁtness value had been computed under total
+border agreement.
+6. implementation and evaluation
+we have implemented the proposed conformance checking
+framework, and evaluated it on both artiﬁcial and real-life
+datasets. our evaluations demonstrate the following main con-
+tributions:
+1. recomposing conformance checking enables replays of
+model-log pairs that were previously not feasible under
+the monolithic approach. this increases the applicability
+of alignment-based conformance checking.
+2. logs associated to large models can take a tremendous
+amount of time to replay under the current monolithic ap-
+proach. for these logs, the proposed recomposition strat-
+egy can lead to signiﬁcant performance gains, speeding up
+the conformance checking process. the signiﬁcant perfor-
+mance gains are present both in noiseless and noisy sce-
+narios.
+3. recomposing conformance checking allows conﬁgurable
+approximations of conformance through interval ﬁtness
+values. the computation time of interval ﬁtness values is
+often shorter than the needed time for exact ﬁtness values
+under both the monolithic and recomposition approach.
+this means that end users can get an idea of the confor-
+mance level within shorter times, or whenever there is a
+hard time constraint.
+the section is structured as follows: first, we discuss the
+implementation details, the characteristics of the datasets used
+in the experiments, and the general conditions applied on the
+experimentation. second, the exact ﬁtness computation and the
+resulting speed-ups and improvement in the feasability are eval-
+uated in detail, in both noiseless and noisy scenarios. third, we
+illustrate the improvement in the feasibility of the alignment-
+based approach for di erent time-constrained scenarios using
+the recomposition strategy, and the e ect of the time limits in
+the interval narrowing. finally, the applicability of the approach
+for real-life scenarios is shown.
+figure 14: resulting alignments for deviation diagnosis
+figure 15: dialog for replay using recomposition
+6.1. implementation, datasets, and evaluations
+the presented recomposing conformance checking frame-
+work has been implemented as the replay with recomposition
+plugin in the decomposedreplayer package of prom6.71[32].
+prom is an extensible framework that supports a wide vari-
+ety of process mining techniques in the form of plug-ins. it
+is platform independent as it is implemented in java, and can
+be downloaded free of charge.2figure 15 shows a dialog box
+of the plugin at which the user can conﬁgure di erent values
+for the parameters introduced in the previous section, and fig-
+ure 14 shows the conformance analysis overview for one of the
+datasets tested. the implementation allows for the setting of all
+the parameters deﬁned in the paper, and to manually select an
+initial decomposition for the approach (including the maximal
+decomposition if desired).
+the experiments were conducted including a wide-range of
+dierent datasets to represent the variability of possible sce-
+narios. the datasets used include both synthetically generated
+datasets (represented as px), and a real-life dataset (represented
+as bpic2012). the process models of the synthetic datasets
+1at this moment, prom6.7 has not been o cially released, consequently,
+prom6.7beta was used instead. however, no signiﬁcant di erences are to be
+expected.
+2http://www.promtools.org/
+15were randomly generated using the plg2 tool [33], and they
+include large processes containing combinations of all the most
+common workﬂow patterns, such as xor, and, loops, or in-
+visible transitions. logs were generated from the models using
+simulation, and di erent operations were applied to emulate
+dierent plausible noise scenarios: no noise, noise by remov-
+ing events and noise by swapping. this is explained in detail
+in section 6.3. the numeration of the datasets is related with
+the creation timestamp and has no relation with any property
+of the processes such as number of activities or arcs. each log
+has 1000 cases. following the open data science principles,
+the datasets are open and publicly available.3the experimen-
+tal evaluation also include a real-life dataset – based on the real
+case bpic2012 [34] – to illustrate the applicability and beneﬁts
+of the proposed approach for real cases. details on the dataset
+are presented in section 6.5, and the models and logs used are
+also publicly available.
+the evaluations are performed on a desktop with two pro-
+cessors intel e5-2470, 8 cores, 2.3 ghz, 32 gb ram, running
+linux 2.6.32 and using a 64-bit version of java 7 where 6gb of
+ram was allocated to the java vm. note that the approach can
+be distributed over a network of computers, but for the reported
+experiments, we only used one computing node. each experi-
+ment was conducted 3 times and we report the average since no
+signiﬁcant di erence was found between the runs.
+table 1: maxrecomposing conﬁguration
+parameters maxrecomposing
+globaldurationthreshold 3600 seconds
+localdurationthreshold 80 seconds
+relativeintervalthreshold 100%
+absoluteintervalthreshold 0
+maxconﬂictthreshold 100
+alignmentpercentagethreshold 100%
+maxiterationthreshold 200
+in the evaluations, we experimented with di erent conﬁgu-
+rations adjusting the termination thresholds. the conﬁguration
+with all the parameter values adjusted to the maximum will be
+identiﬁed as the maxrecomposing conﬁguration as shown in
+table 1. for the sake of generality, this is the conﬁguration
+shown in the results unless it is stated otherwise. moreover, a
+hide and reduce projection strategy was used from the three
+net projection strategies proposed in [35]. net projection is
+used to decompose the overall net into subnets.
+as previously explained, the recomposition approach is in-
+stantiated with an initial decomposition. di erent strategies
+can be used to decompose a model into subcomponents, e.g.,
+maximal decomposition [24], sese-based decomposition [22],
+passage-based decomposition [36], or cluster-based decompo-
+sition [37]. for the sake of simplicity, the experiments use a
+3doi will be requested after the acceptance of the manuscript. meanwhile,
+the datasets can be temporarily accessed in http://www.jorgemunozgama.
+com/data/uploads/ds/isci17dataset.zip .manual decomposition where the decompositions are manually
+decided through visual inspection of the model. as shown in
+figure 16, the partitions follow closely to a sese-based de-
+composition [22]. as such, the initial decomposition is done
+without previous knowledge of the locations where there are
+conformance issues. this is the default decomposition method
+unless stated otherwise.
+6.2. exact ﬁtness in noiseless scenarios
+we ﬁrst experimented with the simplest scenario where the
+model and log are perfectly ﬁtting. in this section we present
+conformance checking results for logs without noise (“no-
+noise” logs). the goals of this section are:
+to compare the feasibility of the recomposition approach
+with the existing monolithic approach.
+to compare and analyze computation times of replays un-
+der both approaches.
+the synthetic process models and “no-noise” logs generated
+by the plg2 tool are used in the experiments. “no-noise” logs
+are perfectly ﬁtting with the corresponding models. this means
+that all the behaviour observed in the log can be matched to
+the behaviour modeled by the model so that the log can be re-
+played perfectly on the model and the ﬁtness value equals to
+1. we note that this is the least computationally intensive of
+all possible scenarios since the alignment algorithm can always
+match a log trace with a corresponding model trace as an align-
+ment of solely synchronous moves. this means that the itera-
+tive process of the recomposition approach does not occur for
+the replays of these model-log pairs because moves associated
+with border transitions are always synchronous moves and in
+agreement.
+there are 15 model-log pairs and for each dataset we con-
+duct two experiments using the recomposition approach and
+the monolithic approach respectively. for each experiment, a
+1 hour time limit is set such that replays which are still running
+after the time limit are stopped and deemed infeasible. other
+than the replay feasibility, ﬁtness, time, and speedup, we also
+report the number of activities ( jaj) in the models and the aver-
+age trace lengths ( jj) of the logs.
+the results are presented in table 2. we ﬁrst note that the
+results from feasible replays are, as expected, all equal to 1,
+i.e., both approaches reported the conformance of the datasets
+correctly. replay is feasible for all datasets under both ap-
+proaches. figure 17 compares the computation times of the
+monolithic replays with the computation times of the recom-
+posing replays on a logarithmic scale . the ﬁgure shows that
+there is a clear performance gain in time across all datasets un-
+der the recomposition approach. the speedup factor per dataset
+is presented in figure 18 where we see that it ranges from 2.5 
+to 35.1. a 2.0speedup factor means that the recomposi-
+tion approach is twice as fast as the monolithic approach and
+a 10.0speedup factor means that the recomposition approach
+is ten times faster. furthermore, speedup factors with respect
+to the average trace length of the log is shown in figure 19.
+16figure 16: initial manual decomposition of model p297 where border transitions are coloured in green
+1101001000time (s)monolithic recomposition
+1101001000time (s)
+datasetscomparison of computation times -no noise
+monolithic recomposition
+figure 17: feasible computation times for synthethic logs without noise
+0002040608101214speed up
+datasets18.6
+11.124.4
+7.229.6
+4.635.1
+10.6
+2.53.010.6
+3.78.312.1
+4.5
+1.010.0100.0speedup factor
+datasetsrecomposition speedup factors -no noisefigure 18: speedup factors from recomposition approach over monolithic ap-
+proach for synthetic logs without noise
+17table 2: replay feasibility and computation times for synthetic logs without noise
+dataset monolithic recomposition
+name source noise jaj jj feasible fitness time (s) feasible fitness time (s) speedup
+p241-l36 synth no 117 95 3 1 398 3 1 21 18.6
+p246-l9 synth no 137 77 3 1 250 3 1 23 11.1
+p272-l30 synth no 201 101 3 1 645 3 1 26 24.4
+p275-l0 synth no 101 77 3 1 167 3 1 23 7.2
+p284-l33 synth no 170 102 3 1 891 3 1 30 29.6
+p285-l12 synth no 140 46 3 1 103 3 1 22 4.6
+p291-l21 synth no 170 90 3 1 904 3 1 26 35.1
+p297-l6 synth no 125 59 3 1 236 3 1 22 10.6
+p307-l27 synth no 193 22 3 1 57 3 1 23 2.5
+p313-l24 synth no 185 20 3 1 68 3 1 23 3.0
+p347-l39 synth no 212 60 3 1 280 3 1 26 10.6
+p381-l3 synth no 111 73 3 1 95 3 1 26 3.7
+p383-l15 synth no 150 108 3 1 193 3 1 23 8.3
+p430-l18 synth no 160 104 3 1 291 3 1 24 12.1
+p436-l45 synth no 230 35 3 1 109 3 1 24 4.5
+18.6
+11.124.4
+7.229.6
+4.635.1
+10.6
+2.53.010.6
+3.78.312.1
+4.5
+0110100
+0 20 40 60 80 100 120speedup factor
+avgerage trace lengthcomparison of average trace lengths 
+and speedup factors -no noise
+figure 19: speedup from recomposition approach in relation to average trace
+length for synthethic logs without noise
+we can observe that datasets with longer average trace lengths
+generally have greater speedup factors.
+in terms of feasibility, both approaches have the same per-
+formance as they were able to complete all replays. however,
+the results show a signiﬁcant improvement in computation time
+using the recomposition approach. as shown in the paper [22],
+the speedup results from the decomposition of the alignment
+problem itself and the trace groupings formed by the decom-
+position. smaller components usually take signiﬁcantly less
+time to replay than large components such that replaying sev-
+eral subcomponents of a decomposition is faster than replay-
+ing the original component. furthermore, distinct traces can
+share identical subsections. trace groupings from decomposi-
+tion can be these subsections such that the previously distinct
+traces become trace groupings where some are identical. since
+alignments are not recomputed for the same trace, the amountof alignment is reduced.
+in conclusion, replay is feasible under both approaches
+within the 1 hour time limit. however, the recomposition ap-
+proach results in faster computation times for all datasets. in
+real-life cases, it is likely that the observed and modeled be-
+haviour are not perfectly ﬁtting. therefore, further experiments
+are conducted using logs with noise, i.e., the log is not perfectly
+ﬁtting with the model.
+6.3. exact ﬁtness in noisy scenarios
+in this section we present conformance checking results for
+logs with noise. this means that there are discrepancies be-
+tween the modeled and observed behaviour such that the ﬁtness
+value is less than 1. similar to the previous section, the goals of
+this section are:
+to compare the feasibility of the proposed recomposition
+approach with the existing monolithic approach.
+to compare and analyze computation times of replays un-
+der both approaches.
+for the sake of comparison, the processes and models are
+the same as the previous section, but noise is included into the
+logs at their generation. to test the performance of the two
+approaches at detecting di erent types of deviations, we ex-
+perimented with two noise types by including them into two
+separate logs. this means that each model is associated with
+two “noisy” logs. each noise type mimics a speciﬁc scenario
+where there is a mismatch between modeled and observed be-
+haviour. the characteristics of the noise types and the process
+of generating these “noisy” logs can be summarized as follows:
+missingtrace noise is where a trace has a probability of
+missing a part of its head, tail and /or episode, i.e., removed
+noise. the noise is included into the log by log generation
+18using the plg2 tool. the speciﬁc conﬁguration used for
+the log generation is shown in table 3 (we refer to [33] for
+a detailed explanation of each parameter).
+swapped noise is where two events in a trace can be in-
+verted. this noise type mimics the scenario where the pro-
+cess has a speciﬁc location where deviation always occurs.
+we generate a log with swapped noise by swapping two
+activities at a speciﬁc location in the model before gener-
+ating a noiseless log using the modiﬁed model. the point
+of deviation is randomly chosen but it is ensured that cases
+always pass through this location.
+table 3: plg2 log generation conﬁgurations for missingtrace dataset
+parameters missingtrace
+number of traces 1000
+integer data object error probability 0%
+integer data object error delta 0
+string data object error probability 0%
+change activity name probability 0%
+trace missing head probability 0.1%
+head max size 2
+trace missing tail probability 0.1%
+tail max size 2
+trace missing episode probability 0.1%
+episode max size 2
+perturbed event order probability 0%
+doubled event probability 0%
+alien event probability 0%
+there are 30 model-log pairs and for each dataset we con-
+duct two experiments using the recomposition approach and the
+monolithic approach. at each experiment, a 1 hour time limit is
+set such that replays which are still running after the time limit
+are stopped and deemed infeasible. other than the replay fea-
+sibility, ﬁtness, time, and speedup, we also report the number
+of transitions in the models and the average trace lengths of the
+logs.
+table 4 presents the results. on the whole, monolithic re-
+play was not feasible for 1 model-log pair (p284-l48) due to
+the 1 hour time limit. at the time column, the infeasible re-
+play is marked with “ot”. figure 20 compares the computa-
+tion times of monolithic replays and recomposing replays for
+logs with missingtrace noise and swapped noise. computation
+times are shown on a logarithmic scale at both ﬁgures. there
+are clear performance gains from adopting the recomposition
+approach. figure 21 shows the speedup factors for logs with
+missingtrace noise and the speedups for logs with swapped
+noise. as previously explained, a 2.0 speedup means that the
+recomposition approach is twice as fast as the monolithic ap-
+proach and a 10.0 speedup means that it is 10 faster. we
+observe that speedups from the recomposition approach range
+from 1:3to at least 85 :5. for the particular model-log pair
+p275-l52, computation time was reduced by a factor 26 :6 from
+17:5 minutes (1052 seconds) under the monolithic approach to
+110100100010000
+time (s)monolithic
+recomposition
+110100100010000time (s)
+datasetscomparison of computation times -
+missingtrace noise
+monolithic recomposition
+110100100010000
+time (s)monolithic
+recomposition
+110100100010000time (s)
+datasetscomparison of computation times -
+swapped noise
+monolithic recompositionfigure 20: feasible computation times for synthethic logs with missingtrace
+noise (top) and swapped noise (bottom) (infeasible replays are shown using a
+dashed pattern instead of a solid ﬁll)
+39 seconds under the recomposition approach. speedup factors
+in relation to the average trace length of logs with missingtrace
+noise and swapped noise are shown in figure 22. we can ob-
+serve that in general logs with longer average trace lengths have
+greater speedup factors.
+in terms of feasibility, the recomposition approach outper-
+forms the monolithic approach in replaying logs with missing-
+trace orswapped noise as the monolithic approach was infeasi-
+ble for 1 model-log pair while the recomposition approach was
+feasible for all datasets. more importantly, for these model-log
+pairs, the recomposition approach was able to compute their
+exact ﬁtness values in very little time (less than 2 minutes).
+the positive relationship between average trace lengths and
+speedups reﬂects the advantage of the recomposition approach.
+logs with long average trace lengths tend to be associated with
+models of complex structure. as previously explained, the
+decomposition of a complex component into several decom-
+posed subcomponents reduces replay time signiﬁcantly. how-
+ever, current techniques only guarantee that conformance re-
+sults from decomposed subcomponents can be aggregated to
+an overall result if the model and log are perfectly ﬁtting. by
+formalizing border activities and border agreement, we relax
+19table 4: replay feasibility and computation times for synthetic logs with missingtrace andswapped noise
+dataset monolithic recomposition
+name source noise jaj jjfeasible fitness time (s) feasible fitness time (s) speedup
+p241-l37 synth miss 117 94 3 0.999 395 3 0.999 34 11.5
+p241-l50 synth swap 117 95 3 0.989 374 3 0.989 26 14.4
+p246-l10 synth miss 137 77 3 0.998 265 3 0.998 31 8.6
+p246-l49 synth swap 137 77 3 0.987 257 3 0.987 28 9.1
+p272-l31 synth miss 201 101 3 0.999 685 3 0.999 81 8.4
+p272-l62 synth swap 201 101 3 0.989 626 3 0.989 40 15.6
+p275-l1 synth miss 101 73 3 0.998 168 3 0.998 36 4.6
+p275-l52 synth swap 101 74 3 0.984 1052 3 0.984 39 26.6
+p284-l34 synth miss 170 106 3 0.998 1147 3 0.998 61 18.7
+p284-l48 synth swap 170 106 7 ot 3 0.997 42 >85:5
+p285-l13 synth miss 140 46 3 0.997 112 3 0.997 32 3.5
+p285-l56 synth swap 140 48 3 0.947 202 3 0.947 29 7.0
+p291-l22 synth miss 170 90 3 0.999 935 3 0.999 46 20.3
+p291-l51 synth swap 170 91 3 0.989 913 3 0.989 35 25.9
+p297-l7 synth miss 125 59 3 0.998 228 3 0.998 31 7.5
+p297-l55 synth swap 125 60 3 0.982 241 3 0.982 30 8.0
+p307-l28 synth miss 193 22 3 0.994 65 3 0.994 52 1.3
+p307-l53 synth swap 193 23 3 0.996 66 3 0.996 27 2.4
+p313-l25 synth miss 185 20 3 0.993 71 3 0.993 29 2.4
+p313-l59 synth swap 185 20 3 0.986 67 3 0.986 28 2.4
+p347-l40 synth miss 212 60 3 0.998 298 3 0.998 54 5.5
+p347-l58 synth swap 212 59 3 0.996 292 3 0.996 40 7.3
+p381-l4 synth miss 111 73 3 0.998 112 3 0.998 28 3.9
+p381-l63 synth swap 111 74 3 0.985 90 3 0.985 28 3.2
+p383-l16 synth miss 150 106 3 0.999 224 3 0.999 31 7.1
+p383-l61 synth swap 150 111 3 0.979 795 3 0.979 43 18.7
+p430-l19 synth miss 160 104 3 0.999 293 3 0.999 46 6.4
+p430-l57 synth swap 160 104 3 0.997 306 3 0.997 30 10.0
+p436-l46 synth miss 230 35 3 0.996 120 3 0.996 68 1.8
+p436-l54 synth swap 230 35 3 0.982 107 3 0.982 35 3.0
+the strict requirement for perfect ﬁtness and allow the aggre-
+gation of results from decomposed subcomponents even when
+there are mismatches between the model and log. this means
+that the recomposition approach gets the performance gains
+from decomposition and the resulting exact ﬁtness result would
+correspond to the ﬁtness value that one would get using the
+monolithic approach. the increasing speedups as average trace
+length increases demonstrate the said performance gains from
+decomposition despite the presence of noise in the log. this
+is further supported by observing the minimal e ect that the
+average trace length has on the computation time of the recom-
+posing replays.
+in conclusion, these experiments empirically show the poten-
+tial performance gains of the recomposition approach. as the
+results illustrate, this new approach not only increases replay
+feasibility, but also results in signiﬁcant performance gains for
+datasets that are feasible under both recomposition and mono-
+lithic approaches.6.4. feasibility and interval narrowing time constrained sce-
+narios
+one important contribution of the recomposition approach
+is to allow conﬁgurable approximations of the overall confor-
+mance between the model and log such that it is not necessary
+to align all the traces in the log with the model. as previously
+mentioned, ﬁtness approximations by ﬁtness interval values can
+further reduce computation times and alleviate replay feasibil-
+ity problems with speciﬁc log traces or sections of the model.
+as time is often the principle concern for alignment-based con-
+formance checking, this section focuses on the e ects of time
+as a hard constraint on the monolithic and recomposition ap-
+proaches. there are two main goals in this section:
+to show how to compare the feasibility of the recomposi-
+tion approach using the monolithic approach. we identify
+cases where the recomposition approach can provide ei-
+ther an exact or an interval ﬁtness value while monolithic
+replay is infeasible.
+to analyze the e ects of time on the narrowing of the ﬁt-
+20000510152025speed up
+datasets11.5
+8.6 8.4
+4.618.7
+3.520.3
+7.5
+1.32.45.5
+3.97.16.4
+1.8
+1.010.0100.0speedup factor
+datasetsrecomposition speed factors -
+missingtrace noise
+01020304050607080910speed up14.4
+9.115.626.6>85.5
+7.025.9
+8.0
+2.4 2.47.3
+3.218.7
+10.0
+3.0
+1.010.0100.0speedup factor
+datasetsrecomposition speedup factors -swapped noisefigure 21: speedup factors from recomposition approach over monolithic ap-
+proach for synthetic logs with missingtrace noise (top) and swapped noise
+(bottom) (infeasible replays are shown using a dashed pattern instead of a solid
+ﬁll)
+ness intervals.
+for the sake of comparison, the experiments are conducted
+using the same synthetic models and generated logs from the
+experiments of the previous section. as explained, each model
+has two associated “noisy” logs; the no-noise logs are excluded
+from these experiments. for each model-log pair, we conduct
+three experiments, each constrained by a di erent time limit on
+the overall alignment time. this is done by varying the value
+of the globaldurationthreshold parameter. experiments are
+conducted with the globaldurationthreshold values of 1, 5 and
+10 minutes.
+for the results, in the case of the monolithic approach, an ex-
+act ﬁtness value is provided if replay is feasible and it is marked
+with a cross otherwise. for the recomposition approach, since it
+defaults to approximation if an exact value cannot be computed,
+either an exact ﬁtness value or a ﬁtness interval is given.
+table 5 shows the results of the experiments. for the ex-
+periments with a 1 minute time constraint, monolithic replay is
+not feasible for any dataset. the recomposition approach can
+compute an exact ﬁtness value for 27 model-log pairs and ﬁt-
+11.5
+8.6 8.4
+4.618.7
+3.520.3
+7.5
+1.32.45.5
+3.97.1
+6.4
+1.8
+0001020304050607080910111213141516171819202122
+0 20 40 60 80 100 120speed up
+avgerage trace length11.5
+8.6 8.4
+4.618.7
+3.520.3
+7.5
+1.32.45.5
+3.97.16.4
+1.8
+1.010.0100.0
+0 20 40 60 80 100 120speedup factor
+average trace lengthcomparison of average trace lengths and speedup 
+factors -missingtrace noise
+datasets
+14.4
+9.115.626.685.5
+7.025.9
+8.0
+2.42.47.3
+3.218.7
+10.0
+3.0
+00010203040506070809101112131415161718192021222324252627282930313233343536373839404142434445464748495051525354555657585960616263646566676869707172737475767778798081828384858687888990
+0 20 40 60 80 100 120speed up14.4
+9.115.626.6>85.5
+7.025.9
+8.0
+2.4 2.47.3
+3.218.7
+10.0
+3.0
+1.010.0100.0
+0 20 40 60 80 100 120speedup factor
+average trace lengthcomparison of average trace lengths and speedup 
+factors -swapped noisefigure 22: speedup from recomposition approach in relation to average trace
+length for synthethic logs with missingtrace noise (top) and swapped noise
+(bottom)
+ness interval values for the remaining 3 model-log pairs. for
+the ﬁtness interval results, the interval range varies from 0 :008
+(p284-l34) to 0 :027 (p272-l31). for the experiments with a
+5 minute time constraint, monolithic replay is feasible for 19
+model-log pairs. the recomposition approach can compute an
+exact ﬁtness value for all 30 model-log pairs. for the exper-
+iments with a 10 minute time constraint, monolithic replay is
+feasible for 22 model-log pairs. the recomposition approach
+can compute an exact ﬁtness value for all 30 model-log pairs.
+previous experiments (cf. section 6.3) have shown that the re-
+play of 1 model-log pair cannot be ﬁnished within one hour
+under the monolithic approach.
+in terms of feasibility, the results show that the recomposi-
+tion approach can give an exact ﬁtness value for more model-
+log pairs than the monolithic approach under all three time con-
+straints. for the shortest 1 minute constraint, the recomposi-
+tion approach can give an exact ﬁtness value for almost all of
+the datasets while monolithic replay was not feasible for any
+dataset. other than feasibility, the ﬁtness interval results com-
+puted by the recomposition approach show that the exact ﬁtness
+values (as shown in table 4) are always within the interval.
+in conclusion, the recomposition approach outperforms the
+21table 5: time-constrained conformance analysis on synthetic logs with noise of dataset using manual initial decomposition
+dataset time constraint on overall alignment time (min)
+1’ 5’ 10’
+namejaj jjmonolithic recomposition monolithic recomposition monolithic recomposition
+p241-l37 117 94 7 0.999 7 0.999 0.999 0.999
+p241-l50 117 95 7 0.989 7 0.989 0.989 0.989
+p246-l10 137 77 7 0.998 0.998 0.998 0.998 0.998
+p246-l49 137 77 7 0.987 0.987 0.987 0.987 0.987
+p272-l31 201 101 7 0.972-0.999 7 0.999 7 0.999
+p272-l62 201 101 7 0.989 7 0.989 7 0.989
+p275-l1 101 73 7 0.998 0.998 0.998 0.998 0.998
+p275-l52 101 74 7 0.984 7 0.984 7 0.984
+p284-l34 170 106 7 0.990-0.998 7 0.998 7 0.998
+p284-l48 170 106 7 0.997 7 0.997 7 0.997
+p285-l13 140 46 7 0.997 0.997 0.997 0.997 0.997
+p285-l56 140 48 7 0.947 0.947 0.947 0.947 0.947
+p291-l22 170 90 7 0.999 7 0.999 7 0.999
+p291-l51 170 91 7 0.989 7 0.989 7 0.989
+p297-l7 125 59 7 0.998 0.998 0.998 0.998 0.998
+p297-l55 125 60 7 0.982 0.982 0.982 0.982 0.982
+p307-l28 193 22 7 0.994 0.994 0.994 0.994 0.994
+p307-l53 193 23 7 0.996 0.996 0.996 0.996 0.996
+p313-l25 185 20 7 0.993 0.993 0.993 0.993 0.993
+p313-l59 185 20 7 0.986 0.986 0.986 0.986 0.986
+p347-l40 212 60 7 0.998 0.998 0.998 0.998 0.998
+p347-l58 212 59 7 0.996 0.996 0.996 0.996 0.996
+p381-l4 111 73 7 0.998 0.998 0.998 0.998 0.998
+p381-l63 111 74 7 0.985 0.985 0.985 0.985 0.985
+p383-l16 150 106 7 0.999 0.999 0.999 0.999 0.999
+p383-l61 150 111 7 0.979 7 0.979 7 0.979
+p430-l19 160 104 7 0.999 0.999 0.999 0.999 0.999
+p430-l57 160 104 7 0.997 7 0.997 0.997 0.997
+p436-l46 230 35 7 0.983-0.996 0.996 0.996 0.995 0.996
+p436-l54 230 35 7 0.982 0.982 0.982 0.982 0.982
+monolithic approach in feasibility when there is a constraint on
+alignment time. more importantly, the recomposition approach
+can always give a ﬁtness result to reﬂect the conformance level
+between the model and log whereas the monolithic approach
+can only give a result if replay can be fully completed.
+having compared the performance of the recomposition ap-
+proach with the existing monolithic approach for di erent pro-
+cess characteristics and noise scenario, we show that the recom-
+position approach can be applied to real-life datasets.
+6.5. recomposed ﬁtness in real-life cases
+in this section we apply the monolithic approach and the re-
+composition approach on a real-life dataset. this is to demon-
+strate that the recomposition approach can be applied to real-
+life datasets and to compare the performances of both ap-
+proaches. notice that, the ﬁnal goal of any conformance ap-
+proach is to gain insight on the conformance problems. there-
+fore, we perform a simple analysis using the conformance re-sults from replay to showcase the applicability of alignment-
+based conformance checking for the analysis of deviations.
+we used the real-life dataset, bpic2012 [34], which previ-
+ously was the real-life dataset at the 2012 bpi (busines process
+intelligence) challenge. this dataset is taken from a dutch fi-
+nancial institute and contains 13,087 cases and 36 event classes.
+apart from some anonymization, the log contains all data as it
+came from the ﬁnancial institute.
+the process represented in the event log is an application
+process for a personal loan or overdraft within a global ﬁnanc-
+ing organization. the event log is a merger of three intertwined
+sub processes such that the ﬁrst letter of each task can be used
+to identify the subprocess that the task originated from.
+since no explicit process model is provided with the dataset,
+a model is constructed with consideration to the task semantics
+and the three sub processes as illustrated in figure 23 (please
+ignore the color bars at the bottom of transitions and the color
+of transitions and places for now).
+for the experiments, a 1 hour time limit is set such that re-
+22table 6: replay feasibility and computation times for bpic2012
+dataset monolithic recomposition
+namejaj jjfeasible fitness time (s) feasible fitness time (s)
+bpic2012 36 20 7 ot 3 0.647-0.648 1761
+figure 23: handmade model for the bpic2012 real-life dataset projected with the deviation issues between the model and log
+plays which are still running after the time limit are stopped
+and deemed infeasible. the recomposition approach is instan-
+tiated by a maximal decomposition. a maximal decomposition
+is where the subcomponents are as small as possible while still
+remaining as a valid decomposition. we report the time and
+ﬁtness of replay under both approaches.
+as shown in table 6, we ﬁnd that the monolithic approach is
+not feasible for bpic2012 under the 1 hour time limit. in con-
+trast, the recomposition approach was able to provide a ﬁtness
+interval value with a range of less than 0.001 under 30 minutes
+(1800 seconds). the results also showed that an interval value
+was given rather than an exact value because 1 trace was re-
+jected during the replay process given the exclusion parameters
+deﬁned (cf. section 5). the ﬁtness interval of [0 :647 0:648]
+indicates there are considerable deviations between the mod-
+eled behavior and observed behavior. further analysis can be
+done by visualizing the conformance results.
+conformance results can be visualized through alignments
+as shown in figure 14 or by projecting the deviation issues
+onto the corresponding places and transitions as shown in fig-
+ure 23. transitions are augmented with two additional infor-
+mation. firstly, the color of the visible transitions indicates
+the execution frequency of a particular transition in the log. a
+lighter color means that the transition is rarely executed and a
+figure 24: conformance diagnosis on transition oaccepted
+darker color means that the transition is often executed. the
+color at the bottom of transitions indicates the distribution be-
+tween synchronous moves (green) and model moves (pink). a
+color bar with a high green portion means that there is little
+conformance issue with the corresponding transition and a low
+green portion means there is severe conformance issue with the
+transition. transitions without color bars do not have any con-
+formance issues. log moves are shown by marking the places
+where log moves occurred. the occurrence frequency is indi-
+cated by the size of the places.
+we ﬁrst observe that out of the three subprocesses, subpro-
+23figure 25: alignment for case 173733 with model move on transition
+oaccepted
+cess awhich relates to the application itself has minimal con-
+formance issues. since the application is submitted through
+the webpage, it makes sense that the observed behavior can
+be easily and accurately described by a corresponding model.
+on the other hand, both subprocess owhich relates to the of-
+fer of the application and subprocess wwhich relates to the
+work items belonging to the application have major confor-
+mance issues. for simplicity, we only focus on subprocess
+o. there are log moves relating to all parts of the subpro-
+cess and there is a high frequency of model moves relating
+to the transitions: oselected ,osent ,ocreated and
+oaccepted . for example, ﬁgure 24 shows the ratio between
+synchronous moves (at 2243 cases) and model moves (at 10040
+cases) for transition oaccepted . this means that 10040
+cases did not execute transition oaccepted even though
+they were supposed to according to the model. this can be
+conﬁrmed by inspecting the alignments of particular cases in
+the alignment visualization. figure 25 shows the alignment
+for case 173733 which indicates a model move for transition
+oaccepted . as such, there is a discrepancy between the re-
+ality and the model suggested by the task semantics regarding
+to how an o er is processed. the identiﬁcation of this con-
+formance issue may prompt further investigations with related
+stakeholders such as the employees who handled the deviating
+cases.
+in conclusion, the results clearly demonstrate that the appli-
+cability of the recomposition approach make alignment-based
+conformance checking feasible for real-life datasets. further-
+more, the utility of the conformance results is shown through a
+simple analysis.
+7. related work
+for an introduction to process mining we refer to [3]. for
+an overview of best practices and challenges, we refer to the
+process mining manifesto [38].
+as previously mentioned, there are four competing quality
+criteria in conformance checking: ﬁtness, precision, simplicity
+and generalization [18]. in this paper, we focused on ﬁtness,
+however the border properties of subnets can also be applied to
+quantify precision and generalization. there are many confor-
+mance checking techniques in the literature [18, 16, 17, 15, 3]
+but in the recent years, the use of alignment-based conformance
+checking has become the de facto standard [16, 39, 40]. align-
+ment techniques provide a robust analysis of ﬁtness, especially
+in the presence of non-determinism in the model or noise in the
+logs.
+yet one limitation of the existing alignment algorithm is the
+explosion of state space when handling industrial sized prob-
+lems. with the increasing availability of event data, this callsfor solutions so that the alignment technique can be widely ap-
+plicable in the evolving context.
+several approaches have been proposed to decompose con-
+formance checking in the literature [37, 24, 23, 22]. their ex-
+perimental results showed an immense reduction in computa-
+tion time over the existing monolithic approach. however, con-
+formance results from most of these approaches only remain at
+the level of sublogs and subnets, the conformance between the
+overall process model and event log is not computed. for ex-
+ample, a recent paper [23] proposed a workﬂow decomposition
+technique that decomposes a workﬂow net into a set of smaller
+workﬂow nets by places after which conformance checking is
+performed on the subnets by alignment. this treats subcom-
+ponents independently and does not compute alignment at a
+global level. an exception is the implementation of an ear-
+lier proposed generic approach to decompose process discov-
+ery and conformance checking [37]. in the implementation,
+conformance checking is again performed by aligning sublogs
+and subnets but an extra step is taken afterwards to merge the
+subalignments into an overall pseudo alignment. the pseudo
+alignment gives a lower bound for the mismatch costs between
+the overall process model and log. this guarantee can provide
+an idea about the overall conformance. in relation to these
+works, the proposed recomposition approach advances exist-
+ing decomposition solutions by extending decomposition tech-
+niques to compute an exact or interval value that reﬂects the
+overall conformance between a process model and log.
+other than decomposing conformance checking, other ideas
+have also been proposed. in [26], approximate alignments are
+proposed to view sections of step-moves in an alignment un-
+der a coarser granularity as multisets. this abstract view of
+alignment reduces the complexity of the alignment problem so
+that computation time is reduced. another way to reduce the
+complexity of the problem is through reduction of the model
+and log. in [41], the notion of indication is used to reduce
+process models. the occurrence of an indicator transition re-
+quires the presence of a speciﬁed set of transitions (its indicated
+set) due to their causal relations. as such, these indication re-
+lations between transitions can be used to reduce models and
+logs. by using a reduced model and log, a macro-alignment
+can be computed in signiﬁcantly shorter time. the missing
+alignment details are later expanded using an e cient align-
+ment algorithm from bio-informatics. other than abstracting
+alignment details to alleviate complexity, new interpretations
+of the alignment concept has also been proposed such as anti-
+alignments [42]. compared to these alternatives, the recompo-
+sition approach presented in this paper preserves the alignment
+concept and does not need to abstract away details to achieve
+performance gain.
+another related work is conformance checking of proclets
+[43]. proclets can be used to deﬁne so-called artifact centric
+processes, i.e. processes that are not monolithic but are com-
+posed of smaller interacting processes (called proclets). in [43],
+it is shown that conformance checking can be done per proclet
+by projecting the event log onto a single proclet while consid-
+ering interface transitions in the surrounding proclets.
+248. conclusions and future work
+this paper presents a novel approach to provide alignment-
+based conformance checking results for large and complex
+models where monolithical approaches are not suitable. this
+approach applies divide and conquer strategies to break down
+the overall component into subcomponents before iteratively
+recomposing these small pieces to get the ﬁnal result on the
+overall conformance. as such, the approach signiﬁcantly im-
+proves upon the performance issue of the existing monolithic
+approach for large and or more complex process models while
+retaining a result quality that is absent from existing decomposi-
+tion techniques. in summary, the approach applies decomposi-
+tion techniques to give a complete solution to alignment-based
+conformance checking problems.
+to enable the aggregation of results from subcomponents, we
+formalized the border transitions of a valid decomposition. we
+showed that aggregation of conformance results from subcom-
+ponents is permissible if and only if there is total border agree-
+ment between all the subcomponents. in addition, we adapted
+the existing relative ﬁtness metric as the decomposed ﬁtness
+metric to compute an exact or interval value to reﬂect the ﬁt-
+ness between a model and log.
+the conformance checking approach has been implemented
+in prom. extensive experimental results from synthetic and
+real-life datasets demonstrate the potential performance gains
+of the recomposition approach over the existing state of the art
+monolithic approach. the use of decomposition increased re-
+play feasibility and reduced computation time for datasets fea-
+sible under both approaches. the speedup from adopting the
+recomposition approach has shown to be attainable under di er-
+ent noise scenarios and increases with the average trace lengths
+of the event logs.
+our future work aims at improving the presented approach as
+well as investigating new metrics for conformance checking. in
+the experiments, we found that the initial decomposition for in-
+stantiating recomposing replay can have an impact on its perfor-
+mance. for the sake of simplicity, manual decompositions were
+used in the experiments on the synthethic datasets. we concede
+that using a manual decomposition is a possible weakness of the
+approach, but believe that we can generate such decompositions
+in an automated way by using sese techniques. also, a study
+of existing decomposition strategies as the initial decomposi-
+tion may lead to new insights. on a similar note, better merging
+heuristics and strategies to encourage border agreement would
+also further improve the performance of the recomposition ap-
+proach. in this paper we have focused on the ﬁtness quality
+dimension. new metrics are needed to extend the recomposi-
+tion approach to other quality dimensions such as precision.
+acknowledgements
+this work is partially supported by conicyt-pcha /doc-
+torado nacional /2017-21170612 , by the vicerrector´ ıa de in-
+vestigaci´ on de la pontiﬁcia universidad cat´ olica de chile /
+concurso estad´ ıas y pasant´ ıas breves 2016 , and by the de-
+partamento de ciencias de la computaci´ on uc /fond-dcc-2017-0001 . the authors would like to thank felix mannhardt
+and boudewijn f. van dongen for their comments on the im-
+plementation details.
+references
+[1] w. m. p. van der aalst, e. damiani, processes meet big data: connecting
+data science with process science, ieee trans. services computing 8 (6)
+(2015) 810–819. doi:10.1109 /tsc.2015.2493732.
+url http://dx.doi.org/10.1109/tsc.2015.2493732
+[2] m. dumas, m. l. rosa, j. mendling, h. a. reijers, fundamentals of
+business process management, springer, 2013.
+[3] w. m. p. van der aalst, process mining - data science in action,
+springer, 2016.
+[4] a. abbasi, s. sarker, r. h. l. chiang, big data research in information
+systems: toward an inclusive research agenda, j. ais 17 (2).
+[5] m. j. jans, m. g. alles, m. a. vasarhelyi, the case for process mining in
+auditing: sources of value added and areas of application, international
+journal of accounting information systems 14 (1) (2013) 1–20.
+[6] w. m. p. van der aalst, k. m. van hee, j. m. e. m. van der werf, a. ku-
+mar, m. verdonk, conceptual model for online auditing, decision sup-
+port systems 50 (3) (2011) 636–647.
+[7] w. m. p. van der aalst, k. m. van hee, j. m. e. m. van der werf, m. ver-
+donk, auditing 2.0: using process mining to support tomorrow’s auditor,
+ieee computer 43 (3) (2010) 90–93.
+[8] j. d. weerdt, m. d. backer, j. vanthienen, b. baesens, a multi-
+dimensional quality assessment of state-of-the-art process discovery al-
+gorithms using real-life event logs, inf. syst. 37 (7) (2012) 654–676.
+[9] j. ribeiro, j. carmona, m. misir, m. sebag, a recommender system for
+process discovery, in: business process management - 12th international
+conference, bpm 2014, haifa, israel, september 7-11, 2014. proceed-
+ings, 2014, pp. 67–83.
+[10] a. k. a. de medeiros, a. j. m. m. weijters, w. m. p. van der aalst,
+genetic process mining: an experimental evaluation, data min. knowl.
+discov. 14 (2) (2007) 245–304.
+[11] c. bratosin, n. sidorova, w. m. p. van der aalst, distributed genetic
+process mining, in: proceedings of the ieee congress on evolutionary
+computation, cec 2010, barcelona, spain, 18-23 july 2010, ieee, 2010,
+pp. 1–8.
+[12] b. v ´azquez-barreiros, m. mucientes, m. lama, prodigen: mining com-
+plete, precise and minimal structure process models with a genetic algo-
+rithm, inf. sci. 294 (2015) 315–333.
+[13] j. munoz-gama, conformance checking and diagnosis in process min-
+ing - comparing observed and modeled processes, springer, 2016.
+[14] a. adriansyah, aligning observed and modeled behavior, ph.d. thesis,
+technische universiteit eindhoven (2014).
+[15] w. m. p. van der aalst, a. adriansyah, b. f. van dongen, replaying
+history on process models for conformance checking and performance
+analysis, wiley interdisc. rew.: data mining and knowledge discovery
+2 (2) (2012) 182–192.
+[16] a. adriansyah, b. f. van dongen, w. m. p. van der aalst, conformance
+checking using cost-based ﬁtness analysis, in: proceedings of the 15th
+ieee international enterprise distributed object computing conference,
+edoc 2011, helsinki, finland, august 29 - september 2, 2011, 2011, pp.
+55–64.
+[17] a. adriansyah, j. munoz-gama, j. carmona, b. f. van dongen, w. m. p.
+van der aalst, alignment based precision checking, in: business process
+management workshops - bpm 2012 international workshops, tallinn,
+estonia, september 3, 2012. revised papers, 2012, pp. 137–149.
+[18] a. rozinat, w. m. p. van der aalst, conformance checking of processes
+based on monitoring real behavior, inf. syst. 33 (1) (2008) 64–95.
+[19] e. rojas, j. munoz-gama, m. sep ´ulveda, d. capurro, process mining
+in healthcare: a literature review, journal of biomedical informatics 61
+(2016) 224–236.
+[20] d. w. embley, s. w. liddle, big data—conceptual modeling to the res-
+cue, in: international conference on conceptual modeling, springer,
+2013, pp. 1–8.
+[21] s. rogers, big data is scaling bi and analytics–data growth is about to
+accelearate exponentially, information management 21 (5) (2011) 14.
+25[22] j. munoz-gama, j. carmona, w. m. p. van der aalst, single-entry single-
+exit decomposed conformance checking, inf. syst. 46 (2014) 102–122.
+[23] l. wang, y . du, w. liu, aligning observed and modelled behaviour based
+on workﬂow decomposition, enterprise information systems 0 (0) (0) 1–
+21.
+[24] w. m. p. van der aalst, decomposing petri nets for process mining: a
+generic approach, distributed and parallel databases 31 (4) (2013) 471–
+507.
+[25] h. m. w. verbeek, w. m. p. van der aalst, merging alignments for de-
+composed replay, in: f. kordon, d. moldt (eds.), application and theory
+of petri nets and concurrency - 37th international conference, petri
+nets 2016, toru ´n, poland, june 19-24, 2016. proceedings, v ol. 9698 of
+lecture notes in computer science, springer, 2016, pp. 219–239.
+[26] f. taymouri, j. carmona, a recursive paradigm for aligning observed be-
+havior of large structured process models, in: business process manage-
+ment - 14th international conference, bpm 2016, rio de janeiro, brazil,
+september 18-22, 2016. proceedings, 2016, pp. 197–214.
+[27] t. murata, petri nets: properties, analysis and applications, proceedings
+of the ieee 77 (4) (1989) 541–580.
+[28] a. rozinat, process mining: conformance and extension, ph.d. thesis,
+technische universiteit eindhoven (2010).
+[29] s. k. l. m. vanden broucke, j. munoz-gama, j. carmona, b. baesens,
+j. vanthienen, event-based real-time decomposed conformance analy-
+sis, in: r. meersman, h. panetto, t. s. dillon, m. missiko , l. liu,
+o. pastor, a. cuzzocrea, t. k. sellis (eds.), on the move to meaningful
+internet systems: otm 2014 conferences - confederated international
+conferences: coopis, and odbase 2014, amantea, italy, october 27-
+31, 2014, proceedings, v ol. 8841 of lecture notes in computer science,
+springer, 2014, pp. 345–363.
+[30] h. m. w. verbeek, w. m. p. van der aalst, decomposed process mining:
+the ilp case, in: f. fournier, j. mendling (eds.), business process man-
+agement workshops - bpm 2014 international workshops, eindhoven,
+the netherlands, september 7-8, 2014, revised papers, v ol. 202 of lec-
+ture notes in business information processing, springer, 2014, pp. 264–
+276.
+[31] m. de leoni, j. munoz-gama, j. carmona, w. m. p. van der aalst, de-
+composing alignment-based conformance checking of data-aware process
+models, in: r. meersman, h. panetto, t. s. dillon, m. missiko , l. liu,
+o. pastor, a. cuzzocrea, t. k. sellis (eds.), on the move to meaningful
+internet systems: otm 2014 conferences - confederated international
+conferences: coopis, and odbase 2014, amantea, italy, october 27-
+31, 2014, proceedings, v ol. 8841 of lecture notes in computer science,
+springer, 2014, pp. 3–20.
+[32] h. m. w. verbeek, j. c. a. m. buijs, b. f. v. dongen, w. m. p. v. d. aalst,
+prom 6: the process mining toolkit, in: m. la rosa (ed.), proc. of bpm
+demonstration track 2010, v ol. 615 of ceur workshop proceedings,
+ceur-ws.org, hoboken, usa, 2010, pp. 34–39.
+url http://ceur-ws.org/vol-615/paper13.pdf
+[33] a. burattin, plg2: multiperspective processes randomization and simu-
+lation for online and o ine settings, corr abs /1506.08415.
+[34] b. van dongen, bpi challenge 2012 (2012). doi:10.4121 /uuid:3926db30-
+f712-4394-aebc-75976070e91f.
+url https://doi.org/10.4121/uuid:
+3926db30-f712-4394-aebc-75976070e91f
+[35] h. m. w. verbeek, decomposed replay using hiding and reduction, in:
+l. cabac, l. kristensen, h. r ¨olke (eds.), pnse 2016 workshop pro-
+ceedings, torun, poland, 2016, pp. 233–252.
+[36] w. m. p. van der aalst, decomposing process mining problems using
+passages, in: s. haddad, l. pomello (eds.), application and theory of
+petri nets - 33rd international conference, petri nets 2012, hamburg,
+germany, june 25-29, 2012. proceedings, v ol. 7347 of lecture notes in
+computer science, springer, 2012, pp. 72–91.
+[37] h. verbeek, w. m. p. van der aalst, j. munoz-gama, divide and conquer,
+tech. rep. bpm-16-06, bpmcenter.org (2016).
+[38] w. m. p. van der aalst, a. adriansyah, a. k. a. de medeiros, f. arcieri,
+t. baier, t. blickle, r. p. j. c. bose, p. van den brand, r. brandtjen, j. c.
+a. m. buijs, a. burattin, j. carmona, m. castellanos, j. claes, j. cook,
+n. costantini, f. curbera, e. damiani, m. de leoni, p. delias, b. f. van
+dongen, m. dumas, s. dustdar, d. fahland, d. r. ferreira, w. gaaloul,
+f. van ge en, s. goel, c. w. g ¨unther, a. guzzo, p. harmon, a. h. m.
+ter hofstede, j. hoogland, j. e. ingvaldsen, k. kato, r. kuhn, a. kumar,m. l. rosa, f. m. maggi, d. malerba, r. s. mans, a. manuel, m. mc-
+creesh, p. mello, j. mendling, m. montali, h. r. m. nezhad, m. zur
+muehlen, j. munoz-gama, l. pontieri, j. ribeiro, a. rozinat, h. s.
+p´erez, r. s. p ´erez, m. sep ´ulveda, j. sinur, p. so er, m. song, a. sper-
+duti, g. stilo, c. stoel, k. d. swenson, m. talamo, w. tan, c. turner,
+j. vanthienen, g. varvaressos, e. verbeek, m. verdonk, r. vigo, j. wang,
+b. weber, m. weidlich, t. weijters, l. wen, m. westergaard, m. t.
+wynn, process mining manifesto, in: f. daniel, k. barkaoui, s. dustdar
+(eds.), business process management workshops - bpm 2011 interna-
+tional workshops, clermont-ferrand, france, august 29, 2011, revised
+selected papers, part i, v ol. 99 of lecture notes in business information
+processing, springer, 2011, pp. 169–194.
+[39] p. mukala, j. c. a. m. buijs, m. leemans, w. m. p. van der aalst, learn-
+ing analytics on coursera event data: a process mining approach, in: pro-
+ceedings of the 5th international symposium on data-driven process dis-
+covery and analysis (simpda 2015), vienna, austria, december 9-11,
+2015., 2015, pp. 18–32.
+[40] x. lu, r. mans, d. fahland, w. m. p. van der aalst, conformance check-
+ing in healthcare based on partially ordered event data, in: proceedings
+of the 2014 ieee emerging technology and factory automation, etfa
+2014, barcelona, spain, september 16-19, 2014, 2014, pp. 1–8.
+[41] f. taymouri, j. carmona, model and event log reductions to boost the
+computation of alignments, in: proceedings of the 6th international sym-
+posium on data-driven process discovery and analysis (simpda 2016),
+graz, austria, december 15-16, 2016., 2016, pp. 50–62.
+[42] t. chatain, j. carmona, anti-alignments in conformance checking - the
+dark side of process models, in: application and theory of petri nets and
+concurrency - 37th international conference, petri nets 2016, toru ´n,
+poland, june 19-24, 2016. proceedings, 2016, pp. 240–258.
+[43] d. fahland, m. de leoni, b. f. van dongen, w. m. p. van der aalst, con-
+formance checking of interacting processes with overlapping instances,
+in: s. rinderle-ma, f. toumani, k. wolf (eds.), business process man-
+agement - 9th international conference, bpm 2011, clermont-ferrand,
+france, august 30 - september 2, 2011. proceedings, v ol. 6896 of lec-
+ture notes in computer science, springer, 2011, pp. 345–361.
+appendix a. additional decomposed alignments
+g
+g
+k
+n
+h
+k
+n
+h
+j
+j
+d
+d
+6
+4
+=
+p
+p
+7
+4
+=
+n
+n
+m
+m
+p
+p
+8
+4
+=
+q
+q
+p
+p
+9
+4
+=
+a
+a
+1
+4
+=
+a
+a
+2
+4
+=
+c
+c
+a
+a
+3
+4
+=
+d
+d
+4
+4
+=
+5
+4
+=
+f
+m
+
+f
+m
+
+c
+c
+t7
+t12
+t15
+t8
+t11
+t4
+t17
+t15
+t14
+t17
+t18
+t17
+t1
+t1
+t3
+t1
+t4
+t6
+t14
+t10
+t3
+figure a.26: subalignments between the trace 4=ha;c;f;m;d;g;j;h;k;n;p;
+qiin event log l2and valid decomposition d1in figure 6
+a
+1
+5
+=
+a
+b
+b
+a
+2
+5
+=
+a
+e
+l
+i
+e
+l
+i
+d
+d
+a
+3
+5
+=
+a
+b
+b
+4
+5
+=
+d
+j
+h
+n
+
+g
+d
+
+h
+n
+g
+k
+j
+k
+5
+5
+=
+6
+5
+=
+7
+5
+=
+p
+p
+l
+l
+n
+n
+p
+p
+8
+5
+=
+q
+q
+p
+p
+9
+5
+=
+t1
+t2
+t1
+t5
+t13
+t9
+t4
+t1
+t2
+t4
+t8
+t15
+t7
+t12
+t11
+t17
+t13
+t15
+t17
+t18
+t17
+figure a.27: subalignments between the trace 5=ha;b;e;i;l;d;j;g;h;k;n;
+p;qiin event log l2and valid decomposition d1in figure 6
+26

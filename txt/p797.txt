@@ -1,0 +1,824 @@
+decomposing alignment-based conformance checking
+of data-aware process models
+massimiliano de leoni1?, jorge munoz-gama2??, josep carmona2, and
+wil m.p. van der aalst1
+1eindhoven university of technology, eindhoven (the netherlands)
+2universitat polit `ecnica de catalunya, barcelona (spain)
+m.d.leoni@tue.nl ,jmunoz@cs.upc.edu ,jcarmona@cs.upc.edu ,
+w.m.p.v.d.aalst@tue.nl
+abstract. process mining techniques relate observed behavior to modeled be-
+havior, e.g., the automatic discovery of a petri net based on an event log. process
+mining is not limited to process discovery and also includes conformance check-
+ing. conformance checking techniques are used for evaluating the quality of dis-
+covered process models and to diagnose deviations from some normative model
+(e.g., to check compliance). existing conformance checking approaches typically
+focus on the control-ﬂow, thus being unable to diagnose deviations concerning
+data. this paper proposes a technique to check the conformance of data-aware
+process models. we use so-called petri nets with data to model data variables,
+guards, and read/write actions. data-aware conformance checking problem may
+be very time consuming and sometimes even intractable when there are many
+transitions and data variables. therefore, we propose a technique to decompose
+large data-aware conformance checking problems into smaller problems that can
+be solved more efﬁciently. we provide a general correctness result showing that
+decomposition does not inﬂuence the outcome of conformance checking. the
+approach is supported through prom plug-ins and experimental results show sig-
+niﬁcant performance improvements. experiments have also been conducted with
+a real-life case study, thus showing that the approach is also relevant in real busi-
+ness settings.
+keywords: process mining, conformance checking, divide-and-conquer tech-
+niques, multi-perspective process modelling
+1 introduction
+nowadays, most organizations document and analyze their processes in some form,
+and with it, the practical relevance of process mining is increasing as more and more
+event data becomes available. process mining techniques aim to discover, monitor and
+improve real processes by extracting knowledge from event logs. the two most promi-
+nent process mining tasks are: (i) process discovery: learning a process model from
+example behavior recorded in an event log, and (ii) conformance checking: diagnosing
+?when conducting most of this research work, dr. de leoni was also afﬁliated with university
+of padua and ﬁnancially supported by the eurostars - eureka project prompt (e!6696).
+??supported by fpu grant (ap2009-4959) and project formalism (tin-2007-66523)credit 
+request 
+(a)verify
+ (b)assessment 
+(c)positive 
+vefication
+register 
+negative 
+verification (d)negative 
+verificationinform requester 
+(e)
+renegotiate 
+request(f)register 
+negative 
+request (g)negative 
+decision
+open credit 
+(h) positive
+decision
+amount (a)interest (i)
+decision (d)
+verification (v) 0.1 amount < interest < 0.2 amount
+the renegotiated amount is 
+smaller than the original 
+amountdecision = negativefig. 1: example of a (simpliﬁed) process to request loans. the dotted arcs going from
+a transition to a variable denote write operations; the arcs towards a transition denote
+read operations, i.e. the transition requires accessing the current variables’ value. in the
+paper, each transition is abbreviated into a lower-case letter (e.g. a) and each variable
+is represented as a upper-case letter (e.g. a). the abbreviations are shown in brackets
+after the name of the transitions or variable names.
+and quantifying discrepancies between observed behavior and modeled behavior [1].
+models that faithfully conform the reality are necessary to obtain trustful analysis and
+simulation results, for certiﬁcation and regulation purposes, or simply to gain insight
+into the process.
+most of the work done in conformance checking in the literature focuses on the
+control-ﬂow of the underlying process, i.e. the ordering of activities. there are various
+approaches to compute the fraction of events or traces in the log that can be replayed
+by the model [2,3].
+in a data-aware process model, each case, i.e. a process instance, is characterized
+by its case variables. paths taken during the execution may be governed by guards and
+conditions deﬁned over such variables. a process model speciﬁes the set of variables
+and their possible values, guards, and write/read actions. since existing conformance
+checking techniques typically completely abstract from data, resources, and time, many
+deviations remain undetected. therefore, the event log may record executions of process
+instances that appear fully conforming, even when it is not the case. rigorous analysis
+of the data perspective is needed to reveal such deviations.
+let us consider the process that is modeled as bpmn diagram in figure 1. it mod-
+els the handling of loans requests from customers. it is deliberately oversimpliﬁed to
+be able to explain the concepts more easily. the process starts with a credit request
+where the requestor provides some documents to demonstrate the capability of paying
+the loan back. these documents are veriﬁed and the interest amount is also computed.
+if the veriﬁcation step is negative, a negative decision is made, the requestor is informed
+and, ﬁnally, the negative outcome of the request is stored in the system. if veriﬁcationis positive, an assessment is made to take a ﬁnal decision. independently of the assess-
+ment’s decision, the requestor is informed. moreover, even if the veriﬁcation is negative,
+the requestor can renegotiate the loan (e.g. to have lower interests) by providing further
+documents or by asking for a smaller amount. in this case, the veriﬁcation-assessment
+part is repeated. if both the decision and veriﬁcation are positive and the requestor is
+not willing to renegotiate, the credit is opened. let us consider the following trace:3
+ex=h(a;;;f(a;4000)g);(b;f(a;4000)g;f(i;450);(v;false)g);(c;f(v;false)g;
+f(d;true)g);(e;;;;);(f;f(a;4000)g;f(a;5000)g);(b;f(a;5000)g;f(i;450);
+(v;false)g);(d;f(v;false)g;f(d;false)g);(e;;;;);(h;f(d;true)g;;)i
+seen from a control-ﬂow perspective only (i.e. only considering the activities’ order-
+ing), the trace seems to be fully conforming. nonetheless, a number of deviations can
+be noticed if the data perspective is considered. first of all, if activity cis executed,
+previously activity bcould not have resulted in a negative veriﬁcation, i.e. vis set to
+false . second, activity fcannot write value 5000 to variablea, as this new value is
+larger than the previous value, i.e. 4000 . furthermore, if the decision and veriﬁcation
+are both negative, i.e. both varedare set to false , thenhcannot be executed at the
+end.
+the identiﬁcation of non-conforming traces clearly has value in itself. nonetheless,
+organizations are often interested in explanations that can steer measures to improve
+the quality of the process. alignments aim to support more reﬁned conformance check-
+ing. an alignment aligns a case in the event log with an execution path of the process
+model as good as possible. if the case deviates from the model, then it is not possible
+to perfectly align with the model and a best matching scenario is selected. note that
+for the same deviation, multiple explanations can be given. for instance, the problem
+thathwas executed when it was not supposed to happen can be explained in two ways:
+(1)hshould not have occurred because vanddare both set to false (“control-ﬂow is
+wrong”) and (2) vanddshould both have been set to true because hoccurs (“data-ﬂow
+is wrong”). in order to decide for the most reasonable explanation, costs are assigned
+to deviations and we aim to ﬁnd the explanation with the lowest cost. for instance, if
+assigning a wrong value to vanddis less severe than executing hwrongly, the sec-
+ond explanation is preferred. the seminal work in [3] only considers alignments in the
+control-ﬂow part, thus ignoring the data-perspective aspect of conformance.
+as we detail in section 2.4, ﬁnding an alignment of an event log and a data-aware
+process model is undecidable in the general case. however, to make the problem decid-
+able, works [4,5] put forward the limitation that guards need to be linear (in)equations.
+readers are also referred to them for a state-of-the-art analysis of data-aware confor-
+mance checking. these works also show that, even with that limitation, the problem
+of ﬁnding an alignment of an event log can become intractable since the problem’s
+complexity is exponential on the size of the model, i.e. the number of activities and data
+variables. in this paper, while keeping the limitations mentioned above, we aim to speed
+3notation (act; r; w)is used to denote the occurrence of activity actthat writes and reads
+variables according to functions wandr, e.g., (b;f(a;4000)g;f(i;450);(v;false)g)is an
+event corresponding to the occurrence of activity bwhile reading value 4000 for variable a
+and writing values 450 and false to variables iandvrespectively. (e;;;;)corresponds to the
+occurrence of activity ewithout reading/writing any variables.     complete     
+log    
+l      1      m      1    
+     ...    
+     l      n         m      n         ...        control-flow    
+model       control-flow    
+log   
+    conformance   
+    l       m   [3]
+    multi-perspective    
+log       multi-perspective    
+model   
+    conformance   
+    l       m   [4,5]    l     1       m     1   
+    ...   
+    l     n       m     n       ...   
+[6,7,8]fig. 2: positioning the contribution of this paper with respect to the state of the art: the
+gray area identiﬁes the novelty of the proposed technique.
+up the computation of alignments by using a divide-and-conquer approach. the data-
+aware process model is split into smaller partly overlapping model fragments. for each
+model fragment a sublog is created by projecting the initial event log onto the activities
+used in the fragment. given the exponential nature of conformance checking, this may
+signiﬁcantly reduce the computation time. if the decomposition is done properly, then
+any trace that ﬁts into the overall model also ﬁts all of the smaller model fragments
+and vice versa. figure 2 positions the contribution of this paper with respect to the
+state-of-the-art alignment-based techniques. the top part identiﬁes the alignment-based
+conformance checking that considers the control ﬂow, only. the bottom part refers to
+the alignment-based conformance checking techniques that account for data, as well.
+regarding the control-ﬂow only, several approaches have been proposed to decompose
+process mining problems, both for discovery and conformance checking. as described
+in [6], it is possible to decompose process mining problems in a variety of ways. spe-
+cial cases of this more general theory are passages [7] and sese-based decomposition
+[8]. however, these approaches are limited to control-ﬂow. indeed, some techniques
+exist that also consider the data aspects (i.e. [4,5]) but without exploiting the possibility
+of decomposing the data-aware model. in this paper, we extend the control-ﬂow ap-
+proaches mentioned above to also take data into account, which coincides with the gray
+area in figure 2. finally, the work in [9] (and similar) for data-aware conformance on
+declarative models is orthogonal to the contributions listed in figure 2, that are focused
+on procedural models.
+the decomposed data-aware conformance checking approach presented in this pa-
+per has been implemented as plug-ins for the prom framework. we conducted exper-
+iments related to a real-life case study as well as with several synthetic event logs.
+experimental results show that data-aware decomposition may indeed be used to sig-
+niﬁcantly reduce the time needed for conformance checking and that the problem is
+practically relevant since models of real processes can actually be decomposed.
+preliminaries are presented in section 2. section 3 introduces our approach for data-
+aware decomposition. section 4 describes different algorithms for instantiating the gen-eral results presented in section 3. section 5 reports on experimental results. section 6
+concludes the paper.
+2 preliminaries
+2.1 system nets
+petri nets and their semantics are deﬁned as usual: a petri net is a tuple (p;t;f )with
+pthe set of places, tthe set of transitions, p\t=;, andf(pt)[(tp)the
+ﬂow relation. a place pis an input place of a transition tiff(p;t)2f; similarly,pis an
+output place of tiff(t;p)2f. the marking of a petri net is a multiset of tokens, i.e.,
+m2i b(p). for some multiset m2i b(p),m(p)denotes the number of times element
+pappears inm. the standard set operators can be extended to multisets, m1]m2is
+the union of two multisets.
+firing a transition tin a marking mconsumes one token from each of its input
+places and produces one token in each of its output places. furthermore, transition t
+is enabled and may ﬁre in mif there are enough tokens in its input places for the
+consumptions to be possible, i.e. iff for each input place soft,m(s)1. some of
+the transitions corresponds to piece of work in the process; each of those transitions are
+associated with a label that indicates the activity that it represents.
+deﬁnition 1 (labeled petri net). a labeled petri net pn= (p;t;f;l )is a petri net
+(p;t;f )with labeling function l2t6!uawhereuais some universe of activity
+labels.4
+transitions without a label are invisible transitions, also known as -transitions. they
+are introduced for routing purposes but they do not represent actual pieces of work. as
+such, their execution is not recorded in the event logs.
+deﬁnition 2 (system net). a system net sn= (pn;minit;mnal)is a triplet where
+pn= (p;t;f;l )is a labeled petri net, minit2i b(p)is the initial marking, and
+mnal2i b(p)is the ﬁnal marking. usnis the universe of system nets .
+deﬁnition 3 (system net notations). letsn= (pn;minit;mnal)2u snbe a
+system net with pn= (p;t;f;l ).
+–tv(sn) =dom(l)is the set of visible transitions insn,
+–av(sn) =rng(l)is the set of corresponding observable activities insn,
+–tu
+v(sn) =ft2tv(sn)j8t02tv(sn)l(t) =l(t0))t=t0gis the set of unique
+visible transitions in sn(i.e., there are no other transitions having the same visible
+label), and
+–au
+v(sn) =fl(t)jt2tu
+v(sn)gis the set of corresponding unique observable
+activities in sn.
+in the remainder, for the formal deﬁnitions and proved theorems in section 3, we
+need to introduce the concept of union of two nets. for this, we need to merge labeling
+functions. for any two partial functions f12x16!y1andf22x26!y2:f3=
+4symbol6!is used to denote partial functions.n1 n2n3 n5 n6
+credit requestregister negative 
+verificationinform requester
+renegotiateopen credit loan assessmentinterests
+amountverification
+decision
+register negative request register negative request 
+n4n4verify verifyfig. 3: pictorial representation of a petri net with data that models the process earlier
+described in terms of bpmn diagram (cf. figure 1). places, transitions and variables
+are represented as circles, rectangles and triangles, respectively. the dotted arcs going
+from a transition to a variable denote the writing operations; the reverse arcs denote the
+read operations, i.e. the transition requires accessing the current variables’ value.
+f1f2is the union of the two functions. f32(x1[x2)6!(y1[y2),dom(f3) =
+dom(f1)[dom(f2),f3(x) =f2(x)ifx2dom(f2), andf3(x) =f1(x)ifx2
+dom(f1)ndom(f2).
+deﬁnition 4 (union of nets). letsn1= (n1;m1
+init;m1
+nal)2u snwithn1=
+(p1;t1;f1;l1)andsn2= (n2;m2
+init;m2
+nal)2usnwithn2= (p2;t2;f2;l2)
+be two system nets.
+–l3=l1l2is the union of l1andl2,
+–n1[n2= (p1[p2;t1[t2;f1[f2;l3)is the union of n1andn2, and
+–sn1[sn2= (n1[n2;m1
+init]m2
+init;m1
+nal]m2
+nal)is the union of system
+netssn1andsn2.
+2.2 petri nets with data
+a petri net with data is a petri net with any number of variables (see deﬁnitions 5 and
+6 below). petri nets with data can be seen as an abstracted version of high-level/colored
+petri nets [10]. colored petri nets are extremely rich in expressiveness; however, many
+aspects are unimportant in our setting. petri nets with data provide precisely the infor-
+mation needed for conformance checking of data-aware models and logs.
+deﬁnition 5 (variables and values). uvnis the universe of variable names. uvvis
+the universe of values. uvm=uvn6!u vvis the universe of variable mappings.
+in this type of nets, transitions may read from and/or write to variables. moreover, tran-
+sitions are associated with guards over these variables, which deﬁne when these they
+can ﬁre. a guard can be any formula over the process variables using relational oper-
+ators (<;>; =) as well as logical operators such as conjunction ( ^), disjunction (_),and negation (:). a variable vappear asvrorvw, denoting the values read and written
+by the transition for v. we denote with formulas (v)the universe of such formulas
+deﬁned over a set vof variables. in the remainder, given a set vu vnof variable
+names, we denote vr=fvr:v2vgandvw=fvw:v2vg.
+formally, a petri net with data (dpn) is deﬁned as follows:
+deﬁnition 6 (petri net with data). a petri net with data dpn = (sn;v; val;init;
+read;write;guard )consists of
+–a system net sn= (pn;minit;mnal)withpn= (p;t;f;l ),
+–a setvu vnof data variables,
+–a function val2v!p(uvv)that deﬁnes the values admissible for each vari-
+able, i.e., val(v)is the set of values that variable vcan have,5
+–a function init2v!u vvthat deﬁnes the initial value for each variable vsuch
+thatinit(v)2val(v)(initial values are admissible),
+–a read function read2t! p (v)that labels each transition with the set of
+variables that it reads,
+–a write function write2t!p (v)that labels each transition with the set of
+variables that it writes,
+–a guard function guard2t!formulas (vw[vr)that associates a guard
+with each transition such that, for any t2tand for any v2v, ifvrappears in
+guard (t)thenv2read(t)and ifvwappears in guard (t)thenv2write (t).
+udpn is the universe of petri nets with data .
+the notion of bindings is essential for the remainder. a binding is a triplet (t;r;w )
+describing the execution of transition twhile reading values rand writing values w. a
+binding is valid if:
+1.r2read(t)!u vvandw2write (t)!u vv
+2. for anyv2read(t):r(v)2val(v), i.e., all values read should be admissible,
+3. for anyv2write (t):w(v)2val(v), i.e., all values written should be admissible.
+4. guard guard (t)evaluate true.
+more speciﬁcally, let us introduce variable assignment b: (vr[vw)6!u vv)which
+is deﬁned as follows: for any v2read(t),(vr) =r(v)and, for any v2write (t),
+(vw) =w(v). a binding (t;r;w )makes guard (t)evaluate true if the evaluation of
+guard (t)wrt.breturns true.
+a marking (m;s)of a petri net with data dpn has two components: m2i b(p)
+is the control-ﬂow marking ands2u vmwithdom(s) =vands(v)2val(v)for
+allv2vis the data marking . the initial marking of a petri net with data dpn
+is(minit;init). recall that init is a function that deﬁnes the initial value for each
+variable.
+(dpn;(m;s))[bidenotes that a binding bis enabled in marking (m;s), which in-
+dicates that each of its input places tcontains at least one token (control-ﬂow enabled),
+bis valid and and sread (t)=r(the actual values read match the binding).6
+5p(x)is the powerset of x, i.e.,y2p(x)is and only if yx.
+6fqis the function projected on q:dom(fq) =dom(f)\qandfq(x) =f(x)for
+x2dom(fq). projection can also be used for bags and sequences, e.g., [x3; y; z2]fx;yg=
+[x3; y]andhy; z; yifx;yg=hy; yi.table 1: deﬁnitions of the guards of the transitions in fig. 3. variables and transition
+names are abbreviated as described in figure 1. subscripts randwrefer to, respectively,
+the values read and written for that given variable.
+transition guard
+credit request true
+verify 0:1ar< iw<0:2ar
+assessment vr=true
+register negative veriﬁcation vr=false^dw=false
+inform requester true
+renegotiate request vr=false^aw< ar
+register negative request dr=false
+open credit dr=true
+an enabled binding b= (t;r;w )may occur , i.e., one token is removed from each
+of the input places tand one token is produced for each of the output places t. more-
+over, the variables are updated as speciﬁed by w. formally:m0= (mnt)]tis
+the control-ﬂow marking resulting from ﬁring enabled transition tin markingm(ab-
+stracting from data) and s0=swis the data marking where s0(v) =w(v)for allv2
+write (t)ands0(v) =s(v)for allv2vnwrite (t).(dpn;(m;s))[bi(dpn;(m0;s0))
+denotes that bis enabled in (m;s)and the occurrence of bresults in marking (m0;s0).
+figure 3 shows a petri net with data dpnexthat models the same process as
+represented in figure 1 as bpmn diagram, and table 1 illustrates the conditions of the
+guards of the transitions of dpnex. the labeling function lis such that the domain of
+lis the set of transitions of dpnexand, for each transition tofdpnex,l(t) =t. in
+other words, the set of activity labels coincides with the set of transitions.
+letb=hb1;b2;:::;bnibe a sequence of bindings. (dpn;(m;s))[bi(dpn;
+(m0;s0))denotes that there is a set of markings (m0;s0);(m1;s1);:::; (mn;sn)such
+that(m0;s0) = (m;s),(mn;sn) = (m0;s0), and(dpn;(mi;si))[bi+1i(dpn;(mi+1;si+1))
+for0i < n . a marking (m0;s0)isreachable from (m;s)if there exists a bsuch
+that(dpn;(m;s))[bi(dpn;(m0;s0)).
+f(dpn ) =fbj9s(dpn;(minit;init))[bi(dpn;(mnal;s))gis the set of
+complete binding sequences , thus describing the behavior of dpn .
+deﬁnition 7 (union of petri nets with data). letdpn1= (sn1;v1;val1;init1;read1;
+write1;guard1)anddpn2= (sn2;v2;val2;init2;read2;write2;guard2)with
+v1\v2=;.dpn1[dpn2= (sn1[sn2;v1[v2;val1val2;init1init2;
+read3;write3;guard3)is the union such that
+–read3(t) =read1(t),write3(t) =write1(t), and guard3(t) =guard1(t)ift2
+t1nt2,
+–read3(t) =read2(t),write3(t) =write2(t), and guard3(t) =guard2(t)ift2
+t2nt1, and
+–read3(t) = read1(t)[read2(t),write3(t) = write1(t)[write2(t), and
+guard3(t) =guard1(t)guard2(t)ift2t1\t2.2.3 event logs and relating models to event logs
+next we introduce event logs and relate them to the observable behavior of a dpn .
+deﬁnition 8 (trace, event log with data). a trace2(uau vmu vm)is a
+sequence of activities with input and output data. l2i b((uau vmu vm))is an
+event log with read and write information, i.e., a multiset of traces with data.
+deﬁnition 9 (from bindings to traces). consider a petri net with data with transi-
+tionstand labeling function l2t6!ua. a binding sequence b2(tu vm
+uvm)can be converted into a trace v2(uau vmu vm)by removing the
+bindings that correspond to unlabeled transitions and by mapping the labeled transi-
+tions onto their corresponding label. l(b)denotes the corresponding trace v.
+note that we overload the labeling function to binding sequences, v=l(b). this
+is used to deﬁne (dpn ): the set of all visible traces.
+deﬁnition 10 (observable behavior of a petri net with data). letdpn be a petri
+net with data. (dpn;(m;s))[v(dpn;(m0;s0))if and only if there is a sequence
+bsuch that (dpn;(m;s))[bi(dpn;(m0;s0))andv=l(b).(dpn ) =fl(b)j
+b2f(dpn )gis the set of visible traces starting in (minit;init)and ending in
+(mnal;s)for some data marking s.
+deﬁnition 11 (perfectly fitting with data). a trace2(uau vmu vm)is
+perfectly ﬁtting dpn2u dpn if2(dpn ). an event log l2i b((uau vm
+uvm))is perfectly ﬁtting dpn if all of its traces are perfectly ﬁtting.
+later, we will need to project binding sequences and traces onto subsets of tran-
+sitions/activities and variables. therefore, we introduce a generic projection operator
+y;v()that removes transitions/activities not in yand variables not in v.
+deﬁnition 12 (projection). letxbe a set of transitions or activities (i.e., xtor
+xua). letyxbe a subset and vu vna subset of variable names. let
+2(xu vmu vm)be a binding sequence or a trace with data. y;v()2
+(y(v6!u vv)(v6!u vv))is the projection of onto transitions/activities y
+and variables v. bindings/events unrelated to transitions/activities in yare removed
+completely. moreover, for the remaining bindings/events all read and write variables
+not invare removed. y;v(l) = [y;v()j2l]lifts the projection operator to
+the level of logs.
+2.4 alignments
+conformance checking requires an alignment of event log land process model dpn ,
+that is the alignment of each single trace 2land process model dpn .
+the events in the event log need to be related to transitions in the model, and vice
+versa. such an alignment shows how the event log can be replayed on the process model.
+building this alignment is far from trivial, since the log may deviate from the model at
+an arbitrary number of places. we need to relate “moves” in the log to “moves” in the
+model in order to establish an alignment between a process model and an event log. it
+may be that some of the moves in the log cannot be mimicked by the model and vice
+versa. we denote such “no moves” by . an alignment is a sequence of moves:table 2: examples of complete alignments of example andn. for readability, the read
+operations are omitted. of course, read operations for any variable must match the most
+recent value for that variable. any move is highlighted with a gray color if it contains
+deviations, i.e. it is not a move in both without incorrect read/write operations.
+(a)
+event-log trace process
+(a,f(a,4000)g) (a,f(a,4000)g)
+(b,f(i,450),(v , false )g)(b,f(i,450),(v , true)g)
+(c,f(d,true)g) (c,f(d,true)g)
+(e,;) (e,;)
+(f,f(a,5000)g) (f,f(a,3000)g)
+(b,f(i,450),(v , false )g)(b,f(i,450),(v , false )g)
+(d,f(d,false )g) (d,f(d,false )g)
+(e,;) (e,;)
+(h,;)
+ (g,;)(b)
+event-log trace process
+(a,f(a,4000)g) (a,f(a,5100)g)
+(b,f(i,450),(v , false )g)(b,f(i,511),(v , true)g)
+(c,f(d,true)g) (c,f(d,true)g)
+(e,;) (e,;)
+(f,f(a,5000)g) (f,f(a,5000)g)
+(b,f(i,450),(v , false )g)(b,f(i,511),(v , false )g)
+(d,f(d,false )g) (d,f(d,false )g)
+(e,;) (e,;)
+(h,;)
+ (g,;)
+deﬁnition 13 (legal alignment moves). let dpn = (sn;v;val;init;
+read;write;guard )be a petri net with data, with sn= (pn;minit;mnal)and
+pn= (p;t;f;l ). letsl=uauvmuvmbe the universe of events. let sdpn =
+tuvmuvmbe the universe of bindings of dpn . let bes
+dpn =sdpn[fg
+ands
+l=sl[fg .
+a legal move in an alignment is represented by a pair (sl;sm)2(s
+ls
+dpn)n
+f(;)gsuch that
+–(sl;sm)is amove in log ifsl2slandsm=,
+–(sl;sm)is amove in model ifsl=andsm2sdpn ,
+–(sl;sm)is amove in both without incorrect read/write operations ifsm= (t;r;w )2
+sdpn andsl= (l(t);r;w)2sl,
+–(sl;sm)is amove in both with incorrect read/write operations ifsm= (t;r;w )2
+sdpn andsl= (l(t);r0;w0)2sl, andr6=r0orw6=w0.
+all other moves are considered as illegal .
+deﬁnition 14 (alignments). letdpn = (sn;v;val;init;read;write;guard )be a
+petri net with data and 2(sl)be an event-log trace. let adpn be the set of legal
+moves for dpn . acomplete alignment oflanddpn is a sequence 2adpn
+such that, ignoring all occurrences of , the projection on the ﬁrst element yields l
+and the projection on the second yields a p2f(dpn ).
+table 2 shows two complete alignments of the process model in figure 3 and the
+log traceexfrom section 1.
+in order to deﬁne the severity of a deviation, we introduce a cost function on legal
+moves:2adpn!r+
+0. this cost function can be used to favor one type of expla-
+nation for deviations over others. the cost of each legal move depends on the speciﬁc
+model and process domain and, hence, the cost function needs to be deﬁned speciﬁ-
+cally for each setting. the cost of an alignment is the sum of the cost of all individual
+moves composing it: k() =p
+(sl;sm)2(sl;sm).
+however, we do not aim to ﬁnd just any complete alignment. our goal is to ﬁnd a
+complete alignment of landdpn which minimizes the cost: an optimal alignment.let l;nbe the (inﬁnite)set of all complete alignments of landdpn . the align-
+ment2 l;dpn is an optimal alignment if, for all02 l;n,k()k(0). note
+that an optimal alignment does not need to be unique, i.e. multiple complete alignments
+with the same minimal cost may exist.
+let us consider again our example introduced above. let us assume to have a cost
+functionssuch thats(sl;sm) = 1 if(sl;sm)is a visible move in process or a
+move in log (i.e. sl=andsmcorresponds to a labeled transition or, conversely,
+sm=, respectively) or a move in both with incorrect read/write operations and
+s(sl;sm) = 0 in case of move in both without incorrect read/write operations or
+a move in model corresponding to an unlabeled transition. the alignment in table 2a
+has a cost of 6 whereas the alignment in table 2b has a cost 8.7it follows that the former
+is a better alignment. as a matter of fact, it is also an optimal alignment, although it is
+not the only one. for instance, any variation of such an alignment where the move
+forfis of the form (now including read operations) ((f;f(a;4000)g;f(a;5000)g)
+(f;f(a;4000)g;f(a;x)g)g))with2250<x< 4000 corresponds to an optimal align-
+ment, as well.
+in section 1, we have mentioned that the data-aware conformance checking is un-
+decidable in the general case. this is caused by the fact that petri nets with data are
+turing-complete. therefore, it is not decidable to verify whether a sequence of valid
+bindings exists that takes from the initial marking to any ﬁnal marking (mfinal;s). as
+a consequence, for instance, it is not possible to ﬁnd an alignment of a petri net with
+data and the empty log trace. as mentioned in section 1, the problem becomes decid-
+able (with an exponential complexity) if guards are restricted to linear (in)equalities.
+3 valid decomposition of data-aware models
+in [6] the author deﬁnes valid decomposition in terms of petri nets: the overall system
+netsnis decomposed into a collection of subnets fsn1;sn2;:::; snngsuch that the
+union of these subnets yields the original system net. a decomposition is valid if the
+subnets “agree” on the original labeling function (i.e., the same transition always has
+the same label), each place resides in just one subnet, and also each invisible transition
+resides in just one subnet. moreover, if there are multiple transitions with the same
+label, they should reside in the same subnet. only unique visible transitions can be
+shared among different subnets.
+deﬁnition 15 (valid decomposition for petri nets [6]). letsn2u snbe a system
+net with labeling function l.d=fsn1;sn2;:::; snngu snis a valid decompo-
+sition if and only if:
+–sni= (ni;mi
+init;mi
+nal)is a system net with ni= (pi;ti;fi;li)for all 1
+in,
+–li=ltifor all 1in,
+–pi\pj=;for1i<jn,
+–ti\tjtu
+v(sn)for1i<jn,
+–rng(li)\rng(lj)tu
+v(sn)for1i<jn, and
+7they also include a cost of two that is accounted for incorrect read operations, not shown in
+the alignments, which are caused by incorrect write operations.–sn=s
+1insni.
+d(sn)is the set of all valid decompositions of sn.
+from the deﬁnition the following properties follow:
+1. each place appears in precisely one of the subnets, i.e., for any p2p:jf1i
+njp2pigj= 1,
+2. each invisible transition appears in precisely one of the subnets, i.e., for any t2
+tntv(sn):jf1injt2tigj= 1,
+3. all visible transitions with the same label (i.e. the label is not unique) appear in
+the same subnet, i.e., for any a2av(sn)nau
+v(sn):jf1inj 9t2
+tv(sn)\ti; l(t)gj= 1,
+4. visible transitions having a unique label may appear in multiple subnets, i.e., for
+anyt2tu
+v(sn):jf1injt2tigj1, and
+5. each edge appears in precisely one of the subnets, i.e., for any (x;y)2f:jf1
+inj(x;y)2figj= 1.
+as shown in [6], these observations imply that conformance checking can be de-
+composed. any trace that ﬁts the overall process model can be decomposed into smaller
+traces that ﬁt the individual model fragments. moreover, if the smaller traces ﬁt the in-
+dividual fragments, then they can be composed into a trace that ﬁts into the overall
+process model. this result is the basis for decomposing process mining problems.
+theorem 1 (conformance checking can be decomposed [6]). letl2i b(a)be
+an event log with auaand let sn2usnbe a system net. for any valid decompo-
+sitiond=fsn1;sn2;:::; snng2d (sn):lis perfectly ﬁtting system net snif
+and only if for all 1in: the projection of lontoav(sni)is perfectly ﬁtting sni.
+in this paper, the deﬁnition of valid decomposition is extended to cover petri nets
+with data.
+deﬁnition 16 (valid decomposition for petri nets with data). letdpn2u dpn
+be a petri net with data. d=fdpn1;dpn2;:::; dpnngu dpn is a valid de-
+composition if and only if:
+–for all 1in:dpni= (sni;vi;vali;initi;readi;writei;guardi)is a
+petri net with data, sni= (pni;mi
+init;mi
+nal)2 u snis a system net, and
+pni= (pi;ti;fi;li)is a labeled petri net,
+–d0=fsn1;sn2;:::; snngu snis a valid decomposition ofs
+1insni,
+–vi\vj=;for1i<jn,
+–dpn =s
+1indpni.
+d(dpn )is the set of all valid decompositions of dpn .
+each variable appears in precisely one of the subnets. therefore, there cannot be two
+fragments that read and or write the same data variables:s
+t2tireadi(t)[writei(t)t
+s
+t2tjreadj(t)[writej(t) =;for1i < jn. moreover, two guards in
+different fragments cannot refer to the same variable. if a transition tappears in multiple
+fragments, then it needs to have a visible unique label as shown in [6]. such a uniquely
+labeled transition tshared among fragments, may use, read, or write different variables
+in different fragments. since dpn =s
+1indpni, we know that, for all tindpn ,
+guard (t)is the product of all guardi(t)such thatt2ti. without loss of generalitywe can assume that the ﬁrst kfragments share t. hence, guard (t) =guard1(t):::
+guardk(t). hence, in a valid decomposition, the guard of a shared transition can only
+be split if the different parts do not depend on one another. notice that, the splitting
+of the data variables is limited by how the variables are used throughout the process,
+existing a worst-case where all the data variables are used in all the steps of the process.
+based on these observations, we prove that we can decompose conformance check-
+ing also for petri nets with data.
+theorem 2 (conformance checking with data can be decomposed). letl2
+i b((uau vmu vm))be an event log with information about reads and writes
+and let dpn2u dpn be a petri net with data. for any valid decomposition d=
+fdpn1;dpn2;:::; dpnngu dpn :lis perfectly ﬁtting petri net with data dpn
+if and only if for all 1in:av(sni);vi(l)is perfectly ﬁtting dpni.
+proof. letdpn = (sn;v;val;init;read;write;guard )be a petri net with data with
+sn= (pn;minit;mnal)andpn= (p;t;f;l ). letd=fdpn1;dpn2;:::
+dpnngbe a valid decomposition of dpn withdpni= (sni;vi;vali;initi;readi;
+writei;guardi),sni= (pni;mi
+init;mi
+nal)2usn, and pni= (pi;ti;fi;li).
+()) letv2lbe such that there exists a data marking ssuch that (dpn;(minit;
+init))[v(dpn;(mnal;s)). this implies that there exists a corresponding bwith
+(dpn;(minit;init))[bi(dpn;(mnal;s))andl(b) =v. for all 1in, we
+need to prove that there is a i
+bwith(dpni;(mi
+init;initi))[i
+bi(dpni;(mi
+nal;si))
+for somesi. this follows trivially because dpnican mimic any move of dpn with
+respect to transitions ti: just takei
+b=ti;vi(b). note that guards can only become
+weaker by projection.
+(() letv2l. for all 1in, leti
+bbe such that (dpni;(mi
+init;initi))[i
+bi
+(dpni;(mi
+nal;si))andli(i
+b) =av(sni);vi(v). the different i
+bsequences can
+be stitched together into an overall bs.t.(dpn;(minit;init))[bi(dpn;(mnal;s))
+withs=s1s2:::sn. this is possible because transitions in one subnet
+can only inﬂuence other subnets through unique visible transitions and these can only
+move synchronously as deﬁned by v. moreover, guards can only be split in indepen-
+dent parts (see deﬁnition 16). suppose that tappears intiandtj, then guard (t) =
+guardi(t)guardj(t). hence, a read/write in subnet icannot limit a read/write in subnet
+j. therefore, we can construct bandl(b) =v. u t
+4 sese-based strategy for realizing a valid decomposition
+in this section we present a concrete strategy to instantiate the valid decomposition def-
+inition over a petri net with data presented in the previous section (cf. def.16). the pro-
+posed strategy decomposes the petri net with data in a number of single-entry single-
+exit (sese) components, which have recently been shown to create meaningful frag-
+ments of a process model [11,8]. sese decomposition is indicated for well-structured
+models, whereas for unstructured models some automatic transformation techniques
+can be considered as a pre-processing step [12].
+we will now informally describe the necessary notions for understanding the pro-
+posed data-oriented sese-based valid decomposition strategies described below. forn1 n2 n3 n5 n6
+credit request verify
+register negative 
+verificationinform requester
+renegotiateopen credit loan assessment register negative request register negative request
+n4n4
+a bcde
+gf
+hi
+j
+l km n
+p os1s2
+s8s3
+s4s9s5
+s10s7s6s1
+s8 s2
+s9 s10 s4 s3
+s5
+s6 s7a b
+m n op k l
+cd ij
+e f gha) petri net
+b) workflow graph and sesesc) rpstfig. 4: a petri net modeling the control-ﬂow of the running example, its workﬂow graph
+and the rpst and sese decomposition.
+n3
+verify
+register negative 
+verificationassessment
+n2
+credit requestverify
+renegotiaten1
+credit requestregister negative 
+verificationinform requesterassessment
+n4n4
+n5
+renegotiateopen credit loan register negative request register negative request 
+n6
+open credit loan 
+verify
+register negative 
+verificationopen credit loan assessment
+verification decision
+credit requestverify
+renegotiateinterests
+amountregister negative request register negative request 
+register negative request register negative request 
+fig. 5: sese-based decomposition for the running example, with 2-decomposition.
+the sake of clarity, we will focus on the control ﬂow to illustrate the concepts, although
+the deﬁnitions will be extended at the end to also consider data.
+given petri net pn = (p;t;f;l ), its workﬂow graph is the structural graph
+wg= (s;e)with no distinctions between places and transitions, i.e., s=p[tand
+e=f. for instance, fig. 4(b) shows the workﬂow graph of the petri net of fig. 4(a)
+(corresponding with the control-ﬂow part of the running example). given a subset of
+edgese0eofwg, the nodesse0=fs2s:9s02s:(s;s0)2e0_(s0;s)2e0g
+can be partitioned into interior and boundary. interior nodes have no connection with
+nodes outside se0, while boundary nodes do. furthermore, boundary nodes can be
+partitioned into entry (no incoming edge belongs to e), or exit (no outgoing edge be-
+longs toe0).e0eis asese ofwg iff the subnet derived from ehas exactly two
+boundary nodes: one entry and one exit. fig. 4(b) shows all non-trivial seses8of the
+petri net of fig. 4(a). for a formal deﬁnition we refer to [11].
+the decomposition based on seses is a well studied problem in the literature, and
+can be computed in linear time. in [13,14], efﬁcient algorithms for constructing the
+8note that by deﬁnition, a single edge is a sese.algorithm 1 sese-based decomposition
+1: build data workﬂow graph dwg fromf,r,w
+2: compute rpst fromdwg
+3: compute sese decomposition dfrom the rpst
+4: compute and merge subnets if necessary to preserve valid decomposition.
+5:return valid decomposition where perspectives are decomposed altogether
+reﬁned process structure tree (rpst) , i.e., a hierarchical structure containing all the
+canonical seses of a model, were presented. informally, an rpst is a tree where the
+nodes are canonical seses, such that the parent of a sese sis the smallest sese that
+containss. fig. 4(c) shows the rpst of the workﬂow graph depicted in fig. 4(b). by
+selecting a particular set of seses in the rpst (e.g., k-decomposition [8]), it is possible
+to obtain a partitioning of the arcs. we refer the reader to the aforementioned work for
+a formal description of the sese-based decomposition.
+to extend the previous deﬁnitions to also account for data, one simply has to incor-
+porate in the workﬂow graph the variables and read/write arcs, i.e., the data workﬂow
+graph of a petri net with data (((p;t;f;l );minit;mnal);v;val;init;read;write;guard )
+with data arcs r=f(v;t)jv2read(t)gandw=f(t;v)jv2write (t)gisdwg =
+(s;e)withs=p[t[vande=f[r[w. the subsequent deﬁnitions after this
+extension (sese, rpst) are analogous.
+similar to [8], we propose a sese decomposition to analyze the conformance of
+petri nets with data, but considering data workﬂow graph instead. algorithm 1 de-
+scribes the steps necessary to construct a sese decomposition. the arcs are partitioned
+in seses by means of creating the rpst from the data workﬂow graph, and select-
+ing a particular set of seses over it. once the partitioning is done, a subnet is created
+for each part. subnets contradicting some of the requirements of def. 16 (e.g. shar-
+ing places, invisible or duplicate transitions, variables, or transitions with non-splitting
+guards) are merged to preserve the valid decomposition deﬁnition.
+figure 5 shows the decomposition for the example of fig.3, where the rpst is
+partitioned using the 2-decomposition algorithm [8], i.e., seses of at most 2 arcs9.
+to ensure a valid decomposition is obtained, step 4 of algorithm 1 combines multiple
+sese fragments into larger fragments, which are not necessarily seses anymore.
+5 implementation and experimental results
+the approach discussed in this paper has been implemented as a plug-in for the open-
+source prom framework for process mining.10our plug-in requires a petri net with
+data and an event log as input and returns as many bags of alignments as the number
+of fragments in which the petri net with data has been decomposed. each bag refers
+to a different fragment and shows the alignments of each log trace and that fragment.
+a second type of output is also produced in which the alignments’ information is pro-
+jected onto the petri net with data. transitions are colored according to the number of
+9although the seses have at most two arcs, this is not guaranteed for the ﬁnal subnets, i.e.,
+some subnets are merged to preserve the valid decomposition deﬁnition.
+10http://www.promtools.orgfig. 6: computation time for checking the conformance of the petri net with data in
+figure 3 and event logs of different size. the y axis is on a logarithmic scale.
+deviations: if no deviation occurs for a given transition, the respective box in the model
+is white-colored. the ﬁlling color of a box shades towards red as a larger fraction of
+deviations occur for the corresponding transition. something similar is also done for
+variables: the more incorrect read/write operations occur for a variable, the more the
+variable is shown with a color close to red. this output is extremely interesting from an
+end-user viewpoint as it allows for gaining a helicopter view on the main causes of devi-
+ations. space limitations prevent us from giving more details and showing screenshots
+of the output. interested readers can refer to [15] for further information.
+as previously mentioned, the plug-in has been evaluated using a number of syn-
+thetic event logs and also a real-life process. the plug-in has been evaluated using the
+model in figure 3 and with a number of event logs that were artiﬁcially generated.
+in particular, we have generated different event logs with the same number of traces,
+5000, but increasing number of events, meaning that, on average, traces were of differ-
+ent length. to simulate that, for each simulated process execution, an increasing number
+of renegotiations was enforced to happen. traces were also generated so as to contain
+a number of deviations: the event logs were generated in a way that 25% of transitions
+ﬁred violating the guards.
+figure 6 shows the results of checking for conformance of the different event logs
+and the process model, comparing the sese-based decomposition with k= 2 with
+the case in which no decomposition is made. to check the conformance of each frag-
+ment, we used the technique reported in [4]. each dot in the chart indicates a different
+event log with traces of different size. the computation time refers to the conformance
+checking of the whole event logs (i.e., 5000 traces). the decomposed net is the same
+as in figure 5. regarding the cost function, we assign cost 1 to any deviation; however,
+this could be customized based on domain knowledge. the results show that, for every
+combination of event log and process model, the decomposition signiﬁcantly reduces
+the computation time and the improvement is exponential in the size of the event log.
+to assess the practical relevant of the approach, we also performed an evaluation
+with a dutch ﬁnancial institute. the process model was provided by a process analyst
+of the institute and consists of 21 transitions: 13 transitions with unique labels, 3 ac-
+tivities labels shared between 2 transitions (i.e. 6 transitions in total), plus 3 invisibletransitions. the model contains twelve process variables, which are read and written
+by the activities when being executed. the process model is omitted for space reasons
+and shown in [15]. we were also provided with an event log that recorded the execu-
+tion of 111 real instances of such a process; overall, the 111 log traces contained 3285
+events, which means roughly 29.6 events per trace. we checked the conformance of
+this process model and this event log, comparing the results when the model has or
+has not been decomposed in small fragments. for conformance checking, here we used
+the technique reported in [5] since the provided process model breaks the soundness
+assumptions required by [4]. for this experiment round, the additional optimizations
+proposed in [5] were deactivated to allow for a fair comparison.
+the application of the decomposition approach to this real-life case study has shown
+tremendous results: the conformance checking has required 52:94seconds when the
+process model was decomposed using the sese-based technique presented in section 4;
+conversely, it required 52891 seconds when the model was not decomposed. this indi-
+cates that decomposing the process model allowed us to save 99:999% of the computa-
+tion time. as a matter of fact, we tried for different values of sese parameter kbut we
+obtained similar results: the computation time did not move away for more than 1 sec-
+ond. the reason of this is related to the fact that every decomposition for any value of
+kalways contained a certain fragment, along with others. indeed, that fragment could
+not be decomposed any further than a given extent. since the computation time was
+mostly due to constructing alignments with that fragment, no signiﬁcant difference in
+computation time could be observed when varying k.
+6 conclusions and future work
+conformance checking is becoming more important for two reasons: (1) the volume
+of event data available for checking normative models is rapidly growing (the topic
+of “big data” is on the radar of all larger organizations) and (2) because of a variety
+of regulations there is a need to check compliance. moreover, conformance checking
+is also used for the evaluation of process discovery algorithms. also genetic process
+mining algorithms heavily rely on the efﬁciency of conformance checking techniques.
+thus far, lion’s share of conformance checking techniques has focused on control-
+ﬂow and relatively small event logs. as shown in this paper, abstracting from other
+perspectives may lead to misleading conformance results that are too optimistic. more-
+over, as process models and event logs grow in size, divide-and-conquer approaches
+are needed to still be able to check conformance and diagnose problems. perspectives
+such as work distribution, resource allocation, quality of service, temporal constraints,
+etc. can all be encoded as data constraints. hence, there is an urgent need to support
+data-aware conformance checking in-the-large.
+this paper demonstrates that data-aware decompositions can be used to speed up
+conformance checking signiﬁcantly. the evaluation with a real-life case study has shown
+that real data-aware process models can indeed be decomposed, thus obtaining even
+tremendous saving of computation time. as future work, we would like to extend our
+experimental evaluation with real-life process models of larger sizes. moreover, we
+would like to explore alternative decomposition strategies using properties of the un-
+derlying data, and to analyze the impact of different component sizes. this paper onlyfocuses on ﬁtness aspect of conformance, namely whether a trace can be replayed on a
+process model. however, recently, research has also been carried on as regards to dif-
+ferent conformance dimensions [16,17], such as whether the model is precise enough
+to not allow for too much behavior compared with what observed in reality in the event
+log. we plan to use data-aware decomposition approaches to speed up the assessment
+of the quality of process models with respect to these other conformance dimensions,
+as well.
+references
+1. van der aalst, w.m.p.: process mining: discovery, conformance and enhancement of busi-
+ness processes. springer (2011)
+2. rozinat, a., van der aalst, w.m.p.: conformance checking of processes based on monitoring
+real behavior. information system 33(1) (2008) 64–95
+3. adriansyah, a., van dongen, b.f., van der aalst, w.m.p.: conformance checking using cost-
+based ﬁtness analysis. in: proceedings of the 15th ieee international enterprise distributed
+object computing conference, (edoc 2011), ieee computer society (2011) 55–64
+4. de leoni, m., van der aalst, w.m.p.: aligning event logs and process models for multi-
+perspective conformance checking: an approach based on integer linear programming. in:
+proceedings of the 11th international conference on business process management, (bpm
+2013). v olume 8094 of lncs., springer (2013) 113–129
+5. mannhardt, f., de leoni, m., reijers, h.a. van der aalst, w.m.p.: balanced multi-
+perspective checking of process conformance (2014) bpm center report bpm-14-07.
+6. van der aalst, w.m.p.: decomposing petri nets for process mining: a generic approach.
+distributed and parallel databases 31(4) (2013) 471–507
+7. van der aalst, w.m.p.: decomposing process mining problems using passages. in: proceed-
+ings of the 33rd international conference on application and theory of petri (petri nets
+2012). v olume 7347 of lncs., springer (2012) 72–91
+8. munoz-gama, j., carmona, j., van der aalst, w.m.p.: single-entry single-exit decomposed
+conformance checking. information systems 46(2014) 102–122
+9. montali, m., chesani, f., mello, p., maggi, f.m.: towards data-aware constraints in declare.
+in shin, s.y ., maldonado, j.c., eds.: sac, acm (2013) 1391–1396
+10. jensen, k., kristensen, l.: coloured petri nets. springer verlag (2009)
+11. polyvyanyy, a.: structuring process models. phd thesis, university of potsdam (2012)
+12. dumas, m., garc ´ıa-ba ˜nuelos, l., polyvyanyy, a.: unraveling unstructured process models.
+in mendling, j., weidlich, m., weske, m., eds.: bpmn. v olume 67 of lnbip., springer
+(2010) 1–7
+13. vanhatalo, j., v ¨olzer, h., koehler, j.: the reﬁned process structure tree. data knowl. eng.
+68(9) (2009) 793–818
+14. polyvyanyy, a., vanhatalo, j., v ¨olzer, h.: simpliﬁed computation and generalization of the
+reﬁned process structure tree. in: 7th international workshop on web services and formal
+methods. revised selected papers. v olume 6551 of lncs., springer (2011) 25–41
+15. de leoni, m., munoz-gama, j., carmona, j., van der aalst, w.m.p.: decomposing confor-
+mance checking on petri nets with data. (2014) bpm center report bpm-14-06.
+16. munoz-gama, j., carmona, j.: a general framework for precision checking. international
+journal of innovative computing, information and control (ijicic) 8(7b) (july 2012) 5317–
+5339
+17. de weerdt, j., de backer, m., vanthienen, j., baesens, b.: a multi-dimensional quality
+assessment of state-of-the-art process discovery algorithms using real-life event logs. infor-
+mation system 37(7) (2012) 654–676

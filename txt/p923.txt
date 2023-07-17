@@ -1,0 +1,1666 @@
+arxiv:1703.06733v1  [cs.ds]  17 mar 2017discovering relaxed sound workﬂow nets using
+integer linear programming
+s.j. van zelst∗, b.f. van dongen, w.m.p. van der aalst, and
+h.m.w. verbeek
+department of mathematics and computer science
+eindhoven university of technology
+p.o. box 513, 5600 mb eindhoven, the netherlands
+2017-03-21
+abstract
+process mining is concerned with the analysis, understandi ng and im-
+provement of business processes. process discovery, i.e. d iscovering a
+process model based on an event log, is considered the most ch alleng-
+ing process mining task. state-of-the-art process discove ry algorithms
+only discover local control-ﬂow patterns and are unable to d iscover com-
+plex, non-local patterns. region theory based techniques, i.e. an estab-
+lished class of process discovery techniques, do allow for d iscovering such
+patterns. however, applying region theory directly result s in complex,
+over-ﬁtting models, which is less desirable. moreover, reg ion theory does
+not cope with guarantees provided by state-of-the-art proc ess discovery
+algorithms, both w.r.t. structural and behavioural proper ties of the dis-
+covered process models. in this paper we present an ilp-base d process
+discovery approach, based on region theory, that guarantee s to discover
+relaxed sound workﬂow nets. moreover, we devise a ﬁltering a lgorithm,
+based on the internal working of the ilp-formulation, that i s able to cope
+with the presence of infrequent behaviour. we have extensiv ely evaluated
+the technique using diﬀerent event logs with diﬀerent level s of exceptional
+behaviour. our experiments show that the presented approac h allow us
+to leverage the inherent shortcomings of existing region-b ased approaches.
+the techniquespresentedare implementedandreadilyavail able inthehy-
+bridilpminer package in the open-source process mining too l-kits prom
+and rapidprom.1
+∗corresponding author: s.j.v.zelst@tue.nl
+1http://promtools.org ;http://rapidprom.org
+11 introduction
+the execution of business processes within a company generates t races of event
+data in its supporting information system. the goal of process mining [2] is
+to turn this data, recorded in event logs , into actionable knowledge. three
+core branches form the basis of process mining: process discovery ,conformance
+checking andprocess enhancement . in process discovery, this paper’s focus, the
+goal is to construct a process model based on an event log. in con formance
+checking the goal is to assess whether a given process model and e vent log
+conform with respect to each other in terms of described behaviou r. in process
+enhancement the goal is to improve processes models, primarily, th ough not
+exhaustively, using the two aforementioned ﬁelds.
+severaldiﬀerent process models exist that (largely) describe the behaviour
+in an event log. hence, we need means to rank and compare these diﬀ erent pro-
+cess models. in process mining we typically judge the quality of proce ss models
+based on four essential quality dimensions: replay-ﬁtness ,precision ,generaliza-
+tionandsimplicity [2,3,18]. replay-ﬁtness describes the fraction of behaviour
+in the event log that is also described by the model. precision describe s the
+fraction of behaviour described by the model that is also present in the event
+log. generalization indicates a model’s ability to account for behaviour not part
+of the event log, e.g. in case of parallelism, it is often impossible to obse rve all
+behaviour in the event log. simplicity refers to a model’s interpretabilit y by a
+human analyst. a process discovery result ideally strikes and adequ ate balance
+between these four quality dimensions.
+a ﬁeld closely related to process discovery is petri net synthesis [11]. here
+the problem is to, given a behavioural system description , decide whether there
+exists a petri net [34] that allows for all behaviour of the system de scription.
+moreover, it needs to minimize additional behaviour. most petri net synthesis
+approaches use region theory [12] which comes in two forms: state-based region
+theory[15,23,24] (using transition systems ), andlanguage-based region the-
+ory[10,21] (using languages ). applying classical region theory using an event
+log as a system description results in petri nets with maximal replay-ﬁtness.
+moreover, precision is maximized . an implicit consequence is poor generaliza-
+tionandpoor simplicity . using these techniques directly on real event logs
+therefore results in process models that are not an adequate rep resentation of
+the event log and do not allow us to reach the global goal of process mining, i.e.
+turning data into actionable knowledge.
+in [44] a process discovery algorithm is proposed on top of language -based
+region theory. the core of the algorithm is an integer linear progr amming
+(ilp)-formulationthatissolvedmultipletimesusingslightvariations. themain
+contribution is a relaxation of the precision maximization property of language-
+based region theory. the algorithm still guarantees that the resu lting process
+model is able to replay all behaviour in the event log. opposed to stat e-of-
+the-art process discovery algorithms, the algorithm provides limite d guarantees
+w.r.t. structural and behavioural properties of the resulting pro cess models.
+moreover, the algorithm only works well under the assumption that the event
+2log only holds frequent behaviour that ﬁts nicely into some underlying process
+model.
+real event logs typically include low-frequent exceptional behaviou r, e.g.
+caused by people deviating from the normative process, cases tha t require spe-
+cial treatment, employees solving unexpected issues in an ad-hoc f ashion etc.
+considering all irregularities together with “normal behaviour” yield s incom-
+prehensible models, both in classical region-based synthesis and re gion-based
+process discovery techniques. in this paper we tackle these prob lems by ex-
+tending and improving existing, region theory based, algorithms [44– 46]. this
+paper’s contributions are summarized as follows:
+1. we show that our approach is able discover relaxed sound workﬂow nets .
+2. we present an eﬀective, integrated, ﬁltering algorithm that res ults in pro-
+cess models that abstract from infrequent and/or exceptional b ehaviour.
+the proposed algorithm is implemented in the process mining framewor k
+prom[38] (hybridilpminer package) and is available in rapidprom [4,16]. we
+have compared our technique with two state-of-the-art ﬁltering techniques [20,
+26]. we additionally validated the applicability of our approach on two re al
+life event logs [27,30]. our experiments conﬁrm the eﬀectiveness of the pro-
+posed approach, both in terms of resulting model quality and compu tational
+complexity.
+the remainder of this paper is organizedas follows. in section 2 we mo tivate
+the need to further develop ilp-based process discovery. in se ction 3 we discuss
+related work. in section 4 we present background related to even t logs, petri
+nets and region theory. in section 5 we show how to incorporate re gions within
+process discovery. in section 6 we show that we are able to guaran tee discovery
+of relax sound workﬂow nets. in section 7 we present an integrate d eﬀective
+algorithmto eliminate infrequent exceptionalbehaviour. in section 8we present
+an evaluation of the proposed approach. section 9 concludes the p aper.
+2 motivation
+a multitude of process discovery algorithms exists [2,22,39]. some n otable
+algorithms concern the α-miner family [8,32,42,43], the heuristics miner [40,
+41], the evolutionary tree miner (etm) [17] and the inductive miner [25,26].
+however, there are good reasons to study and develop region-ba sed techniques.
+most prominently because they allow us to discover complex non-local control-
+ﬂow patterns .
+consider the following set of sequences of executed business proc ess activi-
+ties:/a\}bracketle{ta,c,d,e,f /a\}bracketri}ht,/a\}bracketle{ta,c,b,d,f /a\}bracketri}ht,/a\}bracketle{ta,c,e,d,f /a\}bracketri}htand/a\}bracketle{ta,e,c,d,f /a\}bracketri}ht. if we apply ilp-
+based process discovery [44], i.e. using region theory, we obtain the process
+model in figure 1.
+the model describes that activity ais always executed ﬁrst. after activity
+awe are able to execute activity candein any order, i.e. they are in a parallel
+3construct. however, after executing activity cwe are able to perform activity b
+instead ofe. however, this is only possible as long as we do not execute activity
+d, which we are able to execute after we have executed c. finally we always
+execute activity f. in the model, the choice of executing activity binstead ofeis
+inﬂuenced by the global state of the system. such pattern is called amilestone
+pattern[6].
+ifweapplythe aforementionedstate-of-the-artdiscoveryalgo rithmsonthese
+same data, we obtain the models depicted in figure 2. none of the mod els
+adequately describes the milestone pattern. some models do not ev en guaran-
+tee perfect replay-ﬁtness, i.e. figure 2a. other models, such as t he model in
+figure 2c have very low precision. the only model that actually descr ibes the
+same behaviour is the model in figure 2d. however, the model does n ot capture
+the milestone pattern, i.e. we need to analyse the behaviour of the m odel to
+derive the conclusion that it describes the behaviour of a milestone p attern.
+as the example shows there is a clear incentive for process discover y algo-
+rithms based on (language-based) region theory. however, the s tate-of-the-art
+technique based on language-based region theory [44] has a numb er of deﬁcien-
+cies. it is not able to guarantee that the resulting petri net is a wor kﬂow net,
+i.e. a petri net with favourable graph-theoretical properties. fo r example, the
+petri net in figure 1 does not have a unique sink place. the inductive miner
+for example does guarantee to return (sound) workﬂow nets. mo reover, ilp-
+based process discovery greatly suﬀers from the presence of inf requent and/or
+exceptional behaviour. assume we have an event log containing tho usands of
+repetitions of the aforementioned sequences /a\}bracketle{ta,c,d,e,f /a\}bracketri}ht,/a\}bracketle{ta,c,b,d,f /a\}bracketri}ht,/a\}bracketle{ta,c,e,d,
+f/a\}bracketri}htand/a\}bracketle{ta,e,c,d,f /a\}bracketri}ht. if we inject just one exceptional sequence, e.g. /a\}bracketle{ta,b,c,d,f /a\}bracketri}ht,
+and apply the current state-of-art region-based discovery algo rithm, we obtain
+the model depicted in figure 3. within the model, activity bis now able to
+occur in parallel with activity c. thus, by adding one infrequent, exceptional
+sequence, the algorithm is no longer able to detect the milestone pat tern.
+in this paper we solve the two aforementioned issues. firstly, we pr esent
+an approach that guarantees to ﬁnd relaxed sound workﬂow nets . secondly,
+we present an eﬀective integrated ﬁltering technique that identiﬁe s and ignores
+infrequent and/or exceptional behaviour.
+figure 1: result of ilp based discovery [44], containing a milestone pa ttern.
+4(a)α-,α+-,α++-miner [8,32,42].
+(b)α♯-miner [43].
+(c) inductive-miner [25].
+(d) evolutionary tree miner [17].
+(e) heuristics miner [40,41].
+figure 2: results of several state-of-the-art discovery algorit hms in the prom
+framework [38], when given sequences containing a milestone patter n.
+3 related work
+we predominantly focus on related work in the area of region theory and its
+applicationtoprocessdiscovery. wealsofocusonﬁlteringtechniqu esforprocess
+discovery. for a detailed overview of process discovery algorithms we refer
+to [2,22,39].
+region theory and petri net synthesis region theory is a solution to
+the petri net synthesis problem [35]. the two terms are therefore often used
+interchangeably. the synthesis problem is to, given a behavioural s ystem de-
+scription, decide whether there exists a petri net that allows for a ll behaviour
+described by the system description, and, at the same time minimizes addi-
+tional behaviour. initial work focused on solving the synthesis pro blem using
+transition systems as a system description [15,23,24], i.e. state-based region
+5figure3: resultofapplyingilpbaseddiscovery[44]onaneventlog containing
+a milestone pattern, and, infrequent (faulty) behaviour.
+theory. a set of states within the transition system forms a region, which de-
+ﬁnes a place in the resulting petri net. region theory has also been a pplied
+using apreﬁx-closed language as a system description [10,21], i.e. language-
+based region theory . here, a region is an assignment of decision variables over
+the language’s alphabet, again deﬁning a place in the resulting petri n et. fi-
+nally, language-based region theory has also been extended for lab elled partial
+orders [14,28,29].
+process discovery in contrast to petri net synthesis, process discoveryaims
+at extracting a generalizing process model from an incomplete behavioural sys-
+tem description, i.e. an event log. additionally, we typically need to abs tract
+from infrequent behaviour in order to focus on the mainstream beh aviour in the
+event log.
+in [7] a process discovery approach is presented that transform s an event
+log into a transition system, after which state-based region theor y is applied.
+constructing the transition system is strongly parametrized, i.e. u sing diﬀerent
+parametersyieldsdiﬀerentprocessdiscoveryresults. in[37]asim ilarapproachis
+presented. the main contribution is a complexity reduction w.r.t. con ventional
+region-based techniques.
+in [13] a process discovery approach is presented based on langua ge-based
+region theory. the method ﬁnds a minimal linear basis of a polyhedral cone
+of integer points, based on the event log. it guarantees perfect replay-ﬁtness,
+whereas it does not maximize precision. the worst-case time complex ity of the
+approach is exponential in the size of the event log. in [19] a proce ss discovery
+algorithm is proposed based on the concept of numerical abstract domains.
+based on the event log’s preﬁx-closure a convex polyhedron is appr oximated
+by means of calculating a convex hull. the convex hull is used to compu te
+causalities within the input log by deducing a set of linear inequalities whic h
+represent places. in [44] a ﬁrst design of a process discovery ilp -formulation
+is presented. an objective function is presented, which is generaliz ed in [46],
+that allows for expressing a preference for ﬁnding certain petri n et places. the
+work also presents means to formulate ilp-constraints that help ﬁnding more
+advanced petri net-types, e.g. petri nets with reset- and inhibit or arcs.
+all aforementioned techniques leverage the strict implications of re gion the-
+6ory w.r.t. process discovery, i.e. precision maximization, poor gener alization
+and poor simplicity, to some extend. however, the techniques still p erform sub-
+optimal. since the techniques guarantee perfect replay-ﬁtness, they tend to fail
+if exceptional behaviour is present in the event log, i.e. they produc e models
+that are incorporating infrequent behaviour (outliers).
+filtering infrequent behaviour little work has been done regarding ﬁl-
+tering of infrequent behaviour in context of process mining. the ma jority of
+work concerns unpublished/undocumented ad-hoc ﬁltering impleme ntations in
+the prom framework [38].
+in [20] an event log ﬁltering technique is presented that ﬁlters on event level .
+events within the event log are removed in case they do not ﬁt an und erlying,
+event log based, automaton. the technique can be used as a pre-processing step
+prior to invoking a discovery algorithm.
+in [26] leemans et al. show how to extend the inductive miner [25] wit h
+ﬁltering capabilities to handle infrequent behaviour. the technique is tailored
+towards the internal working of the inductive miner algorithm and c onsiders
+three diﬀerent types of ﬁlters. moreover, the technique exploits the inductive
+nature of the underlying algorithm, i.e. ﬁlters are applied on multiple lev els.
+4 background
+in this section we present basic notational conventions, event log s and workﬂow
+nets.
+4.1 bags, sequences and vectors
+x={e1,e2,...,en}denotes a set. p(x) denotes the power set of x.ndenotes
+the set of positive integers including 0 whereas n+excludes 0.rdenotes the
+set of real numbers. a bag (bag) over xis a function b:x→nwhich we
+write as [ev1
+1,ev2
+2,...,evnn], where for 1 ≤i≤nwe haveei∈x,vi∈n+and
+evi
+i≡b(ei) =vi. if for some element e,b(e) = 1, we omit its superscript. an
+empty bag is denoted as ∅. element inclusion applies to bags: if e∈xand
+b(e)>0 then also e∈b. set operations, i.e. ⊎,\,∩, extend to bags. the set
+of all bags over xis denoted b(x).
+asequenceσof lengthkrelates positions to elements e∈x, i.e.σ:{1,
+2,...,k} →x. an empty sequence is denoted as ǫ. we write every non-empty
+sequence as /a\}bracketle{te1,e2,...,ek/a\}bracketri}ht. the set of all possible sequences over a set xis
+denoted as x∗. we deﬁne concatenation of sequences σ1andσ2asσ1·σ2, e.g.,
+/a\}bracketle{ta,b/a\}bracketri}ht · /a\}bracketle{tc,d/a\}bracketri}ht=/a\}bracketle{ta,b,c,d/a\}bracketri}ht. letx′⊆x, we deﬁne ↓x′:x∗→x′∗recursively
+with↓x′(ǫ) =ǫand↓x′(/a\}bracketle{tx/a\}bracketri}ht·σ) =/a\}bracketle{tx/a\}bracketri}ht· ↓x′(σ) ifx∈x′and↓x′(σ) otherwise.
+we writeσ↓x′for↓x′(σ).
+givenx′⊆x∗, thepreﬁx-closure ofx′is:x′={σ1∈x∗|∃σ2∈x∗(σ1·σ2∈
+x′)}. we extend the notion of a preﬁx-closure on bags of sequences. l et
+x′⊆x∗andbx′:x′→nwe deﬁnebx′:x′→n, such that: bx′(σ) =
+7table 1: fragment of a ﬁctional event log (each line corresponds to an event).
+case-id activity resource time-stamp
+... ... ... ...
+1 register request ( a) john 2015-05-08:08.45
+1examine thoroughly ( b)lucy 2015-05-08:09.13
+2 register request ( a) john 2015-05-08:09.14
+2 check ticket ( d) pete 2015-05-08:10.11
+1 check ticket ( d) pete 2015-05-08:10.28
+2 examine causally ( b)rob 2015-05-08:10.43
+1 decide (e) rob 2015-05-08:11.14
+1 reject request ( h) rob 2015-05-08:11.35
+... ... ... ...
+bx(σ)+/summationtext
+σ·/a\}bracketle{te/a\}bracketri}ht∈x′bx′(σ·/a\}bracketle{te/a\}bracketri}ht). for example, b2= [/a\}bracketle{ta,b/a\}bracketri}ht5,/a\}bracketle{ta,c/a\}bracketri}ht3] yieldsb2=
+[ǫ8,/a\}bracketle{ta/a\}bracketri}ht8,/a\}bracketle{ta,b/a\}bracketri}ht5,/a\}bracketle{ta,c/a\}bracketri}ht3].
+given setxand a range of values r⊆r. vectors are denoted as /vector z∈r|x|,
+where/vector z(e)∈rande∈x. we assume vectors to be column vectors . for vector
+multiplication we assume that vectors agree on their indices. throug hout the
+paper we assume a total ordering on sets of the same domain . givenx={e1,
+e2,...,en}and/vector z1,/vector z2∈r|x|we have/vector z⊺
+1/vector z2=/summationtextn
+i=1/vector z1(ei)/vector z2(ei). aparikh vector
+/vector prepresents the number of occurrences of an element within a sequ ence, i.e.
+/vector p:x∗→n|x|with/vector p(σ) = (# e1(σ),#e2(σ),...,#en(σ)) where # ei(σ) =|{i′∈
+{1,2,...,|σ|} |σ(i′) =ei}|.
+4.2 event logs and workﬂow nets
+in process discovery an event log acts as a main source of input and describes
+the actual execution of activities in context of a business process . an example
+event log, adopted from [2], is presented in table 1. consider all activ ities
+related to case-id 1 . johnregisters a request , after which lucy examines it
+thoroughly . petechecks the ticket after which rob decidestoreject the request .
+the execution of an activityin context of a business process is referred to as
+anevent. a sequence of events, e.g. the sequence of events related to ca se1, is
+referred to as a trace.
+letadenote the universe of all possible activities. an event log lis a
+bag of sequences over a, i.e.,l∈ b(a∗). typically, there exists al⊂ aof
+activities that are actually present in l. in some cases we refer to an event
+log asl∈ b(a∗
+l). a sequence σ∈lrepresents a trace. we write case 1as
+trace/a\}bracketle{t“register request”,“examine thoroughly”, “check ticket” , “decide”, “reject
+request”/a\}bracketri}ht. in the remainder of the paper we use simple characters for activit y
+names, e.g. we write case 1as/a\}bracketle{ta,b,d,e,h /a\}bracketri}ht.
+the goal within process discovery is to discover a process model ba sed on
+8figure 4: example wf-net w1, adopted from [2].
+an event log. in this paper we consider workﬂow nets (wf-nets) [1], based on
+petri nets [34], to describe process models. we ﬁrst introduce petri nets and
+their execution semantics, after which we deﬁne workﬂow nets.
+a petri net is a bipartite graph consisting of a set of vertices called places
+and a set of vertices called transitions . arcs connect places with transitions and
+vice versa. additionally, transitions have a (possibly unobservable) label which
+describes the activity that the transition represents. a petri ne t is a quadruple
+n= (p,t,f,λ ), wherepis a set of places and tis a set of transitions with
+p∩t=∅.fdenotestheﬂowrelationof n, i.e.,f⊆(p×t)∪(t×p).λdenotes
+the label function, i.e. given a set of activities λ ⊂ aand anunobservable
+activityτ /∈λ, it is deﬁned as λ:t→λ∪ {τ}. for a node x∈p∪t,
+the pre-set of xinnis deﬁned as •x={y|(y,x)∈f}andx•={y|(x,
+y)∈f}denotes the post-set of x. graphically we represent places as circles
+and transitions as boxes. for every ( x,y)∈fwe draw an arcfromxtoy. an
+example petri net (which is also a wf-net) is depicted in figure 4. obse rve
+that we have •d={c2},d•={c4}andλ(d) =“reject request”. the petri net
+does not contain any silent transition.
+the execution semantics of petri nets are based on the concept o fmarkings
+a marking mis a bag of tokens, i.e. m∈ b(p). graphically, a place p’s
+marking is visualized by drawing m(p) number of dots inside place p, e.g. place
+“start”infigure 4. a marked petri net isa2-tuple( n,m), wheremrepresents
+n’s marking. we let midenoten’sinitial marking . transition t∈tis
+enabledin marking mif∀p∈•t(m(p)>0). enabled transition tin marking
+m, mayﬁre, which results in new marking m′. iftﬁres, denoted as ( n,
+m)t− →(n,m′), then for each p∈pwe havem′(p) =m(p)−1 ifp∈ •t\t•,
+m′(p) =m(p)+1 ifp∈t•\•t, and,m′(p) =m(p) otherwise, e.g. in figure 4
+we have (w1,[start])a− →(w1,[c1,c2]). given sequence σ=/a\}bracketle{tt1,t2,...,tn/a\}bracketri}ht ∈t∗,
+σis aﬁring sequence of (n,m), written as ( n,m)σ− → →(n,m′) if and only if for
+n=|σ|there exist markings m1,m2,...,m n−1such that ( n,m)t1− →(n,m1),
+(n,m1)t2− →(n,m2),...,(n,mn−1)tn− →(n,m′). we write ( n,m)σ− → → ∗if there
+9exists a marking m′s.t. (n,m)σ− → →(n,m′). we write ( n,m)/squiggleright(n,m′)
+if there exists σ∈t∗s.t. (n,m)σ− → →(n,m′). we deﬁne n’s language as
+l(n,mi) ={σ∈t∗|miσ− → → ∗}, i.e.l(n,mi) ispreﬁx-closed . we deﬁne
+n’slabelled language aslλ(n,mi) ={σ∈λ∗| ∃σ′∈t∗,σ′′∈(λ∪{τ})∗(σ′∈ l(n,
+mi)∧ |σ′|=|σ′′| ∧ ∀i∈{1,2,...,|σ′|}(λ(σ′(i)) =σ′′(i))∧σ′′
+↓λ=σ}. given a ﬁnal
+markingmf, we deﬁne n’sexecution language w.r.t.mfaslmf(n,mi) =
+{σ∈t∗|(n,mi)σ− → →(n,mf)}. we deﬁne n’slabelled execution language
+aslλ
+mf(n,mi) ={σ∈λ∗| ∃σ′∈t∗,σ′′∈(λ∪{τ})∗(σ′∈ lmf(n,mi)∧ |σ′|=
+|σ′′|∧∀i∈{1,2,...,|σ′|}(λ(σ′(i)) =σ′′(i))∧σ′′
+↓λ=σ}
+wf-nets extend petri nets and require the existence of a unique source-and
+sink place which describe the start, respectively end, of a case. moreover, each
+element within the wf-net needs to be on a path from the source to t he sink
+place.
+deﬁnition 1 (workﬂow net [1]) .letn= (p,t,f,λ )be a petri net. let
+pi,po∈pwithpi/\e}atio\slash=po. letλ⊂ abe a set of activities, let τ /∈λand let
+λ:t→λ∪{τ}. tuplew= (p,t,f,p i,po,λ)is a workﬂow net (wf-net) if
+and only if:
+1.•pi=∅
+2.po•=∅
+3. each element x∈p∪tis on a path from pitopo.
+the execution semantics deﬁned for petri nets can directly be app lied on the
+elementsp,tandfofw= (p,t,f,p i,po,λ). notation-wise we substitute w
+for its underlying net structure n= (p,t,f), e.g. (w,m)t− →(w,m′),l(w,
+mi) etc. in context of wf-nets, we assume mi= [pi] andmf= [po] unless
+mentioned otherwise.
+we compute metrics such as replay-ﬁtness and precision, as introd uced in
+the introduction, based on an event log. several behavioural qua lity metrics,
+that do not need any form of domain knowledge, exist for wf-nets. several
+notions of soundness of wf-nets are deﬁned [5]. for example, classical sound
+wf-nets are guaranteed to be free of livelocks, deadlocks, and ot her anomalies
+that can be detected automatically. in this paper we consider the w eakernotion
+ofrelaxed soundness . relaxed soundness requiresthat each transition is at some
+point enabled, and, after ﬁring such transition we are able to event ually reach
+the ﬁnal marking.
+deﬁnition 2 (relaxedsoundness[5]) .letw= (p,t,f,p i,po,λ)be a wf-net.
+wis relaxed sound if and only if: ∀t∈t(∃m,m′∈b(p)((w,[pi])/squiggleright(w,m)∧(w,
+m)t− →(w,m′)∧(w,m′)/squiggleright(w,[po]))).
+reconsider w1(figure 4) and assume we are given an event log with one
+trace:/a\}bracketle{ta,b,d,e,h /a\}bracketri}ht. it is quite easy to see that w1is relaxed sound. moreover,
+replay-ﬁtness is perfect, i.e. /a\}bracketle{ta,b,d,e,h /a\}bracketri}htis in the wf-net’s labelled execution
+language. precision is not perfect as the wf-net can produce a lot m ore traces
+than just /a\}bracketle{ta,b,d,e,h /a\}bracketri}ht.
+10table 2: linear inequalities corresponding to event log l1based on
+equation 5.1.
+m−/vector y(a)≥0 /a\}bracketle{ta/a\}bracketri}ht
+m+/vector x(a)−/vector y(a)−/vector y(b)≥0 /a\}bracketle{ta,b/a\}bracketri}ht
+m+/vector x(a)−/vector y(a)−/vector y(c)≥0 /a\}bracketle{ta,c/a\}bracketri}ht
+m+/vector x(a)+/vector x(b)−/vector y(a)−/vector y(b)−/vector y(d)≥0 /a\}bracketle{ta,b,d/a\}bracketri}ht
+......
+m+/vector x(a)+/vector x(b)+/vector x(c)+2/vector x(d)+2/vector x(e)+/vector x(f)−/vector y(a)−/vector y(b)−/vector y(c)−2/vector y(d)−2/vector y(e)−/vector y(f)−/vector y(h)≥0/a\}bracketle{ta,d,c,e,f,b,d,e,h /a\}bracketri}ht
+5 discovering petri net places usinginteger lin-
+ear programming
+in this section we show how to, given an event log as an input, discove r multiple
+places of a petri net using language based regions.
+5.1 regions
+conceptually, a region represents a place in a petri net that, given the preﬁx-
+closure of an event log, does not block the execution of any sequen ce within
+the preﬁx-closure. we represent a region as an assignment of bina ry decision
+variables describing the incoming and outgoing arcs of its correspon ding place,
+as well as its marking.
+deﬁnition 3 (region) .given an event log lover a set of activities al. let
+m∈ {0,1}and/vector x,/vector y∈ {0,1}|al|. a tripler= (m,/vector x,/vector y)is a region if and only
+if:
+∀σ=σ′·/a\}bracketle{ta/a\}bracketri}ht∈l(m+/vector p(σ′)⊺/vector x−/vector p(σ)⊺/vector y≥0) (5.1)
+variablemindicates whether or not the region’s corresponding place con-
+tains a token, /vector xdenotes incoming arcs and /vector ydenotes outgoing arcs. consider
+event logl1= [/a\}bracketle{ta,b,d,e,g /a\}bracketri}ht10,/a\}bracketle{ta,c,d,e,f,d,b,e,g /a\}bracketri}ht12,/a\}bracketle{ta,d,c,e,h /a\}bracketri}ht9,/a\}bracketle{ta,b,d,e,f,
+c,d,e,g/a\}bracketri}ht11,/a\}bracketle{ta,d,c,e,f,b,d,e,h /a\}bracketri}ht13]. in table 2 we depict a part of the corre-
+sponding set of linear inequalities based on deﬁnition 3. for every non -empty
+sequence in l1, i.e./a\}bracketle{ta/a\}bracketri}ht,/a\}bracketle{ta,b/a\}bracketri}ht, ...,/a\}bracketle{ta,d,c,e,f,b,d,e,h /a\}bracketri}htthere is an associated
+linear inequality in terms of the variables m,/vector xand/vector y. for example, /a\}bracketle{ta/a\}bracketri}htleads to
+m−/vector y(a),/a\}bracketle{ta,b/a\}bracketri}htleads tom+/vector x(a)−/vector y(a)−/vector y(b) etc. note that the inequalities
+abstract from the ordering of activities in traces, e.g. /a\}bracketle{ta,c,d,e/a\}bracketri}htand/a\}bracketle{ta,d,c,e/a\}bracketri}ht
+both map to m+/vector x(a)+/vector x(c)+/vector x(d)−/vector y(a)−/vector y(c)−/vector y(d)−/vector y(e).
+a regionris translated to a petri net place pas follows. given a petri net
+that has a unique transition tafor eacha∈alsuch thatλ(ta) =a. if, for
+a∈al/vector x(a) = 1, we add tato•p. symmetrically, if for a∈al/vector y(a) = 1, we add
+tatop•. finally, if m= 1, placepis initially marked. since translating a region
+to a place is deterministic, we are also able to translate a place to a reg ion, e.g.
+placec2in figure 4 corresponds to a region with /vector x(a) = 1,/vector x(f) = 1,/vector y(d) = 1
+and all other variables set to zero.
+11from a formal perspective, consider an event log lover a set of activities
+al, a petri net n= (p,t,f,λ ) and marking mis.t.l⊆ lλ(n,mi). after
+adding a place, based on any possible region w.r.t. l, ton(and updating mi
+ifm= 1) stilll⊆ lλ(n,mi) holds. however, adding the region potentially
+decreases the size of lλ(n,mi)\l.
+triplesr/vector0= (0,/vector0,/vector0) andr/vector1= (1,/vector1,/vector1) are always regions and hence are
+trivial regions . we letr(l) denote the set of non-trivial regions based on event
+logl.
+5.2 a basic ilp formulation
+setr(l) represents a huge set of regions. however, when using l1as an input
+for process discovery, our goal is to ﬁnd (a very similar wf-net to) the wf-net
+in figure 4. several regions exist in r(l1) that are not a place in figure 4. for
+example, a variable assignment with /vector x(a) = 1 and/vector y(e) = 1 (all other variables
+zero), i.e. representing a place connecting transitions aande, is a region. we
+therefore need means to search through the solution space to ﬁnd regions that
+are of interest.
+firstly, we are only interested in minimal regions , i.e. regions that are not
+expressible as a non-negative linear combination of two other region s, because
+non-minimal regions correspond to implicit places [44]. hence, when ap plying
+region-based techniques in terms of process discovery, we only se arch for min-
+imal regions. finding all minimal regions does however not suﬃce, e.g. the
+aforementioned region with /vector x(a) = 1 and /vector y(e) = 1 is minimal yet implicit.
+to this end we deﬁne an integerlinearprogramming (ilp) [36] formulation
+using the region deﬁnition as a constraint body [44]. ilp is a mathematical
+optimization problem deﬁned over a set of integer variables. the obj ective and
+constraints of an ilp-problem are an expression in terms of the va riables of
+linear form. before introducing the basic ilp-formulation for the p urpose of
+process discovery, we reformulate regions in terms of matrices.
+deﬁnition 4 (region (matrix form)) .given an event log lover a set of
+activitiesal, letm∈ {0,1}and let/vector x,/vector y∈ {0,1}|al|. letmandm′be two
+|l\{ǫ}|×|al|matrices with m(σ,a) =/vector p(σ)(a)andm′(σ,a) =/vector p(σ′)(a)(where
+σ=σ′·/a\}bracketle{ta′/a\}bracketri}ht ∈l). tupler= (m,/vector x,/vector y)is a region if and only if:
+m/vector1+m′/vector x−m/vector y≥/vector0 (5.2)
+we additionally deﬁne matrix mlwhich is an |l|×|al|matrix with ml(σ,
+a) =/vector p(σ)(a) forσ∈l, i.e.,mlis the equivalent of mfor all traces in the event
+log. we deﬁne a general process discovery ilp-formulation that g uarantees to
+ﬁnd a non-trivial region with the additional property that the corr esponding
+place is always empty after replaying each trace within the event log.
+deﬁnition 5 (process discovery ilp-formulation) .given an event log lover
+a set of activities aland corresponding matrices m,m′andml. letcm∈r
+and/vector cx,/vector cy∈r|al|. the process discovery ilp-formulation, ilpl, is deﬁned as:
+12minimize z=cmm+/vector cx⊺/vector x+/vector cy⊺/vector yobjective function
+such that m/vector1+m′/vector x−m/vector y≥/vector0theory of regions
+and m/vector1+ml(/vector x−/vector y) =/vector0corresp. place is empty after each trace
+/vector1⊺/vector x+/vector1⊺/vector y≥1at least one arc connected
+/vector0≤/vector x≤/vector1i.e./vector x∈ {0,1}|a|
+/vector0≤/vector y≤/vector1i.e./vector y∈ {0,1}|a|
+0≤m≤1i.e.m∈ {0,1}
+deﬁnition 5 acts as a basic formulation for process discovery using i lp. to
+actually use the formulation we need to instantiate cm,/vector cxand/vector cy, i.e. the ob-
+jective coeﬃcients , with meaningful values. by varying the actual values for the
+objective coeﬃcients we are able to let the ilp favourdiﬀerent solu tions. in [44]
+an objective function is proposed that minimizes the number of incom ing arcs
+and maximizes the number of outgoing arcs to a place. in [46] the afo remen-
+tioned objective function is extended such that it minimizes the time a token
+resides in the corresponding place. both objective functions are e xpressible as
+a more general function which favours minimal regions [46]. in gener al we are
+able to use any objective function, as long as it favours minimal regio ns. hence,
+in this paper we assume that one uses such objective function.
+using the basic formulation with some objective function instantiatio n only
+yields one, optimal, result. hence we need a more structured appro ach for
+ﬁnding multiple petrinet places, using the ilp formulation presente d as a basis.
+5.3 exploiting causalities
+we need to ﬁnd multiple regions that together form places of a wf-net, in
+line with the behaviour present within the event log. one of the most s uitable
+techniques to ﬁnd multiple regions in a controlled, structured manne r, is by
+exploiting causal relations present within an event log. a causal relation be-
+tween activities aandbimplies that activity acausesb, i.e.bis likely to follow
+(somewhere) after activity a.
+severalapproachesexisttocomputecausalitiesrelations[22]. the α-miner[8]
+deﬁnes causal relation a→lbfrom activity ato activitybif, within some event
+logl, we ﬁnd traces of the form /a\}bracketle{t...,a,b,... /a\}bracketri}htthough we do not ﬁnd traces of the
+form/a\}bracketle{t...,b,a,... /a\}bracketri}ht. within the heuristics miner [40,41] this relation was further
+developed to take frequencies into account as well. given these mult iple deﬁni-
+tions, we assume the existence of a causal relation oracle which, given an event
+log, produces a set of pairs ( a,b) indicating that activity ahas a causal relation
+with (to) activity b.
+deﬁnition 6 (causal relation oracle) .a causal relation oracle γcmaps a bag
+of traces to a set of activity pairs, i.e. γc:b(a∗)→ p(a×a).
+acausaloraclemapsaneventlogontoitsactivities,i.e. γc(l)∈ p(al×al).
+it deﬁnes a directed graph with alas vertices and each pair ( a,b)∈γc(l) as
+13an arc between aandb. later we exploit this graph-based view, for now we
+refer toγc(l) as a collection of pairs.
+when adopting a causal-based ilp process discovery strategy, w e try to ﬁnd
+netplacesthatrepresentacausalityfoundintheeventlog. givena neventlogl,
+for each pair ( a,b)∈γc(l) we enrich the constraint body with three constraints:
+1.)m= 0, 2.)/vector x(a) = 1 and 3.) /vector y(b) = 1. the three constraints ensure that
+if we ﬁnd a solution to the ilp it corresponds to a place which is not mar ked
+and connects transition ato transition b. given pair ( a,b)∈γc(l) we denote
+the corresponding extended causality based ilp-formulation as ilp(l,a→b).
+after solving ilp(l,a→b)for each (a,b)∈γc(l), we end up with a set of
+regions that we are able to transform into places in a resulting petri net. since
+we enforce m= 0 for each causality, none of these places is initially marked.
+moreover, due to constraints based on m/vector1+ml(/vector x−/vector y) =/vector0, the resulting place
+is empty after replaying each trace in the input event log within the ne t. since
+we additionally enforce /vector x(a) = 1 and /vector y(b) = 1, if we ﬁnd a solution to the
+ilp, the corresponding place has both input and output arcs and is not eligible
+for being a source/sink place. hence, the approach as-is does not allow us to
+ﬁnd wf-nets. in the next section we show that a simple pre-proces sing step
+performed on the event log, together with speciﬁc instances of γc(l), allows us
+to discover wf-nets which are relaxed sound.
+6 discovering relaxed sound workﬂow nets
+reconsider example event log l1, i.e.l1= [/a\}bracketle{ta,b,d,e,g /a\}bracketri}ht10,/a\}bracketle{ta,c,d,e,f,d,b,e,
+g/a\}bracketri}ht12,/a\}bracketle{ta,d,c,e,h /a\}bracketri}ht9,/a\}bracketle{ta,b,d,e,f,c,d,e,g /a\}bracketri}ht11,/a\}bracketle{ta,d,c,e,f,b,d,e,h /a\}bracketri}ht13]. letaf⊆al
+denote the set of ﬁnal activities , i.e. activities afs.t. there exists a trace of the
+form/a\}bracketle{t...,af/a\}bracketri}htin the event log. for example, for l1,af={g,h}. after solving
+eachilpl,a→binstance based on γc(l) and adding corresponding places, we
+know that when we exactly replay any trace from l1, after ﬁring gorh, the
+net is empty. since gandhnever co-occur in a trace, it is trivial to add a sink
+placepo, s.t. after replay each trace in l1,pois the only place marked, i.e.
+•po={f,g}andpo•=∅(place “end” in figure 4). in general, such decision is
+not trivial. however, a trivial case for adding a sink pois the case when there
+is only one end activity that uniquely occurs once, at the end of each trace, i.e.
+af={af}and there exists no trace of the form /a\}bracketle{t...,af,...,af/a\}bracketri}ht. in such case we
+have•po={af},po•=∅.
+a similar rationale holds for adding a source place. we deﬁne a set asthat
+denotes the set of start activities , i.e. activities ass.t. there exists a trace of
+the form /a\}bracketle{tas,.../a\}bracketri}htin the event log. for each activity asinaswe know that for
+some traces in the event log, these are the ﬁrst ones to be execut ed. thus, we
+know that the source place pimust connect, in some way, to the elements of
+as. like in the case of ﬁnal transitions, creating a source place is trivia l when
+as={as}and there exists no trace of the form /a\}bracketle{tas,...,as,.../a\}bracketri}ht, i.e. the start
+activity uniquely occurs once in each trace. in such case we create placepiwith
+•pi=∅,pi•={as}.
+14in order to be able to ﬁnd a source and a sink place, it suﬃces to guar antee
+that setsasandafare of size one and their elements always occur uniquely
+at the start, respectively, end of a trace. we formalize this idea th rough the
+notion of unique start/end event logs , after which we show that transforming an
+arbitrary event log to such unique start/end event log is trivial.
+deﬁnition 7 (unique start/end event log) .letlbe an event log over a set
+of activities al.lis auniquestart/end event log (use-log) if there exist
+as,af∈als.t.as/\e}atio\slash=af,∀σ∈l(σ(1) =as∧ ∀i∈{2,3,...,|σ|}(σ(i)/\e}atio\slash=as))and
+∀σ∈l(σ(|σ|) =af∧∀i∈{1,2,...,|σ|−1}(σ(i)/\e}atio\slash=af)).
+since the set of activities alis ﬁnite, it is trivial to transform any event log
+to a use-log. assume we have an event log loveralthat is not a use-log.
+we generate two “fresh” activities as,af∈ as.t.as,af/∈aland create a new
+event logl′overal∪{as,af}, by adding /a\}bracketle{tas/a\}bracketri}ht ·σ· /a\}bracketle{taf/a\}bracketri}httolfor eachσ∈l.
+we letπ:b(a∗)→ b(a∗) denote such use-transformation. we omit asand
+affrom the domain of πand assume that given some use-transformation the
+two symbols are known.
+clearly, after applying a use-transformation, ﬁnding a unique sour ce and
+sink place is trivial. it also provides an additional advantage consider ing the
+abilityto ﬁnd wf-nets. in fact, an ilpinstance ilpl,a→balwayshasa solution
+iflis a use-log. we provide a proof of this property in lemma 1, after wh ich
+we present an algorithm that, given speciﬁc instantiations of γc, discovers wf-
+nets.
+lemma 1 (a use-log based causality has a solution) .letlbe an event
+log over a set of activities al. letπ:b(a∗)→ b(a∗)denote a use-
+transformation function and let as,afdenote the start and end activities. for
+every(a,b)∈γc(π(l))witha/\e}atio\slash=afandb/\e}atio\slash=as,ilp(π(l),a→b)has a solution.
+constructive. we consider the case a/\e}atio\slash=asandb/\e}atio\slash=af. we show that variable
+assignment /vector x(as) =/vector x(a) =/vector x(b) =/vector y(a) =/vector y(b) =/vector y(af) = 1, all other variables
+0 (figure 5a), adheres to all constraints of ilp(π(l),a→b).
+consider constraints of the form ∀σ=σ′·/a\}bracketle{ta/a\}bracketri}ht∈π(l)(m+/vector p(σ′)⊺/vector x−/vector p(σ)⊺/vector y≥0)
+(m/vector1+m′/vector x−m/vector y≥/vector0) and letσ=σ′·/a\}bracketle{tx/a\}bracketri}ht ∈π(l).
+case i:x/\e}atio\slash=a,x/\e}atio\slash=b,x/\e}atio\slash=af. sincex/\e}atio\slash=afwe know/vector p(σ)(af) = 0. moreover,
+sincex/\e}atio\slash=a,x/\e}atio\slash=b, we know that /vector p(σ′)(a) =/vector p(σ)(a) and/vector p(σ′)(b) =/vector p(σ)(b),
+and hence/vector p(σ′)(a)/vector x(a)−/vector p(σ)(a)/vector y(a) = 0 and/vector p(σ′)(b)/vector x(b)−/vector p(σ)(b)/vector y(b) = 0.
+since/vector x(as) = 1 andasoccurs uniquely at the start of each trace, if σ′=ǫsuch
+constraint equals 0, and, 1 otherwise.
+case ii:x=a. we know /vector p(σ)(af) = 0 and /vector p(σ′)(b) =/vector p(σ)(b). now
+/vector p(σ′)(a) =/vector p(σ)(a)−1 and thus /vector p(σ′)(a)/vector x(a)−/vector p(σ)(a)/vector y(a) =−1. sinceas∈σ′
+we have/vector p(σ′)(as)/vector x(as) = 1, and thus the constraint equals 0.
+case iii:x=bsimilar to case ii.
+case iv:x=af. we again have /vector p(σ′)(a) =/vector p(σ)(a) and/vector p(σ′)(b) =/vector p(σ)(b).
+since/vector p(σ)(af)/vector y(af) =/vector p(σ′)(as)/vector x(as) = 1, each constraint equals 0.
+15pas afa
+b
+(a) solution in case a/ne}ationslash=as
+andb/ne}ationslash=af.pas afa/b
+(b) solution in case a=as
+andb/ne}ationslash=afora/ne}ationslash=asand
+b=af.pas af
+(c) solution in case a=as
+andb=af.
+figure 5: visualizations of trivial solutions to ilp(π(l),a→b)in terms of petri
+net places.
+the constraints of the form: /vector1⊺/vector x+/vector1⊺/vector y≥1,/vector0≤/vector x≤/vector1,/vector0≤/vector y≤/vector1 and
+0≤m≤1 are trivially satisﬁed. from case iv combined with /vector x(af) =
+0 it follows that all constraints of the form ∀σ∈π(l)(m+/vector p(σ)⊺(/vector x−/vector y) = 0)
+(m/vector1+ml(/vector x−/vector y) =/vector0) hold. finally the assignment adheres to m= 0,/vector x(a) = 1
+and/vector y(b) = 1.
+in case we have a=asandb/\e}atio\slash=afthe region/vector x(as) =/vector x(a) =/vector y(a) =/vector y(af) =
+1, all other variables 0 (figure 5b), is a solution. the proof is similar to the
+proof of the previous case.
+in case we have a/\e}atio\slash=asandb=afthe region/vector x(as) =/vector x(b) =/vector y(b) =/vector y(af) =
+1, all other variables 0 (figure 5b), is a solution. again the proof is sim ilar to
+the proof in the ﬁrst case.
+finally in case we have a=asandb=afthe region/vector x(as) =/vector y(af) = 1,
+all other variables 0 (figure 5c), is a solution. again the proof is similar to the
+proof in the ﬁrst case.
+in algorithm 1 we present an ilp-based process discovery approa ch that
+uses a use-log internally in order to ﬁnd multiple petri net places. for every
+(a,b)∈γc(π(l)) witha/\e}atio\slash=afandb/\e}atio\slash=asit solvesilp(π(l),a→b). moreover, it
+ﬁnds a unique source and sink place.
+the algorithm constructs an initially empty petri net n= (p,t,f). sub-
+sequently for each a∈al∪ {as,af}a transition tais added to t. for each
+causal pair in the use-variant of input event log l, a placep(a,b)is discovered
+by solving ilp(π(l),a→b)after which pandfare updated accordingly. the
+algorithm adds an initial place piand connects it to tasand similarly creates
+sink placepowhich is connected to taf. for transition tarelated toa∈al, we
+haveλ(ta) =a, whereasλ(tas) =λ(taf) =τ.
+thealgorithmisguaranteedtoalwaysﬁndasolutionto ilp(π(l),a→b), hence
+for each causal relation a place is found. additionally, a unique sourc e and sink
+place are constructed. however, the algorithm does not guarant ee that we
+ﬁnd a connected component, i.e. requirement 3 of deﬁnition 1. in fa ct, the
+nature ofγcdetermines whether or not we discover a wf-net. in theorem 1
+we characterize this nature and prove, by exploiting lemma 1, that we are able
+to discover wf-nets.
+16algorithm 1: ilp-based process discovery
+input :l∈b(a∗
+l),γc:b(a∗)→p(a×a)
+output:w= (p,t,f,p i,po,λ)
+begin
+1p,t,f←∅;
+2letas,af/∈al;
+3t←{ta|a∈al∪{as,af}};
+4foreach (a,b)∈γc(π(l))do
+5 (m,/vector x,/vector y)←solution to ilp(π(l),a→b);
+6 letp(a,b)/∈p;
+7p←p∪p(a,b);
+8 foreacha′∈al∪{as,af}do
+9 if/vector x(a′) = 1then
+10 f←f∪{(ta′,p(a,b)};
+11 if/vector y(a′) = 1then
+12 f←f∪{(p(a,b),ta′)};
+13letpi,po/∈p;
+14p←p∪{pi,po};
+15f←f∪{(pi,tas)};
+16f←f∪{(taf,po)};
+17letλ:t→a∪{τ};
+18foreacha∈aldo
+19λ(ta)←a;
+20λ(tas),λ(taf)←τ;
+21return(p,t,f,p i,po,λ);
+theorem 1 (there exist suﬃcient conditions for ﬁnding wf-nets) .letlbe
+an event log over a set of activities al. letπ:b(a∗)→ b(a∗)denote a
+use-transformation function. let as,afdenote the unique start- and end ac-
+tivity ofπ(l). letγc:b(a∗)→ p(a × a)be a causal oracle and consider
+γc(π(l))as a directed graph. if each a∈alis on a path from astoafin
+γc(π(l)), and there is no path from asto itself, nor a path from afto itself,
+thenilp-based process discovery (l,γc)returns a wf-net.
+on the structure of γc(π(l)).by the requirements on γc(π(l)) and lemma 1,
+we know that for each ( a,b)∈γc(π(l)) a corresponding place will be found
+that has a transition labelled with aas an input and a transition labelled bas
+an output. hence every path in γc(π(l)) corresponds to a path in the resulting
+net and as a consequence, every transition is on a path from astoaf. as every
+place that is added has input transition ( /vector x(a) = 1) and an output transition
+(/vector y(b) = 1), every place is also on a path from astoaf. by construction this
+then also holds from pitopo.
+theorem 1 proves that if we use a causal structure that, when int erpreting
+it as a graph, has the property that each a∈alis on a path from asto
+17af, the result of ilp-based process discovery (l,γc) is a wf-net. although
+this seems a rather strict property of the causal structure, th ere exists a speciﬁc
+causal graph deﬁnition that guarantees this property [41]. henc e we are able to
+use this deﬁnition as an instantiation for γc.
+theorem 1 does not provide any behavioural guarantees, i.e. a wf- net is a
+purely graph-theoretical property. recall that the premise of a region is that it
+doesnotblocktheexecutionofanysequencewithinthepreﬁx-clos ureofanevent
+log. intuitively we deducethat we arethereforeable toﬁre eachtr ansitionin the
+wf-net at least once. moreover, since we know that afis the ﬁnal transition
+of each sequence in π(l), and after ﬁring the transition each place based on
+anyilpπ(l),a→bis empty, we know that we are able to mark po. these two
+observations hint on the fact that the wf-net is relaxed sound , which we prove
+in theorem 2
+theorem 2. letlbe an event log over a set of activities al. letπ:b(a∗)→
+b(a∗)denote a use-transformation function and let as,afdenote the unique
+start- and end activity of π(l). letγc:b(a∗)→ p(a×a)be a causal oracle.
+letw= (p,t,f,p i,po,λ) =ilp-based process discovery (l,γc). ifwis
+a wf-net, then wis relaxed sound.
+by construction of traces in the event log. recall that wis relaxed sound if
+and only if: ∀t∈t(∃m,m′∈b(p)((w,[pi])/squiggleright(w,m)∧(w,m)t− →(w,m′)∧(w,
+m′)/squiggleright(w,[po]))).
+observe that tasis trivially enabled in mi= [pi] since•tas={pi}. consider
+arbitraryt∈t\{tas,taf}. we know ∃σ∈π(l)(σ=/a\}bracketle{tas/a\}bracketri}ht·σ′·/a\}bracketle{tλ(t)/a\}bracketri}ht·σ′′·/a\}bracketle{taf/a\}bracketri}ht).
+let/a\}bracketle{tt′
+1,t′
+2,...,t′
+n/a\}bracketri}hts.t./a\}bracketle{tλ(t′
+1),λ(t′
+2),...,λ(t′
+n)/a\}bracketri}ht=σ′. the fact that each place
+p∈p\ {pi,po}corresponds to a region yields that we may deduce [ pi]tas− − →
+m′
+1,m′
+1t′
+1− →m′
+2,...,m′
+nt′
+n− →m′s.t.m′⊇ •t(if there exists p∈ •ts.t.m′(p) = 0,
+thenpdoes not correspond to a region). hence for any t∈t\{tas,taf}there
+exists a marking reachable from [ pi] that enables t.
+now let/a\}bracketle{tt′′
+1,t′′
+2,...,t′′
+n/a\}bracketri}hts.t./a\}bracketle{tλ(t′′
+1),λ(t′′
+2),...,λ(t′′
+n)/a\}bracketri}ht=σ′′. note that also, again
+by the fact that each place p∈p\ {pi,po}corresponds to a region, we may
+deducem′t′′
+1− →m′′
+1,m′′
+1t′′
+2− →m′′
+2,...,m′′
+n−1t′′
+n− →m′′
+n. clearlywehave m′′
+ntaf− − →mf
+withmf(po) = 1 since taf•={po}, and this is the ﬁrst time we ﬁre taf, i.e.,
+af/∈ /a\}bracketle{tas/a\}bracketri}ht·σ′·/a\}bracketle{tλ(t)/a\}bracketri}ht·σ′′. clearlymf(pi) = 0 and because of constraints of the
+formm/vector1+ml(/vector x−/vector y) =/vector0 we have ∀p∈p\{pi,po}(mf(p) = 0). hence mf= [po]
+and thus after ﬁring tthere exists a ﬁring sequence that leads to marking [ po]
+which proves wis relaxed sound.
+we have shown that with a few pre- and post-processing steps and a spe-
+ciﬁc class of causal structures we are able to guarantee to ﬁnd wf -nets that
+are relaxed sound. these results are interesting since several pr ocess mining
+techniques require wf-nets as an input. the ilp problems solved st ill require
+their solutions to allow for all possible behaviour in the event log. as a r esult,
+the algorithm incorporates all infrequent exceptional behaviour a nd still results
+18in over-ﬁtting complex wf-nets. hence, in the upcoming section we s how how
+to eﬃciently prune the ilp constraint body to identify and eliminate in frequent
+exceptional behaviour.
+7 dealing with infrequent behaviour
+in this section we present an eﬃcient pruning technique that identiﬁ es and
+eliminates constraints related to infrequent exceptional behaviou r. we ﬁrst
+present the impact of infrequent exceptional behaviour after wh ich we present
+the pruning technique.
+7.1 the impact of infrequent exceptional behaviour
+in section 2 we already indicated the impact of infrequent behaviour on the
+results of ilp-based process discovery. in this section we highligh t the main
+cause of ilp-based discovery’s inability to handle infrequent behav iour and we
+devise a ﬁltering mechanism that exploits the nature of the underlyin g body of
+constraints.
+let us again reconsider example event log l1, i.e.,l1= [/a\}bracketle{ta,b,d,e,g /a\}bracketri}ht10,/a\}bracketle{ta,c,
+d,e,f,d,b,e,g /a\}bracketri}ht12,/a\}bracketle{ta,d,c,e,h /a\}bracketri}ht9,/a\}bracketle{ta,b,d,e,f,c,d,e,g /a\}bracketri}ht11,/a\}bracketle{ta,d,c,e,f,b,d,e,h /a\}bracketri}ht13]. us-
+ingan implementationofalgorithm 1in prom[38], with a suitablecausalst ruc-
+tureγc, we ﬁnd the wf-net depicted in figure 6a. the wf-net describes the
+samebehaviourasthe modelpresentedin figure 4andhasperfect replay-ﬁtness
+w.r.t.l1. however, if we create event log l′by simply adding one instance
+of the trace /a\}bracketle{ta,b,c,d,e,g /a\}bracketri}ht, we obtain the result depicted in figure 6b. due to
+one exceptional trace, the model allows us, after executing aorfto execute
+an arbitrary number of b- andc-labelled transitions. this is undesirable since
+precision of the resulting process model drops signiﬁcantly. thus, the addition
+of one exceptional trace results in a less comprehensible wf-net an d reduces
+the precision of the resulting wf-net.
+when analysing the two models we observe that they share some equ al
+places, e.g. both models have a place p({a,f},{d})with•p({a,f},{d})={a,f}and
+p({a,f},{d})•={d}. however, the two places p({a,f},{b,c})with•p({a,f},{b,c})=
+{a,f}andp({a,f},{b,c})•={b,c}andp({b,c},{e})with•p({b,c},{e})={b,c}and
+p({b,c},{e})•={e}in figure 6a, are not present in figure 6b. these are “re-
+placed” by the less desirable places containing self-loops in figure 6b. this is
+caused by the fact that l′
+1contains all traces present in l1, combined with the
+additional constraints depicted in table 3.
+for placep({a,f},{b,c})in figure 6a we deﬁne a corresponding tuple r= (m,
+/vector x,/vector y) with/vector x(a) = 1,/vector x(f) = 1,/vector y(b) = 1 and/vector y(c) = 1 (all other variables 0). the
+additional constraints in table 3 all evaluate to −1 forr, e.g. constraint m+
+/vector x(as)+/vector x(a)+/vector x(b)−/vector y(as)−/vector y(a)−/vector y(b)−/vector y(c)evaluatesto0+0+1+0 −0−0−1−1=
+−1. in case of place p({b,c},{e})we observe that the corresponding tuple r= (m,
+/vector x,/vector y) with/vector x(b) = 1,/vector x(c) = 1 and/vector y(e) = 1, yields a value of 1 for all constraints
+generated by trace /a\}bracketle{ta,b,c,d,e,g /a\}bracketri}ht. for all constraints having a “ ≥0 right hand
+19(a) result based on event log l1
+(b) result based on event log l′
+1
+figure 6: results of applying algorithm 1 ( hybridilpminer package in the
+prom framework [38]) based on l1andl′
+1.
+table 3: some of the newly added constraints based on trace /a\}bracketle{ta,b,c,d,e,g /a\}bracketri}htin
+event logl′
+1, starting from preﬁx /a\}bracketle{ta,b,c/a\}bracketri}htwhich is not present in l1.
+m+/vector x(as)+/vector x(a)+/vector x(b)−/vector y(as)−/vector y(a)−/vector y(b)−/vector y(c)≥0
+m+/vector x(as)+/vector x(a)+/vector x(b)+/vector x(c)−/vector y(as)−/vector y(a)−/vector y(b)−/vector y(c)−/vector y(d)≥0
+...
+m+/vector x(as)+/vector x(a)+/vector x(b)+/vector x(c)+/vector x(d)+/vector x(e)+/vector x(g)−/vector y(as)−/vector y(a)−/vector y(b)−/vector y(c)−/vector y(d)−/vector y(e)−/vector y(g)−/vector y(af)≥0
+m+/vector x(as)+/vector x(a)+/vector x(b)+/vector x(c)+/vector x(d)+/vector x(e)+/vector x(g)+/vector x(af)−/vector y(as)−/vector y(a)−/vector y(b)−/vector y(c)−/vector y(d)−/vector y(e)−/vector y(g)−/vector y(af) = 0
+side” this is valid, however, for constraint m+/vector x(as)+/vector x(a)+/vector x(b)+/vector x(c)+/vector x(d)+
+/vector x(e)+/vector x(g)+/vector x(af)−/vector y(as)−/vector y(a)−/vector y(b)−/vector y(c)−/vector y(d)−/vector y(e)−/vector y(g)−/vector y(af) = 0
+this is not valid.
+the example showsthat the addition of /a\}bracketle{ta,b,c,d,e,g /a\}bracketri}htyields constraintsthat
+invalidate places p({a,f},{b,c})andp({b,c},{e}). as a result the wf-net based on
+eventlogl′
+1containsplaceswithself-loopsonboth bandcwhichgreatlyreduces
+its precision and simplicity. due to the relative infrequency of trace /a\}bracketle{ta,b,c,d,
+e,g/a\}bracketri}htit is arguably acceptable to trade-oﬀ the perfect replay-ﬁtness g uarantee
+of ilp-based process discovery and return the wf-net of figure 6a, givenl′
+1.
+hence, we need ﬁltering techniques and/or trace clustering techn iques in order
+to remove exceptional behaviour. however, apart from simple pre -processing,
+we aim at adapting the ilp-based process discovery approach itse lf to be able
+to cope with infrequent behaviour.
+20by manipulating the constraint body such that it no longer allows for a ll
+behaviour present in the input event log, we are able to deal with infr equent
+behaviour within event logs. given the problems that arise because o f the
+presence of exceptional traces, a natural next step is to leave o ut the constraints
+related to the problematic traces. an advantage of ﬁltering the co nstraint body
+is the fact that the constraints are based on the preﬁx-closure o f the event log.
+thus, evenifalltracesareunique yettheydo sharepreﬁxes, wea reabletoﬁlter.
+additionally, leaving out constraints decreases the size of the ilp’s constraint
+body, which has a potential positive eﬀect on the time needed to solv e an ilp.
+we devise a graph-based ﬁltering technique, i.e., sequence encoding ﬁltering ,
+that allows us to prune constraints based on trace frequency info rmation.
+7.2 sequence encoding graphs
+as a ﬁrst step towards sequence encoding ﬁltering we deﬁne the re lationship
+between sequences and constraints. we do this in terms of sequence encodings .
+a sequence encoding is a vector-based representation of a seque nce in terms of
+region theory, i.e., representing the sequence’s corresponding co nstraint.
+deﬁnition 8 (sequence encoding) .given a set of activities a={a1,a2,...,
+an}./vectorφ:a∗→n2|a|+1denotes the sequence encoding function mapping every
+σ∈a∗to a2·|a|+1-sized vector. we deﬁne /vectorφas:
+/vectorφ(σ′·/a\}bracketle{ta/a\}bracketri}ht) =
+1
+/vector p(σ′)
+−/vector p(σ′·/a\}bracketle{ta/a\}bracketri}ht)
+/vectorφ(ǫ) =
+1
+0
+...
+0
+
+as an example of a sequence encoding vector consider sequence /a\}bracketle{tas,a,b/a\}bracketri}ht
+originating from π(l′
+1), for which we have /vectorφ(/a\}bracketle{tas,a,b/a\}bracketri}ht)⊺= (1,1,1,0,0,0,0,0,0,
+0,0,−1,−1,−1,0,0,0,0,0,0,0). sequence encoding vectors directly correspond
+to region theory based constraints, e.g. if we are given m∈ {0,1}and/vector x,/vector y∈ {0,
+1}|a|and create a vector /vector rwhere/vector r(1) =m,/vector r(2) =/vector x(as),/vector r(3) =/vector x(a), ...,
+/vector r(10) =/vector x(h),/vector r(11) =/vector x(af),/vector r(12) =/vector y(af), ...,/vector r(21) =/vector y(af), then/vectorφ(/a\}bracketle{tas,a,
+b/a\}bracketri}ht)⊺/vector r=m+/vector x(as)+/vector x(a)−/vector y(as)−/vector y(a)−/vector y(b). ascompactnotationfor σ=σ′·/a\}bracketle{ta/a\}bracketri}ht
+we write/vectorφ(σ) as a pair of the bag representation of the parikh vector of σ′and
+a, i.e./vectorφ(/a\}bracketle{tas,a,b/a\}bracketri}ht) is written as ([ as,a],b) whereas/vectorφ(/a\}bracketle{tas,a,b,c/a\}bracketri}ht) is written as
+([as,a,b],c). for/vectorφ(ǫ) we write ([] ,⊥).
+consider the preﬁx-closure of π(l′
+1) which generates the linear inequalities
+presented in table 4. the table shows each sequence present in π(l′
+1) accompa-
+nied by its/vectorφ-value and the number of occurrences of the sequence in π(l′
+1), e.g.
+π(l′
+1)(/a\}bracketle{tas,a/a\}bracketri}ht) = 56. observe that there is a relation between the occurrence
+of a sequence and its corresponding postﬁxes, i.e. after the 56 tim es that se-
+quence/a\}bracketle{tas,a/a\}bracketri}htoccurred, /a\}bracketle{tas,a,b/a\}bracketri}htoccurred 22 times, /a\}bracketle{tas,a,c/a\}bracketri}htoccurred 12 times
+and/a\}bracketle{tas,a,d/a\}bracketri}htoccurred 22 times (note: 56 = 22+12+22). due to coupling of
+21table 4: schematic overview of sequence encodings based on π(l′
+1).
+σ∈π(l′
+1) /vectorφ(σ)⊺, i.e. (m,/vector x(as),/vector x(a),...,/vector y(h),/vector y(af)) /vectorφ(σ) (shorthand) π(l′
+1)(σ)
+ǫ (1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0) ([],⊥) 56
+/a\}bracketle{tas/a\}bracketri}ht (1,0,0,0,0,0,0,0,0,0,0,−1,0,0,0,0,0,0,0,0,0) ([],as) 56
+/a\}bracketle{tas,a/a\}bracketri}ht (1,1,0,0,0,0,0,0,0,0,0,−1,−1,0,0,0,0,0,0,0,0) ([as],a) 56
+/a\}bracketle{tas,a,b/a\}bracketri}ht (1,1,1,0,0,0,0,0,0,0,0,−1,−1,−1,0,0,0,0,0,0,0) ([as,a],b) 22
+/a\}bracketle{tas,a,c/a\}bracketri}ht (1,1,1,0,0,0,0,0,0,0,0,−1,−1,0,−1,0,0,0,0,0,0) ([as,a],c) 12
+/a\}bracketle{tas,a,d/a\}bracketri}ht (1,1,1,0,0,0,0,0,0,0,0,−1,−1,0,0,−1,0,0,0,0,0) ([as,a],d) 22
+/a\}bracketle{tas,a,b,c/a\}bracketri}ht (1,1,1,1,0,0,0,0,0,0,0,−1,−1,−1,−1,0,0,0,0,0,0) ([as,a,b],c) 1
+/a\}bracketle{tas,a,b,d/a\}bracketri}ht (1,1,1,1,0,0,0,0,0,0,0,−1,−1,−1,0,−1,0,0,0,0,0) ([as,a,b],d) 21
+/a\}bracketle{tas,a,c,d/a\}bracketri}ht (1,1,1,0,1,0,0,0,0,0,0,−1,−1,0,−1,−1,0,0,0,0,0) ([as,a,c],b) 12
+/a\}bracketle{tas,a,d,c/a\}bracketri}ht (1,1,1,0,0,1,0,0,0,0,0,−1,−1,0,−1,−1,0,0,0,0,0) ([as,a,d],c) 22
+/a\}bracketle{tas,a,b,c,d/a\}bracketri}ht (1,1,1,1,1,0,0,0,0,0,0,−1,−1,−1,−1,−1,0,0,0,0,0) ([as,a,b,c],d) 1
+/a\}bracketle{tas,a,b,d,e/a\}bracketri}ht (1,1,1,1,0,1,0,0,0,0,0,−1,−1,−1,0,−1,−1,0,0,0,0) ([as,a,b,d],e) 21
+/a\}bracketle{tas,a,c,d,e/a\}bracketri}ht (1,1,1,0,1,1,0,0,0,0,0,−1,−1,0,−1,−1,−1,0,0,0,0) ([as,a,c,d],e) 12
+/a\}bracketle{tas,a,d,c,e/a\}bracketri}ht (1,1,1,0,1,1,0,0,0,0,0,−1,−1,0,−1,−1,−1,0,0,0,0) ([as,a,c,d],e) 22
+/a\}bracketle{tas,a,b,c,d,e /a\}bracketri}ht (1,1,1,1,1,1,0,0,0,0,0,−1,−1,−1,−1,−1,−1,0,0,0,0) ([as,a,b,c,d],e) 1
+/a\}bracketle{tas,a,b,d,e,f /a\}bracketri}ht (1,1,1,1,0,1,1,0,0,0,0,−1,−1,−1,0,−1,−1,−1,0,0,0) ([as,a,b,d,e],f) 11
+/a\}bracketle{tas,a,b,d,e,g /a\}bracketri}ht (1,1,1,1,0,1,1,0,0,0,0,−1,−1,−1,0,−1,−1,0,−1,0,0) ([as,a,b,d,e],g) 10
+/a\}bracketle{tas,a,c,d,e,f /a\}bracketri}ht (1,1,1,0,1,1,1,0,0,0,0,−1,−1,0,−1,−1,−1,−1,0,0,0) ([as,a,c,d,e],f) 12
+/a\}bracketle{tas,a,d,c,e,f /a\}bracketri}ht (1,1,1,0,1,1,1,0,0,0,0,−1,−1,0,−1,−1,−1,−1,0,0,0) ([as,a,c,d,e],f) 13
+/a\}bracketle{tas,a,d,c,e,h /a\}bracketri}ht (1,1,1,0,1,1,1,0,0,0,0,−1,−1,0,−1,−1,−1,0,0,−1,0) ([as,a,c,d,e],h) 9
+/a\}bracketle{tas,a,b,c,d,e,g /a\}bracketri}ht (1,1,1,1,1,1,1,0,0,0,0,−1,−1,−1,−1,−1,−1,0,−1,0,0)([as,a,b,c,d,e ],g) 1
+/a\}bracketle{tas,a,b,d,e,f,c /a\}bracketri}ht (1,1,1,1,0,1,1,1,0,0,0,−1,−1,−1,−1,−1,−1,−1,0,0,0)([as,a,b,d,e,f ],c) 11
+/a\}bracketle{tas,a,b,d,e,g,a f/a\}bracketri}ht (1,1,1,1,0,1,1,0,1,0,0,−1,−1,−1,0,−1,−1,0,−1,0,−1)([as,a,b,d,e,g ],af) 10
+/a\}bracketle{tas,a,c,d,e,f,d /a\}bracketri}ht (1,1,1,0,1,1,1,1,0,0,0,−1,−1,0,−1,−2,−1,−1,0,0,0) ([as,a,c,d,e,f ],d) 12
+/a\}bracketle{tas,a,d,c,e,f,b /a\}bracketri}ht (1,1,1,0,1,1,1,1,0,0,0,−1,−1,−1,−1,−1,−1,−1,0,0,0)([as,a,c,d,e,f ],b) 13
+/a\}bracketle{tas,a,d,c,e,h,a f/a\}bracketri}ht (1,1,1,0,1,1,1,0,0,1,0,−1,−1,0,−1,−1,−1,0,0,−1,−1)([as,a,c,d,e,h ],af) 9
+/a\}bracketle{tas,a,b,c,d,e,g,a f/a\}bracketri}ht (1,1,1,1,1,1,1,0,1,0,0,−1,−1,−1,−1,−1,−1,0,−1,0,−1)([as,a,b,c,d,e,g ],af)1
+/a\}bracketle{tas,a,b,d,e,f,c,d /a\}bracketri}ht (1,1,1,1,1,1,1,1,0,0,0,−1,−1,−1,−1,−2,−1,−1,0,0,0)([as,a,b,c,d,e,f ],d) 11
+/a\}bracketle{tas,a,c,d,e,f,d,b /a\}bracketri}ht (1,1,1,0,1,2,1,1,0,0,0,−1,−1,−1,−1,−2,−1,−1,0,0,0)([as,a,c,d2,e,f],b) 12
+/a\}bracketle{tas,a,d,c,e,f,b,d /a\}bracketri}ht (1,1,1,1,1,1,1,1,0,0,0,−1,−1,−1,−1,−2,−1,−1,0,0,0)([as,a,b,c,d,e,f ],d) 13
+/a\}bracketle{tas,a,b,d,e,f,c,d,e /a\}bracketri}ht (1,1,1,1,1,2,1,1,0,0,0,−1,−1,−1,−1,−2,−2,−1,0,0,0)([as,a,b,c,d2,e,f],e)11
+/a\}bracketle{tas,a,c,d,e,f,d,b,e /a\}bracketri}ht (1,1,1,1,1,2,1,1,0,0,0,−1,−1,−1,−1,−2,−2,−1,0,0,0)([as,a,b,c,d2,e,f],e)12
+/a\}bracketle{tas,a,d,c,e,f,b,d,e /a\}bracketri}ht (1,1,1,1,1,2,1,1,0,0,0,−1,−1,−1,−1,−2,−2,−1,0,0,0)([as,a,b,c,d2,e,f],e)13
+/a\}bracketle{tas,a,b,d,e,f,c,d,e,g /a\}bracketri}ht(1,1,1,1,1,2,2,1,0,0,0,−1,−1,−1,−1,−2,−2,−1,−1,0,0)([as,a,b,c,d2,e2,f],g)11
+/a\}bracketle{tas,a,c,d,e,f,d,b,e,g /a\}bracketri}ht(1,1,1,1,1,2,2,1,0,0,0,−1,−1,−1,−1,−2,−2,−1,−1,0,0)([as,a,b,c,d2,e2,f],g)12
+/a\}bracketle{tas,a,d,c,e,f,b,d,e,h /a\}bracketri}ht(1,1,1,1,1,2,2,1,0,0,0,−1,−1,−1,−1,−2,−2,−1,0,−1,0)([as,a,b,c,d2,e2,f],h)13
+/a\}bracketle{tas,a,b,d,e,f,c,d,e,g,a f/a\}bracketri}ht(1,1,1,1,1,2,2,1,1,0,0,−1,−1,−1,−1,−2,−2,−1,−1,0,−1)([as,a,b,c,d2,e2,f,g],af)11
+/a\}bracketle{tas,a,c,d,e,f,d,b,e,g,a f/a\}bracketri}ht(1,1,1,1,1,2,2,1,1,0,0,−1,−1,−1,−1,−2,−2,−1,−1,0,−1)([as,a,b,c,d2,e2,f,g],af)12
+/a\}bracketle{tas,a,d,c,e,f,b,d,e,h,a f/a\}bracketri}ht(1,1,1,1,1,2,2,1,0,1,0,−1,−1,−1,−1,−2,−2,−1,0,−1,−1)([as,a,b,c,d2,e2,f,h],af)13
+sequences to constraints, i.e. by means of sequence encoding, we can now apply
+the aforementioned reasoning to constraints as well. the frequen cies inπ(l′
+1)
+allow us to decide whether the presence of a certain constraint is in lin e with
+predominant behaviour in the event log. for example, in table 4, /vectorφ(/a\}bracketle{tas,a,b,c/a\}bracketri}ht)
+seems to relate to infrequent behaviour as it appears only once.
+to apply ﬁltering, we construct a weighted directed graph in which ea ch
+sequence encoding acts as a vertex. we connect two vertices by m eans of an arc
+if the source constraint corresponds to a sequence that is a preﬁ x of a sequence
+corresponding to the target constraint, i.e., we connect /vectorφ(/a\}bracketle{tas,a/a\}bracketri}ht) to/vectorφ(/a\}bracketle{tas,a,b/a\}bracketri}ht)
+as/a\}bracketle{tas,a/a\}bracketri}htis a preﬁx of /a\}bracketle{tas,a,b/a\}bracketri}ht. arc weight is based on trace frequency in the
+input event log.
+deﬁnition 9 (sequence encoding graph) .given event log lover set of activ-
+itiesal. a sequence encoding graph is a directed graph g= (v,e,ψ)where
+v={/vectorφ(σ)|σ∈l},e⊆v×vs.t.(/vectorφ(σ′),/vectorφ(σ))∈e⇔ ∃a∈a(σ′· /a\}bracketle{ta/a\}bracketri}ht=σ)
+22andψ:e→nwhere:
+ψ(v1,v2) =/summationdisplay
+σ∈l
+/vectorφ(σ) =v2l(σ)−/summationdisplay
+σ′∈l
+σ′· /angbracketlefta/angbracketright ∈l
+/vectorφ(σ′· /angbracketlefta/angbracketright) =v2/vectorφ(σ′)/negationslash=v1l(σ′)
+consider the sequence encoding graph in figure 7, based on π(l′
+1), as an
+example. by deﬁnition, ([] ,⊥) is the root node of the graph and connects to all
+one-sized sequences. within the graph we observe the relation amo ng diﬀerent
+constraints, combined with their absolute frequencies based on l′
+1
+7.3 filtering
+given a sequence encoding graph we are able to ﬁlter out constraint s. in
+algorithm 2 we devise a simple breadth-ﬁrst traversal algorithm, i.e. sequence
+encoding filtering - breadth first search (sef-bfs), that traverses the
+sequence encoding graph and concurrently constructs a set of i lp constraints.
+the algorithm needs a function as an input that is able to determine, g iven a
+vertexinthesequenceencodinggraph,whatportionofadjacent verticesremains
+in the graph and which are removed.
+deﬁnition 10 (sequence encoding ﬁlter) .given event log lover set of activi-
+tiesaland a corresponding sequence encoding graph g= (v,e,ψ). a sequence
+encoding ﬁlter is a function κ:v→ p(v).
+([],⊥)
+([],as)
+([as],a) ([as,a],b)
+([as,a],c)([as,a],d) ([as,a,b],c)
+([as,a,b],d)
+([as,a,c],d)([as,a,d],c) ([as,a,b,c],d)
+([as,a,b,d],e)([as,a,c,d],e)([as,a,b,c,d],e)
+([as,a,b,d,e],f)
+([as,a,b,d,e],g)([as,a,c,d,e],f) ([as,a,c,d,e],h)([as,a,b,c,d,e ],g)
+([as,a,b,d,e,f ],c)
+([as,a,b,d,e,g ],af)([as,a,c,d,e,f ],b) ([as,a,c,d,e,f ],d)([as,a,c,d,e,h ],af)([as,a,b,c,d,e,g ],af)
+([as,a,b,d,e,f,c ],d)([as,a,b,c,d,e,f ],d)
+([as,a,c,d2,e,f],b)
+([as,a,b,c,d2,e,f],e)
+([as,a,b,c,d2,e2,f],g) ([as,a,b,c,d2,e2,f],h)([as,a,b,c,d2,e2,f,g],af) ([as,a,b,c,d2,e2,f,h],af)56
+56
+22
+1222
+21
+1222
+211222
+11
+1025 9
+11
+1013 12 9
+1113
+12
+1113
+12
+23 13
+23 131 1
+1
+1
+1
+figure 7: an example sequence encoding graph g′
+1, based on example event log
+l′
+1.
+23algorithm 2: sef-bfs
+input :g= (v,e,ψ),κ:v→p(v)
+output:c⊆v
+begin
+1c←∅
+2letqbe a fifo queue
+3q.enqueue (([],⊥))
+4whileq/ne}ationslash=∅do
+5v←q.dequeue ()
+6 forv′∈κ(v)do
+7 c←c∪{v′}
+8 q.enqueue (v′)
+notethatκisanabstractfunctionandmightbeparametrizedasanexample
+considerκα
+maxwhich we deﬁne as:
+κα
+max(v) ={v′|(v,v′)∈e∧ψ(v,v′)≥(1−α)·max
+v′′∈vψ(v,v′′)}, α∈[0,1]
+other instantiations of κare possible as well and hence κis a parameter of the
+general approach. it is however desirable that κ(v)⊆ {v′|(v,v′)∈e}, i.e. it
+only considers vertices reached by vby means of an arc. given an instantiation
+ofκ, it is straightforward to construct a ﬁltering algorithm based on br eadth-
+ﬁrst graph traversal, i.e. sef-bfs.
+the algorithminherits its worst-casecomplexity ofbreadth ﬁrst se arch, mul-
+tiplied by the worst-case complexity of κ. thus, in case κ’s worst-case complex-
+ity iso(1) then we have o(|v|+|e|) for thesef-bfs-algorithm. it is trivial to
+prove, by means of induction on the length of a sequence encoding’s correspond-
+ing sequence, that a sequence encoding graph is acyclic. hence, te rmination is
+guaranteed.
+as an example of executing the sef-bfs algorithm, reconsider figure 7.
+assume weuse κ0.75
+max. vertex ([],⊥) is initially present in qandwill be analyzed.
+since ([],as) is the only child of ([] ,⊥), it is added to q. vertex ([] ,⊥) is
+removed from the queue and is never inserted in the queue again due to the
+acyclic property of the graph. similarly, since ([ as],a) is the only child of ([] ,as)
+it is added to q. all children of ([ as],a), i.e. ([as,a],b), ([as,a],c) and ([as,
+a],d), are added to the queue since the maximum corresponding arc valu e is
+22, and, (1 −0.75)∗22 = 5.5, which is smaller than the lowest arc value 12.
+when analysing ([ as,a],b) we observe a maximum outgoing arc with value 21
+to vertex ([ as,a,b],d) which is enqueued in q. since (1 −0.25)∗21 = 5.25, the
+algorithm does not enqueue ([ as,a,b],c). note that the whole path of vertices
+from ([as,a,b],c) to ([as,a,b,c,d,e,g ],af) is neveranalysedand is stripped from
+the constraint body.
+when applying ilp-based process discovery based on event log l′
+1with se-
+quenceencodingﬁlteringand κ0.75
+max, weobtainthewf-net depictedinfigure 6a.
+24as explained, the ﬁlter leaves out all constraints related to vertice s on the path
+from ([as,a,b],c) to ([as,a,b,c,d,e,g ],af). hence, we ﬁnd a similar model to
+the model found on event log l1and are able to ﬁlter out infrequent exceptional
+behaviour.
+8 evaluation
+algorithm 1 and algorithm 2 (sequence encoding ﬁltering) are implemen ted in
+thehybridilpminer (http://svn.win.tue.nl/repos/prom/packages/hybridilp miner/
+package within the prom framework [38] (http://www.promtools.org ) and
+rapidprom framework [4].23using this implementation we validated the ap-
+proach. in an artiﬁcial setting we evaluated the quality of models dis covered
+and the eﬃciency of applying sequence encoding ﬁltering. we also com pare
+sequence encoding to the imi [26] algorithm and automaton-base d ﬁltering [20].
+finally, we assess the performance of sequence encoding ﬁltering o n real event
+data [27,30].
+8.1 model quality
+the event logs used in the empirical evaluation of model quality are ar tiﬁcially
+generated event logs and originate from a study related to the impa ct of excep-
+tional behaviour to rule-based approachesin process discovery [3 1]. three event
+logs where generated out of three diﬀerent process models, i.e. th eground truth
+event logs . these event logs do not consist of any exceptional behaviour, i.e.
+every trace ﬁts the originating model. the ground truth event logs are called
+a12f0n00 ,a22f0n00 anda32f0n00 . the two digits behind the acharacter in-
+dicate the number of activities present in the event log, i.e. a12f0n00 contains
+12 diﬀerent activities. from each ground truth event log, by means of trace
+manipulation, four other event logs are created that do contain ex ceptional be-
+haviour. manipulation concerns tail/head of trace removal, random part of the
+trace body removal and interchanging two randomly chosen event s [31]. the
+percentages of trace manipulation are 5%, 10%, 20% and 50%. the m anipula-
+tion percentage is incorporated in the last two digits of the event log ’s name,
+i.e. the 5% manipulation version of the a22f0n00 event log is called a22f0n05 .
+the existence of ground truth event logs, free of exceptional be haviour, is
+of utmost importance for evaluation. we need to be able to distinguis hnormal
+fromexceptional behaviour in an unambiguous manner . within evaluation,
+these event logs, combined with the quality dimension precision, allow u s to
+judge how well a technique is able to ﬁlter out exceptional behaviour . recall
+that precisionisdeﬁned asthe number oftracesproducible bythe p rocessmodel
+that are also present in the event log. thus if all traces producible b y a process
+2experiments are performed with source code available at:
+https://github.com/rapidprom/rapidprom-source/tree/ 2017_computing_ilp_1
+3experiments are conducted on machines with 8 intel xeon cpu e 5-2407 v2 2.40 ghz
+processors and 64 gb ram
+25model are present in an event log, precision is maximal, i.e. the precisio n value
+is 1. if the model allowsfor tracesthat arenot present in the even tlog, precision
+is lower than 1.
+if exceptional behaviour is present in an event log, the convention al ilp-
+based process discovery algorithm produces a wf-net that allows f or all excep-
+tional behaviour. as a result, the algorithm is unable to ﬁnd any mean ingful
+patterns within the event log. this typically leads to places with a lot of self-
+loops. the acceptance of exceptional behaviour by the wf-net, c ombined with
+the inability to ﬁnd meaningful patterns yields a low level of precision, when
+using the ground truth log as a basis for precision computation. on t he other
+hand, if we discover models using an algorithm that is more able to hand le the
+presence of exceptional behaviour, we expect the algorithm to allo w for less ex-
+ceptionalbehaviourand ﬁnd moremeaningful patterns. thus, w.r .t. the ground
+truth model, we expect higher precision values.
+to evaluate the sequence encoding ﬁltering approach, we have app lied the
+ilp-based process discovery algorithm with sequence encoding ﬁlt ering using
+κα
+maxandα= 0,0.05,0.1,...,0.95,1. moreover, we performed similar experi-
+ments for the imi [26]4and the automaton based event log ﬁlter of [20]5. after
+applying the automaton based ﬁlter we applied ilp-based process d iscovery as
+a process discovery algorithm. we measured precision [33] and repla y-ﬁtness [3]
+based on the ground truth event logs .
+in figure 8 we present the replay-ﬁtness results of the experimen ts with the
+a12f0nxx event logs. in the charts we plot replay-ﬁtness against the noise
+level and ﬁlter threshold. we additionally use a colour scheme to highlig ht the
+diﬀerences in value. sequence encoding filtering has low replay-ﬁtne ss values
+for all event logs when using a ﬁlter threshold of 0. the replay-ﬁtne ss value of
+the models found quickly rises to 1 and remains 1 for all ﬁlter thresho ld above
+0.2. in case of imi, for a ﬁlter value of 1 .0 (comparable to 0 .0 for sequence
+encoding) we observe some values of 1 for replay-ﬁtness. non-pe rfect replay-
+ﬁtnessseemstobemorelocal,concentratedaroundnoiselevels5% and10%with
+correspondingthresholdlevelsin-between0 .4and0.8. finally, automaton-based
+0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdfitness
+0.00.20.40.60.81.0
+(a) sequence encoding0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdfitness
+0.00.20.40.60.81.0
+(b) imi [26]0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdfitness
+0.00.20.40.60.81.0
+(c) ilp with automaton
+filter [20]
+figure 8: replay-ﬁtness measurements based on a12f0nxx .
+4http://svn.win.tue.nl/repos/prom/packages/inductive miner/
+5http://svn.win.tue.nl/repos/prom/packages/noisefilt ering/
+260
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdprecision
+0.00.20.40.60.81.0
+(a) sequence encoding0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdprecision
+0.00.20.40.60.81.0
+(b) imi [26]0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdprecision
+0.00.20.40.60.81.0
+(c) ilp with automaton
+filter [20]
+figure 9: precision measurements based on a12f0nxx .
+0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdfitness
+0.00.20.40.60.81.0
+(a) sequence encoding0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdfitness
+0.00.20.40.60.81.0
+(b) imi [26]0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdfitness
+0.00.20.40.60.81.0
+(c) ilp with automaton
+filter [20]
+figure 10: replay-ﬁtness measurements based on a22f0nxx .
+ﬁltering rapidly loses perfect replay-ﬁtnesswhen the ﬁlter thresh old exceeds 0 .2.
+only for a noise-level of 0 it seems to retain high replay-values. upon inspection
+it turns out the ﬁlter returns empty event logs for the correspon ding threshold
+and noise levels.
+in figure 9 we present the precision results of the experiments with the
+a12f0nxx event logs. for sequence encoding the chart shows expected be-
+haviour, i.e. with high noise levels and high ﬁlter thresholds precision is lo w.
+there is however an unexpected drop in precision for noise-level 0 w ith a ﬁlter
+threshold around 0 .2. the imi ﬁlter behaves a bit more unexpected since the
+drop in precision seems mainly depending on the noise level rather tha n the
+ﬁlter setting. we expect the precision to be higher in case a ﬁlter thr eshold of
+1.0 is chosen. there is only a slight increase for the 50% noise log when co m-
+paring a ﬁlter threshold of 0 to a ﬁlter threshold of 1. finally, precisio n of the
+automaton ﬁlter behaves as expected, i.e., precision rapidly increas es together
+with an increase in the ﬁlter threshold.
+the replay-ﬁtness results of the experiments with the a22f0nxx event logs
+are presented in figure 10. the charts very similar behaviour to the results re-
+ported for the a12f0nxx event logs. the sequence encoding ﬁlter in figure 10a
+has a replay-ﬁtness value of around 0 .6 when applying it as rigorous as possible,
+i.e. usingα= 0. this implies that the ﬁlter even removes behaviour that is
+presentinthe ground-trutheventlog. forincreasingﬁlterthres holdsthe replay-
+270
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdprecision
+0.00.20.40.60.81.0
+(a) sequence encoding0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdprecision
+0.00.20.40.60.81.0
+(b) imi [26]0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdprecision
+0.00.20.40.60.81.0
+(c) ilp with automaton
+filter [20]
+figure 11: precision measurements based on a22f0nxx .
+ﬁtness value reaches a value of 1 rapidly, i.e., the model is able to repr oduce
+all traces in the event log. for imi (figure 10b) we observe similar be haviour
+(note that the ﬁlter threshold works inverted w.r.t. sequence enc oding ﬁltering,
+i.e. a value of 1 implies most rigorous ﬁltering). however, replay-ﬁtne ss drops a
+little earlier compared to sequence encoding ﬁltering. finally, automa ton based
+ﬁltering, depicted in figure 10b, rapidly drops to 0. again this is due to the
+fact that the ﬁlter tends to return empty logs for high threshold v alues. hence,
+the ﬁlter seems to be very sensitive around a threshold value in-bet ween 0 and
+0.2.
+the precision results of the experiments with the a22f0nxx event logs are
+presented in figure 11. for both the sequence encoding (figure 11 a) and imi
+(figure 11b) we observe a precision value of around 0 .6 based on the event logs
+without any noise. this is due to the fact that the originating model c ontains
+a loop which leads to imprecision. we observe that both sequence enc oding
+ﬁltering as well as imi follow the same pattern in terms of precision. h owever,
+the drop in precision of sequence encoding ﬁltering is more smooth th an the
+drop in precision of imi, i.e. there exist some spikes within the graph. h ence,
+the applying ﬁltering within imi seems to be less deterministic. finally, t he
+precision results for the automaton based ﬁlter are as expected. with a low
+thresholdvaluewehaveverylowprecision,exceptwhenwehavea0% noiselevel.
+towards a threshold level of 0 .2 precision increases after which it maximizes out
+to a value of 1. this is in line with the replay-ﬁtness measurements.
+in figure 12 we present the replay-ﬁtnessresults of the experime nts with the
+a32f0nxx event logs. due to excessive computation time the automaton base d
+ﬁlter [20] is left out of the analysis. we observe that sequence enco ding ﬁltering
+behavessimilartotheexperimentsperformedwiththe a12f0nxx anda22f0nxx
+event logs. the replay-ﬁtness again quickly increase to 1 for increa sing ﬁlter
+thresholdvalues. weobservethat imiseemstoﬁlter outmorebeh aviourrelated
+to the underlying system model when the ﬁlter threshold increases .
+in figure 13 we present the precision results of the experiments wit h the
+a32f0nxx event logs. observe that, due to loop structures, the precision o f a
+model that equals the originating model is only roughly 0 .6. sequence encod-
+ing ﬁltering shows a smooth decrease in precision when both noise and ﬁlter-
+280
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdfitness
+0.00.20.40.60.81.0
+(a) sequence encoding0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdfitness
+0.00.20.40.60.81.0
+(b) imi [26]
+figure 12: replay-ﬁtness measurements based on a32f0nxx .
+0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdprecision
+0.00.20.40.60.81.0
+(a) sequence encoding0
+10
+20
+30
+40
+500.00.20.40.60.81.00.00.20.40.60.81.0
+noise level (%)
+filter thresholdprecision
+0.00.20.40.60.81.0
+(b) imi [26]
+figure 13: precision measurements based on a32f0nxx .
+thresholds are increased, which is as expected. with low noise levels a nd a
+low threshold sequence encoding seems to be able to ﬁlter out the inf requent
+behaviour, however, if there is too much noise and too little is remove d we start
+ﬁnding wf-nets with self-loop places. imi seems to result in models wit h a
+sightly higher precision compared to sequence encoding ﬁltering. as is the case
+in thea22f0nxx event logs, we observe spike behaviour in precision of imi
+based models hinting at non-deterministic behaviour of the ﬁlter.
+based on our experiments, we conclude that the sequence encodin g ﬁlter
+and imi givecomparableresults. however, the sequence encoding ﬁlter provides
+moreexpectedresults,i.e. imibehavessomewhatdeterministic. t heautomaton
+based ﬁlter does provide good results, however, sensibility of the ﬁ lter threshold
+is much higher compared to sequence encoding ﬁltering and imi.
+29computation time (ms.)threshold
+00.250.50.751
+10^2.510^3.010^3.510^4.010^4.510^5.0noise
+10^2.510^3.010^3.510^4.010^4.510^5.0noise
+10^2.510^3.010^3.510^4.010^4.510^5.0noise
+10^2.510^3.010^3.510^4.010^4.510^5.0noise
+10^2.510^3.010^3.510^4.010^4.510^5.0noisesequence encoding
+imi
+automaton
+figure 14: cpu-execution time (ms.) for a22f0nxx event logs (logar ithmic
+scale).
+8.2 computation time
+the core of sequence encoding ﬁltering is leaving out constraints th at are likely
+to refer to exceptional behaviour. thus, we reduce the size of th e core ilp
+constraint body. hence, we expect a decrease in computation time when ap-
+plying rigorous ﬁltering, i.e. κα
+maxwithαtowards 0. using rapidminer we
+repeated similar experiments to the experiments performed for mo del quality,
+and measured cpu-execution time for the three techniques. however, we only
+use threshold values 0, 0 .25, 0.75 and 1.
+in figure 14 we present the average cpu-execution time, based on 50 ex-
+periment repetitions, needed to obtain a process model from an ev ent log. for
+each level of noise we depict computation time for diﬀerent ﬁlter thr eshold set-
+tings, 0% noise is depicted in the left-most ﬁgure, 50% in the right-mo st ﬁgure.
+for imi, we measured the inductive miner algorithm with integrated ﬁlt ering.
+for sequence encoding and automaton ﬁltering, we measure the tim e needed
+to ﬁlter, discover a causal graph and solve underlying ilp problems . as we
+observe in figure 14, imi is fastest in all cases except for a thresh old of 0 where
+sequence encoding tends to outperform imi and automaton-bas ed ﬁltering. we
+observe that in all cases computation time increases when the amou nt of noise
+increases within the event logs. for sequence encoding ﬁltering we o bserve that
+30thresholdreplay−fitness/precision
+0.40.60.81.0
+0.0 0.2 0.4 0.6 0.8 1.0fitness
+precision
+(a) fitness and pre-
+cisionthresholdnumber of arcs
+20406080
+0.0 0.2 0.4 0.6 0.8 1.0
+(b) number of arcsthresholdreplay−fitness/precision
+0.20.40.60.81.0
+0.0 0.2 0.4 0.6 0.8 1.0fitness
+precision
+(c) fitness and pre-
+cisionthresholdnumber of arcs
+50100150200250
+0.0 0.2 0.4 0.6 0.8 1.0
+(d) number of arcs
+figure 15: replay-ﬁtness, precision and complexity based on the road fines
+log [27] (figure 15a and figure 15b) and the sepsislog [30] (figure 15c and
+figure 15d).
+lower threshold values lead to faster computation times. this is as ex pected
+since a low threshold value removes more constraints from the ilp c onstraint
+body than a high threshold value. the automaton-based ﬁlter is slow est in all
+cases. the amount of noise seems to have little impact on the comput ation time
+of the automaton-based ﬁlter, it seems to be predominantly depen ding on the
+ﬁlter threshold. from figure 14 we conclude that imi in general out -performs
+sequence encoding in terms of computation time. however, sequen ce encoding,
+in turn out-performs automaton-based ﬁltering, speciﬁcally for h igher threshold
+settings.
+8.3 application to real-life event logs
+we additionally tested the applicability of sequence encoding ﬁltering u sing
+real-life event logs. we used two event logs, one related to the admin istration
+process of handling road ﬁnes [27] and one regarding the patient t reatment of
+patients suspected to have sepsis [30].
+the results are presented in figure 15. in case of the road fines event
+log (ﬁgures on the left-hand side of figure 15) we observe that rep lay-ﬁtness
+is around 0 .46 whereas precision is around 0 .4 forα-values from 0 to 0 .5. the
+number of arcs for the models of these α-values remains constant (as well as
+the number of places and the number of transitions) suggesting th at the models
+found are the same. after this the replay-ﬁtness increases furt her to around 0 .8
+and reaches 1 for an α-level of 1. interestingly, precision shows a little increase
+aroundα-levelsbetween0 .5and0.75afterwhichitdropsslightlybelowitsinitial
+value. in this case, an α-level in-between 0 .5 and 0.75 seems most appropriate
+in terms of replay-ﬁtness, precision and simplicity.
+in caseof the sepsisevent log (ﬁgures on the left-hand side of figure 15) we
+observe that replay-ﬁtness and precision are roughly behaving as each-other’s
+inverse, i.e. replay-ﬁtness increaseswhereas precision decrease sfor increasing α-
+levels. we moreover observe that the number of arcs within the pro cess models
+is steadily increasing for increasing α-levels. in this case, an α-level in-between
+310.1 and 0.4 seems most appropriate in terms of replay-ﬁtness, precision and
+simplicity.
+finally, for each experiment we measured the associated computat ion time
+of solving all ilp problems. in case of the road fines event log, solving all ilp
+problems takes roughly 5 seconds. in case of the sepsisevent log, obtaining a
+model ilp problems takes less than 1 second.
+9 conclusion
+the work presented in this paper is motivated by the observation th at existing
+region-basedprocessdiscoverytechniquesareuseful, astheya reabletoﬁndnon-
+localcomplexcontrol-ﬂowpatterns. however,the techniques do notprovideany
+structural guarantees w.r.t. the resulting process models, and, they are unable
+to cope with infrequent, exceptional behaviour in event logs.
+the approach presented in this paper extends techniques presen ted in [44–
+46]. we have proven that our approach is able to discover relaxed so und work-
+ﬂow nets, i.e. we are now able to guarantee structural properties of the result-
+ing process model. additionally, we presented the sequence encodin g ﬁltering
+technique which enables us to apply ﬁltering exceptional behaviour w ithin the
+ilp-based process discovery algorithm. our experiments conﬁrm that the tech-
+nique enables us to ﬁnd petri net structures in data consisting of e xceptional
+behaviour, using ilp-based process discovery as an underlying te chnique. se-
+quence encoding ﬁltering proves to be comparable to the imi [26] ap proach, i.e.
+an integrated ﬁlter of the inductive miner [25], in terms of ﬁltering be haviour.
+it is considerably faster than the general purpose ﬁltering appro ach of [20] and
+less sensible to variations in the ﬁlter threshold.
+future work an interesting direction for future work concerns combining
+ilp-basedprocess discoverytechniques with other process disc overytechniques.
+the inductive miner discovers sound workﬂow nets, however, the se models are
+lack the ability to express complex control ﬂow patterns such as a m ilestone
+pattern. some of these patterns are however reconstructible u sing ilp-based
+process discovery. hence, it is interesting to combine these appro aches with
+possibly synergetic eﬀects w.r.t. the process mining quality dimension s.
+another interesting approach is the development of more advance d general
+purpose ﬁltering techniques. most discovery algorithms assume th e input event
+logs to be free of noise, infrequent and/or exceptional behaviour . real-life event
+logs however typically contain a lot of such behaviour. surprisingly, lit tle re-
+search is performed towards ﬁltering techniques that greatly enh ance process
+discovery results, independent of the discovery algorithm used.
+references
+[1] aalst, w.m.p. van der: the application of petri nets to work-
+32ﬂow management. journal of circuits, systems, and comput-
+ers8(1), 21–66 (1998). doi 10.1142/s0218126698000043. url
+http://dx.doi.org/10.1142/s0218126698000043
+[2] aalst, w.m.p. van der: process mining - data science in action, sec-
+ond edition. springer (2016). doi 10.1007/978-3-662-49851-4. url
+http://dx.doi.org/10.1007/978-3-662-49851-4
+[3] aalst, w.m.p. van der, adriansyah, a., dongen, b.f. van: replay-
+ing history on process models for conformance checking and per-
+formance analysis. wiley interdisc. rew.: data mining and knowl-
+edge discovery 2(2), 182–192 (2012). doi 10.1002/widm.1045. url
+http://dx.doi.org/10.1002/widm.1045
+[4] aalst, w.m.p. van der, bolt, a., zelst, s.j. van : rapidprom: mine you r
+processes and not just your data. corr abs/1703.03740 (2017). url
+http://arxiv.org/abs/1703.03740
+[5] aalst, w.m.p. van der, hee, k.m. van, hofstede, a.h.m. ter, sidoro va,
+n., verbeek, h.m.w., voorhoeve, m., wynn, m.t.: soundness of work-
+ﬂow nets: classiﬁcation, decidability, and analysis. formal asp. com -
+put.23(3), 333–363 (2011). doi 10.1007/s00165-010-0161-4. url
+http://dx.doi.org/10.1007/s00165-010-0161-4
+[6] aalst, w.m.p. van der, hofstede, a.h.m. ter, kiepuszewski,
+b., barros, a.p.: workﬂow patterns. distributed and parallel
+databases 14(1), 5–51 (2003). doi 10.1023/a:1022883727209. url
+http://dx.doi.org/10.1023/a:1022883727209
+[7] aalst, w.m.p. van der, rubin, v., verbeek, h. m. w., dongen, b. f.
+van, kindler, e., g¨ unther, c. w.: process mining: a two-step appro ach
+to balance between underﬁtting and overﬁtting. software and sy stem
+modeling 9(1), 87–111 (2010). doi 10.1007/s10270-008-0106-z. url
+http://dx.doi.org/10.1007/s10270-008-0106-z
+[8] aalst, w.m.p. van der, weijters, a.j.m.m., maruster, l.: workﬂow min -
+ing: discovering process models from event logs. ieee trans. kno wl.
+data eng. 16(9), 1128–1142 (2004). doi 10.1109/tkde.2004.47. url
+http://dx.doi.org/10.1109/tkde.2004.47
+[9] adriansyah, a.: aligning observed and modeled behavior. ph.d. the sis,
+eindhoven university of technology (2014). doi 10.6100/ir77008 0. url
+http://dx.doi.org/10.6100/ir770080
+[10] badouel, e., bernardinello, l., darondeau, p.: polynomial algorith ms
+for the synthesis of bounded nets. in: mosses, p.d., nielsen, m.,
+schwartzbach, m.i. (ed.) tapsoft’95: theory and practice of sof tware
+development, 6th international joint conference caap/fase, a arhus,
+33denmark, may 22-26, 1995, proceedings, lecture notes in computer sci-
+ence, vol. 915, pp. 364–378. springer (1995). doi 10.1007/3-540-59 293-8
+207. url http://dx.doi.org/10.1007/3-540-59293-8_207
+[11] badouel, e., bernardinello, l., darondeau, p.: petri net syn-
+thesis. texts in theoretical computer science. an eatcs se-
+ries. springer (2015). doi 10.1007/978-3-662-47967-4. url
+http://dx.doi.org/10.1007/978-3-662-47967-4
+[12] badouel, e., darondeau, p.: theory of regions. in: reisig, w., ro zen-
+berg, g. (ed.) lectures on petri nets i: basic models, advances in petri
+nets, the volumes are based on the advanced course on petri net s, held
+in dagstuhl, september 1996, lecture notes in computer science , vol.
+1491, pp. 529–586. springer (1996). doi 10.1007/3-540-65306 -622. url
+http://dx.doi.org/10.1007/3-540-65306-6_22
+[13] bergenthum, r., desel, j., lorenz, r., mauser, s.: process min-
+ing based on regions of languages. in: alonso, g., dadam,
+p., rosemann, m. (ed.) business process management, 5th intern a-
+tional conference, bpm 2007, brisbane, australia, september 24 -28,
+2007, proceedings, lecture notes in computer science , vol. 4714, pp.
+375–383. springer (2007). doi 10.1007/978-3-540-75183-0 27. url
+http://dx.doi.org/10.1007/978-3-540-75183-0_27
+[14] bergenthum, r., desel, j., lorenz, r., mauser,
+s.: synthesis of petri nets from finite partial lan-
+guages. fundam. inform. 88(4), 437–468 (2008). url
+http://content.iospress.com/articles/fundamenta-inf ormaticae/fi88-4-03
+[15] bernardinello, l.: synthesis of net systems. in: marsan,
+m.a. (ed.) application and theory of petri nets 1993, 14th in-
+ternational conference, chicago, illinois, usa, june 21-25, 1993 ,
+proceedings, lecture notes in computer science , vol. 691, pp.
+89–105. springer (1993). doi 10.1007/3-540-56863-8 42. url
+http://dx.doi.org/10.1007/3-540-56863-8_42
+[16] bolt, a., leoni, m. de, aalst, w.m.p. van der: scientiﬁc workﬂows
+for process mining: building blocks, scenarios, and implementation.
+sttt18(6), 607–628 (2016). doi 10.1007/s10009-015-0399-5. url
+http://dx.doi.org/10.1007/s10009-015-0399-5
+[17] buijs, j.c.a.m., dongen, b.f. van, aalst, w.m.p. van der: a genetic
+algorithm for discovering process trees. in: proceedings of the i eee
+congress on evolutionary computation, cec 2012, brisbane, aust ralia,
+june 10-15, 2012, pp. 1–8. ieee (2012). doi 10.1109/cec.2012.6 256458.
+urlhttp://dx.doi.org/10.1109/cec.2012.6256458
+[18] buijs, j.c.a.m., dongen, b.f. van, aalst, w.m.p. van der: on the
+role of fitness, precision, generalization and simplicity in process
+34discovery. in: meersman, r., panetto, h., dillon, t.s., rinderle-
+ma, s., dadam, p., zhou, x., pearson, s., ferscha, a., bergam-
+aschi, s., crux, i.f. (ed.) on the move to meaningful internet sys-
+tems: otm 2012, confederated international conferences: co opis, doa-
+svi, and odbase 2012, rome, italy, september 10-14, 2012. pro -
+ceedings, part i, lecture notes in computer science , vol. 7565, pp.
+305–322. springer (2012). doi 10.1007/978-3-642-33606-5 19. url
+http://dx.doi.org/10.1007/978-3-642-33606-5_19
+[19] carmona, j., cortadella, j.: process discovery algorithms us-
+ing numerical abstract domains. ieee trans. knowl. data eng.
+26(12), 3064–3076 (2014). doi 10.1109/tkde.2013.156. url
+http://dx.doi.org/10.1109/tkde.2013.156
+[20] conforti, r., rosa, m. la, hofstede, a.h.m. ter: filtering out in frequent
+behavior from business process event logs. ieee trans. knowl. d ata
+eng.29(2), 300–314 (2017). doi 10.1109/tkde.2016.2614680. url
+http://dx.doi.org/10.1109/tkde.2016.2614680
+[21] darondeau, p.: deriving unbounded petri nets from formal la n-
+guages. in: sangiorgi, d., simone, r. de (ed.) concur ’98: con-
+currency theory, 9th international conference, nice, france , septem-
+ber 8-11, 1998, proceedings, lecture notes in computer science , vol.
+1466, pp. 533–548. springer (1998). doi 10.1007/bfb0055646. url
+http://dx.doi.org/10.1007/bfb0055646
+[22] dongen, b.f. van, medeiros, a.k.a. de, wen, l.: process
+mining: overview and outlook of petri net discovery algo-
+rithms. trans. petri nets and other models of concurrency
+2, 225–242 (2009). doi 10.1007/978-3-642-00899-3 13. url
+http://dx.doi.org/10.1007/978-3-642-00899-3_13
+[23] ehrenfeucht, a., rozenberg, g.: partial (set) 2-structure s.
+part i: basic notions and the representation problem. acta
+inf.27(4), 315–342 (1990). doi 10.1007/bf00264611. url
+http://dx.doi.org/10.1007/bf00264611
+[24] ehrenfeucht, a., rozenberg, g.: partial (set) 2-structure s. part ii: state
+spaces of concurrent systems. acta inf. 27(4), 343–368 (1990). doi
+10.1007/bf00264612. url http://dx.doi.org/10.1007/bf00264612
+[25] leemans, s.j.j., fahland, d., aalst, w.m.p. van der: discovering blo ck-
+structured process models from event logs - a constructive app roach.
+in: colom, j.m., desel, j. (ed.) application and theory of petri nets a nd
+concurrency - 34th international conference, petri nets 201 3, milan,
+italy, june 24-28, 2013. proceedings, lecture notes in computer science ,
+vol. 7927, pp. 311–329. springer (2013). doi 10.1007/978-3-64 2-38697-8
+17. url http://dx.doi.org/10.1007/978-3-642-38697-8_17
+35[26] leemans, s.j.j., fahland, d., aalst, w.m.p. van der: discover-
+ing block-structured process models from event logs containing i n-
+frequent behaviour. in: lohmann, n., song, m., wohed, p.
+(ed.) business process management workshops - bpm 2013 inter-
+national workshops, beijing, china, august 26, 2013, revised pa-
+pers,lecture notes in business information processing , vol. 171, pp.
+66–78. springer (2013). doi 10.1007/978-3-319-06257-0 6. url
+http://dx.doi.org/10.1007/978-3-319-06257-0_6
+[27] leoni, m. de, mannhardt, f.: road traﬃc fine management proc ess
+(2015). doi 10.4121/uuid:270fd440-1057-4fb9-89a9-b699b47 990f5. url
+https://doi.org/10.4121/uuid:270fd440-1057-4fb9-89a 9-b699b47990f5
+[28] lorenz, r., juh´ as, g.: towards synthesis of petri nets from scenarios. in:
+donatelli, s., thiagarajan, p.s. (ed.) petri nets and other models of con-
+currency - icatpn 2006, 27th international conference on app lications
+and theory of petri nets and other models of concurrency, turk u, fin-
+land, june 26-30, 2006, proceedings, lecture notes in computer science ,
+vol. 4024, pp. 302–321. springer (2006). doi 10.1007/11767589 17. url
+http://dx.doi.org/10.1007/11767589_17
+[29] lorenz, r., mauser, s., juh´ as, g.: how to synthesize nets fro m lan-
+guages - a survey. in: henderson, s.g., biller, b., hsieh, m.h., shortle ,
+j., tew, j.d., barton, r.r. (ed.) proceedings of the winter simula-
+tion conference, wsc 2007, washington, dc, usa, december 9-12 ,
+2007, pp. 637–647. wsc (2007). doi 10.1109/wsc.2007.4419657. url
+http://dx.doi.org/10.1109/wsc.2007.4419657
+[30] mannhardt, f: sepsis cases - event log (2016). doi
+10.4121/uuid:915d2bfb-7e84-49ad-a286-dc35f063a460. url
+https://doi.org/10.4121/uuid:915d2bfb-7e84-49ad-a28 6-dc35f063a460
+[31] maruster, l., weijters, a.j.m.m., aalst, w.m.p. van der, bosch,
+a. van den: a rule-based approach for process discovery: deal-
+ing with noise and imbalance in process logs. data min. knowl.
+discov. 13(1), 67–87 (2006). doi 10.1007/s10618-005-0029-z. url
+http://dx.doi.org/10.1007/s10618-005-0029-z
+[32] medeiros, a.k.a. de, dongen, b.f. van, aalst, w.m.p. van der, weij ters,
+a.j.m.m.: process mining for ubiquitous mobile systems: an overview
+and a concrete algorithm. in: baresi, l., dustar, s., gall, h.c., mat-
+era, m. (ed.) ubiquitous mobile information and collaboration system s,
+second caise workshop, umics 2004, riga, latvia, june 7-8, 2004 ,
+revised selected papers, lecture notes in computer science , vol. 3272,
+pp. 151–165. springer (2004). doi 10.1007/978-3-540-30188- 212. url
+http://dx.doi.org/10.1007/978-3-540-30188-2_12
+36[33] munoz-gama, j.: conformance checking and diagnosis in
+process mining - comparing observed and modeled pro-
+cesses, lecture notes in business information processing , vol.
+270. springer (2016). doi 10.1007/978-3-319-49451-7. url
+http://dx.doi.org/10.1007/978-3-319-49451-7
+[34] murata, t.: petri nets: properties, analysis and applications. proceed-
+ings of the ieee 77(4), 541–580 (1989). doi 10.1109/5.24143
+[35] reisig, w.: the synthesis problem. trans. petri nets and other models of
+concurrency 7, 300–313 (2013). doi 10.1007/978-3-642-38143-0 8. url
+http://dx.doi.org/10.1007/978-3-642-38143-0_8
+[36] schrijver, a.: theory of linear and integer programming. wiley -
+interscience series in discrete mathematics and optimization. wiley ( 1999)
+[37] sol´ e, m., carmona, j.: process mining from a basis of state reg ions.
+in: lilius, j., penczek, w. (ed.) applications and theory of petri net s,
+31st international conference, petri nets 2010, braga, port ugal, june
+21-25, 2010. proceedings, lecture notes in computer science , vol. 6128,
+pp. 226–245. springer (2010). doi 10.1007/978-3-642-13675- 714. url
+http://dx.doi.org/10.1007/978-3-642-13675-7_14
+[38] verbeek, h.m.w., buijs, j.c.a.m., dongen, b.f. van, aalst, w.m.p.
+van der: xes, xesame, and prom 6. in: soﬀer, p., proper,
+e. (ed.) information systems evolution - caise forum 2010, ham-
+mamet, tunisia, june 7-9, 2010, selected extended papers, lec-
+ture notes in business information processing , vol. 72, pp. 60–
+75. springer (2010). doi 10.1007/978-3-642-17722-4 5. url
+http://dx.doi.org/10.1007/978-3-642-17722-4_5
+[39] weerdt, j. de, backer, m. de, vanthienen, j., baesens, b.:
+a multi-dimensional quality assessment of state-of-the-art pro-
+cess discovery algorithms using real-life event logs. inf. syst.
+37(7), 654–676 (2012). doi 10.1016/j.is.2012.02.004. url
+http://dx.doi.org/10.1016/j.is.2012.02.004
+[40] weijters, a.j.m.m., aalst, w.m.p. van der: rediscovering work-
+ﬂow models from event-based data using little thumb. inte-
+grated computer-aided engineering 10(2), 151–162 (2003). url
+http://content.iospress.com/articles/integrated-com puter-aided-engineering/ica00143
+[41] weijters, a.j.m.m., ribeiro, j.t.s.: flexible heuristics miner (fhm).
+in: proceedings of the ieee symposium on computational intelligen ce
+and data mining, cidm 2011, part of the ieee symposium series
+on computational intelligence 2011, april 11-15, 2011, paris, fra nce,
+pp. 310–317. ieee (2011). doi 10.1109/cidm.2011.5949453. url
+http://dx.doi.org/10.1109/cidm.2011.5949453
+37[42] wen, l, aalst, w.m.p. van der, wang, j., sun, j.: mining pro-
+cess models with non-free-choice constructs. data min. knowl. dis -
+cov.15(2), 145–180 (2007). doi 10.1007/s10618-007-0065-y. url
+http://dx.doi.org/10.1007/s10618-007-0065-y
+[43] wen, l., wang. j., aalst, w.m.p. van der, huang, b., sun, j.: min-
+ing process models with prime invisible tasks. data knowl. eng.
+69(10), 999–1021 (2010). doi 10.1016/j.datak.2010.06.001. url
+http://dx.doi.org/10.1016/j.datak.2010.06.001
+[44] werf, j.m.e.m. van der, dongen, b.f. van, hurkens, c.a.j., sere-
+brenik, a.: process discovery using integer linear programming. f un-
+dam. inform. 94(3-4), 387–412 (2009). doi 10.3233/fi-2009-136. url
+http://dx.doi.org/10.3233/fi-2009-136
+[45] zelst, s.j. van, dongen, b.f. van, aalst, w.m.p. van der: avoiding
+over-fitting in ilp-based process discovery. in: motahari-nezh ad, h.r.,
+recker, j. weidlich, m. (ed.) business process management - 13th i nter-
+national conference, bpm 2015, innsbruck, austria, august 31 - septem-
+ber 3, 2015, proceedings, lecture notes in computer science , vol. 9253,
+pp. 163–171. springer (2015). doi 10.1007/978-3-319-23063- 410. url
+http://dx.doi.org/10.1007/978-3-319-23063-4_10
+[46] zelst, s.j. van, dongen, b.f. van, aalst, w.m.p. van der: ilp-ba sed pro-
+cess discovery using hybrid regions. in: aalst, w.m.p. van der, berg en-
+thum, r., carmona, j. (ed.) proceedings of the ataed 2015 worksh op,
+satellite event of petri nets/acsd 2015, brussels, belgium, june 2 2-23,
+2015.,ceur workshop proceedings , vol. 1371, pp. 47–61. ceur-ws.org
+(2015). url http://ceur-ws.org/vol-1371/paper04.pdf
+38

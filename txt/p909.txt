@@ -1,0 +1,720 @@
+learning hybrid process models from events
+process discovery without faking conﬁdence
+wil m.p. van der aalst1;2and riccardo de masellis2and chiara di francescomarino2
+and chiara ghidini2
+1eindhoven university of technology, po box 513, eindhoven, the netherlands
+2fbk-irst, via sommarive 18, 38050 trento, italy
+abstract. process discovery techniques return process models that are either for-
+mal (precisely describing the possible behaviors) or informal (merely a “picture”
+not allowing for any form of formal reasoning). formal models are able to clas-
+sify traces (i.e., sequences of events) as ﬁtting or non-ﬁtting. most process min-
+ing approaches described in the literature produce such models. this is in stark
+contrast with the over 25 available commercial process mining tools that only
+discover informal process models that remain deliberately vague on the precise
+set of possible traces. there are two main reasons why vendors resort to such
+models: scalability andsimplicity . in this paper, we propose to combine the best
+of both worlds: discovering hybrid process models that have formal and informal
+elements. as a proof of concept we present a discovery technique based on hybrid
+petri nets . these models allow for formal reasoning, but also reveal information
+that cannot be captured in mainstream formal models. a novel discovery algo-
+rithm returning hybrid petri nets has been implemented in prom and has been
+applied to several real-life event logs. the results clearly demonstrate the ad-
+vantages of remaining “vague” when there is not enough “evidence” in the data
+or standard modeling constructs do not “ﬁt”. moreover, the approach is scalable
+enough to be incorporated in industrial-strength process mining tools.
+key words: process mining, process discovery, petri nets, bpm
+1 introduction
+the increased interest in process mining illustrates that business process management
+(bpm) is rapidly becoming more data-driven [1]. evidence-based bpm based on pro-
+cess mining helps to create a common ground for business process improvement and
+information systems development. the uptake of process mining is reﬂected by the
+growing number of commercial process mining tools available today. there are over
+25 commercial products supporting process mining (celonis, disco, minit, myinvenio,
+processgold, qpr, etc.). all support process discovery and can be used to improve
+compliance and performance problems. for example, without any modeling, it is possi-
+ble to learn process models clearly showing the main bottlenecks and deviating behav-
+iors.
+these commercial tools are based on variants of techniques like the heuristic miner
+[17] and the fuzzy miner [8] developed over a decade ago [1]. all return process models
+thatlack formal semantics and thus cannot be used as a classiﬁer for traces. classifying2 w. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini
+traces into ﬁtting (behavior allowed by the model) and non-ﬁtting (not possible accord-
+ing to the model) is however important for more advanced types of process mining. in-
+formal models (“boxes and arcs”) provide valuable insights, but cannot be used to draw
+reliable conclusions. therefore, most discovery algorithms described in the literature
+(e.g., the-algorithm [3], the region-based approaches [6, 15, 18], and the inductive
+mining approaches [11, 12, 13]) produce formal models (petri nets, transition systems,
+automata, process trees, etc.) having clear semantics.
+so why did vendors of commercial process mining tools opt for informal models?
+some of the main drivers for this choice include:
+–simplicity : formal models may be hard to understand. end-users need to be able
+to interpret process mining results: petri nets with smartly constructed places and
+bpmn with many gateways are quickly perceived as too complex.
+–vagueness : formal models act as binary classiﬁers: traces are ﬁtting or non-ﬁtting.
+for real-life processes this is often not so clear cut. the model capturing 80 percent
+of all traces may be simple and more valuable than the model that allows for all
+outliers and deviations seen in the event log. hence, “vagueness” may be desirable
+to show relationships that cannot be interpreted in a precise manner.
+–scalability : commercial process mining tools need to be able to handle logs with
+millions of events and still be used in an interactive manner. many of the more so-
+phisticated discovery algorithms producing formal models (e.g., region-based ap-
+proaches [6, 15, 18]) do not scale well.
+the state-of-the-art commercial products show that simplicity, vagueness and scalabil-
+ity can be combined effectively. obviously, vagueness and simplicity may also pose
+problems. people may not trust process mining results when a precise interpretation of
+the generated model is impossible. when an activity has multiple outgoing arcs, i.e.,
+multiple preceding activities, one would like to know whether these are concurrent or
+in a choice relation. which combinations of output arcs can be combined? showing fre-
+quencies on nodes (activities) and arcs may further add to the confusion when “numbers
+do not add up”.
+we propose hybrid process models as a way to combine the best of both worlds.
+such models show informal dependencies (like in commercial tools) that are deliber-
+ately vague and at the same time provide formal semantics for the parts that are clear-
+cut. whenever there is enough structure and evidence in the data, explicit routing con-
+structs are used. if dependencies are weak or too complex, then they are not left out, but
+depicted in an informal manner.
+we use hybrid petri nets , a new class for petri nets with informal annotations, as
+a concrete representation of hybrid process models. however, the ideas, concepts, and
+algorithms are generic and could also be used in the context of bpmn, uml activity
+diagrams, etc. our proposed discovery technique has two phases. first we discover a
+causal graph based on the event log. based on different (threshold) parameters we scan
+the event log for possible causalities. in the second phase we try to learn places based
+on explicit quality criteria. places added can be interpreted in a precise manner and have
+a guaranteed quality. causal relations that cannot or should not be expressed in terms
+of places are added as sure or unsure arcs. the resulting hybrid petri net can be used as
+a starting point for other types of process mining.learning hybrid process models from events 3
+the approach has been implemented in prom and has been tested on various event
+logs and processes. these applications of our approach show that hybrid process models
+are useful and combine the best of both worlds: simplicity, vagueness, and scalability
+can be combined with partly formal models that allow for reasoning and provide formal
+guarantees .
+the remainder is organized as follows. we ﬁrst present a running example (sect. 2)
+and some preliminaries (sect. 3). sect. 4 deﬁnes hybrid petri nets. the actual two-
+phase discovery approach is presented in sect. 5. sect. 6 describes the prom plug-
+ins developed to support the discovery of hybrid process models. sect. 7 evaluates the
+approach. sect. 8 discusses related work and sect. 9 concludes the paper.
+2 motivating example
+figure 1 illustrates the trade-offs using example data from an order handling process.
+all ﬁve models have been produced for the same event log containing 12,666 cases,
+80,609 events, and eight unique activities. each case has a corresponding trace, i.e., a
+sequence of events. models (a), (b), and (c) are expressed in terms of a petri net and
+have formal semantics. model (a) was created using the ilp miner with default settings;
+it is precise and each of the 12,666 cases perfectly ﬁts the model. however, model (a) is
+difﬁcult to read. for larger event logs, having more activities and infrequent paths, the
+ilp miner is not able to produce meaningful models (the approach becomes intractable
+and/or produces incomprehensible models). models (b) and (c) were created using the
+inductive miner (imf [12]) with different settings for the noise threshold (0.0 respec-
+tively 0.2). model (b) is underﬁtting, but able to replay all cases. model (c) focuses
+on the mainstream behavior only, but only 9,440 of the 12,666 cases ﬁt perfectly. in
+3,189 cases there are multiple reminders and in 37 cases the payment is done before
+sending the invoice. all other cases conform to model (c). models (d) and (e) were
+created using the commercial process mining tool disco (fluxicon) using different set-
+tings. these models are informal. model (d) shows only the most frequent paths and
+(a) precise and fitting process model discovered by the ilp miner
+(b) underfitting process model discovered by the inductive miner
+(c) non-fitting process model discovered by the inductive miner
+(d) disco model showing only 
+the most frequent paths(e) disco model also showing 
+the infrequent paths
+fig. 1. five process models discovered for an event log recorded for 12,666 orders (labels are not
+intended to be readable).4 w. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini
+model (e) shows all possible paths. for such informal models it is impossible to de-
+termine the exact nature of splits and joins. commercial tools have problems dealing
+with loops and concurrency. for example, for each of the 12,666 cases, activities make
+delivery andconﬁrm payment happened at most once, but not in a ﬁxed order. however,
+these concurrent activities are put into a loop in models (d) and (e). this problem is not
+speciﬁc for disco or this event log: all commercial tools suffer from this problem.
+we would like to combine the left-hand side and the right-hand side of figure 1 by
+using formal semantics when the behavior is clear and easy to express and resorting to
+informal annotations when things are blurry or inexact.
+3 preliminaries
+in this section we introduce basic concepts, including multisets, operations on se-
+quences, event logs and petri nets.
+b(a)is the set of all multisets over some set a. for some multiset x2b(a),x(a)
+denotes the number of times element a2aappears inx. some examples: x= [ ] ,
+y= [x;x;y ], andz= [x3;y2;z]are multisets over a=fx;y;zg.xis the empty
+multiset,yhas three elements ( y(x) = 2 ,y(y) = 1 , andy(z) = 0 ), andzhas six
+elements. note that the ordering of elements is irrelevant.
+=ha1;a2;:::;ani2adenotes a sequence over a.(i) =aidenotes thei-th
+element of the sequence. jj=nis the length of anddom() =f1;:::;jjgis the
+domain of.hiis the empty sequence, i.e., jhij= 0 anddom(hi) =;.12is the
+concatenation of two sequences.
+letabe a set and xaone of its subsets. x2a!xis a projec-
+tion function and is deﬁned recursively: hix=hiand for2aanda2a:
+(hai)x=xifa62xand(hai)x=haixifa2x. for example,
+ha;b;aifa;cg=ha;ai. projection can also be applied to multisets of sequences, e.g.,
+[ha;b;ai5;ha;d;ai5;ha;c;ei3]fa;cg= [ha;ai10;ha;ci3].
+starting point for process discovery is an event log where events are grouped into
+cases. each case is represented by a trace, e.g., h.;a;b;c;d;i.
+deﬁnition 1 (event log). anevent logl2b(a)is a non-empty multiset of traces
+over some activity set a. a trace2lis a sequence of activities. there is a special
+start activity .and a special end activity . we require thatf.;gaand each trace
+2lhas the structure =h.;a1;a2;:::;an;iandf.;g\fa1;a2;:::;ang=;.
+ulis the set of all event logs satisfying these requirements.
+an event log captures the observed behavior that is used to learn a process model.
+an example log is l1= [h.;a;b;c;d;i45;h.;a;c;b;d;i35;h.;a;e;d;i20]contain-
+ing 100 traces (jl1j= 100 ) and 580 events (p
+2l1jj= 580 ). in reality, each event
+has a timestamp and may have any number of additional attributes. for example, an
+event may refer to a customer, a product, the person executing the event, associated
+costs, etc. here we abstract from these notions and simply represent an event by its
+activity name.
+apetri net is a bipartite graph composed of places (represented by circles) and
+transitions (represented by squares).learning hybrid process models from events 5
+deﬁnition 2 (petri net). a petri net is a tuple n= (p;t;f )withpthe set of places,
+tthe set of transitions, p\t=;, andf(pt)[(tp)the ﬂow relation.
+transitions represent activities and places are added to model causal relations. x=
+fyj(y;x)2fgandx=fyj(x;y)2fgdeﬁne input and output sets of places and
+transitions. places can be used to causally connect transitions as is reﬂected by relation
+bf:(t1;t2)2bfift1andt2are connected through a place p, i.e.,p2t1andp2t2.
+deﬁnition 3 ( bf).letn= (p;t;f )be a petri net. bf=f(t1;t2)2ttj
+9p2pf(t1;p);(p;t2)gfgare all pairs of transitions connected through places.
+the state of a petri net, called marking , is a multiset of places indicating how many
+tokens each place contains. tokens are shown as block dots inside places.
+deﬁnition 4 (marking). letn= (p;t;f )be a petri net. a marking mis a multiset
+of places, i.e., m2b(p).
+a transition t2tisenabled in markingmof netn, denoted as (n;m )[ti, if
+each of its input places ( p2 t) contains at least one token. an enabled transition t
+may ﬁre, i.e., one token is removed from each of the input places ( p2 t) and one
+token is produced for each of the output places ( p2t).
+(n;m )[ti(n;m0)denotes that tis enabled in mand ﬁringtresults in marking
+m0. let=ht1;t2;:::;tni2tbe a sequence of transitions, sometimes referred to
+as atrace .(n;m )[i(n;m0)denotes that there is a set of markings m0;m1;:::;mn
+such thatm0=m,mn=m0, and(n;mi)[ti+1i(n;mi+1)for0i<n .
+asystem net has an initial and a ﬁnal marking. the behavior of a system net corre-
+sponds to the set of traces starting in the initial marking minitand ending in the ﬁnal
+markingmnal.
+deﬁnition 5 (system net behavior). a system net is a triplet sn= (n;m init;mnal)
+wheren= (p;t;f )is a petri net, minit2 b(p)is the initial marking, and
+mnal2b(p)is the ﬁnal marking. behav (sn) =fj(n;m init)[i(n;m nal)gis
+the set of traces possible according to the model.
+note that a system net classiﬁes traces into ﬁtting (2behav (sn)) and non-
+ﬁtting (62behav (sn)).
+4 hybrid petri nets
+aformal process model is able to make ﬁrm statements about the inclusion or exclusion
+of traces, e.g., trace h.;a;b;c;d;iﬁts the model or not. informal process models are
+unable to make such precise statements about traces. events logs only show example
+behavior: (1) logs are typically incomplete (e.g., the data only shows a fraction of all
+possible interleavings, combinations of choices, or unfoldings) and (2) logs may contain
+infrequent exceptional behavior where the model should abstract from. therefore, it is
+impossible to make conclusive decisions based on event logs. more observations may
+lead to a higher certainty and the desire to make a formal statement (e.g., “after athere6 w. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini
+type i  ?
+type ii  type iii  
+strong causality
+(“sure” )weak causality
+(“unsure” )formal
+(firm statements about 
+the inclusion or 
+exclusion of traces )informal
+(annotations that are 
+deliberately vague )
+fig. 2. the strength of a causality and the formality of a modeling construct are orthogonal.
+however, it makes less sense to express a weak causality in a formal manner.
+is a choice between bandc”). however, fewer observations and complex dependencies
+create the desire to remain “vague”. models (a), (b) and (c) in figure 1 have formal
+semantics as described in deﬁnition 5. (the initial and ﬁnal markings are deﬁned but
+not indicated explicitly: the source places are initially marked and the sink places are the
+only places marked in the ﬁnal markings.) models (d) and (e) in figure 1 are informal
+and therefore unable to classify traces into ﬁtting and non-ﬁtting.
+in essence process models describe causalities between activities. depending on
+the evidence in the data these causalities can be seen as stronger (“sure”) or weaker
+(“unsure”). the strength of a causal relation expresses the level of conﬁdence. a strong
+causality between two activities aandbsuggests that one is quite sure that activity a
+causes activity bto happen later in time. this does not mean that ais always followed
+byb. the occurrence of bmay depend on other factors, e.g., brequirescto happen
+concurrently or aonly increases the likelihood of b.
+the strength of a causality and the formality of a modeling construct are orthogonal
+as shown in figure 2. even when one is not sure, one can still use a formally speciﬁed
+modeling construct. moreover, both notions may be local, e.g., parts of the process
+model are more certain or modeled precisely whereas other parts are less clear and
+therefore kept vague.
+as figure 2 suggests it seems undesirable to express a weak causality using a formal
+construct. moreover, depending on the representational bias of the modeling notation,
+strong causalities may not be expressed easily. the modeling notation may not support
+concurrency, duplicate activities, unstructured models, long-term dependencies, or-
+joins, etc. attempts to express behavior incompatible with representational bias of the
+modeling notation in a formal model are doomed to fail. hence, things that cannot
+be expressed easily in an exact manner can only be captured using annotations that
+are deliberately vague and non-executable. instead, we aim to combine the best of
+both worlds, i.e., marrying the left-hand side and the right-hand side of figure 1 by
+combining both formal and informal notations.
+although the ideas are generic and also apply to other notations (bpmn, uml ac-
+tivity diagrams, etc.), we operationalize the notion of hybrid process models by deﬁning
+and using so-called hybrid petri nets . unlike conventional petri nets, we use different
+types of arcs to indicate the level of certainty .
+figure 3 shows an example of a hybrid petri net discovered based on the event log
+also used to create the models in figure 1. strong causalities are expressed throughlearning hybrid process models from events 7
+conventional places and arcs and sure arcs (arcs directly connecting transitions). weak
+causalities are expressed using unsure arcs (dashed arcs with a question mark). figure 2
+shows the three types of arcs.
+deﬁnition 6 (hybrid petri net). ahybrid petri net is a tuple hpn = (p;t;f 1;
+f2;f3)where (p;t;f 1)is a petri net, f2tt, andf3ttsuch that cf1,f2,
+andf3are pairwise disjoint. arcs of type i ( (p;t)2f1or(t;p)2f1) are the normal
+arcs connecting a place to a transition or vice versa. arcs of type ii ( (t1;t2)2f2)
+are arcs indicating a strong causality between two transitions (sure arcs). arcs of type
+iii ((t1;t2)2f3) are arcs indicating a weak causality between two transitions (unsure
+arcs).
+transitions, places, and normal ( type i ) arcs have formal semantics as deﬁned in
+sect. 3. again we deﬁne an initial and ﬁnal marking to reason about the set of traces
+possible. therefore, we deﬁne the notion of a hybrid system net .
+deﬁnition 7 (hybrid system net). ahybrid system net is a triplet hsn = (hpn;
+minit;mnal)where hpn = (p;t;f 1;f2;f3)is a hybrid petri net, minit2b(p)
+is the initial marking, and mnal2b(p)is the ﬁnal marking. uhsn is the set of all
+possible hybrid system nets. behav (hsn )is deﬁned as in deﬁnition 5 while ignoring
+the sure and unsure arcs (i.e., remove f2andf3).
+only normal ( type i ) arcs have formal semantics; the other two types of arcs are in-
+formal and do not include or exclude traces. recall that petri net without any places
+allows for any behavior and adding a place can only restrict behavior. a sure arc
+(t1;t2)2f2should be interpreted as a strong causal relationship that cannot be ex-
+pressed (easily) in terms of a place connecting t1andt2. an unsure arc (t1;t2)2f3is
+a suspected causal relationship that is too weak to justify a place connecting t1andt2.
+the role of sure and unsure arcs will become clearer when presenting the discovery
+technique in the next section. figure 3 also uses special symbols for the start and end
+activities (.and) as introduced in deﬁnition 1, but the semantics of hsn do not
+depend on this.
+start
+ send 
+invoice
+confirm 
+payment
+pay
+make 
+deliverysend 
+remindercancel 
+orderplace 
+order
+prepare 
+delivery?
+end?p1 p2 p3
+p4p5
+p6p7
+p8p9
+fig. 3. a hybrid system net with minit= [p1]andmnal= [p9]. this hybrid model was
+discovered using the approach presented in sect. 5.8 w. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini
+we would like to stress that only the places in a hybrid system net hsn provide for-
+mal semantics. behavioral quality measures such as ﬁtness and precision will be based
+solely on the places in hsn (see deﬁnition behav (hsn )). sure arcs ( f2) and unsure
+arcs (f3) carry important information but cannot be used for such quality measures.
+5 discovering hybrid process models
+we aim to discover hybrid process models. as a target format we have chosen hybrid
+system nets that have three types of arcs. we use a two-step approach . first, we discover
+acausal graph (sect. 5.1). based on the causalities identiﬁed, we generate candidate
+places. these places are subsequently evaluated using replay techniques (sect. 5.2).
+strong causalities that cannot be expressed in terms of places are added to the hybrid
+system net as sure arcs. moreover, the resulting hybrid model may also express weak
+causal relations as unsure arcs.
+5.1 discovering causal graphs
+a causal graph is a directed graph with activities as nodes. there is always a unique
+start activity ( .) and end activity ( ). there are two kinds of causal relations: strong
+andweak . these correspond to the two columns in figure 2.
+deﬁnition 8 (causal graph). acausal graph is a triplet g= (a;rs;rw)wherea
+is the set of activities including start and end activities (i.e., f.;ga),rsaa
+is the set of strong causal relations, rwaais the set of weak causal relations,
+andrs\rw=;(relations are disjoint). ugis the set of all causal graphs.
+figure 4 shows a causal graph derived from the event log also used to discover the
+models in figure 1. the dashed arcs with question marks correspond to weak causal
+relations. the other arcs correspond to strong causal relations.
+start
+ send 
+invoice
+confirm 
+payment
+pay
+make 
+deliverysend 
+remindercancel 
+orderplace 
+order
+prepare 
+delivery?
+end?
+fig. 4. a causal graph: nodes correspond to activities and arcs correspond to causal relations.learning hybrid process models from events 9
+deﬁnition 9 (causal graph discovery). a causal graph discovery function disc cg2
+ul!ugis a function that constructs a causal graph disc cg(l) = (a;rs;rw)for
+any event log l2ulovera.
+there are many algorithms possible to construct a causal graph from a log. as an ex-
+ample, we use a variant of the approach used by the heuristic miner [1, 17]. we tailored
+the approach to hybrid discovery (i.e., different types of arcs) while aiming for param-
+eters that are intuitive and can be used interactively (e.g., thresholds can be changed
+seamlessly while instantly showing the resulting graph). note that we clearly separate
+the identiﬁcation of causalities from the discovery of process logic (see sect. 5.2).
+deﬁnition 10 (log-based properties). letl2 ulbe an event log over aand
+fa;bga.
+–#(a;l) =p
+2ljfi2dom()j(i) =agjcounts the number of a’s in logl.
+–#(x;l) =p
+x2x#(x;l)counts the number of xaactivities in l.
+–#(a;b;l ) =p
+2ljfi2dom()nfjjgj(i) =a^(i+ 1) =bgjcounts
+the number of times ais directly followed by bin event log l.
+–#(;b;l) =p
+2ljfi2dom()nfjjgj(i+ 1) =bgjcounts the number of
+timesbis preceded by some activity.
+–#(a;;l) =p
+2ljfi2dom()nfjjgj(i) =agjcounts the number of times
+ais succeeded by some activity.
+–rel1(a;b;l ) =#(a;b;l ) + #(a;b;l )
+#(a;;l) + #(;b;l)counts the strength of relation (a;b)rel-
+ative to the split and join behavior of activities aandb.
+–rel2c(a;b;l ) =8
+><
+>:#(a;b;l ) #(b;a;l )
+#(a;b;l )+#(b;a;l )+cif#(a;b;l ) #(b;a;l )>0
+#(a;b;l )
+#(a;b;l )+cifa=b
+0 otherwise
+counts the strength of relation (a;b)taking into account concurrency and loops
+using parameter c2r+(defaultc= 1).
+–causc;w(a;b;l ) =wrel1(a;b;l ) + (1 w)rel2c(a;b;l )takes the weighted
+average of both relations where w2[0;1]is a parameter indicating the relative
+importance of the ﬁrst relation. if w= 1, we only use rel1(a;b;l ). ifw= 0, we
+only use rel2c(a;b;l ). ifw= 0:5, then both have an equal weight.
+rel1(a;b;l ),rel2c(a;b;l ), and causc;w(a;b;l )all produce values between 0
+(weak) and 1 (strong). using the properties in deﬁnition 10, we deﬁne a concrete func-
+tiondisc cgto create causal graphs. all activities that occur at least tfreqtimes in the
+event log are included as nodes. the strength of relations between remaining activities
+(based on causc;w) are used to infer causal relations. trsandtrware thresholds for
+strong respectively weak causal relations. parameter wdetermines the relative impor-
+tance of rel1 andrel2c. parametercis typically set to 1.
+deﬁnition 11 (concrete causal graph discovery technique). letl2 ulbe an
+event log over aand lettfreq2i n+,c2r+,w2[0;1],trs2[0;1],trw2
+[0;1]be parameters such that trstrw. the corresponding causal graph is g=
+disc cg(l) = (a0;rs;rw)where10 w. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini
+–a0=fa2aj#(a;l)tfreqg[f.;gis the set of activities that meet the
+threshold (the start and end activities are always included).
+–rs=f(a;b)2a0a0jcausc;w(a;b;la0)trsgis the set of strong causal
+relations.
+–rw=f(a;b)2a0a0jtrs>causc;w(a;b;la0)trwgis the set of weak
+causal relations.
+figure 4 shows a causal graph constructed using parameters tfreq= 1000 ,c= 1,
+w= 0:2,trs= 0:8, andtrw= 0:75.
+5.2 discovering hybrid system nets
+in the second step of the approach we use the causal graph to create a hybrid system net
+(that turns strong causalities into formal constraints if possible).
+deﬁnition 12 (hybrid system net discovery). a hybrid system net discovery function
+disc hsn2(ulug)!u hsn is a function that for any event log land causal graph
+gdiscovers a hybrid system net disc hsn(l;g)2uhsn.
+just like there are many algorithms possible to create a causal graph, there are also
+multiple ways to construct a hybrid system net from an event log and causal graph. the
+minimal consistency requirements can be deﬁned as follows.
+deﬁnition 13 (consistent). letl2ulbe an event log, let g= (a;rs;rw)2ug
+be a causal graph, and let hsn = (hpn;minit;mnal)2 u hsn with hpn =
+(p;t;f 1;f2;f3)be a hybrid system net. l,g, and snareconsistent if and only if:
+t=as
+2lfa2g,fp.;pgp,f1\((fp.;pgt)[(tfp.;pg)) =
+f(p.;.);(;p)g,minit= [p.]andmnal= [p], for allp2pnfp.;pg:p6=;
+andp6=;,rs=cf1[f2,cf1\f2=;, andrw=f3.
+an event log l, causal graph g, and hybrid system net hsn are consistent if (1)
+landgrefer to the same set of activities all appearing in the event log, (2) there is
+a source place p.marked in the initial place and enabling start activity ., (3) there is
+a sink place pmarked in the ﬁnal marking and connected to end activity , (4) all
+other places connect activities, (5) there is a one-to-one correspondence between strong
+causal relations ( rs) and connections through places ( cf1) or sure arcs ( f2), and (6)
+there is a one-to-one correspondence between weak causal relations ( rw) and unsure
+arcs (f3).
+consider two activities a1;a22athat are frequent enough to be included in the
+model. these can be related in three different ways: (a1;a2)2cf1if there is a place
+connectinga1anda2,(a1;a2)2f2if there is no place connecting a1anda2but there
+is a strong causal relation between a1anda2(represented by a sure arc), (a1;a2)2f3
+if there is a weak causal relation between a1anda2(represented by an unsure arc).
+any discovery function disc hsn2(ulug)!u hsn should ensure consistency.
+in fact, deﬁnition 13 provides hints on how to discover a hybrid system net.
+assume a place p= (i;o)with input transitions p=iand output transitions
+p=ois added.rs=cf1[f2implies that cf1rs. hence,iors, i.e.,learning hybrid process models from events 11
+placep= (i;o)can only connect transitions having strong causal relations. moreover,
+iandoshould not be empty. these observations based on deﬁnition 13 lead to the
+following deﬁnition of candidate places.
+deﬁnition 14 (candidate places). letg= (a;rs;rw)2ugbe a causal graph.
+the candidate places based on gare:candidates (g) =f(i;o)ji6=; ^o6=
+;^iorsg.
+given a candidate place p= (i;o)we can check whether it allows for a particular
+trace.
+deﬁnition 15 (replayable trace). letp= (i;o)be a place with input set p=i
+and output set p=o. a trace=ha1;a2;:::;ani2ais perfectly replayable with
+respect to place pif and only if
+– for allk2f1;2;:::;ng:jf1i<kjai2igjjf 1ikjai2ogj(place
+pcannot “go negative” while replaying the trace) and
+–jf1injai2igj=jf1injai2ogj(placepis empty at end).
+we writex(p;)ifis perfectly replayable with respect to place p= (i;o).
+act(p;) =9a2a2(i[o)denotes whether place p= (i;o)has been activated,
+i.e., a token was consumed or produced for it in .
+note thatx(p;)ifis a trace of the system net having only one place p. to
+evaluate candidate places one can deﬁne different scores.
+deﬁnition 16 (candidate place scores). letl2ulbe an event log. for any candi-
+date placep= (i;o)with input setp=iand output set p=o, we deﬁne the
+following scores:
+–score freq(p;l) =j[2ljx(p;)]j
+jljis the fraction of ﬁtting traces,
+–score rel(p;l) =j[2ljx(p;)^act(p;)]j
+j[2ljact(p;)]jis the fraction of ﬁtting traces that have
+been activated, and
+–score glob(p;l) = 1 j#(i;l) #(o;l)j
+max(#(i;l);#(o;l))is a global score only looking at the
+aggregate frequencies of activities.
+to explain the three scoring functions consider again l1= [h.;a;b;c;d;i45;
+h.;a;c;b;d;i35;h.;a;e;d;i20]. let us consider place p1= (i1;o1)withi1=fag
+ando2=fbg.score freq(p1;l1) =score rel(p1;l1) =80=100= 0:8andscore glob(p1;
+l1) = 1 j100 80j=max(100;80)= 0:8. for placep2= (i2;o2)withi2=fagand
+o2=fb;eg:score freq(p2;l1) =score rel(p2;l1) =score glob(p2;l1) = 1 . hence,
+all three scoring functions agree and show that the second place is a better candidate.
+note that if the candidate place pdoes not inhibit any of the traces in the log, then all
+scores are 1 by deﬁnition.
+let us now consider event log l2= [hc;di1000;ha;bi100;hb;ai10;ha;a;a;a;:::
+;ai](with the last trace containing 1000 a’s) and candidate place p1= (i1;o1)with
+i1=fagando2=fbg.score freq(p1;l2) =1100=1111= 0:99,score rel(p1;l2) =
+100=111= 0:90,score glob(p1;l2) = 1 j1110 110j=max(1110;110)= 0:099. now the val-
+ues are very different. interpreting the scores reveals that score freqis too optimistic. ba-
+sically one can add any place connected to low frequent activities, without substantially12 w. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini
+lowering the score freqscore. hence, score relis preferable over score freq.score globcan
+be computed very efﬁciently because traces do not need to be replayed. it can be used
+to quickly prune the set of candidate places, but the last example shows that one needs
+to be careful when traces are unbalanced (i.e., ioroactivities occur many times in a
+few traces).
+based on the above discussion we use scoring function score relin conjunction with
+a thresholdtreplay . the causal graph, a set of candidate places, and this threshold can
+be used to discover a hybrid system net.
+deﬁnition 17 (concrete discovery technique). letl2 ulbe an event log and
+letg= (a;rs;rw)2 ugbe a causal graph. treplay is the threshold for the
+fraction of ﬁtting traces that have been activated. the discovered hybrid system net
+disc hsn(l;g) = ( hpn;minit;mnal)with hpn = (p;t;f 1;f2;f3)is con-
+structed as follows
+–q=fp2candidates (g)jscore rel(p;la)treplaygis the set of internal
+places (all candidate places meeting the threshold),
+–p=fp.;pg[qis the set of places ( fp.;pg\q=;),
+–t=ais the set of transitions,
+–f1=f(p.;.);(;p)g[f(t;(i;o))2tqjt2ig[f((i;o);t)2qtj
+t2ogis the set of normal arcs,
+–f2=rsncf1is the set of sure arcs, and
+–f3=rwis the set of unsure arcs.
+it is easy to check that this concrete disc hsnfunction indeed ensures consistency.
+the construction of the discovered hybrid system net is guided by the causal graph.
+we can construct hybrid system net disc hsn(l;disc cg(l))for any event log lusing
+parameterstfreq,c,w,trs,trw, andtreplay . for example, the hybrid model shown in
+figure 3 was discovered using tfreq= 1000 ,c= 1,w= 0:2,trs= 0:8,trw= 0:75,
+andtreplay = 0:9. our discovery approach is highly conﬁgurable and also provides
+formal guarantees (e.g., treplay = 1ensures perfect ﬁtness). when there is not enough
+structure or evidence in the data, the approach is not coerced to return a model that
+suggests a level of conﬁdence that is not justiﬁed.
+6 implementation
+two novel prom plug-ins have been created to support the approach described in this
+paper.1the causal graph miner plug-in is used to create a causal graph using the
+approach described in deﬁnition 11. the user can control the parameters w,tfreq,trs,
+andtrwthrough sliders and directly see the effects in the resulting graph. the hybrid
+petri net miner plug-in implements deﬁnition 17 and takes as input an event log and
+a causal graph. the plug-in returns a discovered hybrid system net. only places that
+meet thetreplay threshold are added. the replay approach has been optimized to stop
+replaying a trace when it does not ﬁt.
+1install prom and the package hybridminer fromhttp://www.promtools.org .learning hybrid process models from events 13
+fuzzy causal 
+graphfuzzy petri 
+netunsure arcsure arc sliders
+fig. 5. screenshots of the causal graph miner (left) and the hybrid petri net miner (right)
+analyzing the running example with parameter settings tfreq= 1000 ,c= 1,w= 0:2,trs= 0:8,
+trw= 0:75, andtreplay = 0:9.
+figure 5 shows the two plug-ins in action for the event log containing 12,666 cases
+and 80,609 events. the results returned correspond to the causal graph depicted in fig-
+ure 4 and the hybrid system net depicted in figure 3. both were computed in less than
+a second on a standard laptop. activity send reminder may occur repeatedly (or not)
+after sending the invoice but before payment or cancellation. however, payments may
+also occur before sending the invoice. the hybrid system net in figure 5 (also see fig-
+ure 3 which is better readable) clearly differentiates between (1) the behavior which is
+dominant and clear and (2) the more vague behavior that cannot be captured formally
+or is not supported by enough “evidence”. the example illustrates the scalability of the
+approach while supporting simplicity and deliberate vagueness.
+7 evaluation
+table 1. six data sets used.
+log cases events activities
+bpi-2011 1143 150291 624
+bpi-2012 13087 164506 23
+bpi-2014 46616 466737 39
+bpi-2015 1199 52217 398
+bpi-2016 557 286075 312
+bpi-2017 31509 475306 24process discovery techniques can be evaluated us-
+ing a range of indicators referring to ﬁtness (abil-
+ity to replay the observed behavior), precision
+(avoiding underﬁtting), generalization (avoiding
+overﬁtting), and simplicity (is the model easy to
+understand) [1]. existing indicators are less suit-
+able for the evaluation of hybrid models explic-
+itly capturing vagueness. criteria involving ﬁt-
+ness, precision, and generalization can also not be measured for the informal models
+produced by existing commercial process mining tools. when computing traditional
+quality measures for hybrid system nets we basically ignore the sure and unsure arcs.
+we applied our approach to a large number of real-life events logs and analyzed the
+effects of the different parameters ( tfreq,c,w,trs,trw, andtreplay ) on the resulting14 w. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini
+table 2. parameters used to create the base models and their characteristics.
+logtfreqtrstrww t replayjtjjpjjcf1jjf2jjf3jfitness precision time (ms)
+bpi-2011 343 0.81 0.80 0.10 0.80 38 6 4 200 6 0.84 0.04 11772
+bpi-2012 3926 0.90 0.89 0.10 0.80 14 8 7 20 1 0.90 0.26 12414
+bpi-2014 13985 0.90 0.90 0.10 0.80 10 5 3 13 0 0.93 0.54 21233
+bpi-2015 360 0.45 0.40 0.50 0.80 59 26 24 145 75 0.74 0.05 7055
+bpi-2016 445 0.50 0.50 0.10 0.80 12 2 0 31 0 0.83 0.10 31428
+bpi-2017 9453 0.51 0.50 0.50 0.80 22 8 7 36 12 0.95 0.12 24772
+models. in this section, we report on our ﬁndings using six data sets taken from the
+well-known bpi challenges [16].2
+table 1 shows the basic characteristics of the six event logs used: bpi-20xx refers
+to the year of the corresponding bpi challenge [16] and the number of cases, events, and
+unique activities (event classes) are shown. for bpi-2011 ,bpi-2012 , and bpi-2017 we
+used the full data set. for bpi-2014 we used the event log for incidents, for bpi-2015
+we used the data of the ﬁrst municipality, and for bpi-2016 we used the event log with
+click data. these selections were made to focus on a particular process or organization.
+we ﬁrst selected initial parameters for each of the six event logs in table 1 to create
+six “reasonable” base models. to create the base models we interactively set the thresh-
+olds in such a way that the underlying graph is connected. treplay was set in such way
+that a reasonable number of places remained. table 2 shows the settings used and some
+of the characteristics of the resulting hybrid process models.
+obviously different parameter settings lead to different models. for example, if
+treplay is set to 1, then (by deﬁnition) the ﬁtness will be 1. similarly, the number of
+unsure arcs is directly affected by trw. iftrw=trs, then (by deﬁnition) there will be
+no unsure arcs. column jtjshows the number of retained activities. columns jpjand
+jcf1jprovide insights in the dominant and clear behavior captured in terms of normal
+arcs. columnsjf2jandjf3jindicate the number of sure and unsure arcs. these num-
+bers give insights in the complexity of the models (simplicity dimension). fitness and
+precision are computed using the techniques from [4] and [5] while ignoring the sure
+and unsure arcs (i.e., only considering the normal places and arcs).
+the ﬁtness values in table 2 are as expected. it is possible to improve ﬁtness at the
+cost of having fewer places. the precision values in table 2 vary widely. precision is
+very low for bpi-2011 andbpi-2015 . however, for these models there are many sure
+arcs showing the added value of our hybrid approach. things that cannot be expressed in
+terms of reasonable places ( treplay = 0:8) can still be expressed. traditional approaches
+would be forced to accept places that have a lower quality or ignore the causalities ob-
+served. for example, the inductive miner would generate underﬁtting models or models
+focusing on the mainstream behavior only.
+the computation times (last column in table 2) are in milliseconds. clearly, the
+size of the event log and computation time positively correlate. moreover, the fewer
+candidate places the faster the second step is performed. these numbers show that the
+approach is already quite fast compared to other approaches returning a formal model
+2the reader is invited to redo the experiments using the latest version of prom , the hybrid-
+miner package ( promtools.org ), and the publicly available data sets used here [16].learning hybrid process models from events 15
+(all models are computed in less than 25 seconds). implementation-wise there is ample
+room for improvement, showing that the approach itself is highly scalable.
+for each of the six event logs, we used the baseline values for w,trs,trw,treplay ,
+andtfreq(table 2) as a starting point. (we ﬁxed the value of cto its default value:
+c= 1.) next, we varied some of the key parameters one-by-one while keeping the
+baseline values for the other parameters ﬁxed: treplay2 f0:7;0:8;0:9;1:0g,w2
+f0:0;0:25;0:5;0:75;1:0g,trs2 f0:5;0:6;0:7;0:8;0:9g, andtrw2 f0:5;0:6;0:7;
+0:8;0:9g(such thattrstrw). these results are discussed in detail in a technical
+report [2]. given the limited space, we only summarize the main ﬁndings here.
+– increasing the value of treplay improves ﬁtness of the model because places that are
+not perfectly ﬁtting are removed. the precision of the model typically decreases
+whentreplay goes up. moreover, the removal of places leads to an increase in sure
+arcs.
+– increasing the value of whas a marginal effect on ﬁtness and precision. for some
+of the event logs, precision is better for lower values of w(i.e., more weight is given
+torel2c(a;b;l )).
+– increasing the value of trsleads to fewer connections through places and sure arcs.
+this can only improve ﬁtness. however, the effect is moderate and heavily depends
+ontreplay . precision tends to go down when trsgoes up.
+– increasing the value of trw, by deﬁnition, has no effect on precision and ﬁtness
+and only affects the number of unsure arcs.
+in summary, the discovery approach works in a predictable manner. using the param-
+eters the analyst can inﬂuence the characteristics of the discovered model in a fast and
+reliable manner. it is possible to express “vagueness” in terms of sure and unsure arcs.
+if there is not enough evidence in the data to justify the addition of many “good” places,
+then the resulting model will have a low precision. fitness can be controlled directly by
+treplay . we refer to the technical report for detailed experimental results [2], but ac-
+knowledge that additional evaluations are needed (involving new metrics and groups of
+users).
+8 related work
+the work reported in this paper was inspired by the work of herrmann et al. [9, 10]
+who argue that modeling “requires the representation of those parts of knowledge which
+cannot be stated deﬁnitely and have to be modeled vaguely”. they propose annotations
+to make vagueness explicit. in [9, 10] the goal is to model vagueness, but we aim to
+automatically discover hybrid models supporting both vagueness and formal semantics.
+hybrid process models are related to the partial models considered in software en-
+gineering [7, 14]. these partial models can be completed into formal models and do not
+consider data-driven uncertainty. in fact, these partial models are closer to conﬁgurable
+process models representing sets of concrete models
+in literature one can ﬁnd a range of process discovery approaches that produce for-
+mal models [1]. the -algorithm [3] and its variants produce a petri net. approaches
+based on state-based regions [15] and language-based regions [6, 18] also discover petri16 w. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini
+nets. the more recently developed inductive mining approaches produce process trees
+that can be easily converted to petri nets or similar [11, 12, 13].
+commercial process mining tools typically produce informal models. these are
+often based on the ﬁrst phases of the heuristic miner [17] (dependency graph) or the
+fuzzy miner [8] (not allowing for any form of formal reasoning).
+it is impossible to give a complete overview of all discovery approaches here. how-
+ever,as far as we know there exist on other discovery approaches that return hybrid
+models having both formal and informal elements.
+9 conclusion
+in this paper we advocated the use of hybrid models to combine the best of two worlds:
+commercial tools producing informal models and discovery approaches providing for-
+mal guarantees. we provided a concrete realization of our hybrid discovery approach
+using hybrid petri nets . the ideas are not limited to petri nets and could be applied
+to other types of process models (e.g., bpmn models with explicit gateways for the
+clear and dominant behavior and additional arcs to capture complex or less dominant
+behavior). unlike existing approaches there is no need to straightjacket behavior into a
+formal model that suggests a level of conﬁdence that is not justiﬁed. the explicit rep-
+resentation of vagueness and uncertainty in hybrid process models is analogous to the
+use of conﬁdence intervals and box-and-whisker diagrams in descriptive statistics.
+the approach has been fully implemented and tested on numerous real-life event
+logs. the results are very promising, but there are still many open questions. in fact,
+the paper should be seen as the starting point for a new branch of research in bpm and
+process mining. to evaluate differences between informal, formal, and hybrid mod-
+els from a user perspective, we need new evaluation criteria taking understandability
+and perceived complexity into account. future work will also include “hybrid bpmn
+and uml activity diagrams” focusing on different model constructs (gateways, swim-
+lanes, artifacts, etc.). existing techniques (also supported by prom ) can already be used
+to map compliance and performance indicators onto causalities expressed in terms of
+explicit places. we would like to also provide approximative compliance and perfor-
+mance indicators for sure and unsure arcs. note that commercial tools show delays and
+frequencies on arcs, but these indicators may be very misleading as demonstrated in
+sect. 11.4.2 of [1]. finally, we would like to improve performance. the approach has
+already a good performance. moreover, there are several ways to further speed-up anal-
+ysis (e.g., pruning using score globor user-deﬁned preferences). moreover, computation
+can be distributed in a straightforward manner (e.g., using mapreduce).
+references
+1. w.m.p. van der aalst. process mining: data science in action . springer-verlag, berlin,
+2016.
+2. w.m.p. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini. learning
+hybrid process models from events: process discovery without faking conﬁdence (ex-
+perimental results). arxiv e-prints 1703.06125 ,arxiv.org/abs/1703.06125 , 2017.learning hybrid process models from events 17
+3. w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. workﬂow mining: discovering
+process models from event logs. ieee transactions on knowledge and data engineering ,
+16(9):1128–1142, 2004.
+4. a. adriansyah. aligning observed and modeled behavior . phd thesis, eindhoven university
+of technology, april 2014.
+5. a. adriansyah, j. munoz-gama, j. carmona, b.f. van dongen, and w.m.p. van der aalst.
+measuring precision of modeled behavior. information systems and e-business manage-
+ment , 13(1):37–67, 2015.
+6. r. bergenthum, j. desel, r. lorenz, and s. mauser. process mining based on regions of
+languages. in g. alonso, p. dadam, and m. rosemann, editors, international conference
+on business process management (bpm 2007) , volume 4714 of lecture notes in computer
+science , pages 375–383. springer-verlag, berlin, 2007.
+7. m. famelis, r. salay, and m. chechik. partial models: towards modeling and reasoning
+with uncertainty. in international conference on software engineering (icse 2012) , pages
+573–583. ieee computer society, 2012.
+8. c.w. g ¨unther and w.m.p. van der aalst. fuzzy mining: adaptive process simpliﬁcation
+based on multi-perspective metrics. in g. alonso, p. dadam, and m. rosemann, editors,
+international conference on business process management (bpm 2007) , volume 4714 of
+lecture notes in computer science , pages 328–343. springer-verlag, berlin, 2007.
+9. t. herrmann, m. hoffmann, k.u. loser, and k. moysich. semistructured models are sur-
+prisingly useful for user-centered design. in g. de michelis, a. giboin, l. karsenty, and
+r. dieng, editors, designing cooperative systems (coop 2000) , pages 159–174. ios press,
+amsterdam, 2000.
+10. t. herrmann and k.u. loser. vagueness in models of socio-technical systems. behaviour
+and information technology , 18(5):313–323, 1999.
+11. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-structured process
+models from event logs: a constructive approach. in j.m. colom and j. desel, editors,
+applications and theory of petri nets 2013 , volume 7927 of lecture notes in computer
+science , pages 311–329. springer-verlag, berlin, 2013.
+12. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-structured pro-
+cess models from event logs containing infrequent behaviour. in n. lohmann, m. song,
+and p. wohed, editors, business process management workshops, international workshop
+on business process intelligence (bpi 2013) , volume 171 of lecture notes in business in-
+formation processing , pages 66–78. springer-verlag, berlin, 2014.
+13. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. scalable process discov-
+ery and conformance checking. software and systems modeling , pages 1–33, 2016.
+doi:10.1007/s10270-016-0545-x.
+14. r. salay, m. chechik, j. horkoff, and a. di sandro. managing requirements uncertainty
+with partial models. requirements engineering , 18(2):107–128, 2013.
+15. m. sole and j. carmona. process mining from a basis of regions. in j. lilius and
+w. penczek, editors, applications and theory of petri nets 2010 , volume 6128 of lecture
+notes in computer science , pages 226–245. springer-verlag, berlin, 2010.
+16. b.f. van dongen. bpi challenges (2011-2017), real life event logs collection, data.
+4tu.nl/repository/collection:event_logs , 2017.
+17. a.j.m.m. weijters and w.m.p. van der aalst. rediscovering workﬂow models from event-
+based data using little thumb. integrated computer-aided engineering , 10(2):151–162,
+2003.
+18. j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, and a. serebrenik. process dis-
+covery using integer linear programming. fundamenta informaticae , 94:387–412, 2010.

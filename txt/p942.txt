@@ -1,0 +1,1147 @@
+efficient event correlation over distributed systems
+cheng, l.; van dongen, b.f.; van der aalst, w.m.p.
+published in:
+proceedings - 2017 17th ieee/acm international symposium on cluster, cloud and grid computing, ccgrid
+2017
+doi:
+10.1109/ccgrid.2017.94
+published: 10/07/2017
+document version
+publisher’s pdf, also known as version of record (includes final page, issue and volume numbers)
+please check the document version of this publication:
+• a submitted manuscript is the author's version of the article upon submission and before peer-review. there can be important differences
+between the submitted version and the official published version of record. people interested in the research are advised to contact the
+author for the final version of the publication, or visit the doi to the publisher's website.
+• the final author version and the galley proof are versions of the publication after peer review.
+• the final published version features the final layout of the paper including the volume, issue and page numbers.
+link to publication
+citation for published version (apa):
+cheng, l., van dongen, b. f., & van der aalst, w. m. p. (2017). efficient event correlation over distributed
+systems. in proceedings - 2017 17th ieee/acm international symposium on cluster, cloud and grid
+computing, ccgrid 2017 (pp. 1-10). [7973683] piscataway: institute of electrical and electronics engineers
+(ieee). doi: 10.1109/ccgrid.2017.94
+general rights
+copyright and moral rights for the publications made accessible in the public portal are retained by the authors and/or other copyright owners
+and it is a condition of accessing publications that users recognise and abide by the legal requirements associated with these rights.
+            • users may download and print one copy of any publication from the public portal for the purpose of private study or research.
+            • you may not further distribute the material or use it for any profit-making activity or commercial gain
+            • you may freely distribute the url identifying the publication in the public portal ?
+take down policy
+if you believe that this document breaches copyright please contact us providing details, and we will remove access to the work immediately
+and investigate your claim.
+download date: 14. jan. 2018efﬁcient event correlation over distributed systems
+long cheng, boudewijn f. van dongen and wil m.p . van der aalst
+department mathematics and computer science
+eindhoven university of technology, the netherlands
+l.cheng@tue.nl b.f.v.dongen@tue.nl w.m.p .v.d.aalst@tue.nl
+abstract —event correlation is a cornerstone for process dis-
+covery over event logs crossing multiple data sources. the
+computed correlation rules and process instances will greatly
+help us to unleash the power of process mining. however,
+exploring all possible event correlations over a log could be
+time consuming, especially when the log is large. state-of-the-
+art methods based on mapreduce designed to handle this chal-
+lenge have offered signiﬁcant performance improvements over
+standalone implementations. however, all existing techniques are
+still based on a conventional generating-and-pruning scheme.
+therefore, event partitioning across multiple machines is often
+inefﬁcient. in this paper, following the principle of ﬁltering-and-
+veriﬁcation, we propose a new algorithm, called rf-grap, which
+provides a more efﬁcient correlation over distributed systems.
+we present the detailed implementation of our approach and
+conduct a quantitative evaluation using the spark platform.
+experimental results demonstrate that the proposed method is
+indeed efﬁcient. compared to the state-of-the-art, we are able
+to achieve signiﬁcant performance speedups with obviously less
+network communication.
+keywords -event correlation; process mining; service comput-
+ing; data partitioning; big data; data-intensive computing
+i. i ntroduction
+modern it systems collect and store large mounts of event
+data. for instance, erp systems log business transaction
+events, and high-tech systems such as x-ray machines record
+software and hardware events [1]. such “historical event data”
+can be used to extract non-trivial knowledge and interesting
+insights using current mining techniques [2], [3]. as one of
+the key tasks in such scenarios, event correlation , has received
+notable attention from researchers and practitioners in various
+domains.
+a typical example is the domain of process mining [3],
+which includes three main types of analysis. process discovery
+is concerned with automatically extracting a process model
+from an event log; conformance checking measures how well
+the behaviour recorded in an event log ﬁts a given process
+model and vice versa; and process enhancement focuses
+improving an existing model using information about the
+actual process recorded in an event log [4]. after correlating
+events, one is then able to unleash the power of process
+mining, i.e., discover process models providing novel insights,
+check compliance with respect to some normative model,
+and analyze the bottlenecks and other performance hazards
+in operational processes.
+event correlation mainly comprises the operation of dis-
+covering a set of correlation rules and on that basis to group
+process events into process instances [5]. to illustrate this, anexample of a simpliﬁed log is shown in table i, in which there
+are four events and each with four attributes1. assume that we
+have worked out a correlation rule ψa1,a1(i.e., events having
+the same value on the attribute a1) from the log already,
+then we will be able to get several process instances such
+as/angbracketlefte1,e2/angbracketright,/angbracketlefte3/angbracketrightand/angbracketlefte4/angbracketrightvery easily. we will give the details
+of this processing in section ii.
+table i: an example of a simpliﬁed log
+event a1a2a3a4a5
+e1c2c1c2c5c6
+e2c2c2c4c4c6
+e3c1c1c2c5c7
+e4c3c2c4c4c6
+nowadays, event logs recorded for processes executed in
+highly variable and heterogeneous contexts become common
+in modern information systems. this makes discovering cor-
+relation rules and forming process instances in the context
+of an overall business process very hard [5]. the reason is
+that events collected from multiple data sources could lack
+structures and contexts. in fact, correlating events is also
+computationally expensive, as it requires the exploration of
+a huge space of possible correlation conditions among the
+attributes of different event types [6]. this means that an
+efﬁcient execution of event correlations will be challenging
+and also desirable in the presence of large logs. in fact, we
+can all witness that datasets containing event data are growing
+in size [3].
+signiﬁcant progress has been made to realize high per-
+formance event correlation systems. for example, [6] uses
+database queries to compute all the correlated event pairs for
+all the potential correlation rules and then prunes the non-
+interesting ones by applying non-interestingness criteria. the
+approach has been shown to be very efﬁcient as demonstrated
+by the experimental results reported in [6]. as the amount
+of event log data continues to scale, the method will be not
+suitable for process entire data sets on a single machine,
+due to the hardware limitations (e.g., cpu and memory).
+to handle this issue, state-of-the-art work research [5] uses
+a mapreduce-based method for event correlations over dis-
+tributed platforms. the evaluations presented in [5] have
+shown that the approach can offer signiﬁcant performance
+improvements over the implementation of [6]. nevertheless,
+1to simplify our presentation, we do not consider the attribute a5(gray)
+in the log for all of our examples, unless otherwise speciﬁed.
+2017 17th ieee/acm international symposium on cluster, cloud and grid computing
+978-1-5090-6611-7/17 $31.00 © 2017 ieee
+doi 10.1109/ccgrid.2017.941
+2017 17th ieee/acm international symposium on cluster, cloud and grid computing
+978-1-5090-6611-7/17 $31.00 © 2017 ieee
+doi 10.1109/ccgrid.2017.941
+the proposed technique [5] is still based on a conventional
+generating-and-pruning scheme. in this case, the number of
+generated candidate correlation rules will be large, and as a
+result, the partitioning of log events across multiple machines
+will be inefﬁcient, in terms of time cost on both computation
+and network communication.
+in this work, following the ﬁltering-and-veriﬁcation prin-
+ciple, we propose a new approach, called rf-grap (rule
+filtering and gra phpartitioning), which aims at a more efﬁ-
+cient event correlation using distributed platforms. we provide
+the detailed design and conducted a performance evaluation
+of our method. the main contributions of this paper can be
+summarized as follows:
+•we introduce the state-of-the-art event correlation ap-
+proach and analyze its possible performance issues in
+processing large event logs over distributed systems.
+•we adopt the principle of ﬁltering-and-veriﬁcation for
+efﬁcient correlation analytics over large logs, by incorpo-
+rating light-weight ﬁlter units into candidate correlation
+rules, which can be utilized to prune large numbers of
+non-interesting rules before veriﬁcation.
+•to further improve our performance, in the veriﬁcation
+phase, we model existing correlation rules as a graph and
+introduce a graph partitioning approach to decompose
+the potentially correlated events into chunks by exploring
+efﬁcient data locality assignment.
+•we describe the implementation of our approach and
+report on experiments using spark [7]. the results
+demonstrate that we can achieve signiﬁcant performance
+improvements over the state-of-the-art method in [5].
+for example, for a log with 1 million events and 38
+attributes, our algorithm performs 4.5 ×faster with 43 ×
+less network trafﬁc.
+the remainder of this paper is organized as follows. in
+section ii, we introduce preliminaries including the state-of-
+the-art techniques on event correlation. we present the detailed
+design and implementation of our approach in section iii. we
+report on the evaluation of our approach in section iv. we
+discuss related work in section v and summarize our ﬁndings
+in section vi.
+ii. preliminaries
+in this section, we introduce the preliminaries of event
+correlations and also discuss possible performance issues that
+current approaches suffer from.
+a. event correlations
+in this work, we build on the standard process mining
+notations as deﬁned in [5], [6].
+deﬁnition 2.1: [6] a process event log is a set of events
+l={e1,e2,...,el}, where each event eis represented by
+a tupleei∈a1×a2×...×ak, and attributes a1,...,ak
+represent the union of all the attributes contained in all events.
+an event typically contains only a subset of these attributes
+and will therefore have many of its attributes undeﬁned, which
+will be marked with the value null .for example, the event log in table i has four events and
+four attributes. for an event e∈l , we denote the value of the
+attributeaiin the event ebye.aiin the following.
+deﬁnition 2.2: [5], [6] a deﬁned correlation condition (or
+rule) , is denoted by ψ(ex.ai,ey.aj), over attributes aiand
+ajof respectively the two events exandey. if the condition
+ψ(ex.ai,ey.aj)returns true then we say that exandeyare
+correlated through the attributes aiandaj.
+there are two kinds of correlation conditions: atomic cor-
+relation and multiple correlation conditions (e.g., conjunctive
+conditions and disjunctive conditions). as the former case
+is the most basic condition, we will focus on the atomic
+correlation conditions in this work.
+deﬁnition 2.3: [6] an atomic correlation condition ψai,aj
+speciﬁes that two events are correlated if they have the same
+value on two of their attributes aiandaj, namely, there exists
+ex.ai=ey.aj(orex.aj=ey.ai).
+the atomic correlation condition contains two types of
+correlations: key-based correlation and reference-based cor-
+relation . for the former correlation, a unique value is used in
+each event to directly identify a instance to which it belongs.
+for the later one, events of an instance are correlated using
+a reference with a previous event in the instance. namely,
+ψai,ajis a key-based correlation only when i=j, otherwise,
+it is a reference-based correlation. for example, the correlation
+ruleψa1,a1as described in section i is a key-based condition,
+and the condition ψa1,a2is a reference-based correlation rule.
+in our presentation, sometimes we will also use ai=ajto
+replace the condition ψai,ajin this paper2.
+deﬁnition 2.4: [6] a process instance pis a sequence of
+events corresponding to a subset of events of the log l.
+for instance, the sequence of /angbracketlefte1,e2/angbracketrightin section i is a
+process instance.
+b. correlation discovery
+similar to the approach in [5], [6], we identify the interest-
+ing correlation conditions on the basis of our observation that
+some are non-interesting [8].
+the ﬁrst observation is based on the distribution of attribu-
+tion values over all the events. for a key-based condition, if the
+value domain of an attribute aiis very small (e.g., boolean),
+then the condition ai=aiwill be not interesting [6]. in the
+meantime, for a reference-based case, if most of the values
+of an attribute can not be found in another attribute, then
+the two attributes will be not correlated. these two cases
+can be measured by the properties distinct ratio (ai)and
+sharedratio (ψai,aj), as deﬁned in equation (1.1) and (1.2)
+respectively. generally, a threshold αis used to prune the non-
+interesting conditions. namely, a correlation condition will be
+interesting if its computed property value is greater than α.
+distinct ratio (ai)=|distinct (ai)|
+|nonnull (ai)| (1.1)
+sharedratio (ψai,aj)=|distinct (ai)∩distinct (aj)|
+max{|distinct (ai)|,|distinct (aj)|}(i/negationslash=j)(1.2)
+2note that the condition ai=ajwill be the same as aj=ai.
+2
+2the second observation is based on the number of discov-
+ered process instances. namely, a correlation condition will
+be not interesting if it partitions a log into large number of
+short instances or small number of long instances. this can
+be measured by the property piratio (ψ)as described in
+equation (2). there, |piψ|means the number of discovered
+process instances over the condition ψ, andnonnull (ψ)
+denotes the number of events for which attributes aiand
+ajof the condition ψare not null. a threshold βis used
+to select the interesting conditions which meet the condition
+piratio (ψ)≤β.
+piratio (ψ)=|piψ|
+nonnull (ψ) (2)
+to efﬁciently compute the values of above properties for
+a given log, a data structure (i.e., a table) named correlated
+message buffer (cmb) has been proposed in [5]. for each
+potential correlation condition ψ, a cmb can aggregate all the
+events into event sets according to the values of their attributes
+inψ. for example, figure 1 shows two such buffers based on
+the correlation conditions ex.a1=ey.a1andex.a1=ey.a2,
+respectively. using the two tables, we can quickly get that the
+value ofdistinct ratio (a1)is3/4andsharedratio (ψ)is
+2/3. moreover, we can also discover the potential interesting
+process instances and consequently calculate the value of
+piratio (ψ). for the key-based condition in figure 1(a),
+the instances are the aggregated event sets, i.e., there are
+three instances there. for a reference-based case, process
+instances are computed by applying the dfs (depth-first
+search) algorithm over a bipartite graph [9], in which the two
+disjoint vertex sets uandvare represented by the aggregated
+event sets in a cmb. for the case in figure 1(b), we have that
+u={{e3},{e1,e2}}andv={{e1,e3},{e2,e4}}. using
+dfs, we can get a path {e3}→{e1,e3}→{e1,e2}→
+{e2,e4}from the graph, thus the discovered process will be
+/angbracketlefte1,e2,e3,e4/angbracketright. as there is only one process instance for the
+condition a1=a2, the value of its piratio will be 1/4.
+if we set α=0.5andβ=0.5, then the condition a1=a2
+is an interesting rule and a1=a1is not. we will show in
+our later evaluation in section iv-b, correlations over such a
+criterion can indeed discover interesting rules from real logs.
+c. current approaches
+several systems/techniques have been developed to facilitate
+correlations over event logs in the past years [10]. in the
+following, we mainly focus on two typical approaches with
+regard to efﬁcient computation of event correlations. one is
+based on relational databases systems [6] and the other uses
+the mapreduce framework [5].
+motahari-nezhad et al. [6] introduce an approach to perform
+standard sql queries over a standalone database system to re-
+trieve the cmb related information. they ﬁrst generate all the
+potential atomic correlation conditions based on the attributes
+of an event log, and then they implement each condition as a
+self-join over the log table. for example, correlations over the
+condition a1=a2for the log in table i are done by joining
+the table itself, on its columns a1anda2. obviously, thisva l eventset
+c1→ e3
+c2→e1,e2
+c3→ e4
+(a) condition a1=a1va l eventset1 eventset2
+c1→ e3 e1,e3
+c2→e1,e2e2,e4
+(b) condition a1=a2
+fig. 1: two generated cmbs based on applying two correla-
+tion conditions over the log in table i.
+key (val, tag, event)
+a1=a1 (c2,1,e1), (c2,1,e1)
+a1=a2 (c2,1,e1), (c1,2,e1)
+a1=a3 (c2,1,e1), (c2,3,e1)
+a1=a4 (c2,1,e1), (c5,4,e1)
+a2=a2 (c1,2,e1),...
+a2=a3 (c1,2,e1),...
+a2=a4 (c1,2,e1),...
+a3=a3 (c2,3,e1),...
+a3=a4 (c2,3,e1),...
+a4=a4 (c5,4,e1),...
+(a) message pairs for event e1key (val, tag, event)
+a1=a2 (c2,1,e2), (c2,2,e2)
+(b)a1=a2for event e2
+key (val, tag, event)
+a1=a2 (c1,1,e3), (c1,2,e3)
+(c)a1=a2for event e3
+key (val, tag, event)
+a1=a2 (c3,1,e4), (c2,2,e4)
+(d)a1=a2for event e4
+fig. 2: generated message pairs by applying candidate corre-
+lation conditions on each event as listed in table i.
+approach can use all advantages of current database systems
+on query/join executions (e.g., using indexes) and thus it could
+be very efﬁcient when computing event correlations. however,
+join operations are always time-consuming and considered
+as the performance bottlenecks of current data processing
+systems [11]. when the number of attributes of a log is large,
+large number of self-join executions generated by the potential
+correlation rules will undoubtedly lead to a poor correlation
+performance. moreover, when the number of events is large,
+the intermediate results (e.g., aggregated event sets) generated
+by query executions would be huge. this will impact the
+performance of subsequet operations, i.e., computing process
+instances, due to the associated memory and computing cost.
+in such scenarios, the approach presented in [6] will not be an
+ideal solution for large event logs processing (e.g., including
+millions of events or more).
+to handle big event logs, reguieg et al. [5] have proposed
+an algorithm called hashed v alues centric3(refereed to as
+hvc in the following) over the popular used mapreduce
+framework [12]. they focus on how to efﬁciently partition
+events and consequently maximize the correlation performance
+by using the advantages of parallel implementations. the main
+workﬂow of hvc can be divided into the following three
+phases: (1) based on all the potential correlation rules, message
+pairs4in the form of (rule, (value, tag, event)) are generated
+over all the events on each computing node. the value in the
+pairs means the attribute value and the tag is the index number
+ifor the attribute ai. for example, as illustrated in figure 2,
+for a given rule a1=a2, two pairs will be generated for each
+event; (2) all the generated message pairs are redistributed to
+3the authors have also proposed two additional methods in their work.
+however, the hvc approach generally performs the best in their experimental
+results. therefore, we only focus on hvc in this work.
+4as the term message in some papers means event . to avoid confusion,
+throughout this work, when we say message orpair ormessage pair ,w e
+mean the newly generated data which to be transferred over networks.
+3
+3all the nodes based on the hash values of their correlation rules.
+for a two-node computing system, assume that the events e1
+ande2are located in node 1, e3ande4are in node 2 and
+the hash value of a1=a2is 1, then all the generated 8
+message pairs will be transferred to the node 1; and (3) local
+cmbs are built based on the received message pairs and the
+entire correlation analytics will be terminated when all the
+cmbs have been processed. for instance, the cmb illustrated
+by figure 1(b) will be built by the 8 message pairs received
+on node 1 in the second phase. with constructed cmbs on
+each node and the criteria described previously, we can then
+compute for the interesting conditions and process instances.
+compared to the method [6], the high-level implementa-
+tion of [5] is more general, as it can be run on ordinary
+clusters and ﬁle systems. moreover, experimental results have
+shown that [5] can outperform [6] under various conditions.
+as such, we consider the method [5] as the state-of-the-art
+technique. since each phase of hvc as described above can
+be parallelized across nodes, the scheme offers the potential
+for scalability and thus can be applied on large logs. however,
+the hvc algorithm is still within the generating-and-pruning
+scheme. similar as [6], all its operations are based on allthe
+potential correlation rules. namely, the number of generated
+message pairs in hvc could be very huge, and this will make
+the network communication and computing expensive in a
+distributed environment.
+figure 2(a) illustrates the problem: we have 10 candidate
+correlation rules for the log in table i, and two message pairs
+are generated for each event and for each rule. this means
+that for a very small log with only 4 events, 10×2×4=8 0
+message pairs will be generated by hvc, before subsequent
+operations, i.e., data redistribution, event aggregation and pro-
+cess instance computation, can be performed. more important,
+the number of the generated pairs will increase with increasing
+the number of events and number of attributes, which will
+degrade the performance of [6] in the presence of large logs.
+in the following, we will show how the performance of event
+correlations can be further improved by using a more advanced
+scheme.
+iii. o urapproach
+in this section, we present the detailed design and im-
+plementation of our rf-grap approach. moreover, we also
+discuss about its performance advantages by the comparison
+with the state-of-the-art method.
+a. overview of design
+similar to the approach in [5], we utilize a distributed
+method to discover interesting rules and process instances over
+an input log. nevertheless, to achieve a higher performance,
+we mainly focus on how to efﬁciently reduce the number
+of transferred message pairs over networks rather than how
+to parallelize correlation workloads. the reason is that the
+metric gives the insight into cost on computation and network
+communication. for example, the larger the number of mes-
+sage pairs a node receives, the greater the associated workloadcould be. to achieve our target, we introduce a new approach,
+rf-grap , following the ﬁltering-and-veriﬁcation scheme. in
+the ﬁlter phase, we incorporate a light-weight ﬁlter unit into
+all possible correlation rules to prune large number of non-
+interesting rules without signiﬁcantly increasing processing
+time. for the rest candidate rules, in the veriﬁcation phase, we
+use a graph partitioning approach to decompose the potentially
+correlated events into chunks by exploring data partitioning
+and locality assignment. in general, we divide our approach
+into the following six steps:
+•step 1. model all the possible correlation conditions of a
+log as a correlation graph.
+•step 2. simplify the correlation graph by ﬁltering out
+potential interesting rules.
+•step 3. partition the simpliﬁed correlation graph by
+exploring data locality.
+•step 4. generate message pairs based on the partitioned
+result and then transfer them to the responsible nodes.
+•step 5. build local data structures (e.g., cmbs) based on
+the allocated message pairs at each node.
+•step 6. compute the process instances and calculate the
+values of piratio (ψ)to get the ﬁnal outputs.
+the graph modeling process in step 1 is relatively simple,
+and the methods to compute process instances in step 6 have
+been extensively described in [5], [6] as well as our section ii.
+therefore, in the following, we will focus on the details of
+rule ﬁltering, data partitioning and placement as described in
+steps 2-4. moreover, we will also propose a more efﬁcient
+data structure rather than the cmb [5] for process instance
+computing as mentioned in step 5.
+b. implementation of rf-grap
+the detailed implementation of our approach is shown in
+algorithm 1. again, log l1in table i is used as an example.
+we assume that there are two nodes5, the ﬁrst two events e1
+ande2are located in node 1 and the other two are in node 2.
+1) rule filtering: instead of handling each correlation rule
+independently like in current approaches, before our ﬁltering
+process, we treat the set of rules as a graph. we model all the
+potential correlation rules as a correlation graph gc=(v,e),
+where the vertexes vare the attributes in a log l, i.e.,v=
+{a1,...an}, ande={(ai,aj)∈v×v | i≤j}is the set
+of edges. intuitively, each edge between two vertexes in gc
+indicates a potential correlation condition, and the graph gc
+shows all the possible conditions of l. for example, the graph
+in figure 3(a) is the correlation graph of l1.
+we apply the ﬁrst criterion as introduced in section ii-b
+as a ﬁlter in our approach. for each attribute aiin logl,i t
+is easy to get the frequency information of its values (lines
+4-5 in the algorithm). specially, in a distributed environment,
+we can get such information very quickly using an approach
+similar as the wordcount implementation. for example, for
+5note that, we focus on explaining the high-level implementation in a
+distributed environment here. in this context, a node here refers to a computing
+unit (e.g., an execution core in spark).
+4
+4a1
+a2
+a3a4a5
+(a) a correlation graph gcﬁlteringgk
+gra1
+a2
+a3a4a5
+(b) the simpliﬁed graph gsvertex paritioninga1
+a2
+a3 a3a4
+(c) partitioning result of graphpost-processinga1
+a2
+a3 a3a4a5
+(d) solution for data assignment
+fig. 3: the ﬁltering and graph partitioning as well as the assignment solution of message pairs in our approach.
+the attribute a1inl1, the value c2appears 2 times on node
+1 and 0 times on node 2, therefore we know that it appears
+2 times in attribute a1. with such statistic information for all
+the attribute values, we can then examine whether the value of
+distinct ratio (ai)orsharedratio (ψ)for each correlation
+rule meets the threshold α(lines 6-18). consequently, we can
+easily prune part of correlation rules (i.e., the non-interesting
+ones) and ﬁlter out the potentially interested ones ψfbefore we
+generate any message pairs. this way, the original correlation
+graphgccan be transformed to a simpliﬁed graph gs,b y
+removing the edges not meeting the threshold. for l1,i f
+α=0.7, then we will get its simpliﬁed correlation graph
+as figure 3(b).
+2) graph partitioning: similar as [5], we create message
+pairs based on correlation rules and then partition them to
+facilitate the parallel execution. nevertheless, we only generate
+pairs for the ﬁltered rules. moreover, to achieve better perfor-
+mance, we adopt graph partitioning in our approach rather
+than the hash partitioning in [5]. the reason is the hash-based
+partitioning could bring in redundant message pairs that need
+to be transferred over networks. for example, the hash values
+of the rules a1=a2anda1=a3in figure 2(a) are different,
+therefore the tuple (c2,1,e1)will be transferred two times
+rather than one.
+the simpliﬁed graph gsis composed of two parts, the
+subgraph grfrom the reference-based conditions ψr, and
+gkfrom the key-based ψk. we divide our graph partitioning
+method into two steps, while considering both the network
+communication and load balancing. (1) we divide vertexes in
+grinto disjoint partitions using the most popular used vertex
+partitioning, and assign the vertexes to partitions without
+destructing their connections in gr(lines 19-20). as shown
+in figure 3(c), we could get into the situation where the
+vertexes a1,a2anda3reside in one partition and a4is
+in another partition for our input graph gr. since there is a
+connection between a3anda4,a3needs to be replicated.
+(2) for a vertex partitioning, it is very possible that large
+number of vertexes closed to each other will be located to
+a same partition, and consequently results in load balancing
+problems. to improve this, we assign the element in gkto
+all the partitioned subgraphs to balance the workloads. as
+shown in algorithm 1 lines 21-23, if a vertex in gkhas not
+been assigned in (1), then it will be assigned to a subgraph
+with the minimal edges (i.e., workloads for computing processalgorithm 1 implementation of rf-grap
+input: input log land parameters α,β
+output: interesting rules ψiand process instances pi
+main procedure:
+1:ψf=filtering (l,α)
+2:{ψi,pi}=verification (l,β,ψf)
+3:return{ψi,pi}
+procedure filtering (l,α):
+4:compute the statistic information (ai,val,freq )for sublogs on
+each node and redistribute the tuples based ai
+5:construct k=list(ai,map (val,freq ))at each node, by
+aggregating the values of aiandval respectively
+6:for each ki∈kdo // key-based conditions
+7:disrat(i)=si.map.size//summationtextsi.map.freq
+8: ifdisrat(i)≥αthen
+9: add a rule ψkai=aiinψf
+10: end if
+11: end for
+12: collectkfrom each node to construct r=list(ai,set(val))
+13: for each pair (ri,rj)∈rdo // reference-based conditions
+14:shrat(i,j)=|ri.set∩rj.set|/max{|ri.set|,|rj.set|}
+15: ifshrat(i,j)≥αthen
+16: add a rule ψrai=ajinψf
+17: end if
+18: end for
+procedure verification (l,β,ψf):
+19: build correlation graph grbased on all ψrinψf
+20: partition graph grinto disjoint parts, and copy a vertex vx∈gri
+togrj, if there exist x<y ,vy∈grjandvx×v y/negationslash=∅
+21: for each ψ∈ψk,if(ψ.a /∈gri,∀i)do
+22: assignψto a subgraph grj,∃jto balance the edges
+23: end for
+24: fore∈l i,aj∈l on each node ido
+25: ifaj∈grkthen
+26: generate message pairs (k,(e.a j,j,e))
+27: end if
+28: end for
+29: redistribute message pairs based on the value of kto all nodes
+30: build a c2mb with received tuples on each node
+31: fore∈grion each node ido
+32: compute {ψi,pi}with c2mb,βand the rule from e
+33: end for
+instances). for example, the vertex a5as shown in figure 3
+will be assigned to the second partition rather than the ﬁrst
+one.
+following the previous example with the rules a1=a2
+5
+5key (val, tag, event)
+a1 (c2,1,e1)
+a2 (c1,2,e1)
+a3 (c3,3,e1)
+... ...
+(a) generated pairs for e1va l eventset1 e-set2 e-set3
+c1→ e3 e1,e3∅
+c2→e1,e2e2,e4e1,e3
+c3→ e4 ∅ ∅
+c4→ ∅ ∅e2,e4
+(b) the proposed c2mb data structure
+fig. 4: the form of the generated message pairs, and the data
+structure used for event correlations in our approach.
+anda1=a3: these two rules are assigned the same node
+within our approach, therefore the tuple (c2,1,e1)will be
+transferred only one time rather than two then. this means
+that using a graph-based partitioning, we can efﬁciently reduce
+the redundant message paris to be transferred over networks.
+in fact, vertex partitioning of graphs is a well-studied problem
+in computer science, therefore we can leverage existing code
+to do the partitioning for us. in our ﬁrst step, we use the
+most popular used metis partitioner [13] for this purpose.
+we input the correlation graph gras an undirected graph
+to metis, specify the desired number of partitions, and
+metis outputs partitions of vertexes that are pairwise disjoint.
+normally, we set the number of computing nodes as the input
+parameter to metis. however, when gris very small, e.g.,
+the number of edges is smaller than the underlying nodes, then
+unloaded cases will happen when using metis. to remedy
+this problem, we simply partition the whole graph gs, with a
+method similar as the second step of our partitioning scheme,
+to balance the workloads on each node.
+3) message pair generating: after the partitioning of the
+simpliﬁed graph gs, we can then generate message pairs
+and transfer them to remote nodes according to the graph
+partitioning results. different from [5], we generate message
+pairs based on attributes rather than rules in our approach
+(lines 24-28). namely, an attribute is used as the key in each
+pair, and its responsible value is in the form of (val, tag, event) .
+therefore, for a given event and attribute, only one message
+will be generated. an example of such processing over the
+evente1is demonstrated as figure 4(a). after redistributing
+all the message pairs, we can then rebuild the responsible
+correlation rules at each node if required. for example, the
+pairs with the keys a1anda2received at a node can be used
+to build the cmb with the correlation rule a1=a2.
+4) efﬁcient data structure: as mentioned above, we can
+build cmbs based on the received message pairs and the
+assigned correlation rules on each node. however, such inde-
+pendent buffers could lead to additional cost on memory con-
+sumption due to redundancies. for example, the event set {e1,
+e2}in figure 1 appears in both the cmbs based on a1=a1
+anda1=a2. it should be noted that when the number of
+events is large, such kind of redundancy would greatly impact
+the correlation performance or even break the analytics. to
+improve this problem, we propose a new data structure called
+comprehensive correlation message buffer (c2mb) as shown
+as figure 4(b). we store all the received message pairs in a
+single buffer on each node, and on this basis to compute all
+the required values in the event correlations (lines 30-33). forkey (val, tag, event)
+a1=a1 (c2,1,e1), (c2,1,e1)
+a1=a2 (c2,1,e1), (c1,2,e1)
+a1=a3 (c2,1,e1), (c3,3,e1)
+a1=a4 (c2,1,e1), (c4,4,e1)
+a2=a2 (c1,2,e1),...
+a2=a3 (c1,2,e1),...
+a2=a4 (c1,2,e1),...
+a3=a3 (c3,3,e1),...
+a3=a4 (c3,3,e1),...
+a4=a4 (c4,4,e1),...pruned with ﬁlteringpruned with graph partitioning
+fig. 5: the reduction process of generated message pairs for
+evente1compared with the state-of-the-art.
+instance, when computing the sharedratio (ψ)ofa1=a2,
+the value of |distinct (a1)∩distinct (a2)|will be number of
+rows, in each of which both the sets in the ﬁrst and second
+columns are not empty. all these operations can be done in
+parallel at each node, and the whole correlation process will
+be terminated until all the nodes have ﬁnish their jobs.
+c. comparison with current approaches
+compared to current approaches [5], [6], in general, our
+design follows the ﬁltering-and-veriﬁcation principle rather
+than the conventional one based on generating-and-pruning.
+this way we are able to prune a lot potential correlation rules
+and reduce large number of generated message pairs, as not
+all the possible correlation rules will contribute to the ﬁnal
+outputs. moreover, since correlation rules have overlaps on log
+attributes, message pairs generated on that basis would bring in
+redundant cost on data transferring and computing. instead of a
+hash partitioning in [5], we have used a more advanced graph
+partitioning to reﬁne this. namely, our approach focuses on
+using the strategies of rule filtering and gra phpartitioning
+to improve the correlation performance. that is also the reason
+why we call our approach as rf-grap .
+our method is designed speciﬁcally for distributed plat-
+forms, therefore, we will be able to handle large event logs. in
+comparison, the standalone implementation [6] will meet great
+challenges in this aspect as we mentioned previously. though
+the state-of-the-art [5] is also able to process large logs, as the
+differences mentioned above, our approach can highly reduce
+the network communication cost, which is always critical for
+the performance of a distributed application [14]. to highlight
+this advantage, we use an example as shown in figure 5. it can
+be observed that, in our approach, many generated message
+pairs can be discarded before being transferred over networks.
+moreover, as we have described, the proposed c2mb data
+structure can also save a lot of memory.
+compared with the workﬂow in [5], our method has ad-
+ditional operations like ﬁltering and graph partitioning, we
+believe that all these operations will be light weight. there
+are two reasons for this: (1) ﬁltering can be done by a very
+simple statistic-based job; and (2) the metis partitioner [13]
+6
+6is able to partition large graph in a short time, and actually
+the correlation graph of an event log is typically small. as
+we will show in the next section, our approach is indeed very
+efﬁcient, and outperforms the state-of-the-art [5].
+iv . e xperimental ev alua tion
+in this section, we present an experimental evaluation of our
+approach and compare it with the state-of-the-art [5].
+a. experimental framework
+as described in section ii, our approach is built based on
+the event correlation as deﬁned in [5], [6]. since the results
+reported in [5], [6] do not provide any information about the
+quality of discovered correlation conditions, we ﬁrst conduct
+a qualitative evaluation looking at the acutal results. namely,
+in the context of process mining [3], we check whether the
+cases of a log can be rediscovered by hiding its actually case
+identiﬁers.
+in terms of detailed performance evaluation, since the work
+in [5] does not provide any source code information, in the
+interest of a fair comparison, we have implemented both the
+rf-grap and the hvc approach using scala over the spark
+platform [7]. the source code we used for the performance
+comparison in this section are available at https://github.com/
+longcheng11/eca
+1) platform: we evaluate our approach over a cluster.
+each node we used has 4 cpu cores running at 2.80 ghz
+with 32gb of ram and nodes are connected by inﬁniband.
+the operating system is linux kernel version 2.6.32-279 and
+the software stack consists of spark version 2.0.0, hadoop
+version 2.7.3, scala version 2.11.4 and java version 1.7.0 25.
+moreover, we use metis version 5.1.0 to partition a correlation
+graph as we have described.
+2) datasets: we measure the quality of discovered rules
+over a real log we collected from a commercial corporation.
+as shown as in figure 6(a), the pre-possessed log (referred
+to asx) we used has 16 attributes. the 8- thattribute (i.e.,
+dcn ) is used as the case id in our real process mining
+analytics. therefore, the rule ex.a8=ey.a8should be the
+ideal condition in our event correlations. as an example of
+the log, the third column of table in figure 6(a) shows the
+detailed values of the ﬁrst event in our test data.
+we run our performance tests over different datasets based
+on an event log extracted from the scm business service [6].
+this log has been used as a benchmark dataset for performance
+evaluations in the work [5], [6] as well. the original event log
+has 19 attributes and 4,050 events. to evaluate our approach in
+large-scale cases, we use a same approach as [5] to increase
+both the number of events and attributes while maintaining
+the data behavior and distribution of the log. as a default, we
+increased the number of events and attributes by a factor of
+250 and 2, respectively. namely, there are around 1 million
+events and 38 attributes in the default dataset.0 event id 0
+1 start end start
+2 ite id 40842566
+3 tas id 3
+4 tas name ocrflowv alve
+5 stackname stack 9201510300837
+6 ba tchname ba tch 415103003596
+7 ba tchname 2 ba tch 4
+8 dcn 151030808370
+9 its sta tus 2
+10 sta tus a
+11 its dtstart 2015-11-01 21:15:09.040
+12 imagecount 12
+13 pagecount 12
+14 processda te 2015-10-30 00:00:00
+15 use login mrauto
+16 keyloca tion cebu
+(a) attribute names and example valuescorrelated e1e2e3e4
+e1 1 1 0 0
+e2 1 1 0 0
+e3 0 0 1 1
+e40 0 1 1
+(b) matrix for the ideal condition
+correlated e1e2e3e4
+e11 1 1 1
+e2 1 1 1 1
+e3 1 1 1 1
+e4 1 1 1 1
+(c) matrix for the rule a1=a2
+fig. 6: the attribute names of log xwe used in our quality
+validation, and example correlation matrices.
+3) setup: we set the following system parameters for
+spark: spark worker memory and spark executor memory
+are set to 30gb and spark worker cores is to 4. recall
+that there are two application parameters: (1) α, namely the
+threshold for distinct ratio (ai)andsharedratio (ψ); and
+(2)β, namely the threshold of piratio (ψ). because the
+power of our ﬁltering operation will rely on the value the
+ﬁrst parameter, to examine the performance difference with
+differentα, we will vary its value in our tests, from 1% to 10%.
+in contrast, the value of βonly impacts ﬁnal output and not the
+correlation cost on computing and network communication.
+therefore, we just ﬁx its value in all performance tests. like
+in [5], we set its value to 0.5. in all our experiments, the
+operations of input ﬁle reading and ﬁnal result output are
+both on the hdfs system. we measure runtime as the elapsed
+time from job submission to the job being reported as ﬁnished.
+because we want to focus on the runtime performance of each
+correlation implementation, we only record the number of the
+ﬁnal outputs, rather than materializing them. as a default, we
+implement our tests using 9 nodes, composed one master node
+and 8 worker nodes (i.e., 32 cores).
+b. quality of event correlations
+we use accuracy over correlation matrices to measure the
+quality of discovered rules6. an example of a correlation
+matrix is shown in figure 6(b). there, for the log l1in table i,
+we can build a 4×4matrix. if we know that, for an ideal
+condition (i.e., a known case id for a business process [3]), the
+eventse1ande2are correlated, and e3ande4are correlated,
+then we can mark the correlated events with 1, otherwise 0, in
+the matrix. the accuracy of a discovered rule is the fraction
+of marked values in its correlation matrix that are correct,
+compared to the ideal one. for example, with the correlation
+rulea1=a2overl1, we discover the process instance
+/angbracketlefte1,e2,e3,e4/angbracketright. note that all the four events are correlated
+to each other, and we have its correlation matrix shown as
+figure 6(c). by comparing it with the ideal one we can derive
+that its accuracy is 0.5. we calculate the accuracy for all
+discovered rules and then sort their values. in such scenarios,
+the higher a value is, the better the rule will be.
+6we only conduct an initial evalution here, intead of detailed analysis on
+the real quality of process mining results.
+7
+7condition score
+(8,8) 1.0
+(6,6) 0.9995673
+(2,2) 0.9995673
+(a)α=0.01andβ=0.5condition score
+(8,8) 1.0
+(6,6) 0.9995673
+(2,2) 0.9995673
+(b)α=0.001 andβ=0.5
+condition score
+(8,8) 1.0
+(6,6) 0.9995673
+(2,2) 0.9995673
+(c)α=0.01andβ=0.8condition score
+(8,8) 1.0
+(6,6) 0.9995673
+(2,2) 0.9995673
+(d)α=0.001 andβ=0.8
+fig. 7: correlation accuracy over the log x.
+we choose the ﬁrst 10000 events from the collected x
+log for the quality evaluation. the reason we did not choose
+more events, is that the correlation matrices would consume
+excessive amount of memory. for example, for 1 million
+events and each event id is an integer, a correlation matrix
+will consume 4tb memory (i.e., 4byte ×106×106). we vary
+the values of αandβ, and the results are shown in figure 7. it
+can be seen that the results for the discovered rules and their
+scores are the same for all the cases, even with a very small
+α=0.001 and a big β=0.8. moreover, for each condition,
+the score of the rule (8,8) is 1, which is consistent with
+our expectation that the correlation over the attribute dcn is
+actually the ideal condition. moreover, we see that accuracy of
+the rules (6,6) and(2,2) is very close to 1, which means
+that the 6- thand 2-thattribute of the log can be treated as
+case identiﬁers in the condition of missing the attribute dcn .
+consider the hierarchy of the log, this is reasonable, since
+theite_id andbatchname are the upper level attributes
+of events. it is likely that events correlated on dcn will be
+correlated based on their values in ite_id andbatchname .
+these initial results suggest that the correlation approach we
+adopted in this work is also applicable in real-life settings.
+c. performance results
+next, we present our performance results including runtime,
+network communication as well as scalability as below.
+1) efﬁciency: we evaluate the efﬁciency of our approach by
+comparing its runtime with the hvc approach [5]. moreover,
+to better compare the two algorithms, we also measure the
+number of generated message pairs in their implementations.
+as described previously, this metric represents the potential
+cost on network communication and computing in a correla-
+tion execution.
+we execute each approach with varying the values of the
+application parameter α, from 1% up to 10%, over the default
+data. the results for the runtime and the number of generated
+message pairs (referred to as gmp ) are presented in figure 8.
+figure 8(a) shows that our algorithm performs much faster
+then the hvc algorithm in all the cases, and is able to achieve
+a speedup of 4.5−10.7×. when varying the value of α, the
+runtime of the hvc method is generally the same. in our
+approach, it decreases when increasing the value of α. this
+is reasonable, as hvc always generates message pairs for all
+the possible correlation rules, i.e., the number of gmp is a
+ﬁxed value, making its cost on network communication and02468 1 0050100150200250300350runtime (s)
+the value of parameter α(%)hvc
+rf-grap
+(a) runtime efﬁciency02468 1 0100101102103the number of generated pairs (million)
+the value of parameter α(%)hvc
+rf-grap
+(b) # message pairs (log-scale)
+fig. 8: the efﬁciency of each algorithm over the default
+dataset, with varying the values α(using 32 cores).
+α 1% 10%
+scale 0.5 1 2 0.5 1 2
+speedup 5.1 4.5 >6.6 8.0 10.7 >44.7
+(a)varying the scale factor of number of events
+α 1% 10%
+scale 0.5 1 2 0.5 1 2
+speedup 1.6 4.5 >50.7 5.2 10.7 >61.3
+(b)varying the scale factor of number of attributes
+fig. 9: speedup achieved by rf-grap over hvc with varying
+the scale factors over the default data (with 32 cores).
+computation constant. in comparison, our approach only needs
+to process message pairs over the ﬁltered rules, and the power
+of the ﬁltering is more effective when increasing the value of
+α. this can also be observed in figure 8(b). there, the results
+demonstrate that the number of gmp of our approach is much
+less than hash, and this number decreases obviously with the
+increase of α.
+2) cardinality experiments: to see how the performance
+changes with increasing the number of events and attributes
+in a log, we have done the following two tests based on the
+default dataset: (1) we ﬁx the attributes of the log, to 38, and
+vary the number of events from 0.5 million to 2 million; and
+(2) we ﬁx the number of events to 1 millions, and vary the
+number of attributes from 19 to 76. we also vary the threshold
+αfor each case. as the trends of the results are very similar
+to each other, we only report the conditions with α=1 % and
+10% here.
+in our tests, several runs of the hvc approach aborted
+unexpectedly while raising the exception job aborted due
+to stage failure in spark. upon further analysis, we think
+the possible reason for this is that the number of generated
+message pairs is too large in hvc. this results in out-of-
+memory problems or the size of a partition of a rdd [7]
+exceeding its maximum value. for this condition, we just
+record the runtime of hvc from a job submission until the
+job is aborted, and mark the achieved speedup with a symbol
+“>” in our results. the results are presented in figure 9(a) and
+8
+802468 1 0101102103104network traffic (mb)
+the value of parameter α(%)hvc
+rf-grap
+(a) general network trafﬁc0123456789101102103network traffic (mb)
+executor idhvc
+rf-grap
+(b) retrieved data of each executor
+fig. 10: the network communication of each algorithm when
+using 8 workers (log-scale).
+figure 9(b) respectively. it can be seen that our approach can
+always achieve a signiﬁcant speedup over the hvc method,
+and the speedup is becoming more obviously with increasing
+either the number of events and attributes, highlighting its
+advantages on processing large event logs.
+3) network communication: performance regarding com-
+munication cost is evaluated by recording the metric shufﬂe
+read , as provided by spark. it records the data in bytes read
+from remote executors (machines) but not the data read locally.
+this means that this metric indicates the data transferred
+around the underlying networks during the correlation imple-
+mentations. the results by varying threshold αover the default
+dataset with 8 workers (32 cores) are shown in figure 10(a).
+it can be seen that our approach transfers about 43−74times
+less data than hvc. moreover, to analyze the load balancing
+properties of each algorithm, we also measure the shufﬂe read
+at each executor. as shown in figure 10(b), the transferred
+data is generally evenly redistributed over all the executors,
+implying that there are no hot spot in both the algorithms.
+4) scalability: we test the scalability (scale-out) of our
+approach by varying number of slaves (workers) over the
+default dataset, from 8 cores (2 nodes) to 64 cores. the test
+results for our algorithm and the hvc approach are shown
+in figure 11. there, for simplicity, we also only report the
+cases with α=1 % and 10%. as the submitted jobs of hvc
+are aborted when using 2 and 4 worker nodes, we just add an
+artiﬁcial dashed line to demonstrate its potential scalability.
+we can see that the runtime of both the algorithms decreases
+with increasing the number of cores under different α. this
+means that both rf-grap and hvc generally scale well with
+the number of workers. moreover, we can see that the beneﬁt
+of adding more workers (i.e., the scaled speedup) decreases
+for our approach, though the runtime becomes lower. we
+attribute this to the overhead caused by underlying platform
+and statistic-based operations in our approach. upon closer
+inspection of the results, we can observe the achieved runtime
+speedups under small αis higher than that under large α. the
+reason is that the transferred data is very small for the case
+with a large αand this results in the network and computing
+workloads are comparably small for the underlying platform in
+our approach. in general, our algorithm always performs much0 1 02 03 04 05 06 07 0050100150200250300350runtime (s)
+the number of execution coreshvc
+rf-grap
+(a) withα=1 %0 1 02 03 04 05 06 07 0050100150200250300350runtime (s)
+the number of execution coreshvc
+rf-grap
+(b) withα= 10%
+fig. 11: scalability of our algorithms by varying the number
+of executors.
+faster than hvc, even when using a small number of cores.
+all of these indicate that our method will be more suitable for
+large event log processing than the hvc approach.
+v. r ela ted work
+correlating events is a challenging problem in both the
+ﬁelds of process mining and service mining [15]. up to now,
+various approaches have been proposed on identifying process-
+related events and discovering event correlations [6], [10],
+[16], [17], [18], [19], [20], [21]. for example, pourmirza et
+al. [10] propose a linear programming based method for min-
+ing process models over a log that contains no case identiﬁers.
+poggi et al. [16] introduce a methodology to classify and
+transform clicked urls into events and consequently extract
+business models from web logs. moreover, georgakopoulos
+et al. [21] analyze how events in business processes could be
+grouped into instances of the execution of business processes,
+and motahari-nezhad et al. [6] investigate the problem of
+correlation condition discovery. we have shown that these
+approaches (e.g., [6]) are truly efﬁcient in our quality experi-
+ments. however, most of these approaches focus on high-level
+methods for event correlations, and few of them have ever
+considered the detailed performance or scalability issues in the
+presence of big data. in comparison, our approach provides a
+much better scalable way to deal with huge event logs.
+in fact, quantity of available event data from current in-
+formation systems is increasing in an unprecedented pace,
+and this has posed new challenges for current mining tech-
+niques [22]. to efﬁcient identify and discover event correlation
+conditions for the purpose of process instance discovery over
+large event logs, the state-of-the-art approach [5] uses mapre-
+duce leveraging distributed environments. one of its main
+targets is to investigate how data and computations should
+be partitioned and distributed over underlying nodes, so that
+the correlation tasks can be efﬁciently computed in parallel.
+although the approach in [5] has achieved obvious perfor-
+mance improvements over the standalone implementation [6],
+we have shown in our experimental results that our approach
+can perform much faster in various situations.
+to support parallel and distributed applications, various
+parallel programming languages and paradigms have been
+9
+9developed by the high performance computing community
+(e.g., mpi [23]) and large scale data-analytics community
+(e.g., mapreduce [12] and spark [7]). it is obvious that imple-
+menting an application using different languages and systems
+mentioned above would lead to different application execution
+times. regardless, the technique used for parallel execution
+is actually more important than the language/paradigm used
+for implementations [24]. for example, the generating-and-
+pruning based correlations [5] would always generate huge
+number of message pairs and lead to heavy network com-
+munication, in the presence of large event logs, irrespective
+of the underlying implementation systems. in contrast to this,
+our ﬁltering-and-veriﬁcation based approach is able to highly
+reduce the responsible cost, as it can prune large numbers of
+noninteresting rules before actually generating message pairs.
+it should be noticed again that network communication is
+critical for high-level applications in terms of performance im-
+provements, since data transfers could account for more than
+50% of job completion time in large data applications [14].
+we have adopted a graph-based method for data partitioning
+to facilitate the parallel implementation of event correlations,
+which is motivated by studies on graph query answering in the
+data management domain. usually, with an efﬁcient graph par-
+titioning, graph queries are able to be answered by subgraph
+isomorphism [25]. different from this, we focus on reducing
+generated message pairs based on the correlation graph gen-
+erated by the potentially interesting correlation conditions. in
+our prototype, we adopt the commonly used vertex partitioning
+and then manually balance the workloads on each node. in
+fact, we can use more advanced techniques, such as balanced
+graph partitioning [26], to further improve the robustness of
+our approach in different distributed environments.
+vi. c onclusion
+in this paper, we discussed the importance of event cor-
+relation and revealed possible performance issues of current
+approaches in the presence of large event logs. based on
+this analysis, we have introduced a new approach, called rf-
+grap , which aims a much more efﬁcient event correlation
+while leveraging state-of-the-art distributed systems. we have
+described the detailed design and implementation of our
+approach, and conducted an experimental evaluation which
+included a comparison with a competing approach using the
+spark platform [7]. our experimental results have shown that
+the proposed algorithm is highly efﬁcient and can achieve
+signiﬁcant speedups over the state-of-the-art, and with much
+less network communication.
+acknowledgments. this work is supported by the nwo
+delibida research program.
+references
+[1] s. j. leemans, d. fahland, and w. van der aalst, “scalable process
+discovery with guarantees,” in proc. 16th international conference on
+enterprise, business-process and information systems modeling , 2015,
+pp. 85–101.[2] w. van der aalst, t. weijters, and l. maruster, “workﬂow mining:
+discovering process models from event logs,” ieee transactions on
+knowledge and data engineering , vol. 16, no. 9, pp. 1128–1142, 2004.
+[3] w. van der aalst, process mining: data science in action . springer,
+2016.
+[4] s. hern ´andez, j. ezpeleta, s. j. v. zelst, and w. van der aalst, “assessing
+process discovery scalability in data intensive environments,” in 2015
+ieee/acm international symposium on big data computing , 2015, pp.
+99–104.
+[5] h. reguieg, b. benatallah, h. r. motahari-nezhad, and f. toumani,
+“event correlation analytics: scaling process mining using mapreduce-
+aware event correlation discovery techniques,” ieee transactions on
+services computing , vol. 8, no. 6, pp. 847–860, 2015.
+[6] h. r. motahari-nezhad, r. saint-paul, f. casati, and b. benatallah,
+“event correlation for process discovery from web service interaction
+logs,” the vldb journal , vol. 20, no. 3, pp. 417–444, 2011.
+[7] m. zaharia, m. chowdhury, t. das, a. dave, j. ma, m. mccauley, m. j.
+franklin, s. shenker, and i. stoica, “resilient distributed datasets: a
+fault-tolerant abstraction for in-memory cluster computing,” in proc. 9th
+usenix symposium on networked systems design and implementation ,
+2012, pp. 15–28.
+[8] s. sahar, “interestingness via what is not interesting,” in sigkdd , 1999,
+pp. 332–336.
+[9] j. l. gross and j. yellen, handbook of graph theory . crc press, 2004.
+[10] s. pourmirza, r. dijkman, and p . grefen, “correlation mining: mining
+process orchestrations without case identiﬁers,” in icsoc , 2015, pp.
+237–252.
+[11] l. cheng, s. kotoulas, t. e. ward, and g. theodoropoulos, “robust
+and skew-resistant parallel joins in shared-nothing systems,” in cikm ,
+2014, pp. 1399–1408.
+[12] j. dean and s. ghemawat, “mapreduce: simpliﬁed data processing on
+large clusters,” commun. acm , vol. 51, no. 1, pp. 107–113, 2008.
+[13] g. karypis and v . kumar, “a fast and high quality multilevel scheme
+for partitioning irregular graphs,” siam journal on scientiﬁc computing ,
+vol. 20, no. 1, pp. 359–392, 1998.
+[14] m. chowdhury, m. zaharia, j. ma, m. i. jordan, and i. stoica, “manag-
+ing data transfers in computer clusters with orchestra,” acm sigcomm
+computer communication review , vol. 41, no. 4, pp. 98–109, 2011.
+[15] w. van der aalst, “service mining: using process mining to discover,
+check, and improve service behavior,” ieee transactions on services
+computing , vol. 6, no. 4, pp. 525–535, 2013.
+[16] n. poggi, v . muthusamy, d. carrera, and r. khalaf, “business process
+mining from e-commerce web logs,” in bpm , 2013, pp. 65–80.
+[17] r. engel, w. krathu, m. zapletal, c. pichler, r. j. c. bose, w. van der
+aalst, h. werthner, and c. huemer, “analyzing inter-organizational
+business processes,” information systems and e-business management ,
+pp. 1–36, 2015.
+[18] k. musaraj, t. y oshida, f. daniel, m.-s. hacid, f. casati, and b. be-
+natallah, “message correlation and web service protocol mining from
+inaccurate logs,” in icws , 2010, pp. 259–266.
+[19] s. rozsnyai, a. slominski, and g. t. lakshmanan, “discovering event
+correlation rules for semi-structured business processes,” in debs , 2011,
+pp. 75–86.
+[20] d. r. ferreira and d. gillblad, “discovering process models from
+unlabelled event logs,” in bpm , 2009, pp. 143–158.
+[21] d. georgakopoulos, m. hornick, and a. sheth, “an overview of
+workﬂow management: from process modeling to workﬂow automation
+infrastructure,” distributed and parallel databases , vol. 3, no. 2, pp.
+119–153, 1995.
+[22] w. van der aalst, “a general divide and conquer approach for process
+mining,” in proc. 2013 federated conference on computer science and
+information systems , 2013, pp. 1–10.
+[23] w. gropp, e. lusk, n. doss, and a. skjellum, “a high-performance,
+portable implementation of the mpi message passing interface standard,”
+parallel computing , vol. 22, no. 6, pp. 789–828, 1996.
+[24] l. cheng, a. malik, s. kotoulas, t. e. ward, and g. theodoropoulos,
+“fast compression of large semantic web data using x10,” ieee
+transactions on parallel and distributed systems , vol. 27, no. 9, pp.
+2603–2617, sept 2016.
+[25] j. r. ullmann, “an algorithm for subgraph isomorphism,” journal of
+the acm , vol. 23, no. 1, pp. 31–42, 1976.
+[26] k. andreev and h. racke, “balanced graph partitioning,” theory of
+computing systems , vol. 39, no. 6, pp. 929–939, 2006.
+10
+10

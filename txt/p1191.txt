@@ -1,0 +1,1033 @@
+feature recommendation for structural equation
+model discovery in process mining
+mahnaz sadat qafari and wil van der aalst
+rheinisch-westf ¨alische technische hochschule aachen(rwth), aachen, germany
+m.s.qafari@pads.rwth-aachen.de,wvdaalst@pads.rwth-aachen.de
+abstract. process mining techniques can help organizations to improve the op-
+erational processes. organizations can beneﬁt from process mining techniques in
+ﬁnding and amending the root causes of performance or compliance problems.
+considering the volume of the data and the number of features captured by the
+information system of today’s companies, the task of discovering the set of fea-
+tures that should be considered in root cause analysis can be quite involving. in
+this paper, we propose a method for ﬁnding the set of (aggregated) features with
+a possible e ect on the problem. the root cause analysis task is usually done
+by applying a machine learning technique to the data gathered from the infor-
+mation system supporting the processes. to prevent mixing up correlation and
+causation, which may happen because of interpreting the ﬁndings of machine
+learning techniques as causal, we propose a method for discovering the structural
+equation model of the process that can be used for root cause analysis. we have
+implemented the proposed method as a plugin in prom and we have evaluated it
+using two real and synthetic event logs. these experiments show the validity and
+eectiveness of the proposed methods.
+keywords: process mining · root cause analysis · causality inference.
+1 introduction
+organizations aim to improve operational processes to serve customers better and to
+become more proﬁtable. to this goal, they can utilize process mining techniques in
+many steps, including identifying friction points in the process, ﬁnding the root causes
+of each friction point, estimating the possible impact of changing each factor on the
+process performance, and also planning process enhancement actions. today, there are
+several robust techniques for process monitoring and ﬁnding their friction points, but
+little work on root cause analysis . so, in this paper, we focus on root cause analysis and
+investigating the impact of interventions.
+processes are complicated entities involving many steps, where each step itself may
+include many inﬂuential factors and features. moreover, not just the steps but also the
+order of the steps that are taken for each process instance may vary, which results in
+several process instance variants. this makes it quite hard to identify the set of features
+that inﬂuence a problem. in the literature related to root cause analysis in the ﬁeld of
+process mining, it is usually assumed that the user provides the set of features that have
+a causal relationship with the observed problem in the process (see for example [9,16]).arxiv:2108.07795v1  [cs.lg]  13 aug 20212 m. s. qafari et al.
+to overcome this issue, we have proposed a mechanism that not only helps to identify
+the set of features that may have a causal relationship with the problem, but also the
+values of these features that are more prone to causing the problem.
+traditionally, the task of ﬁnding the root cause of a problem in a process is done in
+two steps; ﬁrst gathering process data from the event log, and then applying data mining
+and machine learning techniques. although the goal is to perform root cause analysis,
+a naive application of such techniques often leads to a mix-up of correlation and causa-
+tion. it is easy to ﬁnd correlations, but very hard to determine causation. consequently,
+process enhancement based on the results of such approaches does not always lead to
+any process improvements.
+consider the following three scenarios:
+(i) in an online shop, it has been observed that the possibility of delay in delivery is
+much higher if some speciﬁc resources are responsible for them.
+(ii) in a consultancy company, there are deviations in some cases and those cases have
+been done mainly by the employees who are most experienced.
+(iii) in an it company, it has been observed that the higher the number of resources
+assigned to a task, the longer it takes.
+the following possibly incorrect conclusions can be made if these observed correlations
+are observed as causal relationships.
+–in the online shop scenario, the responsible resources are causing the delays.
+–in the second scenario, we may conclude that over time the employees get more
+and more reckless, and consequently the rate of deviations increases.
+–in the it company, we may conclude that the more people working on a project,
+the more time is spent on team management and communication, which prolongs
+the project unnecessarily.
+however, correlation does not mean causation. we can have a high correlation between
+two events when they are caused by a possibly unmeasured (hidden) common cause (set
+of common causes), which is called a confounder . for example, in the ﬁrst scenario, the
+delayed deliveries are mainly for the bigger size packages which are usually assigned to
+speciﬁc resources. or, in the second scenario, the deviations happen in the most com-
+plicated cases that are usually handled by the most experienced employees. in the third
+scenario, maybe both the number of employees working on a project and the duration
+of a project are highly dependent on the complexity of the project. as it is obvious from
+these examples, changing the process based on the observed correlations not only leads
+to no improvement but also may aggravate the problem (or create new problems).
+randomized experiments and the theory of causality are two general frameworks
+for ﬁnding the causes of a problem [13,14]. the randomized experiment provides the
+most robust and reliable method for making causal inferences and statistical estimates
+of the e ect of an intervention. this method involves randomly setting the values of the
+features that have a causal e ect on the observed problem and monitoring the e ects.
+applying randomized experiments in the context of processes is usually too expensive
+(and sometimes unethical) or simply impossible. the other option for anticipating the
+eect of any intervention on the process is using a structural causal model [13,14].feature recommendation for structural equation model discovery in process mining 3
+in this method, ﬁrst, the causal mechanism of the process features is modeled by a
+conceptual model and then this model is used for studying the e ect of changing the
+value of a process features.
+fig. 1: the general structural causal equation discovery.
+this paper is an extension of [15], where we have proposed a framework for root
+cause analysis using structural equation modeling. here we address one of the main
+issues in this framework. finding the features that may have a causal e ect on the
+problem often requires substantial domain knowledge. considering the variety of the
+feature values in a process, even when having extensive domain knowledge, it may
+not be easy to determine the values of the features that have the strongest e ect on
+the problem. so, we propose a method for ﬁnding a set of features and feature value
+pairs that may contribute the most to the problem. also, we add aggregated features to
+the features that can be extracted from the event log. this makes the method capable of
+analyzing more scenarios. the framework explained in this paper includes the following
+steps:
+–as a preprocessing step, the event log is enriched by several process-related fea-
+tures. these features are derived from di erent data sources like the event log, the
+process model, and the conformance checking results. also, here we consider the
+possibility of adding aggregated features to the event log regarding the time window
+provided by the user.
+–a set of pairs of the form (feature, feature value) are recommended to the user. such
+pair include the features that might have a causal relationship with the problem and
+those values of them that possibly contribute more to the problem. users can modify
+this set of features that have been identiﬁed automatically or simply ignore it and
+provide another set of features.
+–the next step is creating a target-dependent data table, which we call it situation
+feature table .4 m. s. qafari et al.
+–this step involves generating a graphical object encoding the structure of causal
+relationships among the process features. this graphical object can be provided by
+the customer or be inferred from the observational data using a causal structure
+learning algorithm, also called search algorithm . the user can modify the resulting
+graphical object by adding domain knowledge as an input to the search algorithm
+or by modifying the discovered graph.
+–the last step involves estimating the strength of each discovered causal relationship
+and the e ect of an intervention on any of the process features on the identiﬁed
+problem.
+in figure 1, the general overview of the proposed approach is presented.
+the remainder of the paper is organized as follows. in section 2, we start with
+an example. we use this example as the running example throughout this paper. in
+section 3, we present some of the related work. the corresponding process mining and
+causal inference theory preliminaries are presented in section 4 and, in section 5, an
+overview of the proposed approaches for feature recommendation and causal equation
+model discovery is presented. in section 6, the assumptions and the design choices
+in the implemented plugin and the experimental results of applying it on synthetic and
+real event logs are presented. finally, in section 7, we summarize our approach and its
+applications.
+2 motivating example
+as the running example, we use an imaginary it company that implements software
+for its customers. however, they do not do the maintenance of the released software.
+here, each process instance is corresponding to the process of implementing one soft-
+ware. this process involves the following activities: business case development, feasi-
+bility study, product backlog, team charter, development, test, and release. the petri-net
+model of this company is shown in figure 2. we refer to the sub-model including two
+transitions “development” and “test” (the two blue activities in figure 2) as implemen-
+tation phase .
+the manager of the company is concerned about the duration of the implementation
+phase of projects. she wants to know what features determine the implementation phase
+duration. and also, if there is any way to reduce the implementation phase duration. if
+so, what would be the e ect of changing each feature. these are valid questions to
+be asked before planning for re-engineering and enhancing the process. the manager
+believes that the following features of a project are the process features that might have
+a causal e ect on its “implementation phase duration” (the duration of implementation
+phase):
+–“priority” which is an attribute of business case development indicating how ur-
+gent the software is for the customer,
+–“team size” which is an attribute of team charter indicating the number of re-
+sources working on a project,
+–“duration” of product backlog activity, an attribute of product backlog, which in-
+dicates the duration of the product backlog activity.feature recommendation for structural equation model discovery in process mining 5
+analyzing the historical data from the company shows that there is a high correlation
+between every one of the three mentioned features and the duration of the implemen-
+tation phase. we consider “complexity” (the complexity and hardness of the project)
+as another feature that is not recorded in the event log but has a causal e ect on the
+duration of the implementation phase.
+fig. 2: the petri net model of the process of it company described in section 2.
+the structure of the causal relationship among the features has a high impact on the
+answers to the mentioned questions. in figures 3, 4, and 5, three possible structures of
+the causal relationship among the features of the it company are depicted1.
+                  
+        
+                     
+                                           
+        
+             
+         
+fig. 3: a possible causal structure for the it company.according to figure 3, just
+team size and priority have
+a causal e ect on the du-
+ration of the implementation
+phase. but product backlog
+duration does not have any
+causal e ect on the duration of
+the implementation phase even
+though they are highly corre-
+lated. consequently, changing
+product backlog duration does
+not have any impact on the du-
+ration of the implementation
+phase.
+according to figure 4, all
+three features priority, product backlog duration, and team size inﬂuence the duration
+of the implementation phase. thus, by changing each of these three features, one can
+inﬂuence the duration of the implementation phase.
+1in these three ﬁgures and other ﬁgures in this paper that visualize networks of feature, the
+labels of the nodes are either of the form trace, attribute name if the attribute name is related
+to a trace-level attribute, or of the form activity name, attribute name if the attribute name is
+related to an event-level attribute. in the former case, the activity name indicated the activity
+that the attribute belongs to.6 m. s. qafari et al.
+                  
+        
+                     
+                                           
+        
+             
+         
+fig. 4: a possible causal structure for the it company.based on 5, we can con-
+clude that the complexity, which
+is a hidden feature in the model
+(depicted by the gray dashed
+oval in figure 5), causally
+inﬂuences both implementa-
+tion phase duration and prod-
+uct backlog duration. subse-
+quently, the correlation among
+them is because of having a
+common cause. grounded in
+this causal structure, it is not
+possible to inﬂuence the dura-
+tion of the implementation phase by forcing product backlog activity to take place in a
+shorter or longer amount of time.
+       
+                              
+        
+             
+                           
+        
+                     
+                       
+fig. 5: a possible causal structure for the it company.it is worth noting that not
+all the features are actionable,
+i.e., in reality, it is not possi-
+ble to intervene on some of the
+features. for example, in the
+mentioned it company, we can
+imagine that the manager in-
+tervenes on team size by as-
+signing more or fewer people
+to a project; but he cannot in-
+tervene in the complexity of a
+project. judging whether a fea-
+ture can be intervened requires
+using common sense and do-
+main knowledge.
+in the rest of this paper, we
+show how to answer such questions posed by the company manager. we ﬁrst mention
+how to extract data in a meaningful way regarding the target feature (implementation
+phase duration in this example) and then we show how to discover the causal relation-
+ships between the process features and the structural equation model of the features that
+may a ect the target feature using our method. finally, we demonstrate how questions
+related to investigating the e ect of intervention on the target feature can be answered
+in this framework. in section 6.2, we show the results of applying our method for an-
+swering the mentioned question by the it company manager in this example.
+3 related work
+in the literature, there is plenty of work in the area of process mining dedicated to
+ﬁnding the root causes of a performance or compliance problem. the root cause analysis
+approach of the proposed methods usually involves classiﬁcation [4,9], and rule miningfeature recommendation for structural equation model discovery in process mining 7
+[18]. the main problem of these approaches is that the ﬁndings of these methods are
+based on correlation which does not necessarily imply causation.
+the theory of causation based on the structural causal model has been studied
+deeply [14]. also, a variety of domains beneﬁt from applying methods from this do-
+main(e.g. [10,22]). however, there is little work on the application of the theory of
+causality in the area of process mining. there are some works in process mining that
+use causality theory. these includes:
+–in [5], the authors propose an approach for discovering causal relationships be-
+tween a range of business process characteristics and process performance indi-
+cators based on time-series analysis. the idea is to generate a set of time-series
+using the values of performance indicators, and then applying granger causality
+test on them, to investigate and discover their causal relationships. granger test is
+a statistical hypothesis test to detect predictive causality; consequently, the causal
+relationships using this approach might not be true cause-and-e ect relationships.
+–in [11], the authors use the event log and the bpmn model of a process to discover
+the structural causal model discovery of the features of the process. they ﬁrst apply
+loop unfolding on the bpmn model of the process and generate a partial order of
+features. they use the generated partial order to guide the search algorithm. in this
+work, it is assumed that the bpmn model of a process is its accurate model, which
+is not always the case.
+there is also some work devoted to the case level root cause analysis [1,16].
+it is worth mentioning that all the above-mentioned approaches are based on statis-
+tical tests for discovering causal relationships. consequently, these approaches are not
+feasible when there are a huge number of features. however, none of them provides a
+method for feature recommendation. yet, there is some work on inﬂuence analysis that
+aims at ﬁnding such a set of features [6,7,8].
+4 preliminaries
+in this section, we describe some of the basic notations and concepts of the process
+mining and causal inference theory.
+in the following section, we follow two goals: ﬁrst, we describe the basic notations
+and concepts of the process mining and second, we show the steps involved in convert-
+ing a given event log into a situation feature table.
+4.1 process mining
+process mining techniques start from an event log extracted from an information sys-
+tem. the atomic building block of an event log is an event . an event indicates that an
+activity happened at a speciﬁc point in time for a speciﬁc case. a set of events that are
+related to a speciﬁc process instance are called a trace . we can look at an event log
+as a collection of traces. an event log may include three di erent levels of attributes:
+log-level attributes, trace-level attributes, and event-level attributes. in the following,
+we explicitly deﬁne an event, trace and event log in a way that reﬂects reality and at8 m. s. qafari et al.
+the same time is suitable for our purpose. but ﬁrst, we need to deﬁne the following
+universes and functions:
+–uattis the universe of attribute names , wherefactname;timestamp;caseidg 
+uatt.actname indicates the activity name, timestamp indicates the timestamp of
+an event, and caseid indicates that the event belongs to which case.
+–uvalis the universe of values .
+–values2u att7!p(uval) as a function that returns the set of all possible values of
+a given attribute name2.
+–umap=fm2u att67!u valj8at2dom(m) :m(at)2values (at)gthe universe of all
+mappings from a set of attribute names to attribute values of the correct type.
+also, we deﬁne?as a member ofuvalsuch that?<values (at) for all at2u att.
+we use this symbol to indicate that the value of an attribute is unknown, undeﬁned, or
+is missing.
+now, we deﬁne an event as follows:
+deﬁnition 1 (event). anevent is an element of e 2u map, where e (actname ),?,
+e(timestamp ),?, and e (caseid ),?. we denote the universe of all possible events by
+eand the set of all non-empty chronologically ordered sequences of events that belong
+to the same case (have the same value for caseid) by e+. ifhe1;:::; eni2e+, then for
+all1i<jn, e i(timestamp )ej(timestamp )^ei(caseid )=ej(caseid ).
+example 1. the events in the following table are some of the possible events for the it
+company in section 2.
+e1:=f(caseid;1);(actname;“business case development”) ;(timestamp;t1);(priority;2)g
+e2:=f(caseid;1);(actname;“feasibility study”) ;(timestamp;t2)g
+e3:=f(caseid;1);(actname;“product backlog”) ;(timestamp;t3);(duration;35)g
+e4:=f(caseid;1);(actname;“team charter”) ;(timestamp;t4);(team size;21)g
+e5:=f(caseid;1);(actname;“development”) ;(timestamp;t5);(duration;200)g
+e6:=f(caseid;1);(actname;“test”);(timestamp;t6);(duration;79)g
+e7:=f(caseid;1);(actname;“release”);(timestamp;t7)g
+e8:=f(caseid;2);(actname;“business case development”) ;(timestamp;t8);(priority;1)g
+e9:=f(caseid;2);(actname;“feasibility study”) ;(timestamp;t9)g
+e10:=f(caseid;2);(actname;“product backlog”) ;(timestamp;t10);(duration;63)g
+e11:=f(caseid;2);(actname;“team charter”) ;(timestamp;t11);(team size;33)g
+e12:=f(caseid;2);(actname;“development”) ;(timestamp;t12);(duration;226)g
+e13:=f(caseid;2);(actname;“test”);(timestamp;t13);(duration;74)g
+e14:=f(caseid;2);(actname;“release”);(timestamp;t14)g
+e15:=f(caseid;2);(actname;“development”) ;(timestamp;t15);(duration;62)g
+e16:=f(caseid;2);(actname;“test”);(timestamp;t16);(duration;117)g
+e17:=f(caseid;2);(actname;“release”);(timestamp;t17)g
+2in this paper, it is assumed that the reader is familiar with sets, multi-sets, and functions. p(x)
+is the set of non-empty subsets of set x,;. let xandybe two sets. f:x67!yis a partial
+function. the domain of fis a subset of or equal to xwhich is denoted by dom(f). we write
+f(x)=?ifx<dom(f).feature recommendation for structural equation model discovery in process mining 9
+each event may have several attributes which can be used to group the events. for
+at2u att, and vvalues (at), we deﬁne a group of events as the set of those events in
+ethat assign a value of vto the attribute at; i.e.
+group (at;v)=fe2eje(at)2vg:
+some of the possible groups of events are:
+–the set of events with speciﬁc activity names,
+–the set of events which are done by speciﬁc resources,
+–the set of events that start in a speciﬁc time interval during the day, or,
+–the set of events with a speciﬁc duration.
+we denote the universe of all event groups by g=p(e).
+example 2. here are some possible event groups based on the it company in section
+2.
+g1bgroup (actname;f“business case development” g)
+g2bgroup (actname;f“product backlog” g)
+g3bgroup (actname;f“team charter”g)
+g4bgroup (actname;f“development”g)
+g5bgroup (team size;f33;34;35g)
+based on the deﬁnition of an event, we deﬁne an event log as follows:
+deﬁnition 2 (event log). we deﬁne the universe of all event logs as l=e+67!u map.
+let l where l2lbe an event log, we call each element (;m)2l atrace .
+one of our assumptions in this paper is the uniqueness of events in event logs; i.e., given
+an event log l2l, we have8(1;m1);(2;m2)2l:e121^e222^e1=e2=)
+(1;m1)=(2;m2) and8(he1;:::; eni;m)2l:81i<jn:ei,ej. this property
+can easily be ensured by adding an extra identity attribute to the events.
+also, we assume that the uniqueness of the “caseid” value for traces in a given
+event log l. in other words,8(1;m1);(2;m2)2l:e121^e222^e1(caseid )=
+e2(caseid )=)(1;m1)=(2;m2).
+example 3. l it=f1;2gis a possible event log for the it company in 2. litincludes
+two traces1and2, where:
+–1b(he1;:::e7i;f(responsible ;alice )g) and
+–2b(he8;:::e17i;f(responsible ;alex)g).
+here t1;:::; t17are unique timestamps where t1<<t7andt8<<t17.
+as a preprocessing step, we enrich the event log by adding many derived features
+to its traces and events. there are many di erent derived features related to any of the
+process perspectives; the time perspective, the data ﬂow-perspective, the control-ﬂow
+perspective, the conformance perspective, or the resource /organization perspective of10 m. s. qafari et al.
+the process. we can compute the value of the derived features from the event log or
+possibly other sources.
+moreover, we can enrich the event log by adding aggregated attributes to its events
+and traces. let l2l be an event log, k2n(a non-zero natural number) the num-
+ber of time windows, tminthe minimal timestamp, and tmaxthe maximum timestamp
+inl, we divide the time span of lintokconsecutive time windows with equal length
+(the length of each time window is ( tmax tmin)=kand compute the value of aggre-
+gated attributes for each of these ktime windows. in other words, we deﬁne :l
+uattnvalues (timestamp )!ras a function that given an event log, an aggre-
+gated attribute name, the number of time windows, and a timestamp returns the value
+of the given aggregated attribute in the time window that includes the timestamp. we
+can usefor aggregated attributes at both the event and the trace-level. more precisely,
+given l2 l, (;m)2l,e2,k2n, and at2 u attwhere atis an aggregated
+attribute, we deﬁne e(at)=(l;at;k;e(timestamp )) and m(at)=(l;at;k;t0) where
+t0=maxfe(timestamp )je2g. some of the possible aggregated attributes are: the num-
+ber of waiting customers, workload (in the process-level), average service time, average
+waiting time (in the trace and event-level), number of active events with a speciﬁc ac-
+tivity name, number of waiting events with a speciﬁc activity name (in the event-level),
+average service time, average waiting time (in the resource-level).
+while extracting the data from an event log, we assume that the event recording
+delays by the information system of the process were negligible. considering the time
+order of cause and e ect, we have that only the features that have been recorded before
+the occurrence of a speciﬁc feature can have a causal e ect on it. so the relevant part
+of a trace to a given feature is a preﬁx that trace, which we call such a preﬁx of a trace
+asituation . let prfx(he1;:::; eni)=fhe1;:::; eiij1ing, a function that returns the
+set of non-empty preﬁxes of a given sequence of events. using prfxfunction we deﬁne
+a situation as follows:
+deﬁnition 3 (situation). we deﬁneusituation =e+u mapas the universe of all situa-
+tions. we call each element (;m)2u situation asituation . considering l2l, we deﬁne
+the set of situations of l as s l=f(;m)j2pr f x (0)^(0;m)2lg.
+among the possible subsets of slof a given event log l, we distinguish two im-
+portant type situation subsets of sl. the ﬁrst type is the g-based situation subset of
+lwhere g2gand includes those situations in slthat their last event (the event with
+maximum timestamp) belongs to g. the second type is the trace-based situation subset ,
+which includes the set of all traces of l.
+deﬁnition 4 (situation subset). given l2lwhere s lu situation is the set of situa-
+tions of l, and g2g, we deﬁne
+–g-based situation subset of l as s l;g=f(he1;:::; eni;m)2sljen2gg, and
+–trace-based situation subset of l as s l;?=l.feature recommendation for structural equation model discovery in process mining 11
+example 4. three situations s1,s2, and s3, where s1;s2;s32slit;g4(g4in example 2,
+generated using the trace mentioned in example 3 are as follows:
+s1b(he1;:::e5i;f(responsible ;alice )g)
+s2b(he8;:::e12i;f(responsible ;alex)g)
+s3b(he8;:::e15i;f(responsible ;alex)g)
+note that g4bgroup (actname;f“development”g) and we havefe5;e12;e15gg4. in
+other words e5(actname )=e12(actname )=e15(actname )=“development”.
+if a process includes decision points, then one of the derived attributes that can be
+added to the event log when enriching the event log is the choice attribute. a choice
+attribute is added to the activity that happens before the decision point and its value in-
+dicates which activity has been enabled as the result of the decision that has been made.
+so we can use an added choice attribute and its values to group the events in an event
+log and extract a situation subset based on the occurrence of that speciﬁc choice. we
+already deﬁned two important types of situation subsets; group-based situation subsets
+and trace-based situation subsets. we also distinguish the choice-based situation sub-
+setswhere the situation subset is extracted based on events that have a speciﬁc choice
+attribute. these situation subsets are important as they are conceptually related to a
+decision point.
+when extracting the data, we need to distinguish trace-level attributes from event-
+level attributes. we do that by using situation features which is identiﬁed by a group
+of events, g(possibly g=?), and an attribute name, at. each situation feature is
+associated with a function deﬁned over the situations. this function returns the proper
+value for the situation feature regarding atandgextracted from the given situation.
+more formally:
+deﬁnition 5 (situation feature). we deﬁneusf=uatt(g[f?g )as the universe
+of the situation features . each situation feature is associated with a function #sf:
+usituation67!u valsuch that given sf =(at;g)where at2u att, and g2g[f?g
+we have:
+–if g=?, then #(at;g)((;m))=m(at)and
+–if g2g, then #(at;g)((;m))=e(at)where e =arg max
+e02g\fe”2ge0(timestamp )for(;m)2
+usituation .
+we denote the universe of the situation features as usf.
+we can consider a situation feature as an analogy to the feature (a variable) in a tabu-
+lar data. also, we can look at the corresponding function of a situation feature as the
+function that determines the mechanism of extracting the value of the situation feature
+from a given situation. given a situation ( ;m) and a situation feature ( at;g), ifg=?,
+its corresponding function returns the value of atin trace level (i.e., m(at)). however, if
+g,?, then the function returns the value of atine2that belongs to gand happens
+last (has the maximum timestamp) among those events of that belong to g.12 m. s. qafari et al.
+example 5. we can deﬁne the following situation features using the information men-
+tioned in the previous examples:
+sf1b(team size;g3)
+sf2b(duration;g2)
+sf5b(implementation phase duration ;?):sf3b(priority;g1)
+sf4b(duration;g4)
+also, considering s1(example 4), we have:
+#sf1(s1)=21
+#sf2(s1)=35
+#sf5(s1)=279#sf3(s1)=2
+#sf4(s1)=200
+where s1is one of the situations mentioned in 4.
+we interpret a nonempty set of situation features, which we call it a situation feature
+extraction plan , as an analog to the schema of tabular data. more formally;
+deﬁnition 6 (situation feature extraction plan). we deﬁne a situation feature ex-
+traction plan assfu sfwhere sf,;.
+example 6. a possible situation feature extraction plan for the it company in section
+2 is as follows:
+sfit=f(team size;g3);(duration;g2);(priority;g1);(duration;g4)g
+=fsf1;sf2;sf3;sf4g:
+we can map each situation to a data point according to a given situation feature
+extraction plan. we do that as follows:
+deﬁnition 7 (instance). let s2u situation andsfu sfwhere sf,;. we deﬁne the
+instance instsf(s)as inst sf(s)2sf!u valsuch that8sf2sf: (instsf(s))(sf)=
+#sf(s). we denote the universe of all possible instances as:
+uinstance =[
+s2u situation[
+sfu sf
+sf,;finstsf(s)g:
+an instance is a set of pairs where each pair is composed of a situation feature
+and a value. with a slight abuse of notation, we deﬁne values (sf)=values (at) where
+sf=(at;g) is a situation feature.
+example 7. considering sfitfrom example 5 and the situations from example 4. we
+have:
+instsfit(s1)=f((team size;g3);21);((duration;g2);35);((priority;g1);2);
+((duration;g4);200)g=f(sf1;21);(sf2;35);(sf3;2);(sf4;200)g
+instsfit(s2)=f((team size;g3);33);((duration;g2);63);((priority;g1);1);
+((duration;g4);226)g=f(sf1;33);(sf2;63);(sf3;1);(sf4;226)g
+instsfit(s3)=f((team size;g3);33);((duration;g2);63);((priority;g1);1);
+((duration;g4);62)g=f(sf1;33);(sf2;63);(sf3;1);(sf4;62)gfeature recommendation for structural equation model discovery in process mining 13
+given a situation feature extraction plan sf, we consider one of its situation features
+as the class situation feature, denoted as csfandsfnfcsfgas descriptive situation
+features. given sfu sf,csf2sfwhere csf=(at;g), and an event log l, we can
+generate a class situation feature sensitive tabular data-set. we call such a tabular data
+set a situation feature table . to do that, we ﬁrst generate sl;gand then we generate the
+situation feature table which is the bag of instances derived from the situations in sl;g,
+regarding sf. note that choosing sl;gsuch that gis the same group as the one in class
+situation feature (where we have csf=(at;g)), ensures the sensitivity of the extracted
+data to the class situation feature. more formally;
+deﬁnition 8 (situation feature table). let l2 l be an event log, sf u sfa
+situation feature extraction plan, and csf =(at;g)2sf. we deﬁne a situation feature
+table tl;sf;(at;g)(or equivalently t l;sf;csf) as follows:
+tl;sf;(at;g)=[instsf(s)js2sl;g]:
+note that if csf=(at;g) where g2g, then the situation feature table tl;sf;csfincludes
+the instances derived from the situations in g-based situation subset sl;g. however, if
+g=?, then it includes the situations derived from the situations in trace-based situation
+subset sl;?.
+example 8. based on example 7 we have
+tlit;sfit;(duration;g4)=[instsfit(s1);instsfit(s2);instsfit(s3)]:
+note that in this example, the class situation feature is csf=sf4=(duration;g4).
+another way to present tlit;sfit;(duration;g4)is as follows:
+sf1=(team size;g3)sf2=(duration;g2)sf3=(priority;g1)sf4=(duration;g4)
+21 35 2 200
+33 63 1 226
+33 63 1 117
+in this table, the ﬁrst row is corresponding to the instsfit(s1), the second row is corre-
+sponding to the instsfit(s2), and the third row is corresponding to the instsfit(s3).
+4.2 structural equation model
+a structural equation model is a data generating model in the form of a set of equations.
+each equation encodes how the value of one of the situation features is determined by
+the value of other situation features. it is worth noting that these equations are a way to
+determine how the observational and the interventional distributions are generated and
+should not be considered as normal equations. more formally3;
+deﬁnition 9 (structural equation model (sem)). let t l;sf;csfbe a situation feature
+table, in which l 2l,sfu sf, and csf2sf. the sem of t l;sf;csfis deﬁned as
+eq 2 sf!expr (sf)where for each sf 2s f, expr (sf)is an expression of the
+situation features in sfnfsfgand possibly some noise n sf. it is needed that the noise
+distributions n sfof sf2sfbe mutually independent.
+3deﬁnition 9 and 11 are based on [14].14 m. s. qafari et al.
+we need sfto be causal su cient , which means sfincludes all relevant situation
+features. based on deﬁnition 9, given a sem eqover the sfof a situation feature
+table tl;sf;csf, for each sf2sf, the right side of expression sf=expr (sf) ineqdoes
+not include sf.
+giveneqover the sfof a situation feature table tl;sf;csf, theparents of the sf2sf
+is the set of situation features that appear in the right side of expression eq(sf). the set
+of parents of a situation feature includes those situation features with a direct causal
+eect on it.
+example 9. a possible sem for the situation feature table mentioned in example 8 is
+as follows:
+(priority;g1)=n(priority;g1) n(priority;g1)uni f orm (1;3)
+(team size;g3)=10(priority;g1)+n(team size;g3)n(team size;g3)uni f orm (1;15)
+(duration;g2)=2(team size;g3)+n(duration;g2)n(duration;g2)uni f orm ( 5;5)
+(duration;g4)=2(duration;g2)(priority;g1)n(duration;g4)uni f orm ( 100;100)
++(team size;g3)+n(duration;g4)
+the structure of the causal relationships between the situation features in a sem
+can be encoded as a directed acyclic graph, which is called causal structure . given
+a semeqon a set of situation features sf, each vertex in its corresponding causal
+structure is analogous to one of the situation features in sf. let sf1;sf22sf, there is
+a directed edge from sf1tosf2ifsf1appears in the right side of expression eq(sf2).
+more formally,
+deﬁnition 10 (causal structure). leteqbe the sem of the situation feature table
+tl;sf;csf. we deﬁne the corresponding causal structure ofeqas a directed acyclic graph
+(u;)where u=sfand(sf1;sf2)2if sf1;sf22sfand sf1appears in the right
+side of expression eq(sf2).
+in the rest of this paper, we use sf1sf2instead of ( sf1;sf2)2.
+having a situation feature table tl;sf;csf, the structural equation model of its situa-
+tion features can be provided by a customer who possesses the process domain knowl-
+edge or in a data-driven manner.
+example 10. the causal structure of the sem mentioned in example 9 is as depicted
+in figure 6.
+to predict the e ect of manipulating one of the situation features on the other situ-
+ation features, we need to intervene on the sem by actively setting the value of one (or
+more) of its situation features to a speciﬁc value (or a distribution). here, we focus on
+atomic interventions where the intervention is done on just one of the situation features
+by actively forcing its value to be a speciﬁc value.
+deﬁnition 11 (atomic intervention). given an semeqoversfwhere sf2sfn
+fcsfg, and c2values (sf), the semeq0after the intervention on sf is obtained by
+replacingeq(sf)by sf =c ineq.
+note that the corresponding causal structure of eq0(after intervention on sf) is
+obtained from the causal structure of eqby removing all the incoming edges to sf[14].feature recommendation for structural equation model discovery in process mining 15
+                  
+        
+                     
+                                    
+                             
+        
+fig. 6: the causal structure of the sem mentioned in example 9.
+when we intervene on a situation feature, we just replace the equation of that situation
+feature in the sem and the others do not change as causal relationships are autonomous
+under interventions [14].
+example 11. we can intervene on the sem introduced in example 9 by forcing the
+team size to be 13. for this case, the sem under the intervention is as follows:
+(priority;g1)=n(priority;g1) n(priority;g1)uni f orm (1;3)
+(team size;g3)=13
+(duration;g2)=2(team size;g3)+n(duration;g2)n(duration;g2)uni f orm ( 5;5)
+(duration;g4)=2(duration;g2)(priority;g1)n(duration;g4)uni f orm ( 100;100)
++(team size;g3)+n(duration;g4)
+5 approach
+observing a problem in the process, we need to ﬁnd a set of situation features sfwhich
+not only include csf(the situation feature capturing the problem) but also be causal
+sucient. the expressiveness of the discovered sem is highly inﬂuenced by sf(even
+though sems, in general, can deal with latent variables). considering the variety of the
+possible situation features captured by the event log and the derived ones, ﬁnding the
+proper set sfand also those values of the situation features (or combination of values)
+that contribute more to the problem is a complicated task and needs plenty of domain
+knowledge.
+we know that correlation does not mean causation. on the other hand, if a situation
+feature is caused by another situation feature (set of situation features), this implies
+that there is a correlation between the given situation feature and its parents. we use
+this simple fact for the automated situation feature recommendation. it is worth noting
+that the proposed automated situation feature recommendation method is one of the
+many possible choices. the automated situation feature recommendation method and
+the sem discovery process are described in the following:
+5.1 automated situation feature recommendation
+given an event log l2land the class situation feature csf=(at;g), we declare a nom-
+inal situation feature sfas a possible cause of csfif there exists a value v2values (sf)16 m. s. qafari et al.
+that appears in big enough portion (at least where 0<1) of the situations of sl;g
+with the undesirable (problematic) result for csf. when sfis a numerical situation fea-
+ture, we use equal width binning for the values of sfthat appear in lwhere the number
+of bins, b, is given by the user. we consider sfas a possible cause of csfif there exists a
+bin of values of sfinlsuch that the values of that bin appears in more than of portion
+of situations in sl;gwith the undesirable value for csf. more formally:
+deﬁnition 12 (potential causal situation feature). let l2l be an event log, csf =
+(at;g)the class situation feature where g 2g[f?g ,a threshold where 0< 1,
+and values (csf)#denotes the set of undesirable values of csf . we consider a situation
+feature sf a possible cause of csf if one of the following two conditions holds:
+if sf is a nominal situation feature:
+9v2values (sf)jfs2sl;gj#sf(s)=v^#csf(s)2values (csf)#gj
+jfs2sl;gj#csf(s)2values (csf)#gj:
+if sf is a numerical situation feature:
+90ib 1jfs2sl;gj#sf(s)2[i(vmax vmin+1)
+b;(i+1)(vmax vmin+1)
+b)^#csf(s)2values (csf)#gj
+jfs2sl;gj#csf(s)2values (csf)#gj
+where b2ndenotes the number of bins, v maxis the maximum value and v minis the
+minimum value for sf in l.
+moreover, we deﬁne the set of all potential causes of csf as the set of all sf 2u sf
+for which one of the above inequalities holds.
+we present the set of the potential causes to the user as a set of tuples ( sf;v) where
+sf2u sfandv2values (sf) (if sfis a numerical situation feature, then vis the lower
+bound of the bin) in the descending order regarding the portion of the situations of sl;g
+with the undesirable result that has value vforsf(has a value in the bin with the lower
+bound v). this way, the ﬁrst tuples in the order are those values (lower bound of bins of
+values) of those situation features that intervention on them may have (potentially) the
+most e ect on the value of the class situation feature.
+5.2 sem inference
+here we show how to infer the sem of a given situation feature table in two steps:
+–the ﬁrst step is causal structure discovery , which involves discovering its causal
+structure of the situation feature table. this causal structure encodes the existence
+and the direction of the causal relationships among the situation features in the
+situation extraction plan of the given situation feature table.
+–the second step is causal strength estimation , which involves estimating a set
+of equations describing how each situation feature is inﬂuenced by its immedi-
+ate causes. using this information we can generate the sem of the given situation
+feature table.
+in the sequel, we describe these two steps.feature recommendation for structural equation model discovery in process mining 17
+causal structure discovery. the causal structure of the situation features in a given
+situation feature table can be determined by an expert who possesses the domain knowl-
+edge about the underlying process and the causal relationships between its features. but
+having access to such knowledge is quite rare. hence, we support discovering the causal
+structure in a data-driven manner.
+several search algorithms have been proposed in the literature (e.g., [3,20,12]). the
+input of a search algorithm is observational data in the form of a situation feature table
+(and possibly knowledge) and its output is a graphical object that represents a set of
+causal structures that cannot be distinguished by the algorithm. one of these graphical
+objects is partial ancestral graph (pag) introduced in [23].
+a pag is a graph whose vertex set is v=sfbut has di erent edge types, including
+!;$;!;. similar to , we use inﬁx notation for !;$;!;. each edge type
+has a speciﬁc meaning. let sf1;sf22v. the semantics of di erent edge types in a pag
+are as follows:
+–sf1!sf2indicates that sf1is a direct cause of sf2.
+–sf1$sf2means that neither sf1norsf2is an ancestor of the other one, even though
+they are probabilistically dependent (i.e., sf1andsf2are both caused by one or more
+hidden confounders).
+–sf1!sf2means sf2is not a direct cause of sf1.
+–sf1sf2indicates that there is a relationship between sf1andsf2, but nothing is
+known about its direction.
+the formal deﬁnition of a pag is as follows [23]:
+deﬁnition 13 (partial ancestral graph (pag)). a pag is a tuple (v;!;$;!;)
+in which v=sfand!;$;!;vvsuch that!,$,!, andare mutually
+disjoint.
+the discovered pag by the search algorithm represents a class of causal structures
+that satisﬁes the conditional independence relationships discovered in the situation fea-
+ture table and ideally, includes its true causal structure.
+example 12. two possible pags for the sem mentioned in example 9 are shown in
+figure 7.
+                  
+        
+                     
+                                           
+        
+
+
+
+             
+          
+
+(a)
+
+
+ (b)
+fig. 7: two possible pags for the sem mentioned in example 9.18 m. s. qafari et al.
+now, it is needed to modify the discovered pag to a compatible causal structure. to
+transform the output pag to a compatible causal structure, which represents the causal
+structure of the situation features in the situation feature table, domain knowledge of
+the process and common sense can be used. this information can be applied by directly
+modifying the discovered pag or by adding them to the search algorithm, as an input,
+in the form of required directions orforbidden directions denoted as dreqanddf rb,
+respectively. dreq;df rbvvanddreq\df rb=;. required directions and forbidden
+directions inﬂuence the discovered pag as follows:
+–if (sf1;sf2)2dreq, then we have sf1!sf2orsf1!sf2in the output pag.
+–if (sf1;sf2)2df rb, then in the discovered pag it should not be the case that
+sf1!sf2.
+we assume no hidden common confounder exists, so we expect that in the pag,
+relation$be empty4. we can deﬁne the compatibility of a causal structure with a pag
+as follows:
+deﬁnition 14 (compatibility of a causal structure with a given pag). given a
+pag (v;!;$;!;)in which$=;, we say a causal structure (u;)is compatible
+with the given pag if v=u,(sf1!sf2_sf1!sf2)=)sf1sf2, and sf1
+sf2=)(sf1sf2sf2sf1), whereis the xor operation and sf1;sf22v.
+example 13. the causal structure shown in figure 6 is compatible with both pags
+demonstrated in figure 7.
+causal strength estimation. the ﬁnal step of discovering the causal model is es-
+timating the strength of each direct causal e ect using the observed data. suppose d
+is the causal structure of a situation feature table tl;sf;csf. as dis a directed acyclic
+graph, we can sort its nodes in a topological order . now, we can statistically model
+each situation feature as a function of the noise terms of those situation features that
+appear earlier in the topological order ofd. in other words, sf=f (nsf0)sf0:(sf0)(sf)
+[14]. the set of these functions, for all sf2sf, is the sem of sf.
+finally, we want to answer questions about the e ect of an intervention on any of the
+situation features on the class situation feature. we can do the intervention as described
+in deﬁnition 11. the resulting sem (after intervention) demonstrates the e ect of the
+intervention on the situation features.
+note that, in a given causal structure of a situation feature table tl;sf;csf, there is
+no directed path between sf2sfandcsf, they are independent and consequently,
+intervening on sfby forcing sf=chas no e ect on csf.
+6 experimental results
+we have implemented the proposed approach as a plugin in prom which is available in
+the nightly-build of prom under the name root-cause analysis using structural equa-
+tion model . prom is an open-source and extensible platform for process mining [21].
+4if$,;, the user can restart the procedure after adding some more situation features names to
+the situation feature table.feature recommendation for structural equation model discovery in process mining 19
+the inputs of the implemented plugin are an event log, the petri-net model of the pro-
+cess, and, the conformance checking results of replaying the given event log on the
+given model. in the rest of this section, ﬁrst, we mention some of the implementation
+details and design choices that we have made and then we present the results of applying
+the plugin on a synthetic and a real event log.
+6.1 implementation notes
+in the implemented plugin, we ﬁrst enrich the event log by adding some attributes.
+some of the features that can be extracted (besides the ones that have been explicitly
+mentioned in the event log) from the event log using the implemented plugin are as
+follows:
+–time perspective: timestamp, activity duration, trace duration, trace delay, sub-
+model duration.
+–control-ﬂow perspective: next activity, previous activity.
+–conformance perspective: deviation, number of log moves, number of model moves.
+–resource organization perspective: resource, role, group.
+–aggregated features:
+process-level: the number of waiting customers, workload.
+trace-level:average service time, average waiting time.
+event-level: number of active events with a speciﬁc activity name, number of
+waiting events with a speciﬁc activity name.
+resource-level: average service time, average waiting time
+as the second step, the user needs to specify csfandsf. the user can specify sfby
+manually selecting the proper set of situation features or use the implemented situation
+feature recommendation method on a predeﬁned set of situation features (for example
+all the situation features) to identify the relevant set of situation features to csf. ifsf
+includes an aggregated feature, we also compute the values of the aggregated feature
+the third step involves extracting situation feature table from the event log. accord-
+ing to the selected sfandcsfthe proper situation subset of the event log is generated
+and the situation feature table is extracted. then we infer the causal structure of the
+situation feature table. for this goal, we use the greedy fast causal inference (gfci)
+algorithm [12] which is a hybrid search algorithm. the inputs of gfci algorithm are
+the situation feature table and possibly background knowledge. the output of gfci
+algorithm is a pag with the highest score on the input situation feature table. in [12],
+it has been shown that under the large-sample limit, each edge in the pag computed
+by gfci is correct if some assumptions hold. also, the authors of [12] using empir-
+ical results on simulated data have shown that gfci has the highest accuracy among
+several other search algorithms. in the implemented plugin, we have used the tetrad
+[19] implementation of the gfci algorithm. to use gfci algorithm, we need to set
+several parameters. we have used the following settings for the parameters of the gfci
+algorithm in the experiments: cuto for p-values =0.05, maximum path length =-1,
+maximum degree =-1, and penalty discount =2.
+in the implemented plugin, we have assumed linear dependencies among the situa-
+tion features and additive noise when dealing with continuous data. in this case, given20 m. s. qafari et al.
+a semeqoversf, we can encodeeqas a weighted graph. this weighted graph is
+generated from the corresponding causal structure of eqby considering the coe cient
+ofsf2ineq(sf1) as the weight of the edge from sf2tosf1. using this graphical rep-
+resentation of a sem, to estimate the magnitude of the e ect of sfon the csf, we can
+simply sum the weights of all directed paths from sftocsf, where the weight of a path
+is equal to the multiplication of the weights of its edges.
+6.2 synthetic event log
+for the synthetic data, we use the it company example in section 2. the situation
+feature extraction plan is:
+f(team size;g3);(duration;g2);(priority;g1);(implementation phase duration ;?)g:
+where the class situation feature is ( implementation phase duration ;?). we assume
+that the true causal structure of the data is as depicted in figure 5.
+to generate an event log, we ﬁrst created the petri-net model of the process as shown
+in 2 using cpn tools [17]. then, using the created model, we generated an event log
+with 1000 traces. we have enriched the event log by adding implementation phase
+duration attribute to the traces. this attribute indicates the duration of the sub-model
+including “development” and “test” transitions in person-day. when generating the log,
+we have assumed that the true sem of the process is as follows:
+(complexity ;?)=n(complexity ;?) n(complexity ;?)uni f orm (1;10)
+(priority;g1)=n(priority;g1) n(priority;g1)uni f orm (1;3)
+(duration;g2)=10(complexity ;?)+n(team size;g3) n(duration;g2)uni f orm ( 2;4)
+(team size;g3)=5(complexity ;?)+3(priority;g1)+n(team size;g3)n(team size;g3)uni f orm ( 1;2)
+(implementation phase duration ;?)=50(complexity ;?)+ n(implementation phase duration ;?)uni f orm (10;20)
+5(team size;g3)+n(implementation phase duration ;?)
+the summary of the generated event log and its trace variants (generated by prom) are
+shown in figure 8.
+generating situation feature table. we generate a situation feature table using the men-
+tioned situation feature extraction plan. a snapshot of the generated situation feature
+using the implemented plugin is shown in figure 9. in this ﬁgure, the class situation
+feature is colored in pink and the descriptive situation features are colored gray.
+sem inference. applying the implemented plugin on the situation feature extracted
+from the event log, the pag depicted in figure 10a was discovered. even though the
+discovered pag does a good job regarding discovering the potential causal relation-
+ship, it does not say much about the direction of them. here the customer may guess
+that another inﬂuential attribute might exist that acts as a confounder. considering
+(complexity ;?) as another descriptive situation feature, then the discovered pag by the
+implemented plugin would be as the one in figure 10b. this pag is more accurate and
+includes the true causal structure of the situation feature table. we have assumed that the
+complexity of a project is a feature that is not recorded in the event log. the customer,
+may assume (based on domain knowledge) that the duration of “product backlog” is
+longer in more complex projects and assign to the complexity of a project the ﬂoorfeature recommendation for structural equation model discovery in process mining 21
+fig. 8: the trace variants in the synthetic event log.
+fig. 9: a snapshot of the situation feature table generated for the synthetic event log.
+of the value of ( duration;g2) divided by 10. now, using domain knowledge and the
+chronological order of transitions, we can turn the discovered pag into the causal struc-
+ture depicted in figure 10c. after estimating the strength of the causal relationships, we
+obtain the sem shown in figure 10d.
+moreover, we can have the inferred sem in text format. in this case, the output
+would be as shown in figure 11.
+by comparing the estimated coe cients of situation features names in the output of
+the plugin (and equivalently the weights of the edges in figure 10d), and those in the
+equations of the true sem of the data, we can see that the estimated and real strengths
+of causal relationships are quite close.
+to investigate the e ect of an intervention on any of the situation features on the
+class situation feature, we can ﬁnd the equation capturing the e ect of intervention by
+simply clicking on its corresponding node in the causal structure. for example, if we22 m. s. qafari et al.
+(a) the pag discovered by applying the im-
+plemented plugin on the situation feature table
+extracted using the mentioned situation feature
+extraction plane in this section.
+(b) the discovered pag after adding
+(complexity ;?) to the situation feature
+extraction plan (as one of the descriptive
+situation features).
+(c) the causal structure which is obtained by
+modifying the pag in 10b based on common
+sense and domain knowledge.
+(d) the inferred sem by estimating the strength
+of the discovered causal relationships.
+fig. 10: the pac, causal structure and the sem discovered using implemented plugin
+for the synthetic event log.
+fig. 11: the discovered sem from the situation feature table extracted from the syn-
+thetic event log after adding ( complexity ;?) to the situation feature extraction plan in
+the text format.
+click on the corresponding node of ( team size;g3), we have
+(implementation phase duration ;?)=75:0004(complexity ;?)+noise:
+this equation means that by enforcing the complexity of a project to be one unit more
+complex, then we expect that its implementation phase takes approximately 75 more
+person-days (assuming that the complexity of a project is actionable). as another ex-
+ample, equation ( implementation phase duration ;?)=0:0(duration;g2) shows
+the estimated e ect of intervention on ( duration;g2). we can interpret this equation as
+“intervention on ( duration;g2) has no e ect on ( implementation phase duration ;?)”.
+6.3 real event log
+we have used the implemented plugin also on several real-life event logs. in this subsec-
+tion we analyse receipt phase of an environmental permit application process (wabo)feature recommendation for structural equation model discovery in process mining 23
+fig. 12: the ﬁrst 27 recommended situation features and values by applying our new
+situation feature recommendation method.
+coselog project [2] event log (receipt log for short). the receipt event log includes
+1434 traces and 8577 events. the maximum duration of traces in the receipt event log
+is almost 276 days while and the average duration of traces is almost 3 minutes. we
+consider those traces that took longer than 1 percent of the maximum trace duration as
+delayed. thus, the class situation feature is ( trace delay;?) and “trace delay” is one of
+the trace-level attributes that has been used to enrich the receipt event log. the length
+of the time window in this experiment has been set to one day.
+situation feature extraction plan selection. in this case study, we ﬁrst use the situation
+feature recommendation in which we set the number of bins to 100. we use the set
+including features related to the resources of events, the duration of events, process
+workload, and some of the trace features (such as deviation, number of model moves,
+number of log moves, responsible, and department) as the initial set of features. in
+figure 12, one can see the ﬁrst 27 recommended situation features and values. the
+last column shows in which percent of the situations with the undesirable result, the
+situation feature has the mentioned value.
+we set thethreshold to 0 :05%. as a result, the situation feature extraction plan
+includes some of the resources for some of the events, responsible, deviation, num-24 m. s. qafari et al.
+fig. 13: a snapshot of the situation feature table extracted from the receipt event log
+based on the selected situation feature extraction plan.
+ber of log moves, number of model moves, and process workload. we have ignored
+some of the situation features recommended by the algorithm. for example, we have
+ignored ( department ;?) as the value assigned to this situation feature in almost all of
+the traces is “general”, so it does not contain any information about the class situation
+feature. also, we have ignored ( deviation;?) as each of its assigned values appears in
+almost the same portion of the situations with the undesirable result. we have ignored
+(number logmove ;?) as it has the same value as ( number modelmove ;?) in all of the
+generated instances. for the sake of simplicity, we use the following abbreviation for
+activity names in the rest of this section.
+–“t02” instead of “t02 check conﬁrmation of receipt”.
+–“t04” instead of “t04 determine conﬁrmation of receipt”,
+–“t05” instead of “t05 print and send conﬁrmation of receipt”,
+–“t06” instead of “t06 determine necessity of stop advice”,
+–“t10” instead of “t10 determine necessity to stop indication”,
+the situation feature extraction plan in this example is as follows:
+f(gt02;resource );(gt04;resource );(gt05;resource );(gt06;resource );(gt10;resource );
+(?;trace delay );(?;process workload );(?;responsible )
+(?;deviation );(?;number logmove )g
+where the class situation feature is ( ?;trace delay ) and
+(gt02bgroup (actname;f“t02”g)
+(gt04bgroup (actname;f“t04”g)
+(gt10bgroup (actname;f“t10”g):(gt05bgroup (actname;f“t05”g)
+(gt06bgroup (actname;f“t06”g)
+generating situation feature table. using the above situation feature extraction plan,
+we generate a situation feature table. a snapshot of the generated situation feature table
+is shown in figure 13.
+sem inference. the discovered pag from the extracted situation feature is as shown in
+figure 14. using the temporal ordering of the activities (in this process, t02 happens
+before t04,t04 happens before t05,t05 happens before t06,t06 happens before
+t10 in all the traces) and common sense (the choice of the resource of an activity doesfeature recommendation for structural equation model discovery in process mining 25
+fig. 14: the pag of the situation feature table extracted from the receipt event log,
+discovered by the implemented plugin.
+fig. 15: the causal structure obtained by modifying the pag in figure 14 using com-
+mon sense and domain knowledge.
+not aect the choice of the resource of another activity that happened before) we are
+able to convert the pag in figure 14 into the causal structure shown in figure 15.
+according to this causal structure only ( gt02;resource ) and (?;number logmove )
+have a causal e ect on (?;trace delay ) and there is no causal relationship between
+other situation features and ( ?;trace delay ). some of the other causal relationships
+encoded in figure 15 are as follows:
+–the choice of ( gt02;resource ) directly inﬂuences the choice of ( gt04;resource )
+and ( gt06;resource ).
+–the value of ( gt02;resource ) indirectly inﬂuences the value of ( gt05;resource ),
+(gt10;resource ).
+–(?;responsible ) and ( gt06;resource ) causally inﬂuence ( gt10;resource ).
+–(?;number logmove ) and ( gt10;resource ) directly inﬂuence ( ?;deviation ).
+–there is no causal relationships between any of the situation features and ( ?;
+process workload ).
+after applying the estimation step, we can see the interventional distributions of
+(?;trace delay ). we can see the e ect of an intervention on any of the situation features
+by clicking on its corresponding node. for example, we can see that the probability of
+(?;trace delay )=delayed by forcing ( gt02;resource )=resource 14 is almost 0.256.
+the predicted interventional distributions resulting from enforcing ( gt02;resource ) to
+be assigned each of its possible values is shown in figure 16.26 m. s. qafari et al.
+fig. 16: the predicted interventional distributions resulting from intervention on
+(gt02;resource ) by enforcing di erent values.
+it is worth noting that as the data in this case study is categorical, the inferred sem
+includes several equations where the right hand side includes many terms. each term
+shows the distribution of each one of the situation feature values condition on one of
+the values of one of its direct causes. so, it is not possible to completely present the
+inferred sem like in the continuous case.
+7 conclusion
+distinguishing causal from mere correlational relationships among the process features
+is a vital task when investigating the root causes of performance and /or conformance
+problems in a company. the best way to identify the causal relationships is using ran-
+domized experiments. however, this requires implementing process changes to see their
+eect. as applying randomized experiments is usually quite expensive (if not impossi-
+ble) in the processes, we propose a method for root cause analysis based on the theory
+of causality which uses a mixture of data analysis and domain knowledge. the stake-
+holders can use this framework to incorporate both domain knowledge and potential
+statistically supported causal e ects to ﬁnd the sem of the features and indicators of
+the process. moreover, this method helps stakeholders investigating the e ect of anfeature recommendation for structural equation model discovery in process mining 27
+intervention on the process. this information can be used to design and order the re-
+engineering steps.
+the validity of a discovered structural equation model (and any other machine learn-
+ing technique) is highly inﬂuenced by the set of features that have been used for data
+extraction and structural equation model discovery. however, the complex and dynamic
+inter-dependencies in processes makes the task of selecting the set of features with a po-
+tential causal e ect on the observed problem in the process a challenging task. so, we
+have proposed a simple yet intuitive and e ective feature recommendation method in
+this paper. the proposed method provides the user not just the set of features with the
+possible causal e ect on the class situation feature but also those values of the features
+that potentially have the largest contribution to the observed problem in the process. it
+is worth noting that this was missing in the previous work on the causal structure model
+discovery of a process.
+as future work, we would like to learn more process- related features that go be-
+yond individual cases. for example, bottlenecks are caused by competing cases or a
+shortage of resources. also, notions such as blocking, batching, and overtaking are not
+captured well. we would also like to make the diagnostics more understandable. this
+requires mapping diagnoses related to features back onto the process model and even
+log. finally, we would like to enhance simulation models with sem-based rules.
+acknowledgement
+we thank the alexander von humboldt (avh) stiftung for supporting our research.
+references
+1. bozorgi, z.d., teinemaa, i., dumas, m., la rosa, m., polyvyanyy, a.: process mining meets
+causal machine learning: discovering causal rules from event logs. in: 2020 2nd international
+conference on process mining (icpm). pp. 129–136. ieee (2020)
+2. buijs, j.: receipt phase of an environmental permit application process (‘wabo’), coselog
+project. eindhoven university of technology (2014), http://dx.doi.org/10.4121/
+uuid:a07386a5-7be3-4367-9535-70bc9e77dbe6
+3. chickering, d.m.: optimal structure identiﬁcation with greedy search. journal of machine
+learning research 3(nov), 507–554 (2002)
+4. gupta, n., anand, k., sureka, a.: pariket: mining business process logs for root cause
+analysis of anomalous incidents. in: proceedings of databases in networked informa-
+tion systems - 10th international workshop. vol. 8999, pp. 244–263. springer (2015).
+https: //doi.org /10.1007 /978-3-319-16313-0 19
+5. hompes, b.f.a., maaradji, a., rosa, m.l., dumas, m., buijs, j.c.a.m., van der aalst,
+w.m.p.: discovering causal factors explaining business process performance variation. in:
+proceedings of advanced information systems engineering. vol. 10253, pp. 177–192.
+springer (2017). https: //doi.org /10.1007 /978-3-319-59536-8 12
+6. lehto, t., hinkka, m.: discovering business area e ects to process mining analysis using
+clustering and inﬂuence analysis. in: international conference on business information sys-
+tems. pp. 236–248. springer (2020)28 m. s. qafari et al.
+7. lehto, t., hinkka, m., hollm ´en, j.: focusing business improvements using process mining
+based inﬂuence analysis. in: international conference on business process management. pp.
+177–192. springer (2016)
+8. lehto, t., hinkka, m., hollm ´en, j., et al.: focusing business process lead time improvements
+using inﬂuence analysis. in: simpda. pp. 54–67 (2017)
+9. de leoni, m., van der aalst, w.m., dees, m.: a general process mining framework for cor-
+relating, predicting and clustering dynamic behavior based on event logs. inf. syst. 56(c),
+235–257 (2016). https: //doi.org /10.1016 /j.is.2015.07.003
+10. mothilal, r.k., sharma, a., tan, c.: explaining machine learning classiﬁers through diverse
+counterfactual explanations. in: proceedings of the 2020 conference on fairness, account-
+ability, and transparency. pp. 607–617 (2020), http://arxiv.org/abs/1905.07697
+11. narendra, t., agarwal, p., gupta, m., dechu, s.: counterfactual reasoning for process opti-
+mization using structural causal models. in: proceedings of business process management
+forum. vol. 360, pp. 91–106. springer (2019). https: //doi.org /10.1007 /978-3-030-26643-1 6
+12. ogarrio, j.m., spirtes, p., ramsey, j.: a hybrid causal search algorithm for latent variable
+models. in: proceedings of probabilistic graphical models - eighth international confer-
+ence. pp. 368–379 (2016), http://proceedings.mlr.press/v52/ogarrio16.html
+13. pearl, j.: causality. cambridge university press (2009)
+14. peters, j., janzing, d., sch ¨olkopf, b.: elements of causal inference: foundations and learning
+algorithms. mit press (2017)
+15. qafari, m.s., van der aalst, w.m.: root cause analysis in process mining using structural
+equation models. in: international conference on business process management. pp. 155–
+167. springer (2020)
+16. qafari, m.s., van der aalst, w.m.: case level counterfactual reasoning in process mining.
+arxiv preprint arxiv:2102.13490 (2021)
+17. ratzer, a.v ., wells, l., lassen, h.m., laursen, m., qvortrup, j.f., stissing, m.s., west-
+ergaard, m., christensen, s., jensen, k.: cpn tools for editing, simulating, and analysing
+coloured petri nets. in: proceedings of applications and theory of petri nets. vol. 2679, pp.
+450–462. springer (2003). https: //doi.org /10.1007 /3-540-44919-1 28
+18. sani, m.f., van der aalst, w.m.p., bolt, a., garc ´ıa-algarra, j.: subgroup discovery in
+process mining. in: proceedings of business information systems. pp. 237–252. springer
+(2017). https: //doi.org /10.1007 /978-3-319-59336-4 17
+19. scheines, r., spirtes, p., glymour, c., meek, c., richardson, t.: the tetrad project: con-
+straint based aids to causal model speciﬁcation. multivariate behavioral research 33(1),
+65–117 (1998)
+20. spirtes, p., glymour, c.n., scheines, r., heckerman, d.: causation, prediction, and search.
+mit press (2000)
+21. verbeek, h., buijs, j., van dongen, b., van der aalst, w.m.: prom 6: the process mining
+toolkit. proc. of bpm demonstration track 615, 34–39 (2010)
+22. wang, y ., liang, d., charlin, l., blei, d.m.: the deconfounded recommender: a causal in-
+ference approach to recommendation. corr abs /1808.06581 (2018), http://arxiv.org/
+abs/1808.06581
+23. zhang, j.: on the completeness of orientation rules for causal discovery in the pres-
+ence of latent confounders and selection bias. artif. intell. 172(16-17), 1873–1896 (2008).
+https: //doi.org /10.1016 /j.artint.2008.08.001

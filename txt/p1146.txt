@@ -1,0 +1,483 @@
+time-aware concept drift detection using the
+earth mover’s distance
+tobias brockhoff[0000-0002-6593-9444], merih seran uysal[0000-0003-1115-6601],
+wil m.p. van der aalst[0000-0002-0955-6940]
+process and data science group (pads)
+computer sience 9, rwth aachen university, aachen, germany
+{brockhoff, uysal, wvdaalst }@pads.rwth-aachen.de
+abstract —modern business processes are embedded in a com-
+plex environment and, thus, subjected to continuous changes.
+while current approaches focus on the control ﬂow only, addi-tional perspectives, such as time, are neglected. in this paper, weinvestigate a more general concept drift detection framework thatis based on the earth mover’s distance. our approach is ﬂexiblein terms of incorporating additional perspectives thanks to thecapability of deﬁning custom feature representations, as wellas expressive feature similarity measures. we demonstrate theformer by incorporating the time perspective using both a time-binning-based trace descriptor and a suitable similarity measurethat considers time and control ﬂow. we evaluate the resultingsliding window detector on different types of control-ﬂow andtime drifts, and holistic drifts involving multiple perspectives.
+index t erms —process mining, concept drift detection, earth
+mover’s distance
+i. i ntroduction
+due to changing conditions in business environments,
+business processes are continuously evolving and are, thus,
+seldomly in a steady state. therefore, ﬂexibility, supportedby efﬁcient and holistic change detection and managementapproaches, is an important competitive advantage and caneven be necessary to persist in a competitive environment.
+a major challenge for detecting concept drift is its mul-
+tifactorial causes and effects. for example, new regulationschange the control ﬂow, the workload is adapted to changingmarket demand/price, the organization of the individual workchanges over time, or new employees temporarily reduce theperformance of speciﬁc parts of the process. hence, conceptdrift detection methods that allow for different perspectivesonto the process are needed.
+to this end, this paper proposes a drift detection method
+based on the earth mover’s distance (emd) [1] which allowsus to incorporate different perspectives. introduced in thecomputer vision domain as a similarity measure matchinghuman perception well, emd has recently gained interest inthe process mining community as a method for conformancechecking on stochastic languages [2]. given two distributionsand a measure of pairwise feature similarity, emd describes
+we thank the alexander von humboldt (avh) stiftung for supporting our
+research. funded by the deutsche forschungsgemeinschaft(dfg, german
+research foundation) under germany’s excellence strategy — exc-2023internet of production 390621612.the minimum effort that is required to transform one distribu-
+tion into the other. its intuitive interpretation and ﬂexibilityin terms of specifying a feature distribution and similaritymeasure makes emd a general comparison method that hasbeen applied in many different domains.
+in contrast to most of the existing work which solely focuses
+on control-ﬂow level drifts by means of hypothesis tests oncontrol ﬂow feature distributions, we propose to exploit theﬂexibility of emd to address other manifestations of drift.for instance, from the resource perspective, the frequencythat a certain resource executes a sequence of activities mightchange, while these activities are still handled by other re-sources. moreover, the control-ﬂow level drift detection doesnot consider time which is a major driver for key performance
+indicators. for example, an increasing case arrival rate willultimately impact the sojourn times if the available resourcesbecome overloaded. furthermore, the service times of certainactivities, as a proxy for case complexity, can determine howthe case will be further handled and, therefore, impact thegeneral control ﬂow. these use cases require methods thatextend the general control-ﬂow perspective and also considertime, resources or combinations of the former perspectivesyielding a broader or even holistic view on potential changes.
+using emd we demonstrate how a time perspective can be
+incorporated into concept drift detection, e.g., activity serviceand sojourn times. to achieve this, we use both a time-awaretrace descriptor and a suitable similarity measure.
+our contributions are as follows: first, we introduce a
+sliding window-based concept drift detection approach thatuses stochastic languages to represent the windows. then,we use emd to compare two windows with each other anddetect a (possible) concept drift between them. moreover, wedemonstrate how the basic detection approach can be modiﬁedin order to incorporate time features.
+the remainder of the paper is organized as follows: we
+review the related work in section ii. then, section iv-aintroduces emd for stochastic languages and section iv-bdemonstrates how time can be incorporated into the detectionapproach. after presenting the sliding windows method insection iv-c, we evaluate our approach in section v. finally,we conclude our paper and give an outlook on future work insection vi.ii. r elated work
+originally, the topic of concept drift originated from the
+ﬁelds of data mining and machine learning where it describes a
+change of a target concept [3], [4] dependent on a hidden con-text. as summarized in [5], there are three major approachesfor detecting concept drift. approaches based on sequential
+analysis incrementally compute and maintain a test statistic
+on distribution changes of the input data, e.g., whether theprobability ratio of certain subsequences changes [6]. methodsbased on statistical process control maintain a model of the
+process and detect change points by monitoring predictionquality metrics [7], [8]. finally, window-based drift detectors
+compare the empirical data distributions between two datawindows at different periods in time. in this context, differ-ences between the distributions can be assessed directly bystatistical tests [9], assuming equal distributions as the nullhypothesis, or by signiﬁcant changes of information theoreticmeasures, e.g., kullback-leibler divergence [10].
+in process mining, window-based concept drift detectors are
+the most prominent type of detector. the ﬁrst approach specif-ically tailored to business processes was proposed in [11].the authors apply two ﬁxed-size sliding windows representingtraces by feature vectors proposing two global and two localfeatures, respectively. differences between the feature vectordistributions are then assessed by a hypothesis test. finally,sliding the windows over the log yields a p-value plot thatcan be used for visual concept drift detection. a more detailedanalysis of this approach can be found in [12]. moreover, usingimproved windowing techniques, this work was automatizedand extend in [13] to deal with gradual drift and multi-orderdynamics, i.e., multiple changes of different granularities. asimilar window-based approach representing traces by meansof a trace abstraction in terms of so-called runs was proposed
+in [14]. based on the classical α-relations [15], distributions
+over trace abstractions are computed and compared using ahypothesis test. the idea of using α-relations for drift detection
+was also extended to drift detection and characterization inevent streams [16], [17]. the authors in [18] propose tocompute pair-wise intra-trace activity distances over a refer-ence window where distance interval changes indicate changepoints. a window-based approach that chooses a differentwindow representation based on convex polyhedra over theparikh vector [19] can be found in [20]. finally, windowcomparison using the canberra distance on the dependencyrelations of the heuristic miner was proposed in [21].
+in contrast to the window-based approaches, a sequen-
+tial analysis based approach, that maintains statistics on
+whether directly-follows and eventually-follows relations al-ways, never, or sometimes hold within sequential sections ofthe process, was introduced in [22]. nevertheless, all theseapproaches only consider the control ﬂow level.
+clustering is another approach for detecting changes. the
+authors in [23] propose to enhance the trace representation bya time dimension by adding the start timestamp of the trace.although this explicitly incorporates time into the representa-tion, time information of individual activities is not considered.a more general framework for trace clustering based changepoint detection is introduced in [24]. traces within a chosenwindow are clustered using the markov cluster algorithmand the trace of the difference matrix between two clustermatrices is proposed as a window similarity measure. thedownside of this approach is that control-ﬂow features andtime information are not considered by the authors. moreover,cluster differences were only evaluated visually.
+iii. p
+relimiaries
+before proposing our novel concept drift detection method,
+this section introduces the basic concepts needed in sec-tion iv.
+a) event log: letς
+adenote a ﬁnite alphabet of activ-
+ities and let σvbe the set of (countable inﬁnite) additional
+activity descriptor values that deﬁne a view on the process,e.g.,σ
+v=nfor temporal information based on binning
+(cf. section iv-b). each event can then be described by anactivity and its additional descriptor value yielding an alphabetς=σ
+a×σv. given a descriptor e=(a,v)∈σ,ea=a,
+ev=vdenote the corresponding activity and view value,
+respectively. subsequently, the set σ∗of all ﬁnite words over
+σdescribes the possible trace variants of the process. for a
+traceσ=(e1,e2,...,e n)∈σn, we denote the i-th element
+byσi=eiand the subsequence (ei,...ej)byσ[i,j],i≤j.
+using the potentially extended alphabet, the input of ourmethod is an event log that is deﬁned as follows:
+deﬁnition 1 (event log) .letσdenote a (countable inﬁnite)
+alphabet. an event log is a ﬁnite multiset of traces e:ς
+∗→
+n.
+for example, e=[/angbracketleft(a,1),(b,4)/angbracketright7,/angbracketleft(a,4),(b,2)/angbracketright3,/angbracketleft(b,2),
+(a,4)/angbracketright1]is an event log containing 10 traces comprising an
+additional integer descriptor.
+b) stochastic language: stochastic languages can be
+used to represent collections of traces. in addition to the trace
+variants that are present, a stochastic language also captures
+the likelihood of a variant. formally, it is deﬁned as a function
+that assigns a probability to each trace.
+deﬁnition 2. given an alphabet σ,f:ς∗→[0,1]is a
+stochastic language iff σt∈σ∗f(t)=1 .
+each multiset of traces, e.g., an event log, can be trans-
+formed into a stochastic language by normalization. for
+instance, the preceding example event log can be normal-
+ized to[/angbracketleft(a,1),(b,4)/angbracketright6
+10,/angbracketleft(a,4),(b,2)/angbracketright3
+10,/angbracketleft(b,2),(a,4))/angbracketright1
+10].
+the support of a stochastic language fwill be denoted by
+sf={t∈σ∗|f(t)>0}. in the following, we will consider
+ﬁnite stochastic languages, i.e., stochastic languages with
+ﬁnite support.
+iv . m ethods
+in this section, we propose an approach for time-aware
+concept drift detection. to this end, we ﬁrst introduce the earth
+34mover’s distance (emd) as a comparison method for proba-
+bility distributions. regarding the importance of incoporatingadditional perspectives for holistic change point detection,using the proposed method, we demonstrate how the detectorcan naturally be extended to consider time. finally, we brieﬂydescribe the sliding window approach that was used to makethe method applicable for concept drift detection.
+a. concept drift detection based on emd
+the earth mover’s distance (emd) is a distance-based sim-
+ilarity measure for the comparison of probability distributions.
+intuitively, it considers one distribution as piles of earth andthe other as a set of holes. given a ground distance functionthat describes the effort of moving earth from a certain pileto a speciﬁc hole, emd is the minimum-cost ﬂow required tomove earth from hills to holes.
+a) trace distance: before formally deﬁning emd as a
+distance measure for stochastic languages, we introduce thenotion of a trace distance [2]. a trace distance δ:ς
+∗×σ∗→
+[0,1]describes the dissimilarity of any two given traces. it
+is required to be symmetric and to satisfy the identity ofindiscernibles porperty [2]. besides, it is desirable that δ
+additionally satisﬁes the triangle inequality, i.e., ∀t,t
+/prime,t/prime/prime∈
+σ∗:δ(t,t/prime)+δ(t/prime,t/prime/prime)≤δ(t,t/prime/prime), so that δ, and therefore
+also emd, become a metric. nevertheless, as detailed insection iv-b, some trace distance candidates might onlyempirically satisfy the triangle inequality for most inputs.
+b) emd for stochastic languages: given a trace dis-
+tance function, emd as a measure for comparing stochasticlanguages has been proposed in [2]. in general, emd as asimilarity measure between probability distributions unites twodesirable properties. on the one hand, it is frequency-awarein the sense that it considers the magnitude of discovereddifferences. on the other hand, the notion of difference isdetermined by the trace distance, and, thus, different distancefunction can express different perceptions of similarity. in thecontext of processes, we use this property to open differentperspectives on the process. formally, in the context of ﬁnitestochastic languages f,g, emd between fandgcan be
+deﬁned by the following linear program:
+deﬁnition 3 (earth mover’s distance). letf,g be ﬁnite
+stochastic languages over the alphabet σand letδbe a trace
+distance function. the earth mover’s distance between fand
+gis deﬁned by:
+emd(f,g)= minimize/summationdisplay
+t∈sf/summationdisplay
+u∈sgxtu·δ(t,u)
+s.t. ∀t∈sf:/summationdisplay
+u∈sgxtu=f(t) (source)
+∀u∈sg:/summationdisplay
+t∈sfxtu=g(u) (target)
+∀t∈sf∀u∈sg:xtu≥0 (non-negativity).0.1/0.20/0.250/0.5
+0/0.20.5/0
+0/0.50.05/0.60/0.50.35/0/angbracketlefta, b, e, f/angbracketright10
+100
+/angbracketlefta, b, d, f/angbracketright50
+100
+/angbracketlefta, c, f/angbracketright40
+100
+/angbracketlefta, b, d, e, f /angbracketright
+15
+100/angbracketlefta, b, d, f/angbracketright
+50
+100/angbracketlefta, c, f/angbracketright
+35
+100
+fig. 1: optimal cost ﬂow for emd(f1,f2)for the stochastic
+languages f1,f2. edge inscriptions x∗
+tu/δ(t,u)show the opti-
+mal ﬂowx∗tuand the trace distance value δ(t,u)for all variants
+t∈sf1,u∈sf2. zero ﬂow edges are depicted by dashed
+lines. even though we have sf1/negationslash=sf2,emd(f1,f2)=0.05
+shows that the difference concerns infrequent behavior.
+while the last constraints ensure non-negative ﬂows, the
+source constraints assert that the entire probability mass for
+each trace of fis moved to traces in g. likewise, the target
+constraints limit the ﬂows to gaccording to its probability
+mass distribution. furthermore, the objective function ensuresa minimal effort ﬂow. note that, as we consider ﬁnite stochas-tic languages, the number of variables and constraints is ﬁnite,and, thus, the linear program is well-deﬁned. moreover, thelinear program is feasible due to the equality of the total weightoffandgas stochastic languages are inherently normalized.
+besides, normalization and a metric as trace distance wouldmake emd on stochastic languages a metric too [1].
+to detect control ﬂow changes between two stochastic
+languages, we can for example use the post-normalized lev-enshtein distance, where in a second step the computeddistance value is normalized by the maximum length of thetwo considered sequences, as trace distance function. for in-stance, consider the stochastic languages f
+1=[/angbracketlefta,b,d,f/angbracketright50
+100,
+/angbracketlefta,c,f/angbracketright40
+100,/angbracketlefta,b,e,f/angbracketright10
+100],f2=[/angbracketlefta,b,d,f/angbracketright50
+100,/angbracketlefta,c,f/angbracketright35
+100,
+/angbracketlefta,b,d,e,f /angbracketright15
+100]andf3=[/angbracketlefta,b,d,f/angbracketright20
+100,/angbracketlefta,c,f/angbracketright70
+100,
+/angbracketlefta,b,e,f/angbracketright10
+100]wheref1represents the basic process behavior.
+while in f2an infrequent new variant where both dande
+can occur is introduced replacing another infrequent variant,inf
+3the most frequent variant changes from /angbracketlefta,b,d,f/angbracketrightto
+/angbracketlefta,c,f/angbracketright. using the (post)normalized levenshtein distance, we
+obtain emd(f1,f2)=0.05andemd(f1,f3)=0.15which
+well reﬂects the major behavior change in f3. the example
+solution to the linear program for emd(f1,f2)is depicted in
+figure 1. it shows that, on the one hand, the costs are causedby transferring a probability mass of 0.1between the two
+infrequent variants /angbracketlefta,b,e,f/angbracketrightand/angbracketlefta,b,d,e,f /angbracketright, which have
+a post-normalized trace distance of 0.2. on the other hand, a
+slightly reduced likelihood of /angbracketlefta,c,f/angbracketrightinf
+2causes additional
+costs of0.05·0.6=0.03. using emd for stochastic language
+comparison enables us to focus on trace properties by meansof the trace distance function. moreover, it also allows us toconsider the frequency of observed patterns.
+35b. time-aware concept drift detection
+in this section, we propose to extend concept drift detection
+by adding a time perspective, i.e., sojourn times or activity
+service times. to this end, we exploit the ﬂexibility of emdand introduce a time-aware ground distance. we ﬁrst binthe observed times and then apply a weighted levenshteindistance variant in order to obtain a control ﬂow and time-aware comparison method.
+a) binning: we apply time binning in order to abstract
+similar time related behavior and to make the weightedlevenshtein distance applicable. to this end, depending onthe chosen time perspective, ﬁrst, we collect the observedactivity service or sojourn times. as time features might differsigniﬁcantly between different activities, we locally evaluatethe following two clustering approaches, i.e., we computethe statistics per activity while taking the complete log intoaccount. following the pareto principle that 80% of theinteresting behavior is caused by 20% of the cases, we proposeto determine the bins by a percentile-based clustering based onthe times observed for each individual activity. the bin edgesare thereby chosen according to a given list of percentiles.regarding multimodal time distributions we propose to usethe k-means++ [25] as a data-driven clustering approach. inthe 1-dimensional time setting its objective is theoreticallywell-founded being equivalent to minimizing the within-classvariance [26]. a major advantage is that this approach candeal with different cluster sizes among different activities. byapplying these binning techniques, we discretize time-relatedinformation into kbins and obtain traces over an alphabet
+σ
+t=σa×{0,...,k−1}with the bin index as an additional
+descriptor.
+b) time-aware trace distance: given two traces σ,σ/prime∈
+σ∗
+tover the binned alphabet with kbins, we propose to
+use a variant of the weighted levenshtein distance δl[27]
+which splits the total operation costs into control-ﬂow and
+time costs, respectively. to this end, on the control-ﬂowlevel, we deﬁne binary costs c
+f
+r:σa×σa→r≥0for
+renaming and unary costs cf
+id:σa→r≥0for insertion and
+deletion. likewise, on the time level, we use binary costs
+ct
+mr:{0,...,k −1}×{0,...,k−1}→ r≥0, for matching and
+renaming activities considering different time bins and unary
+costsct
+id:{0,...,k −1}→ r≥0for insertion and deletion. the
+resulting trace distance can then be deﬁned by the following
+recursive relation:
+δl(σ[1,i],σ/prime[1,j])=
+min⎧
+⎪⎪⎪⎪⎪⎪⎪⎪⎪⎨
+⎪⎪⎪⎪⎪⎪⎪⎪⎪⎩δ
+l(σ[1,i−1],σ/prime[1,j−1])+ct
+mr((σ i)v,(σ/prime
+j)v) if(σ i)a=(σ/prime
+j)a
+δl(σ[1,i−1],σ/prime[1,j−1])+
+cfr((σ i)a,(σ/prime
+j)a)+ctmr((σ i)v,(σ/prime
+j)v)(rename)
+δl(σ[1,i],σ/prime[1,j−1])+cf
+id((σ/prime
+j)a)+ct
+id((σ/prime
+j)v)( insert)
+δl(σ[1,i−1],σ/prime[1,j])+cf
+id((σ i)a)+ct
+id((σ i)v)( delete).(1)
+regarding a concrete instantiation of the cost functions, we
+need to ensure that it respects the inter-dependencies betweenthe edit operations to preserve the intuitive interpretability ofthe distance value which is stated in the following axiom.
+axiom 1 (levenshtein-based trace distance interpretability).
+levenshtein-based trace distances that consider time informa-
+tion should fulﬁll the following properties:
+1. renaming is preferable over deletion and insertion
+2. matching events under a large time difference is less
+expensive than
+(a) deletion followed by insertion(b) renaming events with different activity labels but the
+same time information.
+moreover, since we will use δ
+lin a sliding-window frame-
+work, we want δlto be symmetric so that traces from the left
+and right window are treated equally. for example, consider
+three subsequent windows each containing just a single tracevariant, namely σ
+1,σ2andσ3, such that the ﬁrst and third
+window are equal, i.e., σ1=σ3. intuitively, differences and,
+hence, potential drift points between the ﬁrst and the second,or between the second and the third window should be scoredequally, i.e., δ
+l(σ,σ/prime)=δl(σ/prime,σ/prime/prime). therefore, we use the
+same function for the insertion and deletion cost to make δl
+symmetric.
+considering the interpretation axioms, let a,a/prime∈σa,a/negationslash=
+a/prime,t,t/prime∈{0,...,k−1}. we use ﬁxed control-ﬂow penalties
+for renaming, insertion, and deletion, i.e., cf
+r(a,a/prime)=fr=
+1=fid=cf
+id(a), costs linear in the bin distance for matching
+and renaming w.r.t. time, i.e., ct
+m(t,t/prime)=ctr(t,t/prime)=|t−t/prime|,
+and cost linear in the bin index for insertion and deletion, i.e.,
+ct
+id(t)=t. even though time bins of disjoint activities are
+not necessarily comparable w.r.t. absolute time, this choice
+naturally enforces axiom 1.2(b). for example, consider thecosts and traces f
+r=2,fid=2 ,σ=/angbracketleft(a,1),(b,4)/angbracketright,
+σ/prime=/angbracketleft(a,4),(b,2)/angbracketrightandσ/prime/prime=/angbracketleft(b,2),(a,4)/angbracketright. if renaming
+can only be applied to different activity labels, is not per seexpensive and does not respect time differences, we obtain3+2= δ
+l(σ,σ/prime)≥δl(σ,σ/prime/prime)=2+2 although renaming
+is required twice in the latter case. this contradicts theintuitive perception of similarity. likewise, for high renamingcosts, that are independent of the time difference, renamingoperations would dominate emd, therefore, rendering it lesssensitive to time behavior changes. in addition to a generaloperation penalty, we also consider the time bin for insertionand deletion operations enforcing axiom 1.2(a).
+in order to account for different trace lengths, we post-
+normalize the distance by the maximum trace lengths, i.e.,
+¯δ
+l(σ,σ/prime)=δl(σ,σ/prime)
+max(|σ|,|σ/prime|),σ,σ/prime∈σ∗. even though δlis a
+metric, normalization might violate the triangle inequalityfor levenshtein based edit distances [28]. accordingly, ¯δ
+lis
+not necessarily a metric. nevertheless, the triangle inequalityand thus metric properties emprically hold for most of thedescriptors considered in our evaluation.
+c. sliding window
+in order to detect concept drift in an event log, we em-
+bed our approach into a sliding window framework. let
+(t
+1,t2,...,tn)∈(σ∗)ndenote an ordering of the traces
+36ti−4ti−3ti−2ti−1titi+1ti+2ti+3ti+4ti+5ti+6wl
+i,2wr
+i,2wl
+i,4 wr
+i,4
+wl
+i+2,2wr
+i+2,2
+wl
+i+2,4 wr
+i+2,4
+fig. 2: multi-scale sliding window. at each scale, viz. window
+size 2 and 4, we maintain a left and right window. aftercomparison, both windows are shifted by a stride size of 2.
+by the timestamp of the ﬁrst event. as depicted in fig-
+ure 2, given an index i,w
+l
+i,w=(ti−w+1,ti−w,...,ti)and
+wr
+i,w=(ti+1,ti+2,...,tw)denote the left and right window,
+respectively. we compute the corresponding trace descriptorsfor each window pair w
+l
+i,wandwr
+i,wand transform the
+resulting representations into stochastic languages fl
+iandfl
+r
+by normalization. afterwards, we compare fl
+iandfl
+rusing
+emd yielding the dissimilarity score emd(fl
+i,fr
+i). finally,
+the windows are shifted by a user-deﬁned stride size. increas-ing the stride size, thereby trades localization accuracy forefﬁciency. we plot the ﬁnal emd values to detect processchanges. similar to the work in [29], we use different-sizedwindows in order to show and validate drift on multiple scales.
+v. e
+v aluation
+in this section, we demonstrate the capability of the pro-
+posed method to detect control-ﬂow drifts, time drifts, andcontrol-ﬂow drifts which can only be detected by a holisticapproach. to this end, we created multiple artiﬁcial event logsfrom variants of the model used in [11]. figure 3 depictsthe adapted model, which models the process of handlinghealth insurance claims, in bpmn notation. arriving claimsare registered and classiﬁed into low and high claims. be-sides, a questionnaire is sent to the claimant which might beanswered. each claim undergoes several checks which eitherlead to rejection or eventually to acceptance. in contrast to theoriginal model, our model adapts the efﬁcient reject-if-check-
+is-unsuccessful pattern for low and high claims. furthermore,
+our model introduces refunding activities before the claimant isnotiﬁed. after checking, every claimant receives a documentednotiﬁcation and can be called additionally. finally, the case isarchived while some cases are also controlled in more detail. inorder to assign the tasks to resources, we maintain a resourcepool and randomly choose free resource therefrom. followingnatural behavior, we sample exponentially distributed inter-case arrival times while the service times of human executedactivities are normal distributed.
+a. implementation
+we implemented the methods presented in section iv as a
+plugin in prom. the plugin allows to specify multiple sliding
+windows of different window and stride sizes. moreover, itsupports the levenshtein distance and the weighted leven-shtein distance for time-binning based trace descriptors, thatwe proposed in section iv-b, as trace distance functions.regarding the time perspective, the user can choose betweenservice and sojourn time-aware concept drift detection. in thiscase, the time bins are computed according to user-deﬁnedpercentiles for the percentile-based bin edge computation or agiven number of clusters for the data-driven approach using k-
+means. in order to efﬁciently compute emd, we implementedan exterior point simplex method described in [30], [31],which is tailored to the underlying optimal-cost-ﬂow problem.
+b. control-flow drift
+in order to demonstrate the ability of our approach to
+detect control-ﬂow drifts, we apply it to the log used in [11].
+the log contains different types of control-ﬂow drift with achange every 1200 traces. figure 4a shows the output of ourplugin for different window sizes using emd with levenshteindistance for window comparison. the bottom panel shows aheatmap of emd values w.r.t. the indices of the traces, orderedby the timestamp of the ﬁrst event, and the window sizes.given that different window sizes capture changes of differentfrequencies, this spectrum-inspired visualization can help tolocalize changes in the time and frequency domain. the upperpanel shows a lineplot of the emd values for an interactivelyselectable window size.
+first, as depicted by the dotted lines, we note that all
+model changes can be detected, although the inherently high-dimensional trace descriptor requires large windows sizes tocapture the process behavior. as can be seen for windowsize 200, the signiﬁcantly higher variance indicates that thesample size is insufﬁcient to fully represent the underlyingdistribution. in this case, larger windows are needed to verifypotential drift points. moreover, it can be seen that emdnaturally describes the extend to which the process is affectedby the change. to this end, consider the highlighted emdvalue difference between the second and third peak. while thepre-change model for the second peak contains an or-relationbetween ’by phone’, ’e-mail’, and ’post’, as well as theoption to skip everything, the change removes the latter option.the low emd values thereby indicate that relatively few casesare affected, i.e., the notiﬁcation has been skipped for thesecases. in contrast, the third peak results from introducing anexclusive choice between the former activities. considerablylarger emd values show that many cases are affected, i.e.,before the change claimants were often notiﬁed via multiplechannels.
+although the currently implemented window descriptor
+based on stochastic languages, which consider entire traces,can be effectively high-dimensional, an advantage is that wecan detect long-term dependencies. in order to show this, weintroduce a controlling activity scrutinizing a limited subsetof the recently archived cases. initially, given two low andhigh claim cases, the probability that the high claim caseis selected for additional controlling is 40%. after 2000cases this probability changes to 20%, following the ideathat high claim cases have been handled more carefully, andtherefore less controlling is required. this introduces a long-term dependency between the initial check claim sequence
+37register +×
+create
+questionnairesend
+questionnaire×skip
+questionnaire
+receive
+questionnaire×high insurance
+check×high medical
+history check×contact
+hospital×
+low insurance
+check×low medical
+history check×calc
+refundrefund
+booking×prepare
+notiﬁcation+
+×e-mail
+post××by phone
+×
+++ archive
+×
+controlling
+×
+fig. 3: the adapted insurance claim model from [11] showing a process for handling low and high insurance claims. dashed
+lines show the activities that are affected by the ﬁltering applied in the time-induced control ﬂow drift scenario.
+(a) different control-ﬂow drifts (stride size 2).
+ (b) long-term dependency drift (stride size 2).
+fig. 4: drift detection on the control-ﬂow level using the levenshtein distance. it shows the spectrum over window sizes 200,400, 600, 800 and selectively emd for window size 600.
+and the controlling activity which is further extended by
+the introduction of the refunding activities (cf. figure 3).as depicted in figure 4b, the drift can be detected whichwould not be possible using local statistics, e.g., a windowaround each activity if the window size is too small [11].intuitively, such drift scenarios are relevant for activities whosenumber of occurrences is limited by the resource availabilityand, therefore, drifts do not necessarily affect the followsfrequencies of directly preceding activities.
+c. time drift
+in order to assess the capability to detect time drift, we
+inject changes of the case arrival rate. using an initial base
+inter-arrival time of 45 minutes, we created a log with suddenarrival rate drifts to 60, 45, 30, 45, 25, and 45 minutes every2000 traces, respectively. in order to exclude the possibilityof inter-arrival-time-induced control-ﬂow drifts, we ﬁlter thequestionnaire-related activities. due to the increased sojourntimes, more questionnaires are received back which causes acontrol-ﬂow drift.
+regarding the parameter setting of f
+idandfr, preceding
+experiments showed that fid=fr=1works well. in general,
+we could see that the output of our method is not very sensitiveto this setting for reasonably small values. furthermore, weapply the data-driven bin computation using k-means, which
+generally performed well, with k=3 . this follows the
+intuition to have a bin for slow, moderate, and fast behavior.as depicted by the dotted blue lines in figure 5a, according
+to our method an increasing inter-arrival time does not signif-icantly affect the sojourn times. during periods of baselinearrival rate, the resources are sufﬁcient to handle each caseimmediately. therefore, reducing the arrival rate does notaffect the immediate reaction, and hence the sojourn timesdo not change. in contrast, decreasing the inter-arrival timesincreases the sojourn times and a drift is detected. the peakscorresponding to the onsets of arrival rate drifts are highlightedby dotted black lines. in addition to the ground truth arrivalrate changes, we observe two additional peaks, depicted by thedensely dotted lines, which might be attributed to the varianceof the arrival rate and activity service times. moreover, largeremd values for shorter inter-arrival times show that emd isa measure for the impact of the drift. regarding our deﬁnitionof the time-aware trace distance function δ
+l, this experiment
+shows that incorporating the time bins into the costs forinsertion and removal causes a shift of the baseline costs, asindicated by the dashed red line, so that the emd values aregenerally larger during periods of faster case arrival. given twotraces for which the optimal distance according to δ
+lrequires
+deletion and insertion, a low arrival rate and, therefore, lowsojourn times and bin indices yield a comparatively smallerdistance value than a high arrival rate and consequently higherbin indices due to higher costs for insertion and deletion.hence, the costs arising from imperfectly matching windowsare generally higher. since the baseline shifts accumulate,
+38we can, to some extend, also observe ongoing gradual drifts
+towards increasing sojourn times during the periods of arrivalrate change.
+d. time-induced control flow drift
+finally, we investigate a drift scenario that requires a holistic
+approach combining the time and control perspective. to
+this end, we distinguish between low claims with an easymedical history and those with a difﬁcult history. in themodel, this difference reﬂects in the service time of ’lowmedical history check’ with an increased service time formore difﬁcult cases. the service times for each group aremodeled by normal distributions where the probability of alow claim being difﬁcult is 20%. the service times sampledfrom the resulting gaussian mixture model are depicted infigure 6. assuming that the resources for calling claimants arelimited and therefore only a ﬁxed percentage of the claimantscan be called, we introduce a drift by changing the individualprobabilities for notiﬁcation by phone for easy and difﬁcultcases. while initially the probability is 50% for both degreesof difﬁculty, after the drift, that is introduced after 2500 cases,difﬁcult cases are certainly called and easy cases only with aprobability of approximately 40%. note that in order to detectthis drift, time has to be considered since the general control-ﬂow on the activity level is not affected.
+detecting the aforementioned concept drift requires us to
+focus on the low claim check activities and the subsequentnotiﬁcation as there is only a small impact on the completeprocess. therefore, we ﬁlter the generated log, containing 5000traces, for low claim cases by only considering claims thatexperience the ’low insurance check’. note that cases thatare rejected in this step are still considered, which slightlybroadens the focus. furthermore, we only focus on checkingand notiﬁcation related activities depicted by dotted lines infigure 3. as before, we apply data-driven bin computationwithk=3. figure 5b shows the output for the ﬁltered log. the
+dotted line indicates a drift that occurs after half of the traces,which ﬁts the time of the actual drift. the magnitude of emdchange also gives evidence that this drift only slightly affectsthe process, i.e., only a few claims are concerned. moreover,the high variance and large emd values that can be seen inthe multi-scale plot in figure 5b indicate a high variabilityof the binning-based descriptor. therefore large sample sizes,i.e., large windows, are required to approximate the underlyingdistribution to obtain clearer peaks, as indicated by the blackcircle. besides, it can be noted that it sufﬁces to categorizeservice times into three bins to detect the drift, even thoughthe underlying service time distribution is bi-modal.
+consequently, the presented experimental results show that
+our method is able to detect drifts that require a holisticconsideration of time and control ﬂow.
+vi. c
+onclusion and future work
+in this paper, we proposed an emd-based concept drift
+detection approach that allows for different perspectives on theprocess thanks to the ﬂexibility of emd regarding the choiceof the representation and the distance measure. furthermore,we demonstrated how a time perspective that enables serviceand sojourn-time aware drift detection can be implemented inthis framework. the experimental evaluation showed that var-ious types of control-ﬂow, as well as time-dependent control-ﬂow drifts can successfully be detected. however, the ability ofthe currently used trace descriptor to holistically detect drift inlong-term dependencies is traded for the requirement of largewindows sizes and possible additional preprocessing.
+for future work, given our ﬁrst results on holistic drift detec-
+tion, we intend to perform a more comprehensive evaluation,in particular on real-world data, as well as to develop meth-ods that allow to systematically ﬁnd a proper preprocessingwithout requiring domain knowledge. considering the tracedescriptors, e.g., lower-dimensional descriptors and descriptorsthat incorporate additional perspectives are possible futuredirections to investigate. moreover, descriptors and trace dis-tances that are more robust to concurrency can be investigated.furthermore, since binning the time information can result ininformation loss, trace distance functions that do not rely onbinning need to be investigated. however, ﬁrst and foremost,extensions that provide drift diagnostics, i.e., methods thatreveal the actual changes of the process, are crucial to make thedetected drifts actionable. for example, consider the additionalpeaks in figure 5a. currently, we can only diagnose that eithercontrol ﬂow and sojourn times are affected or by consideringonly the control ﬂow perspective conclude that only the controlﬂow is affected. nevertheless, in neither case we can clearlypinpoint the effect. in this context, we want to exploit theoptimal values of the ﬂow variables in the emd-deﬁninglinear program. by construction, these values determine theemd value and, therefore, describe the differences betweenthe stochastic languages. finally, the application to eventstreams can be investigated, which, in addition to dealing withpotentially changing time information granularity, requires toadapt the trace descriptor and/or distance, e.g. by allowingpartial matches, to handle incomplete traces.
+r
+eferences
+[1] y . rubner, c. tomasi, and l. j. guibas, “a metric for
+distributions with applications to image databases,” in
+iccv, 1998, p. 59.
+[2] s. j. j. leemans, a. f. syring, and w. m. p. van der
+aalst, “earth movers’ stochastic conformance check-ing,” in bpm f orum, 2019, pp. 127–143.
+[3] g. widmer and m. kubat, “learning in the presence
+of concept drift and hidden contexts,” mach. learn.,
+vol. 23, nov. 1994.
+[4] a. tsymbal, “the problem of concept drift: deﬁnitions
+and related work,” tech. rep., 2004.
+[5] j. gama, i. ˇzliobaitundeﬁned, a. bifet, m. pechenizkiy,
+and a. bouchachia, “a survey on concept drift adapta-tion,” acm comput. surv., vol. 46, no. 4, mar. 2014.
+[6] a. wald, “sequential tests of statistical hypotheses,”
+ann. math. statist., vol. 16, no. 2, pp. 117–186, jun.1945.
+[7] a. bouchachia, “fuzzy classiﬁcation in dynamic envi-
+ronments,” soft comp., vol. 15, no. 5, pp. 1009–1022,
+may 2011.
+39(a) sojourn time drifts.
+ (b) activity duration induced control-ﬂow drift.
+fig. 5: drift detection incorporating the time perspective. window sizes 200, 400, 600, 800, selectively displaying emd for
+window size 600. the stride size is 5.
+fig. 6: service time distribution for low claims according tothe degree of difﬁculty.
+[8] r. klinkenberg, “adaptive information ﬁltering: learn-
+ing in the presence of concept drifts,” in aaai, 1998,
+pp. 33–40.
+[9] d. kifer, s. ben-david, and j. gehrke, “detecting
+change in data streams,” in vldb, 2004, pp. 180–191.
+[10] r. sebasti ˜ao and j. gama, “change detection in learning
+histograms from data streams,” in epia, 2007, pp. 112–
+123.
+[11] r. p. j. c. bose, w. m. p. van der aalst, i. ˇzliobait ˙e,
+and m. pechenizkiy, “handling concept drift in process
+mining,” in caise, 2011, pp. 391–405.
+[12] r. p. j. c. bose, w. m. p. van der aalst, i. ˇzliobait ˙e, and
+m. pechenizkiy, “dealing with concept drifts in processmining,” ieee trans. neural netw. learn. syst., vol. 25,
+no. 1, pp. 154–171, jan. 2014.
+[13] j. martjushev, r. p. j. c. bose, and w. m. p. van der
+aalst, “change point detection and dealing with gradualand multi-order dynamics in process mining,” in bir,
+2015, pp. 161–178.
+[14] a. maaradji, m. dumas, m. la rosa, and a. ostovar,
+“fast and accurate business process drift detection,” inbpm, 2015, pp. 406–422.
+[15] w. van der aalst, t. weijters, and l. maruster, “work-
+ﬂow mining: discovering process models from eventlogs,” tkde, vol. 16, no. 9, pp. 1128–1142, 2004.
+[16] a. ostovar, a. maaradji, m. la rosa, a. h. m. ter hof-
+stede, and b. f. v . van dongen, “detecting drift fromevent streams of unpredictable business processes,” inconceptual modeling, 2016, pp. 330–346.
+[17] a. ostovar, a. maaradji, m. la rosa, and a. h. m.
+ter hofstede, “characterizing drift from event streamsof business processes,” in caise, 2017, pp. 210–228.[18] r. accorsi and t. stocker, “discovering workﬂow
+changes with time-based trace clustering,” in simpda,
+2012, pp. 154–168.
+[19] j. carmona and j. cortadella, “process mining
+meets abstract interpretation,” in ecml pkdd, 2010,
+pp. 184–199.
+[20] j. carmona and r. gavald `a, “online techniques for
+dealing with concept drift in process mining,” in ida,
+2012, pp. 90–102.
+[21] t. li, t. he, z. wang, y . zhang, and d. chu, “un-
+raveling process evolution by handling concept drifts inprocess mining,” in scc, 2017, pp. 442–449.
+[22] c. zheng, l. wen, and j. wang, “detecting process
+concept drifts from event logs,” in otm , 2017, pp. 524–
+542.
+[23] d. luengo and m. sep ´ulveda, “applying clustering in
+process mining to ﬁnd different versions of a businessprocess that changes over time,” in bpm workshops ,
+2012, pp. 153–158.
+[24] b. hompes, j. buijs, w. van der aalst, p. dixit, and
+j. buurman, “detecting change in processes using com-parative trace clustering,” in simpda, 2015, pp. 95–
+108.
+[25] d. arthur and s. vassilvitskii, “k-means++: the ad-
+vantages of careful seeding,” in soda, 2007, pp. 1027–
+1035.
+[26] d. liu and j. yu, “otsu method and k-means,” in his,
+vol. 1, 2009, pp. 344–349.
+[27] r. a. wagner and m. j. fischer, “the string-to-string
+correction problem,” jacm , vol. 21, no. 1, pp. 168–173,
+jan. 1974.
+[28] a. marzal and e. vidal, “computation of normalized
+edit distance and applications,” tpami, vol. 15, no. 9,
+pp. 926–932, 1993.
+[29] t. dasu, s. krishnan, s. venkatasubramanian, and k.
+yi, “an information-theoretic approach to detectingchanges in multi-dimensional data streams,” in symp.
+int. comp. scie. stat., 2006.
+[30] k. paparrizos, “a non improving simplex algorithm for
+transportation problems,” rairo-oper res, vol. 30,
+no. 1, pp. 1–15, 1996.
+[31] h. achatz, p. kleinschmidt, and k. paparrizos, “a dual
+forest algorithm for the assignment problem,” in applied
+geometry and discrete mathematics: the victor kleefestschrift, vol. 4, 1991, pp. 1–10.
+40

@@ -1,0 +1,527 @@
+activity mining by global trace segmentation
+christian w. g ¨unther, anne rozinat, and wil m.p. van der aalst
+information systems group, eindhoven university of technology,
+p.o. box 513, nl-5600 mb, eindhoven, the netherlands.
+fc.w.gunther,a.rozinat,w.m.p.v.d.aalst g@tue.nl
+abstract. process mining is a technology for extracting non-trivial and useful
+information from execution logs. for example, there are many process mining
+techniques to automatically discover a process model describing the causal de-
+pendencies between activities. unfortunately, the quality of a discovered process
+model strongly depends on the quality and suitability of the input data. for ex-
+ample, the logs of many real-life systems do not refer to the activities an analyst
+would have in mind, but are on a much more detailed level of abstraction. trace
+segmentation attempts to group low-level events into clusters, which represent
+the execution of a higher-level activity in the (available or imagined) process
+meta-model. as a result, the simpliﬁed log can be used to discover better pro-
+cess models. this paper presents a new activity mining approach based on global
+trace segmentation. we also present an implementation of the approach, and we
+validate it using a real-life event log from asml’s test process.
+keywords : process mining, event log schema transformation, trace segmentation.
+1 introduction
+process mining technology attempts to extract non-trivial and useful information about
+real-world processes from their “footprints”, i.e., from event logs recorded by it sys-
+tems that support these processes [1]. however, the value of a process mining analysis
+strongly depends on the quality and suitability of the input event log data. first and
+foremost, many process mining approaches require that the event log is cleaned to re-
+move any kind of noise. further, it is necessary that the structure of the event log is in
+line with the process meta-model that is used for interpretation of the results. the latter
+requirement, i.e. a proper alignment between the event log structure and an understood
+process meta-model, is often not fulﬁlled by event logs extracted from real-life systems.
+there may be misalignments due to a number of reasons:
+– the log recording mechanism is faulty, or is not properly conﬁgured.
+– the conﬁguration of the log recording mechanism does not correspond to the un-
+derstood process meta-model.
+– the level of abstraction on which logging occurs does not correspond to the desired
+level of abstraction for log analysis.
+these are only three examples for a number of situations which may lead to mis-
+alignment. the ﬁrst example points out an actual problem, which may not be possibleto resolve. however, the other examples point to misalignment that can be ﬁxed by a
+set of techniques for event log schema transformation .
+event log schema transformation modiﬁes the level of abstraction of event logs. it
+may be applied to any layer of the log (e.g., to the whole log, traces, activities, etc.).
+put simply, event log schema transformation works by clustering and splitting artifacts
+within one layer, e.g., clustering events within traces, or partitioning the log into several
+“sublogs”. this transformation effectively propels the respective layer onto a different
+level of abstraction. therefore, by using event log schema transformation, an event log
+can be adjusted to correspond to a speciﬁc process meta-model, so that its analysis
+becomes more meaningful. note that these transformation techniques can also be used
+in the absence of an explicit process meta-model. in such use cases it is helpful for
+easing log analysis, e.g. by reducing the number of artifacts within an event log.
+in this paper we focus on trace segmentation , which denotes the identiﬁcation of
+coherent subsequences of events within traces. trace segmentation can be used both
+for identifying activity clusters in low-level logs, as well as for ﬁnding more homoge-
+neous, tacit sub-traces within a longer, unstructured trace. the remainder of the paper is
+organized as follows. we ﬁrst discuss the topic of trace segmentation (section 2). then,
+we introduce a new approach based on global trace segmentation, which can be used
+for activity mining (section 3). subsequently, the implementation of this new activity
+mining approach is presented (section 4). we evaluate the approach by applying it to
+a complex real-life event log from asml (section 5). finally, we discuss related work
+(section 6) and conclude the paper (section 7).
+2 trace segmentation
+an ideal event log for process mining analysis is well-structured and on an appropriate
+level of abstraction. in many real-life situations, these requirements are, however, not
+fulﬁlled. often, real event logs are recorded on a very low level of abstraction. events
+in these logs are identifying miniscule activities within the system, which cannot be
+easily related to activities in the process model imagined by the analyst. it is not that
+these high-level activities are not represented in the event log at all, rather that their
+representation is scattered among many low-level events. this dissociation of activities
+makes it very hard for process analysts to correctly relate the observed behavior to any
+available, or imagined, process meta-model.
+trace segmentation is an important event log schema transformation technique,
+which makes such low-level logs more understandable and easier to analyze. the fun-
+damental idea of trace segmentation is illustrated in figure 1. the starting point is a
+low-level trace of events (shown on the bottom of figure 1). trace segmentation at-
+tempts to identify coherent sub-sequences of events within the trace, i.e., to “cut up”
+the trace into a number of event clusters. in the example in figure 1, four clusters have
+been identiﬁed in the trace.
+the rationale behind trace segmentation is that every cluster of low-level events is
+supposed to represent the execution of a higher-level activity in the (available or imag-
+ined) process meta-model. it is also important that these event clusters are properly
+categorized (i.e., clustered) into types of clusters. this allows for the discovery of cor-abaxcyzwabcbxyzcluster 1cluster 2cluster 3cluster 4cluster type acluster type b
+event log tracesegmentationsegment type discoveryfig. 1. schematic description of trace segmentation.
+responding activity types, which are supposed to result in a comparable sub-sequence
+of low-level events. with respect to the example in figure 1, two cluster types aand
+bhave been identiﬁed, each supported by two clusters. clusters of type aconsist of
+events from event classses a,b, orc, while clusters of type bare constituted by events
+of classes x,y,z, andw.
+trace segmentation has two main use cases. the ﬁrst one is activity mining . in ac-
+tivity mining, trace segmentation is applied to elevate the log’s level of abstraction, i.e.,
+to analyze the event log from a higher-level point of view. in the example in figure 1,
+the trace would have been simpliﬁed to a sequence of four events (i.e., the clusters),
+from two event classes (i.e., the cluster types). the second use case is trace discovery .
+in trace discovery, the discovered event sub-sequences are interpreted as hidden traces
+of a process described by their cluster type. regarding the example, the process type
+represented by cluster type awould have two traces a; b; a; c anda; b; c; b .
+both activity mining and trace discovery can be implemented by trace segmentation
+techniques. in the following section we propose a new global approach towards trace
+segmentation, which is based on the correlation between event classes.
+3 global trace segmentation approach
+as explained earlier, trace segmentation is based on the idea that subsequences of
+events, which are supposed to be the product of a higher-level activity, are identiﬁed.
+this approach focuses on the global correlation between event classes , i.e. types of
+events. from the co-occurrence of events in the log, we derive the relative correlation
+between their event classes.
+our approach for global trace segmentation can be outlined as follows.
+– we use the notion of a global event class correlation , describing how closely related
+the event classes found in the log are. event class correlation is derived from the
+log, i.e., event classes whose events frequently occur together in the log are highly
+correlated.– based on event class correlation, we infer a hierarchy of event classes . this hierar-
+chy represents an abstraction of the set of original event classes on multiple levels.
+all event classes found in the log are successively combined into clusters, repre-
+senting higher-level types. note that the clusters created in this step do not refer to
+groups of events, but are clusters of event classes.
+– in this hierarchy of event classes, an arbitrary level of abstraction can be chosen for
+trace segmentation. the clusters of event classes on that level of abstraction are then
+projected onto the event log. subsequences of events, whose event classes belong
+to one cluster, are considered segments of the log. these segments, i.e. clusters of
+events, are the result of global trace segmentation.
+the global approach described here works top-down . the association of each event
+to its respective higher-level cluster is not directly derived from its local, surrounding
+events, but rather established from the global correlation of its event class to other event
+classes.
+in the remainder of this section, we ﬁrst show how the global event class correlation
+is determined, which is the foundation of this approach (section 3.1). then, we describe
+how, based on this correlation, our algorithm builds a global event class hierarchy (sec-
+tion 3.2). finally, we explain how this hierarchy is used to enable the actual global trace
+segmentation in an adaptive manner (section 3.3).
+3.1 scanning global event class correlation
+our global approach for trace segmentation is based on the notion that there is a global
+relationship between event classes in the log. this relationship between event classes is
+then projected onto the actual event instances in the log, i.e. events inherit their mutual
+relationship from their respective event classes.
+we can express this relationship between event classes in a correlation function.
+deﬁnition 1 (event class correlation). letcbe a set of event classes. the function
+ecc2cc!i r+
+0assigns to each tuple of event classes a certain correlation value.
+the larger this value is, the more related the two respective event classes are.
+in our approach we determine the correlation function between event classes by
+scanning the complete log. we start with a matrix of cc, initialized with zero values
+before the actual scanning pass. while traversing the log, this matrix is updated for each
+following relation that is found. note that this correlation matrix, as well as the corre-
+lation function itself, is symmetric, i.e. ecc(x; y ) =ecc(y; x ). during the scanning
+pass, this symmetry needs to be maintained by the algorithm.
+the scanning pass of this algorithm is illustrated in figure 2. in this example, the
+scanning is currently inspecting an event of class a, on the bottom of the trace. we call
+the event currently under consideration the reference event . looking at the directly pre-
+ceding event of class h, the scanner can establish an observation of the co-occurrence
+between event classes handa, which means that their relationship is strengthened.
+correspondingly, the correlation matrix value for ecc(a; h )is incremented by i, the
+increment value (which is usually set to 1).reference eventabedfcghalook-backwindow ofsize 6ecc/prime(a, h)=ecc(a, h)+iecc/prime(a, g)=ecc(a, g)+(i·a2)ecc/prime(a, c)=ecc(a, c)+(i·a3)ecc/prime(a, f)=ecc(a, f)+(i·a4)ecc/prime(a, d)=ecc(a, d)+(i·a5)ecc/prime(a, e)=ecc(a, e)+(i·a6)fig. 2. scanning global event class correlation.
+in our approach, the scanning pass uses a look-back window for evaluating each
+event. this means that if the look-back window’s size is six (as in the example in fig-
+ure 2) the scanner will consider the last six events which have preceded each reference
+event. note that this algorithm for scanning the event log is similar to the one used in
+[10]. when evaluating events in the look-back window, the scanner will attenuate its
+measurement exponentially, based on an attenuation factor a, where 0< a < 1. for
+any event xin the look-back window, where yis the reference event, the correlation ma-
+trix will be updated as follows: ecc(c(x); c(y)) =ecc(c(x); c(y) + (ian), where nis
+the number of events located between xandyin the trace. this approach improves the
+capture of relationships within activity clusters where behavior is more unstructured,
+i.e., where the order of low-level events may change frequently.
+after the scanning pass has evaluated all events in all traces of the log, a reliable
+correlation function between event classes is established, as expressed in the aggregated
+correlation matrix. our correlation function thus considers two event classes as more
+related, if events of these classes frequently occur closely together in traces of the log.
+3.2 building the event class cluster hierarchy
+after the correlation function between event classes has been established in the scan-
+ning pass, we have a global measurement of relationship between event classes in the
+log. based on this correlation function, our approach builds a hierarchy of event classes,
+successively combining the most related event classes into higher-level entities.
+for this task, we use an adapted version of the agglomerative hierarchical clustering
+(ahc) algorithm, which is a well-known data clustering technique [3]. the primitives
+to be clustered are the event classes found in the log, and we apply ahc using the
+correlation function established in the scanning pass. note that the clusters created here
+refer to higher-level activity types, i.e., we are actually inferring types of clusters whose
+instances are event clusters in the log.
+the ahc algorithm can be described as follows:
+1. the set of entities einitially consists of all primitives, i.e. event classes.2. find the two entities aandbinewhich have the largest correlation value ecc(a; b)
+for all tuples of entities in e.
+3. create a new event class cluster x, which contains aandb.
+4. remove aandbfrome, and add xtoe.
+5. ifecontains more than one entity, continue with the next iteration at step 2.
+thus, in each iteration the ahc algorithm merges two entities, and thus succes-
+sively combines all event classes into one cluster representing all event classes. to be
+able to merge also clusters with event class primitives, or with other clusters of event
+classes, we need to specify an appropriate correlation function for clusters. for this task
+we use the notion of complete linkage [3], which deﬁnes the distance of two clusters as
+the maximum distance between any elements from each cluster. note that our notion of
+correlation is inversely related to the notion of distance used in data clustering. there-
+fore, the correlation between a cluster and an event class is also deﬁned as the minimal
+correlation of any element of the cluster to that respective event class.
+edghabcluster 1cluster 2cluster 3cluster 4
+level 0level 1level 2level 3level 4gegebdcluster 2cluster 1cluster 1
+fig. 3. ahc event class cluster tree.
+by applying this ahc algorithm to the set of event classes in a log, we construct
+a hierarchical tree structure of event classes and event class clusters. figure 3 shows
+an example of this structure. the initial set of event classes is depicted at the bottom,
+consisting of event classes g,e,a,h,b, andd.
+during the ﬁrst iteration of the ahc algorithm, event classes aandhare deter-
+mined to have the maximum correlation value of all event classes. consequently, they
+are combined into a new event class cluster, which is shown as cluster 1in figure 3.
+every iteration of the algorithm creates a new level of clustering . for example, the ﬁrst
+iteration creates level 1, which differs from the initial level 0 by having event classes a
+andhremoved, and replaced by the newly created cluster 1.
+3.3 adaptive global trace segmentation
+once the event class cluster hierarchy has been established, we can apply our global
+trace segmentation approach. since this hierarchical structure successively simpliﬁesthe set of event classes in each level, we can take advantage of this and allow the analyst
+to adaptively simplify the event log.
+after selecting the desired level of abstraction, corresponding to the different levels
+in the event class cluster hierarchy, every event in the log is processed as follows. events
+whose event classes are still present as primitives in the desired level of abstraction
+are left untouched. if an event’s class is contained in a cluster on the desired level of
+abstraction, its event name is replaced by the cluster name. after rewriting the log in
+this manner, repetitions of events which refer to the same cluster are collapsed into one
+event.
+ahabdggehagcluster 1bdggegcluster 1cluster 1ggegcluster 1cluster 2cluster 1
+cluster 1cluster 2cluster 3cluster 3cluster 4
+level 0level 1level 2level 3level 4
+fig. 4. step-wise global trace segmentation.
+this procedure is illustrated in figure 4. an original trace of the log is shown on the
+left, i.e. this trace is on level 0 and thus not simpliﬁed yet. for every level of abstraction
+in the event class cluster hierarchy we can now apply our trace segmentation approach.
+in our example from figure 3, event classes aandhwere combined to cluster 1
+in level 1. the example trace in figure 4 has three events of class aand two events
+of class h. after rewriting these events, they can be combined into two occurrences of
+cluster 1, thus simplifying the log. as shown in figure 4, this procedure can be applied
+for every level of the event class cluster hierarchy. it successively reduces the number
+of event classes, and the number of overall events, in the log.
+while this example shows the application of global trace segmentation for activity
+mining, it can be equally applied for trace discovery. with respect to level 1 in figure 4,
+the algorithm has discovered two traces a; h; a andh; a , both describing the tacit
+subprocess denoted as cluster 1.
+4 implementation and visualization
+the global approach for trace segmentation has been implemented as the stream scope
+plugin in the process mining (prom) framework [1]. while the focus of this implemen-
+tation is on activity mining, extending it for trace discovery purposes would be rather
+trivial.fig. 5. stream scope visualization of global trace segmentation.
+when the plugin is applied to an event log, the correlation function is scanned from
+the log and the event class cluster hierarchy is created. this initialization of the plugin
+is very fast. after the initialization, the result view of the plugin is shown, as depicted
+in figure 5. the left side of this view is devoted to the actual stream scope log visual-
+ization, while the right side offers parameters to adjust both the visualization and the
+trace segmentation.
+the stream scope visualization is based on the event class cluster hierarchy, and
+shows every trace in the log separately. every event class found in the log corresponds to
+a vertical coordinate, while the horizontal coordinate represents the sequence of events
+as they occur in the trace (note that the stream scope visualization uses an equidistant
+display of events, i.e. actual time is not considered for horizontal coordinates). every
+event in a trace is represented by a green dot in the visualization.
+for ordering event classes on the vertical axis of the visualization, the stream scope
+plugin uses the event class cluster hierarchy. this hierarchy tree is walked in a depth-
+ﬁrstmanner, thereby assembling a list of leave nodes (i.e., event classes) in the order in
+which they are found. as a result, event classes are ordered in a manner which reﬂects
+their correlation, i.e. more related event classes are situated closer together in this order.
+the hierarchy shown in figure 3 shows an example of this in level 0, which essentially
+gives an example of event classes ordered in this manner, from left to right. the resulting
+view can be compared to a musical notation. patterns of co-occurring events can be
+easily recognized by their locality, i.e. their being situated closely together.
+on the right side of this view, the user can set the desired level of abstraction with
+a slider. this will result in a display of blue background areas in the visualization,
+covering the span of event classes combined in each cluster found. note that this display
+of coherent cluster blocks is only possible due to the reordering of event classes from the
+hierarchy tree, which ensures that clusters are non-interrupted vertical subsequences.76 event classes,34 event class clusters.18 event classes,18 event class clusters.4 event classes,4 event class clusters.fig. 6. global trace segmentation on three levels of abstraction.
+figure 6 shows an excerpt of a streamscope visualization for two event log traces.
+this excerpt is shown on three different levels of abstraction. on the left, the log is
+projected onto 76 event classes. 34 of these event classes are in fact clusters of event
+classes. the clusters of events referring to these clustered event classes have a solid blue
+background in the visualization. in the center of figure 6, the log has been projected
+onto 18 event classes, all of which are in fact clusters of event classes. one can see that
+especially events, whose classes are more located towards the top of the visualization,
+have been combined into larger clusters, when compared to the previous abstraction.
+finally, the visualization on the right shows the log projected onto four event classes,
+all of which are clusters.
+the plugin provides a projection of the log, which corresponds to the currently se-
+lected level of abstraction, to the framework. thereby, this simpliﬁed log is also avail-
+able for other mining and analysis techniques. further, the plugin allows the user to
+control the visualization, both by adjusting its size (i.e., zooming in or out) and by ap-
+plying a “blur” ﬁlter, which can help in identifying patterns of event classes visually.
+finally, the plugin allows the user to “play back” traces in audio, by mapping each event
+class onto a musical note. this experimental feature harnesses the capabilities of human
+audio perception to intuitively recognize musical patterns.
+5 application to asml’s wafer scanner test log
+in a previous case study [7, 8], we have analyzed asml’s test process for wafer scan-
+ners. asml is a leading manufacturer of wafer scanners, complex and expensive ma-
+chines which play an integral part in the production of integrated circuits. we have
+analyzed asml’s test process for wafer scanners based on event log data recorded dur-
+ing the wafer scanner test phase. the actions in this test phase can be considered on two
+levels of abstraction: while the actual event log data could only be obtained on a rather
+low level of abstraction, detailing the single tests which had been executed, asml also
+provided us with an explicit mapping of low-level tests to so-called job steps . using this
+mapping, a higher-level event log, describing the test process on a job step level, could
+be derived. this lower-level and higher-level log was eventually used for analysis by
+more traditional process mining approaches.even for the higher-level, job step-mapped log our analysis has yielded relatively
+unstructured and complex spaghetti models. these models are not only cumbersome to
+read and hard to interpret. when compared to the reference process model provided by
+asml, they indicate serious deviations in practice, i.e., the test process is in fact not
+executed according to speciﬁcation. these deviations are due to the complexity of the
+testing process (e.g., failing tests may trigger the re-execution of earlier phases in the
+test procedure to account for changed parameters or replaced components). they are
+thus, in principle, expected and inherent to the test process at asml. however, at the
+same time the provided grouping of low-level tests into higher-level job steps, just like
+the reference process itself, are created manually. since job steps represent the idealized
+process steps, they may not reﬂect the actual reality of testing wafer steppers in practice.
+ideally, a job step, as deﬁned by the reference process, should refer to a self-
+contained part of the testing process, which can be considered completed if all its tests
+have been successfully executed. however, if these job steps do not represent an appro-
+priate grouping of low-level tests, this can lead to unnecessary re-executions of earlier
+job steps, and thus can introduce deviations to the reference process. if tests could be
+better grouped into job steps, the high-level process model would more accurately re-
+ﬂect the true process of testing wafer scanners in asml. furthermore, if there are
+strong dependencies between tests that are contained in separate job steps, this infor-
+mation can be used to improve the process by duplicating or re-positioning tests, so as
+to reveal problems earlier on, and thus shorten the completion time of the overall test
+procedure (by avoiding re-executions of large parts of the test process).
+for investigating the suitability of the current grouping of tests into job steps, we
+have analyzed the original asml log on the test code level with the global trace seg-
+mentation approach presented in this paper. if the job step compositions deﬁned by
+asml are indeed appropriate, trace segmentation should be able to rediscover the orig-
+inal job steps, as clusters of test codes, from the event log.
+in fact, figure 5 shows part of the visualization of this technique applied to the
+asml test log. in total, 23 clusters have been derived from the event log, so as to cor-
+respond to the 23 job steps deﬁned by asml. we can see that the clusters, as discovered
+by global trace segmentation and highlighted in blue in figure 5, cover contiguous and
+extensive parts of traces. thus, we can assume that the low-level behavior captured in
+these clusters represents actually related tests, which are frequently executed in close
+proximity. we subsequently compared these 23 clusters obtained by the global trace
+segmentation approach to the original 23 job steps. consider figure 7, which visualizes
+the relations of the obtained clusters (clusters 1–23) to the original job steps (‘ae’–
+‘zero’). we can observe relationships between clusters and job steps in two directions.
+1. one can see that many clusters contain (parts of) different job steps, thus indicat-
+ing a strong relation between these job steps. for example, cluster 23completely
+contains the job steps ‘d’, ‘i’, ‘l’, and ‘m’, whereas cluster 1fully covers job steps
+‘x’, ‘v’, and ‘u’. another example are the job steps ‘ue’ and ‘oe’, which seem to be
+highly connected (cf. clusters 2,8, and 7).
+2. furthermore, many job steps are actually split-up and represented by multiple clus-
+ters. consider, for example, job step ‘j’, which is in part associated to cluster 23
+while another part of the same job step is associated to cluster 1.bc
+srzcde
+bmwlcabfcapccasocatdcawqemgofgpicaijsrmclpinipipcpisspizpmlubfluipluucluupodtetodscuodsmvgismtsdatsdmxztcwctcwomahfmasazero182211
+16
+elpdriarrisa1719aegrexgrmogrrrgrrw
+wtaewtamwtarwtazxysofodefodmfodzwgtdgiwslhielhimxydgxydmxydo
+ueemzq6
+eldmhwwehwwrhwwzswapswcrswhpswlcswwt4
+1015swbd20srcasredcalccarfahwcihwcrhwcz3
+luaplubd23caac21
+elfpellawztdoe
+xyamxyaofggzxynmxynoxynzxywgxywmxywoxyatxymoxymmxymtemwa14caatgawamsmmmsmo
+rmrgcmrocmrpsmrspmrsq12lulm13
+ocaztbmwzdihwditdemlxsszpi
+9pigpxyiafoqzfpeqemcalusl
+lptrfgggfggmxykgxykmxyktlhtvlhtxxyngxyntfggolptaxyko782dimrgaraszfo
+diredirg5
+odad1xyvgxyvmxyvo
+swzsswcaswgafig. 7. relationship between the clusters discovered by global trace segmentation (indicated by
+numbers), and the original job step composition (indicated by ‘ae’, ‘zero’, ‘a’, etc.). the back-
+ground color of tests in the job steps indicate their association to the clusters discovered by global
+trace segmentation.
+while relationship (1) can in part also be detected by analyzing the process model
+discovered from the job step-mapped event log, especially relationship (2) generates
+additional insight that could not be obtained via the more traditional process mining
+techniques. this can be illustrated by figure 8, which depicts two clusters1that were
+1note that the fuzzy miner is able to cluster highly correlated nodes in the process model.
+the graphs in figure 8 show the nodes which have been clustered in a darker color, while the
+regular nodes in the model, to which these are connected, are visualized in a lighter color.(a) small cluster (reﬂects
+activity cluster 23).
+(b) larger cluster (reﬂects activity cluster
+1and23, which share job step j).
+fig. 8. two clusters in the job step-based fuzzy model that were grouped based on a smaller and
+a higher node signiﬁcance cutoff. in the larger cluster two actually separate sets of job steps are
+grouped together (and not put in distinct clusters) because a subset of their test codes belongs to
+the same job step (see jin figure 7).
+created by the fuzzy miner [6] based on the original job step-mapped log. the left clus-
+ter aggregates the four job steps ‘d’, ‘i’, ‘l’, and ‘m’, and thus largely reﬂects cluster
+23from figure 7. the right cluster was created by the fuzzy miner after increasing the
+node signiﬁcance threshold parameter, thus yielding a model with a higher node aggre-
+gation tendency. however, instead of creating two separate cluster nodes, reﬂecting the
+correlation of job steps ‘d’, ‘i’, ‘l’, and ‘m’ on the one side (cluster 23in figure 8),
+and reﬂecting the correlation of job steps ‘x’, ‘v’, and ‘u’ on the other side (cluster 1
+in figure 8), all these job steps are aggregated within a single cluster node in the fuzzy
+model.
+the reason for this is job step ‘j’, which is partly associated to one group, and partly
+associated to the other group of job steps. due to the ﬁxed mapping between test codes
+and job steps (test code names were simply replaced by their corresponding job step
+names), occurrences of tests belonging to this job step cannot be distinguished by the
+mining algorithm, and therefore all job steps are grouped together. here it becomes ap-
+parent that, using the global trace segmentation approach, more detailed dependencies
+between the job steps can be revealed than by simply analyzing the process model. as a
+consequence, it is easier to detect concrete opportunities to optimize the test procedure,
+e.g., by repositioning or replicating tests within the reference process, which is followed
+by test engineers.
+since the clusters obtained by the global trace segmentation approach now offer an
+alternative way of grouping the low-level tests into higher-level process steps, we have
+used a log reﬂecting this new abstraction for process discovery. we have then compared(a) based on explicit job step
+mapping (conformance: 0:28).
+(b) based on previously mined ac-
+tivity clusters (conformance: 0:46).
+fig. 9. two fuzzy models mined with the same parameters, yielding a similar level of complexity.
+the activity cluster-based model has a signiﬁcantly better conformance.
+the results to the model obtained from the original job step-mapped event log. figure 9
+depicts two models that were discovered with the fuzzy miner while using exactly the
+same mining parameters. the model on the left was created using the explicit job step
+mapping provided by the domain experts, while the model on the right was created
+using the grouping obtained from trace segmentation (instead of cluster names, their
+job step associations are used in the activity name).
+both models show a comparable level of complexity. however, we can judge the
+quality of these models better when using the conformance metric deﬁned for fuzzy
+models [6]. the model in figure 9(a) has a signiﬁcantly poorer fuzzy conformance
+(0:28) than the model depicted in figure 9(b), which has a conformance of 0:46. this
+supports the hypothesis that our trace segmentation approach creates a more realistic
+grouping of the low-level tests than the manual job step mapping, and thus more faithful
+representations of the real test process ﬂow can be discovered.
+similarly, figure 10 depicts two process models created with the fuzzy miner, which
+have the same level of conformance (ca. 0:5). we have adjusted the parameters of the
+fuzzy mining algorithm [6] to yield two models with the same fuzzy conformance. the
+model on the left has been mined using the original job step mapping and is clearly more
+complex than the model on the right, which was discovered based on the previously
+discovered activity clusters.
+in this section, we have used our new activity mining approach to evaluate the job
+step abstraction provided by asml. we have found that a more suitable abstraction(a) based on explicit job step mapping
+(more complex model).
+(b) based on previously mined activity
+clusters (less complex model).
+fig. 10. two fuzzy models with the same conformance ( 0:5). the activity cluster-based model
+is clearly less complex, since it captures the actual steps in the process in a better way.
+can be proposed based on the actually observed behavior. this abstraction should be
+compared to the given job step mapping by a domain expert. furthermore, 176 out of
+the total 360 test codes were not included in the given job step mapping at all. this
+is due to the fact that the job step mapping is manually created and maintained. to
+be able to compare our discovered clusters to the original job steps, we have removed
+these events from the log. however, using activity mining it may be possible to create
+an updated job step mapping for asml, which also includes these currently unmapped
+test codes.
+6 related work
+process mining is a ﬁeld of analysis that focuses on mining behavioral aspects from log
+data. since the mid-nineties several groups have been concentrating on the discovery of
+process models from event-based data. in [2] an overview is given of the early work in
+this domain. to also tackle logs from more more unstructured and complex processes,
+ﬂexible approaches such as fuzzy mining [6] have been proposed recently.
+regarding trace segmentation, we earlier introduced a local approach [5], which is
+based on clustering event instances , by analyzing their proximity towards other events
+in their trace. in contrast, the approach presented in this paper focuses on the global
+correlation between event classes , i.e. types of events. compared to the global approach
+presented in this paper, the local approach may yield better results, since it allows forone event class to be contained in multiple cluster types. given an event log containing
+the same low-level event class in a number of higher-level activities, the global approach
+presented here cannot discover an accurate set of event cluster types. however, while
+the local approach may provide more accurate results, it also has serious performance
+problems. since for every event in the log a corresponding initial cluster is created, the
+memory consumption can be very high for large logs. further, since all initial clusters
+need to be compared to one another, the runtime complexity is exponential with respect
+to the size of the log. in contrast, the global approach presented here is very efﬁcient
+with linear complexity, and is thus suitable even for interactive use.
+related to our notion of trace segmentation are approaches from the data mining
+domain, which also focus on the clustering of sequential event data. the main difference
+is that process mining needs to deal with various forms of concurrency. in [5] a more
+detailed discussion of related work in this area is provided.
+there are also other event log schema transformation approaches, which, for ex-
+ample, cluster traces within a log based on the assumption that the event log in fact
+describes a number of tacit process types [9, 4]. as a consequence, similar traces within
+one log are grouped into more homogeneous subsets, which can subsequently be ana-
+lyzed separately and yield more understandable process models than if analyzed alto-
+gether.
+7 conclusion
+in this paper we have presented a new approach for trace segmentation, which can
+identify subsequences of events that are supposed to be the product of a higher-level
+activity. in contrast to earlier approaches, our solution addresses the problem in a global,
+top-down manner. based on a global correlation between event classes, these classes are
+successively clustered into higher-level classes. by projecting these clusters onto the
+actual events in a log we can reduce the number of unique activities, and thus elevate
+the event log onto an arbitrary level of abstraction.
+we have demonstrated the usefulness of trace segmentation in general, and of our
+global approach in particular, using the case study of asml’s test process as an ex-
+ample. while asml had provided us with an explicit model for their test process,
+the actual testing performed in practice differed signiﬁcantly, as discovered by process
+mining. process discovery can show that the control ﬂow of actual process execution
+is different from an idealized process model. in this paper, we have shown that also
+thecomposition of activities from lower-level process steps can be veriﬁed by using
+trace segmentation. the event clusters which were discovered by trace segmentation
+correspond much better to the actual process execution than the idealized job step map-
+ping as envisioned by asml. consequently, trace segmentation provides an additional
+dimension for the veriﬁcation of real-life processes.
+trace segmentation is also an effective technique for event log pre-processing . by
+elevating the event log onto a higher, more suitable level of abstraction, other process
+mining techniques (e.g., for control ﬂow discovery) can discover process models which
+are more suitable for analysis, since they feature activities that correspond to the expec-
+tations of analysts.future research in the area of trace segmentation should concentrate on ﬁnding ef-
+ﬁcient methods for the recognition of repetitive event patterns, especially for situations
+where event classes can belong to more than one pattern. to increase the usefulness
+of the presented approach in practice, future extensions of the implementation should
+allow the user to (a) manually correct errors of the algorithm, and (b) to provide names
+for the found higher-level activities, before actually simplifying and further analyzing
+the log.
+acknowledgements
+we want to thank asml for providing us with their data, and particularly thank ivo de
+jong for his collaboration and interest in process mining.
+references
+1. w.m.p. van der aalst, b.f. van dongen, c.w. g ¨unther, r.s. mans, a.k. alves de medeiros,
+a. rozinat, v . rubin, m. song, h.m.w. verbeek, and a.j.m.m. weijters. prom 4.0: com-
+prehensive support for real process analysis. in j. kleijn and a. yakovlev, editors, appli-
+cation and theory of petri nets and other models of concurrency (icatpn 2007) , volume
+4546 of lecture notes in computer science , pages 484–494. springer-verlag, berlin, 2007.
+2. w.m.p. van der aalst, b.f. van dongen, j. herbst, l. maruster, g. schimm, and a.j.m.m.
+weijters. workﬂow mining: a survey of issues and approaches. data and knowledge
+engineering , 47(2):237–267, 2003.
+3. r.o. duda, p.e. hart, and d.g. stork. pattern classiﬁcation . wiley-interscience, new york,
+ny , usa, 2000.
+4. g. greco, a. guzzo, l. pontieri, and d. sacc ´a. mining expressive process models by clus-
+tering workﬂow traces. in advances in knowledge discovery and data mining (pakdd
+2004) , volume 3056 of lecture notes in computer science , pages 52–62. springer-verlag,
+berlin, 2004.
+5. c.w. g ¨unther and w.m.p. van der aalst. mining activity clusters from low-level event
+logs. beta working paper series, wp 165, eindhoven university of technology, eind-
+hoven, 2006.
+6. c.w. g ¨unther and w.m.p. van der aalst. fuzzy mining: adaptive process simpliﬁcation
+based on multi-perspective metrics. in g. alonso, p. dadam, and m. rosemann, editors,
+international conference on business process management (bpm 2007) , volume 4714 of
+lecture notes in computer science , pages 328–343. springer-verlag, berlin, 2007.
+7. a. rozinat, i.s.m. de jong, c.w. g ¨unther, and w.m.p. van der aalst. process mining ap-
+plied to the test process of wafer steppers in asml. ieee transactions on systems, man,
+and cybernetics–part c, doi: 10.1109/tsmcc.2009.2014169 , 2009.
+8. a. rozinat, i.s.m. de jong, c.w. g ¨unther, and w.m.p. van der aalst. process mining of test
+processes: a case study. beta working paper series, wp 220, eindhoven university of
+technology, eindhoven, 2007.
+9. m. song, c.w. g ¨unther, and w.m.p. van der aalst. trace clustering in process mining.
+inproceedings of the 4th workshop on business process intelligence (bpi’08), bpm work-
+shops 2008 , 2008.
+10. a.j.m.m. weijters and w.m.p. van der aalst. rediscovering workﬂow models from event-
+based data using little thumb. integrated computer-aided engineering , 10(2):151–162,
+2003.

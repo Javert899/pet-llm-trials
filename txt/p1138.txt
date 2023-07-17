@@ -1,0 +1,606 @@
+conformance checking approximation using subset
+selection and edit distance
+mohammadreza fani sani1, sebastiaan j. van zelst1;2, and wil m.p. van der aalst1;2
+1process and data science chair, rwth aachen university, aachen, germany
+2fraunhofer fit, birlinghoven castle, sankt augustin, germany
+{fanisani,s.j.v.zelst,wvdaalst}@pads.rwth-aachen.de
+summary. conformance checking techniques let us ﬁnd out to what degree a
+process model and real execution data correspond to each other. in recent years,
+alignments have proven extremely useful in calculating conformance statistics.
+most techniques to compute alignments provide an exact solution. however, in
+many applications, it is enough to have an approximation of the conformance
+value. speciﬁcally, for large event data, the computation time for alignments is
+considerably long using current techniques which makes them inapplicable in re-
+ality. also, it is no longer feasible to use standard hardware for complex process
+models. this paper, proposes new approximation techniques to compute approx-
+imated conformance checking values close to exact solution values in less time.
+these methods also provide upper and lower bounds for the approximated align-
+ment value. our experiments on real event data show that it is possible to improve
+the performance of conformance checking by using the proposed methods com-
+pared to using the state-of-the-art alignment approximation technique. results
+show that in most of the cases, we provide tight bounds, accurate approximated
+alignment values, and similar deviation statistics.
+key words: process mining conformance checking approximation 
+alignment subset selection edit distance simulation 
+1 introduction
+one of the main branches of process mining is conformance checking, aiming at in-
+vestigating conformity of a discovered/designed process model w.r.t, real process ex-
+ecutions [1]. this branch of techniques is beneﬁcial to detect deviations and to mea-
+sure how accurate a discovered model is. in particular, the techniques in this branch
+are able to check conformance based on process modeling formalisms that allow for
+describing concurrency, i.e., the possibility to specify order-independent execution of
+activities. early conformance checking techniques, e.g., “token-based replay” [2], often
+lead to ambiguous and/or unpredictable results. hence, alignments [3] were developed
+with the speciﬁc goal to explain and quantify deviations in a non-ambiguous manner.
+alignments have rapidly turned into the de facto standard conformance checking tech-
+nique [4]. moreover, alignments serve as a basis for techniques that link event data to
+process models, e.g., they support performance analysis, decision mining [5], business
+process model repair [6] and prediction techniques. however, computing alignments is
+time consuming on real large event data, which makes it unusable in reality.2 mohammadreza fani sani et al.
+in many applications, we need to compute alignment values several times, e.g., if
+we want to have a suitable process model for an event log, we need to discover many
+process models using various process discovery algorithms with different settings, and,
+measure how each process model ﬁts with the event log using alignment techniques.
+as normal alignment methods require considerable time for large event data, analyz-
+ing many candidate process models is impractical. consequently, by decreasing the
+alignment computation time, we can consider more candidate models in a limited time.
+moreover, in several cases, we do not need to have accurate alignment values, i.e., it is
+sufﬁcient to have a quick approximated value or a close lower/upper bound for it.
+in this paper, we propose several conformance checking approximation methods
+that provide approximated alignment values plus lower and upper bounds for the actual
+alignment value. the underlying core idea, is to consider just a subset of the process
+model behavior, instead of its all behavior. the methods additionally return problematic
+activities, based on their deviation rates. using these methods, users are able to adjust
+the amount of process model behaviors considered in the approximation, which affects
+the computation time and the accuracy of alignment values and their bounds.
+we implemented the methods in two open-source process mining tools and applied
+them on several large real event data and compared them with the state-of-the-art align-
+ment approximation method. the results show that using some of proposed methods,
+we are able to approximate alignment values faster and at the same time the approxi-
+mated values are very close to actual alignment values.
+the remainder of this paper is structured as follows. in section 2, we discuss related
+work. section 3 deﬁnes preliminary notation. we explain the main method in section 4
+and evaluate it in section 5. section 6 concludes the paper.
+2 related work
+several process mining techniques exists, ranging from process discovery to prediction.
+we limit related work to the ﬁeld of conformance checking and sampling techniques in
+the process mining domain. we refer to [1] for an overview of process mining.
+in [7], the authors review the conformance checking techniques in process mining
+domain. in [8] different methods for conformance checking and its applications are
+covered. early work in conformance checking uses token-based replay [2]. the tech-
+niques replay a trace of executed events in a petri net and add missing tokens if tran-
+sitions are not able to ﬁre. after replay, a conformance statistic is computed based on
+missing and remaining tokens. alignments were introduced in [9] and have rapidly de-
+veloped into the standard conformance checking technique. in [10, 11], decomposition
+techniques are proposed for alignment computation. moreover, [12] proposes a decom-
+position method to ﬁnd an approximation of the alignment in a faster time. applying
+decomposition techniques improves computation time, i.e., the techniques successfully
+use the divide-and-conquer paradigm, however, these techniques are primarily beneﬁ-
+cial when there are too many unique activities in the process [13]. recently, general
+approximation schemes for alignments, i.e., computation of near-optimal alignments,
+have been proposed [14]. finally, the authors in [4] propose to incrementally compute
+preﬁx-alignments, i.e., enabling real-time conformance checking for event data streams.conformance checking approximation 3
+t1
+t3p1p2
+p3p4
+p5p6t2
+t4t5
+t6
+l=[ 〈a, b, c, e〉,  〈a, e〉, 〈a, c, b, d, e〉, 〈a, b, e〉, 〈c, e 〉]   4 3 10 2
+fig. 1: an example petri net and an
+event log in a multiset view.
+...〈 …, a, b, b, ...〉   m2〈 …, a, b, c, ...〉   m1
+〈 …, c, b, c, ...〉   mn〈 …, a, c, b, ...〉   m3event log
+mb
+          
+fig. 2: overview of the proposed ap-
+proach. it uses mbv(sn)to ap-
+proximate alignment costs.
+a limited amount of work considers the use of sampling in process mining. in [15],
+the authors proposed a sampling approach based on parikh vectors of traces to detect
+the behavior in the event log. in [16], the authors recommend a trace-based sampling
+method to decrease the discovery time and memory footprint. in [17], a trace-based
+sampling method, speciﬁcally for the heuristic miner [18], is proposed. in these sam-
+pling methods, we have no control on the size of the ﬁnal sampled event data, and,
+depending on the deﬁned behavioral abstraction, the methods may select almost all the
+process instances. finally, all these sampling methods are unbiased and lead to non-
+deterministic results. in [19], we analyzed random and biased sampling methods with
+which we are able to adjust the size of the sampled data for process discovery.
+some research focuses on alignment value approximation. [20] proposes sampling
+the event log and applying conformance checking on the sampled data. the method
+increases the sample size until the approximated value is accurate enough. however, the
+method does not guarantee the accuracy of the approximation, e.g., by providing bounds
+for it. in section 5, we show that if there is lot of unique behavior in the event log,
+using this method, the approximation time exceeds the computation time for ﬁnding the
+alignment value. the authors of [21] propose a conformance approximation method that
+applies relaxation labeling methods on a partial order representation of a process model.
+similar to the previous method, it does not provide any guarantee for the approximated
+value. furthermore, it needs to preprocess the process model each time. in this paper,
+we propose multiple alignment approximation methods that increase the conformance
+checking performance. the methods also provide bounds for alignment values and a
+deviation ratio of problematic activities.
+3 preliminaries
+in this section, we brieﬂy introduce basic process mining and, speciﬁcally, conformance
+checking terminology and notations that ease the readability of this paper.1
+given a setx, a multisetboverxis a functionb:x!n0that allows certain
+elements of xappear multiple times. b=fe2xjb(e)>0gis the set of elements
+present in the multiset. the set of all multisets over a set xis written asb(x).
+1for some concepts, e.g., labeled petri net and system net please use the deﬁnitions in [10]4 mohammadreza fani sani et al.
+given a system net sn,f(sn)is the set of all complete ﬁring sequences of sn
+andv(sn)is the set of all possible visible traces, i.e., complete ﬁring sequences start-
+ing its initial marking and ending in its ﬁnal marking projected onto the set of observable
+activities (not silent transitions, e.g., t3in fig. 1). to measure how a trace aligns to a
+process model, we need to deﬁne the notation of moves. a move is a pair (x;t)where
+the ﬁrst element refers to the log and the second element refers to the corresponding
+transition in the model.
+deﬁnition 1 (legal moves). letl2b(a)be an event log, where ais the set of
+activities and let tbe the set of transitions in the model. moreover, let lbe a function
+that returns the label of each transition. alm=f(x;(x;t))jx2a^t2t^l(t) =
+xg[f (;(x;t))jt2t^l(t) =xg[f (x;)jx2ag is the set of legal moves .
+for example, (a;t1)means that both log and model make an “ amove” and the move in
+the model is caused by the occurrence of transition t1(as the label of t1isa). note that
+indicates ”no move” in log/model trace. now, we deﬁne alignment as follows [10].
+deﬁnition 2 (alignment). letl2lbe a log trace and m2f(sn)a complete
+ﬁring sequence of a system net sn. an alignment of landmis a sequence of pairs
+2a
+lmsuch that the projection on the ﬁrst element (ignoring ) yieldsland the
+projection on the second element (ignoring and transition labels) yields m.
+an alignment is a sequence of legal moves such that after removing all symbols,
+the top row corresponds to a trace in the event log and the bottom row corresponds to
+a complete ﬁring sequence in f(sn). the middle row corresponds to a visible path
+when ignoring the steps, i.e., corresponding to silent transitions (e.g., t3in fig. 1).
+for silent transitions, there is no corresponding recorded event in the log. the following
+alignments relate to l=ha;c;b;d;eiand the petri net in fig. 1.
+1=acbde
+abe
+t1t3t2t62=acbde
+acbe
+t1t4t2t6
+by considering the label of visible transitions of an alignment, we ﬁnd the corre-
+sponding model trace, e.g., the model trace of 1isha;b;ei. to quantify the costs of
+misalignments we introduce a move cost function .synchronous moves , i.e., moves
+that are similar in the trace and the model, have no costs, i.e., for all x2 a ,
+((x;(x;t))=0 . moves in model only have no costs if the transition is invisible, i.e.,
+(;t) = 0 ifl(t)=.
+deﬁnition 3 (cost of alignment). cost function 2alm!r0assigns costs to
+legal moves. the cost of an alignment 2a
+lmis() =(x;y)2(x;y).
+in this paper, we use a standard cost function sthat assigns unit costs: s(
+;t) =s(x;) = 1 ifl(t)6=. in the above example alignments, s(1) = 2 and
+s(2) = 1 . given a log trace and a system net, we may have many alignments. to
+select the most appropriate one, we select an alignment with the lowest total costs.
+deﬁnition 4 (optimal alignment). letl2b(a)be an event log and let sn be a
+system net with v(sn)6=;.conformance checking approximation 5
+– forl2l, l;sn=f2a
+lmj9m2f(sn)is an alignment of landmg.
+– an alignment 2 l;snis optimal for trace l2land system net snif for any
+alignment02 l;sn:(0)().
+–sn2 a!a
+lmis a mapping that assigns any log trace lto an optimal
+alignment, i.e., sn(l)2 l;snandsn(l)is an optimal alignment.
+–sn2a!ais a mapping that assigns any log trace lto visible activities of
+the model trace of the optimal alignment.
+in the running example, sn(ha;c;b;d;ei)=2(2is optimal), and
+(ha;c;b;d;ei)=ha;c;b;eiis the corresponding model trace for the optimal alignment.
+we can compute the distance of two traces (or two sequences) faster using the
+adapted version of levenshtein distance [22]. suppose that ;02a, edit distance
+function4(;0)!nreturns the minimum number of edits that are needed to trans-
+formto0. as edit operations, we allow deletion/insertion of an activity (or a transi-
+tion label) in a trace, e.g., 4(ha;c;f;ei;ha;f;c;ai)=4, corresponds to two deletions
+and two insertions. this measure is symmetric, i.e., 4(;0) =4(0;). it is possible
+to use the4function instead of the standard cost function. thus, 4andsreturn same
+distance values. the 4function is expendable from unit cost (i.e., s) to another cost
+by giving different weights to insertion and deletion of different activities.
+in [23], it is explained that the levenshtein metric before normalization satisﬁes
+the triangle inequality. in other words, 4(;0)4(;00) +4(00;0). moreover,
+suppose that sis a set of sequences, (l;s) = min
+m2s4(l;m)returns the distance
+of the most similar sequence in sforl.
+letv(sn)is a set of all visible ﬁring sequences in sn, andsn()is an optimal
+alignment for sequence . it is possible to use (;v(sn))instead ofs(sn())
+2. using the edit distance function, we are able to ﬁnd which activities are required to
+be deleted or inserted. so, not only the cost of alignment; but, the deviated parts of the
+process model (except invisible transitions) are also detectable using this function.
+it is possible to convert misalignment costs into the ﬁtness value using equation 1.
+it normalizes the cost of optimal alignment by one deletion for each activity in the
+trace and one insertion for each visible transition in the shortest path of model (spm).
+the ﬁtness between an event log land a system net sn (i.e.,fitness (l;sn )) is a
+weighted average of traces’ ﬁtness.
+fitness (l;sn) = 1 (sn())
+jlj+ min
+m2f(jmj)(1)
+4 approximating alignments using subset of model behavior
+as computational complexity of computing alignment is exponential in the number of
+states and the number of transitions, it is impractical for larger petri nets and event
+logs [24]. considering that the most time consuming part in the conformance checking
+procedure is ﬁnding an optimal alignment for each l2land the system net snleads
+us to propose an approximation approach that requires fewer alignment computations.
+the overview of the proposed approach is presented in fig. 2. we suggest to use mb
+2because of the page limit, we do not provide the proof of this statement here.6 mohammadreza fani sani et al.
+v(sn)instead of the whole v(sn)and apply the edit distance function instead of
+s. in the following lemma, we show that using this approach, we have an upper bound
+for the cost of alignment (i.e., a lower bound for the ﬁtness value).
+lemma 1 (alignment cost upper bound). letl2ais a log trace, and m2
+v(sn)is a visible ﬁring sequence of sn. we have s(sn(l))4(l;m)where
+sn(l)is the optimal alignment.
+proof: we shown that4(l;m) =s(), so we have4(l;m)s(sn(l)).
+therefore, if s(sn(l))>4(l;m),sn(l)is not an optimal alignment. con-
+sequently, if we use any mbv(sn),(l;mb)returns an upper bound for the
+cost of optimal alignment.
+here, we explain the main components of our proposed approach, i.e., constructing
+a subset of model behavior ( mb) and computing the approximation.
+4.1 constructing model behavior ( mb)
+as explained, we propose to use mbi.e., a subset of visible model traces to have an
+approximated alignment. an important question is how to construct mb. in this regard,
+we propose two approaches, i.e., simulation andcandidate selection .
+1) simulation: the subset of model traces can be constructed by simulating the
+process model. in this regard, having a system net and the initial and ﬁnal markings,
+we simulate some complete ﬁring sequences. note that we keep only the visible ﬁring
+sequences in mb. it is possible to replay the petri net randomly or by using more
+advanced methods, e.g., stochastic petri net simulation techniques. this approach is
+fast; but, we are not able to guarantee that by increasing the size of mbwe will obtain
+the perfect alignment (or ﬁtness) value, because the model traces are able to be inﬁnite.
+another potential problem of this method is that the generated subset may be far from
+traces in the event log that leads to have an inaccurate approximation.
+2) candidate selection: the second method to construct mbis computing the op-
+timal alignments of selected traces in the event log and ﬁnding the corresponding model
+traces for these alignments. in this regard, we ﬁrst select some traces (i.e., candidates)
+from the event log land put them in lc. then for each l2lcwe ﬁnd the opti-
+mal alignment and insert sn(l)tomb. thereafter, for other traces 0
+l2l0
+c(i.e.,
+l0
+c=l lc), we will use mband compute (0
+l;mb).
+as the triangle inequality property holds for the edit distance function, it is better to
+insertsn(l)inmbinstead of considering l. to make it more clear, let lbe a log
+trace,snis a system net, and m=sn(l)is the corresponding visible model trace
+for an optimal alignment of landsn. according to the triangle inequality property,
+for any trace 2l, we have4(;m)4 (;l) +4(l;m). so, the cost of
+transforming ltomis less than the cost of transforming it to land then tom.
+as(l;mb)returns the minimum cost of the most similar sequence in mbtol,
+putting directly the alignments of traces mbcauses to have a smaller upper bound for
+alignment cost. moreover, it is possible to have sn(sn(1)) =sn(sn(2))for
+16=2. therefore, by inserting sn(1)instead of1inmb, we will have mbwith
+fewer members that increases the performance of the approximation.conformance checking approximation 7
+table 1: result of using the proposed approximation method for the event log that is
+given in fig. 1, using mb=fha;b;ei;ha;b;c;eig.
+trace s(sn)(;mb)actual fitness lboundfitness uboundfitness appxfitness freq
+ha;b;c;ei 0 0 1 1 1 1 10
+ha;ei 1 1 0.8 0.8 0.8 0.8 4
+ha;c;b;d;ei 1 2 0.875 0.75 1 0.875 3
+ha;b;ei 0 0 1 1 1 1 2
+hc;ei 2 2 0.5 0.5 0.8 0.65 1
+l 0.916 0.898 0.95 0.924
+to select the candidate traces in lc, we propose three different methods. we can
+select these traces randomly or based on their frequency in the event log (i.e, l(l)).
+the third possible method is to apply a clustering algorithm on the event log and put the
+traces inkdifferent clusters based on their control ﬂow information. we then select one
+trace, i.e., medoid for each cluster that represents all cluster’s members. it is expected
+that by using this approach, the detected bounds will be more accurate.
+4.2 computing alignment approximation
+after constructing mb, we use it for all traces in the l0
+c. note that for the simulation
+method,lc=;andl0
+c=l. moreover, for the candidate selection method, we
+use the alignment values that already computed by in constructing mb. to compute
+the lower bound for the ﬁtness value, we compute the ﬁtness value of all of the 2
+l0
+cusing(;mb). afterwards, based on the weighted average of this ﬁtness and
+alignments that are computed in the previous part, the lower bound for the ﬁtness value
+is computed.
+for the upper bound of ﬁtness value, we compare the length of each trace in l0
+c
+with the shortest path in the model (i.e., spm ). to ﬁndspm , we compute the cost of
+the optimal alignment for an empty trace (i.e., hi) and the system net. in the example
+that is given in fig. 1, spm = 3. if the length of a trace is shorter than the spm , we
+know that it needs at least spm linsertions to transform to one of model traces in
+v(sn). otherwise, we consider at least 0 edit operation for that trace. because, it is
+possible that there is a model trace s.t. m2v(sn)andm=2mband it perfectly
+ﬁts to the log trace. after computing the upper bound values for all traces in l0
+c, based
+on the weighted average of them and the computed ﬁtness values of traces in lc, we
+compute the upper bound value for ﬁtness.
+to compute the approximation values, for each trace in 2l0
+c, we compute the
+(;mb)and compare it to the average ﬁtness value of lc. if the ﬁtness value of
+the new trace is higher than fitness (lc;sn), we consider (;mb)as the approx-
+imated ﬁtness value; otherwise, fitness (lc;sn)will be considered for the approx-
+imation. similar to the bounds, we use the weighted averages of ﬁtness values of lc
+andl0
+cto compute the approximated ﬁtness value of whole event log. note that for the
+simulation method that lc=;, the approximated ﬁtness value for each trace (and for
+the whole event log) is equal to the lower bound.
+finally, the proposed method returns the number of asynchronous (i.e., deletions
+and insertions) and synchronous moves for each activity in the event log. this informa-
+tion helps the data analyst to ﬁnd out the source of deviations.8 mohammadreza fani sani et al.
+in table 1, the computed bounds and the approximated ﬁtness value for each trace
+and the overall event log of fig. 1 is given based on mb=fha;b;ei;ha;b;c;eig. this
+mbis possible to be gained by computing the alignment of the two most frequent traces
+in the event log or by simulation. moreover, lboundfitness ,uboundfitness andap-
+pxfitness show the lower bound, the upper bound and the approximation of the ﬁtness
+value respectively. the approximated ﬁtness will be 0:924that its accuracy equals to
+0:008. the proposed bounds are 0:95and0:898. furthermore, the method returns the
+number of insertion and deletions that are 1 insertion for a, 5 insertion for b, 3 deletions
+forc, 3 deletions for d, and nothing for e.
+by increasingjmbj, we expect to have more accurate approximations and bounds.
+but, increasing the jmbjfor the candidate selection approach increases the number of
+required alignments computations and consequently increases the computation time.
+5 evaluation
+in this section, we aim to explore the accuracy and the performance of our methods.
+we ﬁrst explain the implementation, and, subsequently, we explain the experimental
+setting. finally, the experimental results and some discussions will be provided.
+5.1 implementation
+to apply the proposed conformance approximation method, we implemented the con-
+formance approximation plug-in in the prom [25] framework3. it takes an event log
+and a petri net as inputs and returns the conformance approximation, its bounds, and
+the deviation rates of different activities. in this implementation, we let the user adjusts
+the size ofmband the method to select and insert model traces in it (i.e., simulation
+and alignment of selected candidates). if the user decides to use alignments for creating
+model behavior, she can select candidates based on their frequency ,random , or using
+theclustering algorithm. for ﬁnding the distance of a log trace and a model trace, we
+used the edit distance function, which is an adapted version of the levenshtein dis-
+tance [22]. to cluster traces, we implement the k-medoids algorithm that returns one
+trace as a candidate for each cluster [26] based on their edit distance.
+to apply the methods on various event logs with different parameters, we ported the
+developed plug-in to rapidprom , i.e., an extension of rapidminer and combines
+scientiﬁc work-ﬂows with a several process mining algorithms [27].
+5.2 experimental setup
+we applied the proposed methods on eight different real event logs. some information
+about these event logs is given in table 2. here, uniqueness refers tovariant #
+trace #.
+for process discovery, we used the inductive miner [34] with infrequent thresholds
+equal to 0:3,0:5, and 0:7. we applied conformance approximation methods with differ-
+ent settings. in this regard, an approximation parameter is used with values equal to 1,
+2,3,5,10,15,20,25, and 30. this value for the simulation method is the number of
+3svn.win.tue.nl/repos/prom/packages/logfilteringconformance checking approximation 9
+table 2: statistics regarding the real event logs that are used in the experiment.
+event log activities# traces# variants# df# uniqueness
+bpic- 2012 [28] 23 13087 4336 138 0.33
+bpic- 2018 -department [29] 6 29297 349 19 0.01
+bpic- 2018 -inspection [29] 15 5485 3190 67 0.58
+bpic- 2018 -reference [29] 6 43802 515 15 0.01
+bpic- 2019 [30] 42 251734 11973 498 0.05
+hospital-billing [31] 18 100000 1020 143 0.01
+road [32] 11 150370 231 700
+sepsis [33] 16 1050 846 115 0.81
+simulated traces times jlj, and for the candidate selection methods (i.e., clustering ,fre-
+quency , and random ), it shows the relative number of selected candidates, i.e.,jlcj
+jlj. we
+also compared our proposed method with the statistical sampling method [20]. the ap-
+proximation parameter for this method determines the size and the accuracy of sampling
+and we consider ==approximation parameter 0:001. we did not consider [12]
+in the experiments, as it does not improve the performance of normal computation of
+alignment [35] for event logs which have few unique activities using the default setting.
+even for some event logs with lots of unique activities in [12], the performance im-
+provement of our methods is higher. because of the page limit, we do not show results
+of this experiment here.
+in all experiments and for all methods, we used eight threads of cpu. moreover,
+each experiment was repeated four times, since the conformance checking time is not
+deterministic, and the average values are shown.
+to evaluate how the conformance approximation is able to improve the performance
+of the conformance checking process, we used the pi=normal conformance time
+approximated conformance time. in
+this formula, a higher pivalue means conformance is computed in less time. as all
+our proposed methods need a preprocessing phase (e.g., for clustering the traces), we
+compute the piwith and without the preprocessing phase.
+the accuracy of the approximation, i.e., the difference between approximated con-
+formance value and the actual ﬁtness value shows how close is the approximated ﬁt-
+ness to the actual ﬁtness value that is computed by accuracy =jaccfitness 
+appxfitnessj. also, we measure the distance of the provided upper and lower bounds.
+the bound width of an approximation is computed by boundwidth =ubfitness 
+lbfitness . tighter bound widthes means that we have more accurate bounds.
+5.3 experimental result and discussion
+in fig. 3, we show how different approximation methods improve the performance of
+conformance checking. for most of the cases, the improvement is higher for the simu-
+lation method. it is because, the most time consuming part in conformance checking is
+computing the optimal alignment. as in the simulation method, there is no need to do
+any alignment computation, it is faster than any other method. for some event logs, the
+statistical sampling method [20] is not able to provide the approximation faster than
+the normal conformance checking (i.e., pi < 1). it happens because, this method is
+not able to beneﬁt from the parallel computing of alignment and after each alignment
+computation it needs to check if it needs to do more alignment or not. for the statisti-
+calmethod, decreasing approximation parameter leads to more precise approximations;10 mohammadreza fani sani et al.
+fig. 3: performance improvement with consideration of preprocessing time.
+fig. 4: performance improvement without consideration of preprocessing time.
+however, it causes to have less pivalue. among the candidate selection methods, using
+thefrequency method usually leads to a higher pivalue.
+for some event logs, e.g., road , none of the method has a high pivalue. it happens
+because in fig. 3, we consider the preprocessing time. the preprocessing time corre-
+sponds to choosing the candidate traces and simulating the process model behaviors that
+needs to be done once per each event log or process model. for the candidate selection
+methods, this phase is independent of process models and for doing that we do not need
+to consider any process model. for the simulation method, this phase is independent of
+the given event log. thus, we are able to do the preprocessing step before conformance
+approximation. if we use some event log standards such as mxml and parquet, we do
+not need to preprocess the event log for the frequency andrandom method because we
+know the number of variants and their frequency beforehand.conformance checking approximation 11
+table 3: the average accuracy of approximation for conformance values when we use
+different approximation methods. here we used different inductive miner thresholds.
+in fig. 4, we show the performance improvement without considering the prepro-
+cessing time. as the statistical sampling method does not have preprocessing phase,
+it is not shown in this ﬁgure. it is shown that there is a linear decrement in improve-
+ment of the candidate selection methods by increasing the approximation parameter.
+it is expectable, as increasing in this parameter for candidate selection methods means
+more optimal alignment computations that requires more time. for example, by consid-
+ering 5for this parameter, means that we need to compute 5%of all optimal alignments
+of the normal conformance checking. therefore, it is expected that the approximated
+conformance value will be computed in 20times faster than using normal alignment.
+after analyzing the performance improvement capabilities of the proposed methods,
+in table 3, we compare the accuracy of their approximations. in this regard, the average
+accuracy values of the approximated conformance values are shown in this table. the
+lower value means a higher accuracy or in other words, the approximated ﬁtness value
+is closer to the actual ﬁtness value. in this table, fitness shows the actual ﬁtness value
+when the normal conformance checking method is used. we used different values for
+the approximation parameter as explained in section 5.2. the results show that for most
+of the event logs the accuracy of the simulation method is not good enough. however,
+forbpic- 2018 -reference andbpic- 2018 -department , that have simpler process mod-
+els, using this method, we generated almost all the model behavior (i.e., mb=v)
+and obtain perfect accuracy. results show that if we use the statistical , and frequency
+methods, we usually obtain accuracy value below 0:01which is acceptable for many
+applications. among the above methods, results of the statistical sampling method are
+more stable and accurate. however, the accuracy of candidate selection methods is usu-
+ally improved by using a higher approximation parameter.12 mohammadreza fani sani et al.
+fig. 5: the average of bound width using different approximation methods.
+in the next experiment, we aim to evaluate the provided bounds for the approxima-
+tion. fig. 5 shows how increasing the value of the approximation parameter increases
+the accuracy of the provided lower and upper bounds. as the statistical method does not
+provide any bounds, we do not consider it in this experiment. the simulation method is
+not able to provide tight bound widths for most of the event logs. for most of the event
+logs, the frequency method results in tighter bounds. however, for event logs like sep-
+siswhich there is no high frequent trace-variant, the clustering method provides more
+accurate bounds. if there are high frequent variants in the event log, it is recommended
+to use the frequency approximation method. note that, for all methods, by increasing
+the value of approximation parameter, we decrease the bound width.
+considering both fig. 4 and fig. 5, we observe that there is a trade-off between the
+performance and the accuracy of the approximation methods. by increasing the number
+of visible traces in mb, we need more time to approximate the ﬁtness value; but, we
+will provide more accurate bounds. in the case that we set the approximation parameter
+to100, the bound width will be zero; however, there will not any improvement in per-
+formance of the conformance checking. by adjusting the approximation parameter, the
+end user is able to specify the performance improvement.
+fig. 5 shows that for some event logs like sepsis andbpic- 2018 -inspection , none
+of the approximation methods are able to provide tight bounds. that happens because
+in these event logs not only do we have lots of unique traces; but, also these traces are
+not close to each other. in table 4, we show the average of edit distance of the most
+similar trace in the event logs that equals to average2l(;l ). if the traces
+in an event log are similar to each other, we are able to provide tight bounds by the
+approximation methods. this characteristic of the event log can be analyzed without
+any process model before the approximation. therefore, it is expected to use more
+traces inmbwhen the traces are not similar. using this preprocessing step, user is
+able to adjust the approximation parameter easier.conformance checking approximation 13
+table 4: the average similarity of traces in different event logs.
+bpic-2012 department inspection references bpic-2019 hospital road sepsis
+3.686 1.224 3.269 1.481 5.108 1.745 1.113 3.956
+table 5: comparison of deviation ratio of the six most problematic activities using
+normal alignment ( real) and the frequency based approximation method ( appx ).
+bpic-2012 department inspection references bpic-2019 hospital road sepsis
+appx real appx real appx real appx real appx real appx real appx real appx real
+activity 1 1.00 1.00 1.00 1.00 1.00 1.00 1.00 1.00 1.00 1.00 1.00 0.99 1.00 0.96 1.00 1.00
+activity 2 1.00 1.00 0.53 0.53 1.00 1.00 1.00 0.50 1.00 1.00 1.00 0.95 1.00 0.96 1.00 1.00
+activity 3 1.00 0.94 0.37 0.37 1.00 1.00 0.31 0.28 1.00 0.98 0.96 0.95 1.00 0.83 0.59 0.48
+activity 4 0.64 0.45 0.06 0.06 1.00 0.85 0.00 0.00 1.00 0.91 1.00 0.88 1.00 0.82 0.43 0.32
+activity 5 0.16 0.01 0.00 0.00 0.58 0.40 0.00 0.00 0.13 0.11 0.83 0.82 1.00 0.72 0.20 0.25
+activity 6 0.67 0.00 1.00 0.00 0.29 0.16 0.01 0.00 0.13 0.11 0.82 0.82 0.10 0.10 0.27 0.22
+finally, we analyze the accuracy of the provided information about deviations. we
+ﬁrst analyze the normal alignments of event logs and process models. thereafter, for
+each alignment, we determine the six most problematic activities based on their devia-
+tion ratio that is computed based on the following formula.
+deviationratio =asynchronousmoves
+asynchronousmoves +synchronousmoves(2)
+afterwards, we compare the deviation ratio of these problematic activities with the
+case that the approximation method was used. the result of this experiment is given in
+table 5. here, we used the frequency selection method with an approximation parameter
+equal to 10. we did not compare the result with the statistical method as the goal of this
+method is either the ﬁtness value or the number of asynchronous moves; but, could not
+return both of them at the same time4. results show that using the frequency method,
+we ﬁnd the problematic activities that have high deviation rates.
+considering all the experiments, we conclude that using frequency of traces for se-
+lecting candidates is more practical. moreover, the candidate selection methods give
+more ﬂexibility to users to trade off between the performance and the accuracy of ap-
+proximations compared to the statistical method that sometimes could not improve the
+performance and has nondeterministic results. in addition, the proposed methods pro-
+vide bounds for the approximated alignment value and deviation rates for activities that
+is useful for many diagnostic applications. finally, the proposed methods are able to
+use parallel computation and beneﬁt from adjusted computational resources.
+6 conclusion
+in this paper, we proposed approximation methods for conformance value including
+providing upper and lower bounds. instead of computing the accurate alignment be-
+tween the process model and all the traces available in the event log, we propose to
+4approximating deviations is required much more time using the statistical method.14 mohammadreza fani sani et al.
+just consider a subset of possible behavior in the process model and use it for approxi-
+mating the conformance value using the edit distance function. we can ﬁnd this subset
+by computing the optimal alignments of some candidate traces in the event log or by
+simulating the process model. to evaluate our proposed methods, we developed them
+in prom framework and also imported them to rapidprom and applied them on several
+real event logs. results show that these methods decrease the conformance checking
+time and at the same time ﬁnd approximated values close to the actual alignment value.
+we found that the simulation method is suitable to be used when the given process
+model is simple. we also show that using the frequency method is more applicable to
+select the candidate traces and have accurate results. results also indicate that although
+thestatistical method [20] is able to approximate accurately, it takes more time and for
+some event logs, it is slower than the normal conformance checking.
+as future work, we aim to ﬁnd out what the best subset selection method is due to
+the available time and event data. also, it is possible to provide an incremental approx-
+imation tool that increases the mbduring the time and let the end user decide when the
+accuracy is enough. here, we did not use the probabilities for the simulation method, we
+think that by using the distribution in the event log, we enhance the simulation method.
+references
+1. van der aalst, w.m.p.: process mining - data science in action, second edition. springer
+berlin heidelberg (2016)
+2. rozinat, a., van der aalst, w.m.: conformance checking of processes based on monitoring
+real behavior. information systems 33(1) (2008) 64–95
+3. adriansyah, a., munoz-gama, j., carmona, j., van dongen, b., van der aalst, w.m.p.:
+alignment based precision checking. in: international conference on business process
+management, springer (2012) 137–149
+4. van zelst, s.j., bolt, a., hassani, m., van dongen, b.f., van der aalst, w.m.: online con-
+formance checking: relating event streams to process models using preﬁx-alignments. inter-
+national journal of data science and analytics (2017) 1–16
+5. de leoni, m., van der aalst, w.m.: data-aware process mining: discovering decisions in
+processes using alignments. in: proceedings of the 28th annual acm symposium on applied
+computing, acm (2013) 1454–1461
+6. fahland, d., van der aalst, w.m.p.: model repair—aligning process models to reality.
+information systems 47(2015) 220–243
+7. elhagaly, m., drvoderi ´c, k., kippers, r.g., bukhsh, f.a.: evolution of compliance check-
+ing in process mining discipline. in: 2019 2nd international conference on computing,
+mathematics and engineering technologies (icomet), ieee (2019) 1–6
+8. carmona, j., van dongen, b., solti, a., weidlich, m.: conformance checking. springer
+(2018)
+9. van der aalst, w.m.p., adriansyah, a., van dongen, b.f.: replaying history on process
+models for conformance checking and performance analysis. wiley interdiscip. rev. data
+min. knowl. discov. 2(2) (2012) 182–192
+10. van der aalst, w.m.: decomposing petri nets for process mining: a generic approach.
+distributed and parallel databases 31(4) (2013) 471–507
+11. munoz-gama, j., carmona, j., van der aalst, w.m.: single-entry single-exit decomposed
+conformance checking. information systems 46(2014) 102–122conformance checking approximation 15
+12. lee, w.l.j., verbeek, h.m.w., munoz-gama, j., van der aalst, w.m.p., sep ´ulveda, m.: re-
+composing conformance: closing the circle on decomposed alignment-based conformance
+checking in process mining. inf. sci. 466(2018) 55–91
+13. verbeek, h.m.w., van der aalst, w.m.p., munoz-gama, j.: divide and conquer: a tool
+framework for supporting decomposed discovery in process mining. comput. j. 60(11)
+(2017) 1649–1674
+14. taymouri, f., carmona, j.: a recursive paradigm for aligning observed behavior of large
+structured process models. in: international conference on business process management,
+springer (2016) 197–214
+15. carmona, j., cortadella, j.: process mining meets abstract interpretation. in: machine learn-
+ing and knowledge discovery in databases, springer (2010) 184–199
+16. bauer, m., senderovich, a., gal, a., grunske, l., weidlich, m.: how much event data
+is enough? a statistical framework for process discovery. in: international conference on
+advanced information systems engineering, springer (2018) 239–256
+17. berti, a.: statistical sampling in process mining discovery. in: the 9th international con-
+ference on information, process, and knowledge management. (2017) 41–43
+18. weijters, a.j.m.m., ribeiro, j.t.s.: flexible heuristics miner (fhm). in: cidm. (2011)
+19. sani, m.f., van zelst, s.j., van der aalst, w.m.p.: the impact of event log subset selection on
+the performance of process discovery algorithms. in: adbis, proceedings. (2019) 391–404
+20. bauer, m., van der aa, h., weidlich, m.: estimating process conformance by trace sampling
+and result approximation. (2019) 179–197
+21. padr ´o, l., carmona, j.: approximate computation of alignments of business processes
+through relaxation labelling. in: international conference on business process management,
+springer (2019) 250–267
+22. sellers, p.h.: on the theory and computation of evolutionary distances. siam journal on
+applied mathematics 26(4) (1974) 787–793
+23. marzal, a., vidal, e.: computation of normalized edit distance and applications. ieee
+transactions on pattern analysis and machine intelligence 15(9) (1993) 926–932
+24. adriansyah, a., munoz-gama, j., carmona, j., van dongen, b.f., van der aalst, w.m.: mea-
+suring precision of modeled behavior. information systems and e-business management
+13(1) (2015) 37–67
+25. van der aalst, w.m.p., van dongen, b., g ¨unther, c.w., rozinat, a., verbeek, e., weijters,
+t.: prom: the process mining toolkit. bpm (demos) 489(31) (2009)
+26. de amorim, r.c., zampieri, m.: effective spell checking methods using clustering algo-
+rithms. in: proceedings of the international conference recent advances in natural lan-
+guage processing ranlp 2013. (2013) 172–178
+27. van der aalst, w.m.p., bolt, a., van zelst, s.: rapidprom: mine your processes and not
+just your data. corr abs/1703.03740 (2017)
+28. van dongen, b.f. (boudewijn): bpi challenge 2012 (2012)
+29. van dongen, b.f. (boudewijn), borchert, f. (florian): bpi challenge 2018 (2018)
+30. van dongen, b.f. (boudewijn): bpi challenge 2019 (2019)
+31. mannhardt, f.: hospital billing-event log. eindhoven university of technology. dataset
+(2017) 326–347
+32. de leoni, m., mannhardt, f.: road trafﬁc ﬁne management process. eindhoven university
+of technology. dataset (2015)
+33. mannhardt, f.: sepsis cases-event log. eindhoven university of technology (2016)
+34. leemans, s.j., fahland, d., van der aalst, w.m.p.: discovering block-structured process
+models from event logs containing infrequent behaviour. in: bpi. (2014) 66–78
+35. van dongen, b.f.: efﬁciently computing alignments - algorithm and datastructures. in:
+business process management workshops - bpm 2018 international workshops, sydney,
+nsw, australia, september 9-14, 2018, revised papers. (2018) 44–55

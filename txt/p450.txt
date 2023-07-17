@@ -1,0 +1,1371 @@
+conformance checking of service behavior
+wil m.p. van der aalst
+eindhoven university of technology and queensland univers ity of technology
+marlon dumas and chun ouyang
+queensland university of technology
+and
+anne rozinat and eric verbeek
+eindhoven university of technology
+a service-oriented system is composed of independent softw are units, namely services, that interact
+with one another exclusively through message exchanges. th e proper functioning of such system
+depends on whether or not each individual service behaves as the other services expect it to behave.
+since services may be developed and operated independently , it is unrealistic to assume that this
+is always the case. this paper addresses the problem of check ing and quantifying how much the
+actual behavior of a service, as recorded in message logs, co nforms to the expected behavior as
+speciﬁed in a process model. we consider the case where the ex pected behavior is deﬁned using the
+bpel industry standard (business process execution langua ge for web services). bpel process
+deﬁnitions are translated into petri nets and petri net-bas ed conformance checking techniques are
+applied to derive two complementary indicators of conforma nce:ﬁtness andappropriateness .
+the approach has been implemented in a toolset for business p rocess analysis and mining, namely
+prom, and has been tested in an environment comprising multi ple oracle bpel servers.
+categories and subject descriptors: d.2.5 [ software engineering ]: testing and debugging—
+diagnostics ;distributed debugging ;monitors ; h.4.1 [ information systems applications ]:
+oﬃce automation— workﬂow management ; h.3.4 [ information storage and retrieval ]: sys-
+tems and software— distributed systems ;information networks
+general terms: languages, measurement, theory, veriﬁcati on
+additional key words and phrases: web services, conformanc e, bpel, petri nets, prom
+1. introduction
+a service-oriented system is composed of software services that interact with one
+another for a given purpose. to ensure that this purpose is at tained, designers
+corresponding author’s address: w.m.p. van der aalst, depa rtment of mathematics & com-
+puter science, eindhoven university of technology, p.o. bo x 513, nl-5600 mb, eindhoven, the
+netherlands.
+e-mail addresses of authors: {w.m.p.v.d.aalst,a.rozinat,h.m.w.verbeek }@tue.nl and
+{c.ouyang,m.dumas }@qut.edu.au.
+the development of prom is supported by eit, nwo-ew, the tech nology foundation stw,
+and the iop program of the dutch ministry of economic aﬀairs. this work was also funded by
+an australian research council (arc) discovery grant (dp04 51092).
+permission to make digital/hard copy of all or part of this ma terial without fee for personal
+or classroom use provided that the copies are not made or dist ributed for proﬁt or commercial
+advantage, the acm copyright/server notice, the title of th e publication, and its date appear, and
+notice is given that copying is by permission of the acm, inc. to copy otherwise, to republish,
+to post on servers, or to redistribute to lists requires prio r speciﬁc permission and/or a fee.
+c/circlecopyrt20yy acm 0000-0000/20yy/0000-0001 $5.00
+acm journal name, vol. v, no. n, month 20yy, pages 1–29.2·wil m.p. van der aalst et al.
+specify these interactions and their dependencies in some f orm. in principle, the
+participating services are implemented, adapted, or conﬁg ured to comply with this
+speciﬁcation. however, services may be developed, operate d, and evolved by inde-
+pendent teams or organizations. thus, there is no guarantee that once a system
+is under operation, some services will not deviate from the s peciﬁcation. for ex-
+ample, after sending a request, a service may receive a reply of the wrong type,
+a service may reject a message sent by another service, messa ges may be received
+out of order, etc. furthermore, each of these unexpected beh aviors may cascade
+into other deviations. in general terms, service independe nce raises the question of
+conformance : “do all services in a service-oriented system operate as ex pected?”.
+this paper addresses the following question: given an expec ted service behavior
+captured as one or several process models , and an observed behavior as registered
+in amessage log , does the observed behavior conform to the expected behavio r?
+we use the term service choreography to refer to a speciﬁcation of the expected
+behavior of an individual service or collection of services . choreographies may be
+captured in a number of languages. in this paper, we consider a standard language
+for service behavior speciﬁcation, namely the business pro cess execution language
+for web services (bpel) [jordan et al. 2006], but the results can well be applied to
+other languages. also, the paper assumes that messages are r epresented according
+to the xml and soap standards [box et al. 2000], but the propos ed techniques
+could be applied to other message formats. finally, the pape r focuses on checking
+the fulﬁllment of control ﬂow dependencies captured in the c horeography. we do
+not consider the issue of checking that each individual mess age conforms to its
+expected message type as this is a well-understood problem.
+when a choreography and a message log do not conform, two scen arios are pos-
+sible. first of all, the model may be assumed to be correct bec ause it represents
+the way partners should work, and the question is whether the events in the log
+are consistent with the process model. for example, the log m ay contain event
+sequences that are not possible according to the model. this may indicate viola-
+tions of the choreography. second, the event log may be assum ed to be “correct”
+because it is what really happened. in the latter case the que stion is whether the
+choreography that has been agreed upon is no longer valid and should be modiﬁed.
+in this paper, we provide techniques for addressing both of t he above scenarios.
+the following examples illustrate the need for conformance checking of service
+behavior by comparing (service) choreographies with messa ge logs.
+—to manage its interactions with suppliers and carriers, a l arge retail company
+(lrc) has set up a number of logistics services. one of these s ervices is respon-
+sible for tracking shipments. this service is activated whe n a supplier sends a
+“request for routing instructions” for a particular replen ishment order. the ser-
+vice gathers details from a human operator, and responds to t he supplier with
+the corresponding “routing instructions” indicating whic h carrier should be used
+and where should the products be shipped. subsequently, the supplier interacts
+with the nominated carrier. once the shipment has been picke d up by the carrier
+from the supplier’s premises, the supplier is expected to se nd an “advanced ship-
+ment notiﬁcation” (asn) to lrc’s shipment tracking service . subsequently, the
+carrier may send a number of “shipment status notiﬁcations” to lrc. normally,
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·3
+such status notiﬁcations would only be received by lrc after a corresponding
+asn has been received. however, some suppliers may be late in sending their
+asn or may fail to send it altogether, or messages may come out of order. by
+checking the conformance of the actual message logs with the “ideal choreogra-
+phy”, lrc may detect and quantify such deviations.
+—consider a supplier’s order management service and the cor responding procure-
+ment service on the customer’s end. the customer starts an in teraction by placing
+an order. the supplier acknowledges through an initial orde r response, possibly
+followed by one or several order updates. the customer can ch ange or cancel the
+order under some circumstances. however, requests for chan ges or cancellations
+to an order cannot be accepted once the supplier has issued an “order conﬁr-
+mation”. also, the supplier expects that the customer will n ot send requests for
+changes or cancellations for orders which have not yet been a cknowledged through
+an initial order response. by using conformance checking, t he buyer and/or the
+supplier may ﬁnd out if their services actually follow this a greed-upon choreog-
+raphy. later in the paper, we will consider a variant of this e xample to illustrate
+our approach and its corresponding tools.
+the above examples hint to a possible link between service le vel agreements
+(slas) and quality of service (qos) monitoring on the one han d, and confor-
+mance checking on the other. however, slas and qos metrics ty pically focus on
+performance indicators such as time, failure rate or cost of activities and processes
+[cardoso et al. 2004]. such indicators assume that the proce ss conforms to some
+predeﬁned model. thus, conformance checking of service beh avior is complemen-
+tary to sla and qos monitoring.
+this paper addresses the problem of choreography conforman ce checking by
+building on earlier work on checking the conformance of a for mal model (e.g., a
+petri net) with respect to a set of traces. to link this work to the technologies
+currently used in service-oriented systems, we provide a ma pping from bpel to
+petri nets and a mapping from soap messages to event logs.
+figure 1 illustrates the contributions and the structure of the paper. section 2
+gives an overview of the approach used in this paper. section 3 elaborates on the
+notion of conformance and introduces the prom conformance c hecker. then, in
+section 4, we discuss the mapping of bpel onto wf-nets [ouyan g et al. 2005a;
+ouyang et al. 2005b], a subclass of petri nets. section 5 disc usses ways of extracting
+high-level event logs from soap message logs. section 6 desc ribes a case study
+demonstrating the feasibility of our approach and the tools we have developed.
+related work is discussed in section 7 and section 8 conclude s the paper.
+2. overview of approach
+the goal of choreography conformance checking is to verify t hat all parties be-
+have as expected, i.e., to answer the question “does the serv ice behavior match
+the service speciﬁcation?”. both the service behavior and t he service speciﬁcation
+refer to occurrences of activities. hence, choreography co nformance checking sug-
+gests capabilities with respect to observing activities. d epending on the setting,
+the activities themselves may be recorded or it is just possi ble to see the mes-
+sages being exchanged. middleware products such as ibm’s we bsphere, oracle
+acm journal name, vol. v, no. n, month 20yy.4·wil m.p. van der aalst et al.
+service
+specification
+(abstract
+bpel)service
+behavior
+(soap
+messages)
+formal
+process
+model
+(petri nets)event log 
+(mxml)conformance?
+section 4
+(mapping bpel onto wf-nets)
+section 3
+(conformance checking based 
+on petri nets)section 5
+(monitoring and correlating 
+messages)jdeveloperoracle bpel
+servers
+bpel2pnml
+wofbpel
+promtcp tunneling
+promimport
+fig. 1. outline of the paper showing the role of the core secti ons of the paper and the tools used.
+bpel, and colombo, maintain detailed logs of activities. ho wever, in many cases
+only soap messages can be observed. fortunately, it is typic ally possible to link
+soap messages to activities and implicitly derive activity occurrences. message
+exchanges and activity occurrences may be seen from the pers pective of a global
+observer or from that of a local observer. the global observe r sees activities and/or
+messages at the process level, i.e., involving multiple ser vices. a local observer
+only sees the activities and/or messages related to a single service. based on these
+two viewpoints (activities/messages and global/local) at leastfour possible settings
+for choreography conformance checking can be derived: (a) relevant messages ex-
+changed between all services involved in a choreography are visible, (b) relevant
+activities executed inside all services involved in a chore ography are visible, (c)
+relevant messages sent or received by a single service are vi sible, and (d) relevant
+activities executed within a single service are visible. in this paper, we will focus
+on the third setting (observing messages locally). moreove r, we assume that the
+service speciﬁcation is expressed in terms of abstract bpel [jordan et al. 2006].
+however, our ideas and techniques are applicable to all four settings and do not
+depend on the use of bpel.
+figure 2 describes the approach proposed in this paper. base d on a process
+model described as an abstract bpel process (i.e., the servi ce speciﬁcation), we
+generate a petri net [desel et al. 2004]. we use a translation described in [ouyang
+et al. 2005a; ouyang et al. 2005b] and implemented in a tool ca lled bpel2pnml1.
+we also propose an approach to monitor and to correlate soap m essages in or-
+der to construct events logs. conformance checking is perfo rmed by comparing
+the obtained event logs with the petri net. the reason for usi ng petri nets as a
+intermediate step is that it is simpler to check the conforma nce of a simple formal
+model than checking the conformance of a complicated langua ge like bpel.
+the paper considers two notions of conformance: ﬁtness andappropriateness .
+1documentation and software available from www.bpm.fit.qut.edu.au/projects/babel/tools/ .
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·5
+<receive  …
+createinstance=”yes”>
+<correlations/>
+</receive>
+<invoke  …
+inputvariable = …
+outputvariable = ...>
+<correlations/>
+</invoke>
+<invoke  …
+inputvariable = … >
+<correlations/>
+</invoke>
+<receive  …
+variable = … >
+<correlations/>
+</receive>
+(mt,pi)<reply  … >
+variable = …
+</receive>abstract bpel
+soap messages
+soap monitor/correlator
+(mt,pi)
+(mt,pi)
+(mt,pi)
+(mt,pi)
+(mt,pi)
+...event log
+a
+egd
+h i
+jkml
+cb
+gf(mt,pi)
+(mt,pi)
+(mt,pi)petri net
+conformance checking!information systemconformance?
+fig. 2. overview of the approach. the top level shows the proc ess model in bpel and the recorded
+behavior in the form of soap messages. the bpel speciﬁcation is mapped onto petri nets and
+the soap messages are put in an event log. finally, both are co mpared using conformance
+checking.
+an event log and a petri net ﬁtif the petri net can generate each trace in the log.
+in other words, the petri net describing the choreography sh ould be able to “parse”
+every event sequence extracted from the message logs. in [ro zinat and aalst 2006]
+it is shown that it is possible to quantify ﬁtness, e.g., an ev ent log and petri net may
+have a ﬁtness of 0 .66 indicating that 66 percent of the events in the log are poss ible
+acm journal name, vol. v, no. n, month 20yy.6·wil m.p. van der aalst et al.
+according to the model. unfortunately, high ﬁtness does not imply conformance:
+it is easy to construct petri nets that are able to parse any ev ent log. although
+such petri nets have a ﬁtness of 1 .0, they do not provide meaningful information
+about the service’s behavior. this is why we consider a secon d dimension, namely
+appropriateness. appropriateness captures the idea of occam’s razor : “one should
+not increase, beyond what is necessary, the number of entiti es required to explain
+anything”. a model is appropriate if it is the “simplest” one explaining the observed
+behavior. thus, overﬁtting and underﬁtting models are avoi ded.
+the techniques proposed in this paper are implemented in a to ol called confor-
+mance checker . this tool is integrated into the prom framework2. although prom
+oﬀers a wide range of tools related to process mining [aalst e t al. 2003] (e.g., ltl
+checking, process discovery, veriﬁcation, etc.), in this p aper we focus on prom’s
+conformance checker and its application to monitoring serv ices.
+for conformance checking, it is crucial that each event reco rded in the log can
+be linked to (i) a process instance (also called a case) and (ii) a process model
+element (e.g., an activity in bpel terms or a transition in petri-net terms).3in
+figure 2 this is indicated by the pairs (mt,pi) .pirefers to a speciﬁc process
+instance, i.e., a unique identiﬁer of the case being process ed. examples of a pi
+are a customer id, customer order reference, a social securi ty number, a patient id,
+etc.mtis the message type that can be linked to some activity at. examples
+of anmtare “request for information”, “approval message”, and “de cline oﬀer”.
+note that, depending on the setting, it may be possible to dir ectly capture activity
+occurrences and have events of the form (at,pi) where atrefers to an activity.
+when middleware products such as ibm’s websphere and oracle bpel are being
+used this is realistic. otherwise, it is likely that only mes sages can be intercepted
+and events are of the form (mt,pi) . in this paper we focus on the latter situation.
+it may seem trivial to capture events of the form (mt,pi) or(at,pi) . in the pres-
+ence of process-aware information systems such as workﬂow m anagement systems
+(e.g., staﬀware, filenet, flower, etc.) and dedicated midd leware products (e.g.,
+mqseries and oracle bpel) it is indeed easy to extract the des ired information.
+however, in many other situations this turns out to be much mo re complicated.
+section 5 discusses diﬀerent ways of extracting event logs f rom soap message logs.
+in an ideal situation the abstract bpel process and the obser ved messages con-
+form (a precise deﬁnition will be given in the next section). however, there may
+be discrepancies between the actual service behavior recor ded in the event log and
+the service speciﬁcation represented in bpel. there are two possible causes for
+non-conformance: (1) the service implements a process diﬀe rent from the speciﬁca-
+tion given by the abstract bpel process; and (2) the environm ent behaves diﬀerent
+from what could be expected based on the speciﬁcation given b y the abstract bpel
+process. in the remainder, we will show that it is indeed poss ible to measure con-
+formance and track down discrepancies between the abstract bpel process and the
+observed message exchanges. although, we have implemented this in the context of
+bpel, other languages for service interaction speciﬁcatio n could be used. the only
+2documentation and software available from www.processmining.org .
+3this requirement is also found in process mining techniques [aalst et al. 2003] (e.g., the α
+algorithm [aalst et al. 2004]).
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·7
+requirement is that these languages should be suitable for d escribing all message
+exchanges between the services involved in the choreograph y, and there should be
+a mapping from the control-ﬂow subset of that language to pet ri nets.
+as shown earlier in figure 1, the next three sections present how conformance
+checking can be applied to service behavior. first, we prese nt an approach to do
+conformance checking given a petri net and an event log (sect ion 3). then we show
+a mapping from abstract bpel to petri nets (section 4) and dis cuss the various
+ways in which service behavior (e.g., soap messages) can be c aptured and mapped
+onto a format suitable for conformance checking (section 5) .
+3. conformance checking based on petri nets
+the starting point for conformance checking is the presence of both an explicit
+process model, describing how some business process should be executed, and some
+kind of event log, giving insight into how it was actually carried out. clearly, it
+is interesting to know whether they conform to each other. in [rozinat and aalst
+2006] this question has been explored using petri nets to rep resent process models
+[desel et al. 2004], and assuming some abstract event log whe re log events are
+only expected to (i) refer to an activity from the business pr ocess, (ii) refer to a
+case (i.e., a process instance), and (iii) be totally ordere d. as indicated before, we
+assume that messages can be associated to activities and cas es. moreover, there is
+no interaction among cases. therefore, we can assume that an event log is simply
+a multiset of activity traces, i.e., each case refers to a seq uence of activities and
+a log is simply a collection of such sequences. by mapping bpe l onto petri nets
+and soap messages onto multisets of traces, we can focus on th e core idea of
+conformance checking.
+we have identiﬁed two dimensions of conformance, ﬁtness andappropriateness
+[rozinat and aalst 2006]. fitness relates to the question wh ether the observed
+process behavior complies with the control ﬂow speciﬁed by t he process model,
+while appropriateness can be used to evaluate whether the mo del describes the
+observed process in a suitable way (cf. occam’s razor as disc ussed in section 1).
+to illustrate both dimensions of conformance we use the exam ple process shown
+in figure 3(a). the process is represented as a petri net [des el et al. 2004]. the
+squares in figure 3(a) are transitions and represent activi ties. the circles are
+places and represent pre- and post-conditions (i.e., parti al states). in a petri net,
+places may hold tokens. the marking of a petri net is the distr ibution of tokens
+over places (i.e., the state). the network structure is stat ic while the number of
+tokens and their location may change. a transition is enable d if there is a token
+on each of its input places. a transition may ﬁre if it is enabl ed. firing implies
+removing tokens from the input places and producing tokens f or the output places.
+in figure 3(a), transition ais enabled. firing aimplies moving a token from place
+start to place c1, etc. note that there are two transitions bearing the same la bel
+“set checkpoint”. each of these two transitions represents an activity that can
+be thought of as an automatic backup action within the contex t of a transactional
+system, i.e., activity ais carried out at the beginning to deﬁne a rollback point
+enabling atomicity of the whole process, and at the end to ens ure durability of the
+results. then, the actual business process is started with t he distinction of low-value
+acm journal name, vol. v, no. n, month 20yy.8·wil m.p. van der aalst et al.
+(a) simplified model of processing a liability clai m 
+(b) event log l1 (c) event log l2 (d) event log l3
+(e) “underfitting” 
+process model(f) “overfitting” 
+process modelno. of instances log traces 
+4070 
+245 
+56 abdea 
+acdghfa 
+acgdhfa no. of instances log traces 
+1207 
+145 
+56 
+23 
+28 abdea 
+acdghfa 
+acgdhfa 
+achdfa 
+acdhfa no. of instances log traces 
+24 
+7
+15 
+6
+1
+8bde 
+aabhf 
+chf 
+adbe 
+acbgdfaa 
+abeda 100 % fitness less than 
+100 % fitness much less 
+than 100 % fitness 
+100 % fitness 
+but not sufficiently specific from 
+behavioral  point of view 100 % fitness 
+but not represented in 
+structurally  suitable way 
+fig. 3. two dimensions of conformance: ﬁtness and appropria teness.
+claims and high-value claims, which get registered diﬀeren tly (borc). the policy
+of the client is always checked ( d) but in the case of a high-value claim, additionally,
+the consultation of an expert takes place ( g), and then the ﬁled liability claim is
+being checked in more detail ( h). finally, the claim is completed according to the
+former choice between bandc(i.e.,eorf).
+figures 3(b)-(d) show three example logs for the process des cribed in figure 3(a)
+at an aggregate level. this means that process instances exh ibiting the same event
+sequence are combined as a logical log trace while recording the number of in-
+stances to weigh the importance of that trace. note that each of the logs shown
+in figures 3 represents a multiset of traces, e.g., log l1contains 4070 occurrences
+of (a, b, d, e, a ), 245 occurrences of ( a, c, d, g, h, f, a ), and 56 occurrences of
+(a, c, g, d, h, f, a ). an event log can be viewed as a multiset of traces since only
+the control ﬂow perspective is considered here. in a diﬀeren t setting like, e.g., min-
+ing social networks, the resources performing an activity w ould distinguish those
+instances from each other.
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·9
+event log l1completely ﬁtsthe model in figure 3(a) as every log trace can be
+associated with a valid path from start toend. in contrast, event log l2does
+not match completely as the traces achdfa andacdhfa lack the execution of
+activity g, while event log l3does not contain any trace corresponding to the
+speciﬁed behavior.
+now consider the two process models shown in figure 3(e)-(f) . although event
+logl2ﬁts both models quantitatively, i.e., the event streams of t he log and the
+model can be matched perfectly, they do not seem to be appropriate in describ-
+ing the observed behavior. the ﬁrst one is much too generic (“ underﬁtting”) as
+it covers a lot of extra behavior, allowing for arbitrary seq uences containing the
+activities a,b,c,d,e,f,g, orh, while the latter—although it does not allow
+for more sequences than those that were observed in the log—o nly lists the possible
+behavior instead of expressing it in a meaningful way (“over ﬁtting”). note that
+such underﬁtting and overﬁtting models could be constructe d for any log, e.g., also
+l1andl3in figure 3. therefore, these extremes do not oﬀer a better un derstand-
+ing than can be obtained by just looking at the aggregated log . so, there is also a
+qualitative dimension and we claim that a “good” process mod el should somehow
+be minimal in structure to clearly reﬂect the described beha vior (i.e., structural
+appropriateness ), and minimal in behavior to represent as closely as possibl e what
+actually takes place (i.e., behavioral appropriateness ).
+conformance checking aims at both quantifying the respecti ve dimension of con-
+formance and locating the mismatch, if any. we have develope d metrics for measur-
+ing the ﬁtness and the behavioral and structural appropriat eness of a given process
+model and event log [rozinat and aalst 2006]. but we also seek for suitable visu-
+alizations of the results as this is crucial to understand th e sources of mismatches.
+for example, we can quantify ﬁtness by replaying the log in th e model. for this,
+the replay of every log trace starts with marking the initial place in the model and
+then the transitions that belong to the logged events in the t race are ﬁred one after
+another. while doing so, one counts the number of tokens that had to be created
+artiﬁcially (i.e., the transition belonging to the logged e vent was not enabled and
+therefore could not be successfully executed ) and the number of tokens that were
+left in the model (they indicate that the process has not properly completed ). only
+if there were neither tokens left nor missing, the ﬁtness mea sure evaluates to 1 .0,
+which indicates 100% ﬁtness.
+b
+a
+cdstart c1 c2e
+fc3
+ac4 end
+g hc5
+c8
++51 -51 c6c7remained 
+enabled 
+failed 
+execution 
+fig. 4. example process model after replay of event log l2.
+figure 4 shows that the places of missing and remaining token s during log replay
+can also be used to provide insight into the location of error . because of the
+acm journal name, vol. v, no. n, month 20yy.10·wil m.p. van der aalst et al.
+remaining tokens (whose amount is indicated by a + sign) in pl acec6transition g
+has remained enabled, and as there were tokens missing (indi cated by a −sign) in
+placec7transition hhas failed seamless execution. this suggests that the exper t
+consultation (activity g) did not take place for all the treated cases, and possible
+alignment actions would be to either enforce the speciﬁed pr ocess or to introduce
+the possibility to skip activity gin the model.
+both dimensions of conformance, i.e., ﬁtness and appropria teness, have been im-
+plemented in the prom conformance checker [rozinat and aals t 2006]. note that
+the checker supports duplicate activities , e.g., in figure 3(a) there are two activities
+with label a. this is important because multiple activities in a bpel spe ciﬁca-
+tion can exchange messages of a given type and are therefore i ndistinguishable.
+similarly, it is important that the conformance checker sup portssilent steps , i.e.,
+activities that are not logged. note that the presence of sil ent activities makes it
+necessary to construct parts of the state space to ﬁnd the mos t likely path.
+4. mapping bpel onto wf-nets
+to provide tool support for conformance checking of bpel pro cesses we rely on
+two tools developed by the authors of this paper: bpel2pnml a nd wofbpel.
+bpel2pnml translates bpel process deﬁnitions into petri ne ts represented in the
+petri net markup language (pnml). wofbpel, built using woﬂa n [verbeek et al.
+2001], applies static analysis and transformation techniq ues on the output produced
+by bpel2pnml. for the purpose of conformance checking, wofb pel is used to:
+(i) simplify the petri net produced by bpel2pnml by removing unnecessary silent
+transitions, and (ii) convert the petri net into a so-called workflow net (wf-net),
+which has certain properties that simplify the analysis pha se and is the input format
+required by the prom conformance checker.
+below, we discuss the mapping from bpel to wf-nets and illust rate it using a
+bpel process deﬁnition of a supplier service that we will use as a running example
+in the remainder of this paper.
+4.1 the supplier service
+figure 5 provides an overview of a process deﬁnition capturi ng the behavior of a
+“supplier service”. this ﬁgure uses a visual notation reﬂec ting the syntax of bpel.
+this service provides a purchase order and change order serv ice for customers, where
+the purchase order that has been placed may be changed once.
+the supplier process is initiated upon receiving a purchase order that contains
+one or several line items. the supplier may accept or reject a ny ordered item,
+possibly suggesting alternative products, quantities or d elivery dates in the latter
+case. the supplier replies to the purchase order either with a single response listing
+the outcome for all items, or with multiple responses corres ponding to subsets of
+the items. the rationale for having multiple responses is th at the supplier may
+be unable to determine outright if it can accept a line item. i n this case, the
+supplier sends a ﬁrst response listing the items of which the outcomes have been
+determined. additional responses are then sent as informat ion becomes available.
+after receiving an order response, the customer may request to change the previous
+purchase order because of some item(s) being rejected. a cha nge order is an up-
+dated purchase order that overrides the previous one. simil arly to the processing
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·11
+  process “supplier”
+  sequence “main”
+  scope “cancellationscope”
+catchfault “orderchange”(main activity) (fault/event handlers)
+invoke
+“orderchangeresponse”
+whilependingchangeditems>0
+invoke
+“orderchangeresponse”onevent “change”
+throwfault
+“orderchange”whilependingorderitems>0
+invoke
+“orderresponse”invoke
+“orderresponse”receive
+“order”
+fig. 5. an abstract view of the supplier process.
+of a purchase order, the supplier may reply with a single resp onse or with multiple
+responses to a change order.
+for the readers that want to see the actual deﬁnitions of the s upplier service both
+as an abstract and as an executable bpel process, we refer to a technical report
+where we include the full bpel speciﬁcations [aalst et al. 20 05].4an abstract
+process is deﬁned at the level of abstraction required to cap ture public aspects
+of the service (i.e., message exchanges with the environmen t). in the working
+example, the abstract process speciﬁes that the service rec eives orders and change
+orders and sends order responses and change order responses , and captures the
+control dependencies between these messages. meanwhile, a n executable process
+represents a possible implementation of the abstract proce ss. however, services are
+not always coded as bpel executable processes.
+4.2 mapping bpel to petri nets
+we ﬁrst map bpel processes to petri nets, which can be then con verted to wf-
+nets. when using petri nets to capture the formal semantics o f bpel, we allow
+the usage of both labeled and unlabeled transitions. the lab eled transitions model
+events and basic activities. the unlabeled transitions ( τ-transitions, also known as
+silent steps ) represent internal actions that cannot be observed by exte rnal users.
+this section presents only selected parts of the mapping. a c omplete version of the
+formal speciﬁcation of the mapping can be found in [ouyang et al. 2005b].
+4.2.1 activities. we start with the mapping of a basic activity (x) shown in
+figure 6, which also illustrates our mapping approach for st ructured activities.
+the net is divided into two parts: one (drawn in solid lines) m odels the normal
+processing of x, the other (drawn using dashed lines) models the skipping of x.
+in the normal processing part, the four places are used to cap ture four possible
+states for the execution of activity x: rxfor “ready” state, sxfor “started” state, cx
+for “completed” state, and fxfor “ﬁnished” state. the transition labeled xmodels
+4this report can be downloaded from bpmcenter.org .
+acm journal name, vol. v, no. n, month 20yy.12·wil m.p. van der aalst et al.
+rx
+sx
+skippedx
+ycx
+fxxto_skipx
+"skip"y
+x
+fig. 6. a basic activity.
+the action to be performed. this is an abstract way of modelin g basic activities,
+where the core of each activity is considered as an atomic act ion. two τ-transitions
+(drawn as solid bars) model silent steps, i.e., internal act ions for checking pre-
+conditions or evaluating post-conditions for activities. in the mapping of bpel
+to petri nets, we will introduce many silent steps to model th e ”logical wiring”
+among transitions representing the actual activities. the skip path in figure 6 is
+mainly used to facilitate the mapping of control links. note that the toskipand
+skipped places are respectively decorated by two patterns (a letter yand its upside-
+down image) so that they can be graphically identiﬁed. in fig ure 6, hiding the
+subnet enclosed in the box labeled xyields an abstract graphic representation of
+the mapping for activities. this is used in the rest of the pap er.
+figure 7 depicts the mapping of structured activities. next to the mapping
+of each activity is a bpel snippet of the activity. more τ-transitions (drawn as
+hollow bars) are introduced for the mapping of routing const ructs. in figure 7 and
+subsequent ﬁgures, the skip path of the mapping is not shown i f it is not used.
+a detailed description of the mapping [ouyang et al. 2005b] i s outside the scope
+of this paper. however, to give some insight into the mapping , we describe the
+mappings of while andscope activities in some detail.
+awhile activity supports structured loops. in figure 7(e), activi ty x has a sub-
+activity a that is performed multiple times as long as the whi le condition ( z) holds
+and the loop construct ends if the condition does not hold any more ( ∼z).
+ascope provides event and fault handling. it has a main activity tha t deﬁnes
+its “normal” behavior. to map fault handling, we deﬁne four ﬂ ags for a scope,
+each represented by a petri net place, as shown in figure 7(f) . these ﬂags are:
+tocontinue , indicating the execution of the scope is in progress and no e xception
+has occurred; tostop, signaling an error has occurred and all active activities n ested
+in the scope need to stop; snapshot , capturing the scope snapshot deﬁned in [jor-
+dan et al. 2006] which refers to the preserved state of a succe ssfully completed
+uncompensated scope; and nosnapshot , indicating the absence of a scope snapshot.
+speciﬁcally, if a fault occurs during the execution of the no rmal behavior associ-
+ated to a scope, it will be caught by one of the fault handlers d eﬁned for the scope,
+and the scope switches from normal “processing” mode to “fau lt handling” mode.
+these two modes are represented by places tocontinue andtostop. a scope in
+which a fault has occurred is considered to have ended abnorm ally and thus cannot
+be compensated, even if the fault has been caught and handled successfully. this
+is represented by places snapshot andnosnapshot . for space reasons, we do not
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·13
+( c )  switch
+( f )  scope ( d )  pick( b )  flow ( a )  sequence
+( e )  whilea
+farx
+brb
+fb
+cx
+fxx
+activity a
+activity bname="x"><sequence
+</sequence>
+rx
+fxsx
+cxe1e2
+ra
+farb
+fbx
+ay
+byyye1
+e2</onmessage>
+</onalarm>
+</pick><onmessage
+<onalarm><pick
+name="x">
+activity a
+activity b>z1
+z2name="x"><switch
+<case>
+<condition>
+</condition>
+activity a    
+</case>
+<case>
+<condition>
+</condition>
+activity b
+</case>
+</switch>rx
+fxcxfara
+fbrb"z "1sx
+"~z1
+v
+2z "
+a by yyyx
+fqcqqr
+sq
+ara
+faq
+!to_continueq
+to_stopq
+snapshotq
+no_snapshotqc
+x:)name="q">
+activity a<scope
+</scope>fxrx
+sx
+cxara
+fabrb
+fbx
+</flow>activity bactivity aname="x"><flows
+z
+</condition>
+activity a<while
+</while>name="x">sxrx
+fxcxara
+fa"~z" "z"x
+<condition>x
+ar
+fig. 7. mapping structured activities.
+describe fault handlers and other advanced constructs. ful l details, including a for-
+mal deﬁnition of the mapping, can be found in a separate techn ical report [ouyang
+et al. 2005b].
+4.2.2 event handlers. a scope can provide event handlers that are responsible
+for handling normal events (i.e., message or alarm events) t hat occur concurrently
+when the scope is running. figure 8 depicts the mapping of a sc ope (q) with an
+event handler (eh). the four ﬂags associated with the scope a re omitted. the
+subnet enclosed in the box labeled ehspeciﬁes the mapping of eh. as soon as
+scope q starts, it is ready to invoke eh. event enormal isenabled and may occur
+upon an environment or a system trigger. when enormaloccurs, an instance of eh is
+created, in which activity he (“handling event”) is execute d. eh remains active as
+long as q is active. finally, event enormalbecomes disabled once the normal process
+(i.e., main activity a) of q is ﬁnished. however, if a new inst ance of eh has
+already started before enormalis disabled, it is allowed to complete. the completion
+of the scope as a whole is delayed until all active instances o f event handlers have
+completed.
+4.2.3 example: mapping of the supplier process. figure 9 depicts the mapping
+of the supplier process shown in figure 5. the complete mappi ng of the supplier
+process, as obtained using bpel2pnml, is summarized in figu re 9. this ﬁgure
+sketches the top-level structure including the top-level s cope, the fault handler and
+acm journal name, vol. v, no. n, month 20yy.14·wil m.p. van der aalst et al.
+enormal <onalarm  ><scope name="q">
+<eventhandlers>
+activity he
+</onalarm>
+</eventhandlers>
+activity a
+</scope>example bpel code 2:enormal <onmessage  ><scope name="q">
+<eventhandlers>
+</onmessage>
+</eventhandlers>activity he
+activity a
+</scope>example bpel code 1:
+cq
+fqra
+fa...
+caaqr
+sq
+enormal
+rhe
+fheheto_invokeeh
+/0/0/0/0/0/0
+/1/1/1/1/1/1enabledehq
+fig. 8. mapping event handlers.
+the event handler in the process. for illustration purposes , some net details (e.g.,
+those associated to the process scope and the skip paths) are omitted. also, for the
+sake of readability the following conventions are used: pla cetocontinue is labeled
+by a “c”, tostopby an “x”, snapshot by a “smiley face” and nosnapshot by an
+exclamation mark. the reader does not need to understand thi s diagram in detail.
+what is important to retain is that any abstract bpel speciﬁc ation can be mapped
+onto a petri net, but in this mapping process a large number of silent steps (i.e.,
+transitions with label τ) are introduced. next we will show how to remove these
+and simplify the petri net prior to performing conformance c hecking.
+4.3 from petri nets to wf-nets
+the prom conformance checker takes a wf-net [aalst 1998] and an mxml log
+as input. a wf-net is a petri net which models a workﬂow proces s deﬁnition.
+it has exactly one input place (called source place) and one o utput place (sink
+place). a token in the source place corresponds to a case (i.e ., process instance)
+which needs to be handled, and a token in the sink place corres ponds to a case
+which has been handled. also, in a wf-net there are no danglin g tasks and/or
+conditions. tasks are modeled by transitions and condition s by places. therefore,
+every transition/place should be located on a path from the s ource place to the
+sink place in a wf-net [aalst 1998].
+the petri net obtained from the automated mapping to petri ne ts is generally
+not a wf-net. for example, the petri net sketched in figure 9 c ontains four
+sink places: one at the bottom of the ﬁgure and four along the d otted line labeled
+“cancellationscope”. such additional source and sink plac es come from the mapping
+of constructs that can cause activities to be skipped, namel y: control links and fault
+handlers attached to scopes. in order to facilitate the mapp ing of control links and
+fault handlers, and to be consistent in the way structured ac tivities are mapped
+in bpel, we have assumed in our mapping that any activity may b e skipped. as
+a result, a skip path is generated for every activity in bpel2 pnml. however,
+not every activity can actually be skipped. a straightforwa rd counter example is
+the root activity (i.e., the top-level process scope). by re moving these idle skip
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·15
+cancellationscope
+throwfault[note]: the concrete action of ``throwfault'' is modelled by one transition, which is graphically represented
+by two transitions to avoid arc crossing....
+...
+...ccs
+f
+mainf
+fprocesscancellationscopec
+:)!change
+..
+....
+throwfault
+tfftfrto_invokeeh
+ehenabled...
+...
+.....
+....
+......
+......
+order
+......
+orderresponser
+for
+or
+...
+...orderchangeresponserocr
+ocrfthrowfault x
+invokedfhfh to_invoke
+...while2r
+...
+...rocr
+focr...
+...
+fwh2c
+while2process
+r
+or
+orderresponsewh1
+or
+fcsrs
+or
+orcancellationscoper
+scs
+while1fwhile1
+cwh1frrr
+mainprocess
+o
+o
+fh
+responseswh2
+orderchange
+fig. 9. mapping of the supplier process shown in figure 5.
+acm journal name, vol. v, no. n, month 20yy.16·wil m.p. van der aalst et al.
+fragments, the petri net obtained from the initial phase of t he mapping can be
+converted to a wf-net.
+we use wofbpel to convert the petri nets returned by bpel2pnm l to wf-
+nets. wofbpel has originally been built to perform analysis on the petri nets
+produced as output from bpel2pnml. since it uses woﬂan [verb eek et al. 2001]
+and woﬂan can only handle wf-nets, wofbpel ﬁrst needs to remo ve the idle skip
+fragments to obtain a wf-net. in addition to this, wofbpel al so applies behavior
+preserving reduction rules based on the ones given by murata [murata 1989]. this
+way, the size of the net can be signiﬁcantly reduced by removi ng unnecessary silent
+transitions and redundant places. note that there is a diﬀer ence between the rules
+given by murata and the rules used in wofbpel. the explanatio n for this diﬀerence
+is that in our case the non-silent transitions (represented by labeled transitions)
+should never be removed.
+figure 10 shows the reduction rules used in wofbpel, where on ly silent transi-
+tions ( τ-transitions) can be removed. the ﬁrst rule shows that a (sil ent) transition
+connecting two places may be removed by merging the two place s, provided that
+tokens in the ﬁrst place can only move to the second place. the second rule shows
+that multiple alternative silent transitions can be reduce d to a single one. note
+that after applying the second rule one may be able to apply th e ﬁrst rule provided
+that the ﬁrst place has only one remaining output arc (see fig ure 10). the third
+rule shows that self-loops can be removed if the transition i nvolved is silent. when
+applying the rules one should clearly diﬀerentiate between silent and non-silent
+transitions. for example, in the fourth and ﬁfth rule at leas t one of the transi-
+tions should be silent, otherwise the rule should not be appl ied (as indicated). in
+the fourth rule the execution of yis inevitable once the silent transition has been
+executed. therefore, it is only possible to postpone its occ urrence. in the ﬁfth
+rule the execution of xis always followed by the silent transition. note that the
+silent transition cannot have any additional inputs. there fore, it is only possible
+to postpone its occurrence. the two last rules do not remove a ny transitions but
+remove places. transitions xandymay be or may not be silent. the reduction
+rules shown in figure 10 do not preserve the moment of choice a nd therefore assume
+trace semantics rather than branching or weak bisimulation semantics [glabbeek
+and weijland 1996].
+based on the above, figure 11 depicts the wf-net automatical ly generated from
+the supplier bpel process of figure 5 using ﬁrst bpel2pnml to obtain a petri
+net and then wofbpel to remove idle skip paths and reduce the s ize of the net.
+for reference, the petri net generated by bpel2pnml for the s upplier process
+contains 96 places and 84 transitions, while the reduced wf- net contains 27 places
+and 27 transitions.
+5. monitoring and correlating messages
+in order to perform conformance checking, we assume that mes sages sent and re-
+ceived by a service are logged. the resulting logs should be o rdered chronologically
+and should contain for each message, an indication of whethe r the message is in-
+bound or outbound, as well as the message headers (e.g., http and/or soap
+headers). the message payload is not relevant as we focus on b ehavioral rather
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·17
+fig. 10. behavior preserving reduction rules used in wofbpe l.
+than structural conformance.
+given such a message log and a bpel abstract process deﬁnitio n that is presup-
+posed to correspond to the message log, we need to extract log traces such as those
+depicted in figures 3(b)-(d).5the labels in these log traces should correspond to
+labels in the petri net obtained from the bpel abstract proce ss deﬁnition. these
+labels must allow one to determine the direction of messages and their message
+type. thus, for each message we must determine:
+—its corresponding bpel abstract process instance (herewi th called its service
+instance ). this is required because the event log needs to be structur ed as a set
+of log traces, each corresponding to one execution of the pro cess capturing the
+expected behavior of the service.
+—a label denoting the bpel communication action in the abstr act process deﬁn-
+ition to which the production or consumption of the message i s attributed.
+5note that we will extract more information but this is the bar e minimum for conformance check-
+ing. the mxml format also allows for the logging of timestamp s, data, resources, and transac-
+tional aspects.
+acm journal name, vol. v, no. n, month 20yy.18·wil m.p. van der aalst et al.
+τ
+ττ ττ ττorder
+orderresponse
+orderresponsechangeτ
+τ ττ
+exitτ
+ττ
+throwfault
+ττ
+ττ
+τ
+orderchangeresponse
+orderchangeresponse
+fig. 11. the wf-net for the supplier process.
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·19
+in the remainder of this section we discuss both issues in det ail.
+5.1 grouping messages into log traces
+in order to apply the proposed conformance checking techniq ue, messages need to
+be grouped into log traces each representing one execution of the service, i.e., each
+message needs to be associated to a process instance. if the s ervice is implemented
+as an executable bpel process, this grouping of messages is t rivial. the process is
+executed by an engine that generates logs associating each c ommunication action
+(and thus the message consumed or produced by that action) to a process instance.
+all messages consumed or produced by a process instance can t hen be grouped into
+a log trace.
+if no executable bpel process is available, we need to group m essages into log
+traces just by looking at their contents. current web servic e standards do not make
+a provision for messages to include a “service instance iden tiﬁer”, so assuming the
+existence of such identiﬁer may be unrealistic in some situa tions. other monitor-
+ing approaches in the ﬁeld of web services have recognized th is problem and have
+addressed it in diﬀerent ways, but they usually end up relyin g on very speciﬁc and
+sometimes proprietary approaches. for example the web serv ices navigator [pauw
+et al. 2005] uses ibm’s data collector to log both the content s and context of soap
+messages. but to enable correlation, the data collector ins erts a proprietary soap
+header element into messages.
+in order to avoid relying on proprietary soap extensions, we use a generic group-
+ing mechanism that we term chained correlation . the idea of chained correlation
+is that every message, except for the ﬁrst message of a servic e instance, refers to at
+least one previous message belonging to the same service ins tance. in the context of
+contemporary web service standards and middleware this cor relation information
+can be obtained in at least two ways:
+—when using soap in conjunction with ws-addressing, each me ssage contains
+an identiﬁer ( messageid header) and may refer to a previous message through
+therelatesto header. if we assume that these addressing headers are used t o
+relate messages belonging to the same service instance in a c hained manner, it
+becomes possible to group a raw service log containing all th e messages sent or
+received by a service into log traces corresponding to servi ce instances. this is
+the method used in our case study and more details will be give n in section 6.
+the method is applicable when using oracle bpel as well as var ious other web
+service middleware supporting the ws-addressing standard . note however web
+service middleware supporting ws-addressing may use the replyto header to
+correlate messages as opposed to the relatesto . speciﬁcally, the replyto header
+of a given message (say m) may contain a uri uniquely identifying the message in
+question. subsequently, when another message m′of the opposite directionality
+is observed that has the same uri in the toheader, mandm′can be correlated.
+—the second method is based on the identiﬁcation of properti es that a message
+has in common with another message belonging to the same serv ice instance. in
+bpel, properties shared by messages belonging to the same se rvice instance are
+captured as correlation sets . a correlation set can be seen as a function that
+maps a message to a value of some type. correlation sets are as sociated with
+acm journal name, vol. v, no. n, month 20yy.20·wil m.p. van der aalst et al.
+communication actions. when a message is received which has the same value
+for a correlation set as the value of a message previously sen t by a running service
+instance, the message in question is associated with this in stance. this allows one
+to map messages to service instances, except for those messa ges that initialize a
+correlation set, that is, those messages that start a new ins tance. assuming that
+in the bpel abstract process of a service only the initial act ions of the protocol
+initialize correlation sets, and all other actions refer to the same correlation sets
+as the initial action, each message produced or consumed by t he service can
+be mapped to a service instance as follows: the full message l og is scanned in
+chronological order. a message is either related to a new ser vice instance if it
+corresponds to a communication action that initializes a co rrelation set, or related
+to a previously identiﬁed service instance if the values of i ts correlation set match
+those of a message sent by the previous service instance.
+in some cases, neither of the techniques outlined above is ap plicable. in other
+words, there may be no way of deﬁning a function that can deter mine whether or not
+a given message is related to a previously observed message. in this case, techniques
+from the area of web session identiﬁcation can be employed, b ut such techniques
+are not 100% reliable. this avenue is considered in [gombotz and dustdar 2005].
+5.2 abstracting messages as labels
+once the message log has been grouped into log traces corresp onding to service
+instances, we associate each message in a log trace with a tra nsition label used in
+the wf-net obtained from the bpel abstract process deﬁnitio n. these transition
+labels represent communication actions seen at the level of abstraction used for
+conformance checking.
+bpel’s communication action types are: invoke ,reply,receive , andonmessage
+(oronevent in bpel 2.0). a receive or an onmessage action consumes one me s-
+sage, a reply produces one message, while an invoke can eithe r produce a single
+message ( simple send ) or produce a message and consume another one in that
+order ( synchronous send-receive ). without loss of generality, we assume that the
+bpel abstract process given to the conformance checker does not contain any syn-
+chronous send-receive. for the purposes of conformance che cking, a synchronous
+send-receive can be decomposed into a sequence activity containing a simple send
+followed by a receive. also without loss of generality, we as similate reply actions to
+send actions and onmessage handlers to receive actions, sin ce these elements have
+the same eﬀect in terms of message logs.
+thus, for conformance checking purposes, we view communica tion actions in a
+bpel abstract process as being labeled by a pair /angbracketleftd, mt /angbracketrightwhere d stands for the
+direction (inbound or outbound) and mt for message type. all non-communication
+actions are given τ-labels since their execution does not manifest itself as me ssage
+log entries. actions with τ-labels in the abstract process get translated to silent
+transitions.
+under this labeling scheme, it is possible that two actions i n a bpel process
+get the same label. hence, the petri net generated from a bpel abstract process
+may have multiple (non-silent) transitions with the same la bel. fortunately, this
+possibility is supported by the conformance checking techn ique, e.g., the example
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·21
+in figure 3(a) contains two actions with label a.
+each communication action in a bpel process deﬁnition is lin ked to a wsdl
+operation. a wsdl operation in turn is associated with binding information that
+determines how messages related to that operation are encod ed and exchanged over
+a given communication protocol (e.g., soap over http or xml o ver http). the
+structure of an operation’s binding information varies dep ending on the transport
+protocol, but in any case it normally provides a means to iden tify messages that
+pertain to that operation. in the case of soap over http, the b inding informa-
+tion for a wsdl operation maps this operation to a soapaction identiﬁer. this
+makes it possible to reliably associate a soap message with a wsdl operation
+by inspecting the soapaction ﬁeld in the http header of the message. in the
+case of a communication protocol based on plain xml over http , the binding
+information of a given wsdl operation may include a relative url to be found
+in the http headers of every message pertaining to that opera tion. again, this
+makes it possible to associate a soap message to an operation by analyzing the
+“request uri” in the message’s http header.
+in the general case, however, the soapaction header and the m apping between
+wsdl operations and soapaction identiﬁers are optional. in the absence of
+this information, associating soap messages to wsdl operat ions may require
+inspection of the message’s body. speciﬁcally, the top-lev el element in the soap
+message body needs to be compared with the message type assoc iated to each
+operation supported by the service. this technique is only r eliable if operations
+map to message types with diﬀerent top-level elements. othe rwise, the user of
+the conformance checker would have to provide a function map ping each soap
+message in the log to a wsdl operation. this illustrates that the versatility of
+soap and wsdl make it diﬃcult to achieve a general and reliabl e solution for the
+problem of mapping messages to operations. in some cases, ta ilor-made solutions
+are required.
+despite these potential obstacles, it is realistic to assum e that every message pro-
+duced or consumed by a service for which a bpel abstract proce ss is deﬁned, can
+be mapped to a wsdl operation. with this information and the m essage direction,
+we can construct log traces such that each entry in the trace c an be matched to
+a communication action label under the labeling scheme desc ribed above. because
+we are able to map a bpel speciﬁcation onto a petri net (cf. sec tion 4) and we
+can associate messages to both process instances and activi ties (cf. this section),
+we can now apply the conformance checking techniques descri bed in section 3.
+6. experimental application of the approach
+this section discusses the applicability of the approach an d tools described in pre-
+vious sections using the example from section 4.1. we focus s peciﬁcally on the
+“local message observer” setting, that is, relevant messag es exchanged between all
+services involved in the choreography (i.e. supplier and cu stomer) are visible.
+6.1 obtaining event logs
+to generate soap messages, we needed to implement services t hat would behave,
+at least presumably, according to the abstract bpel process es describing the chore-
+ography. we could have used a conventional programming lang uage to implement
+acm journal name, vol. v, no. n, month 20yy.22·wil m.p. van der aalst et al.
+these services. however, we chose not to do so and implemente d an executable
+process deﬁnition corresponding to the “supplier” role in t he working example.
+speciﬁcally, we took the abstract bpel process deﬁnition of the supplier role as a
+starting point and we added into it manual tasks (e.g. for ord er entry and process-
+ing), data manipulation actions and other details. in this w ay, we obtained an ex-
+ecutable bpel process deﬁnition that we deployed into the or acle bpel process
+manager (version 10.1.2).6.
+soap messages are typically exchanged between two services , which can both
+run on the same server or on diﬀerent servers. for this reason , we also had to
+implement a simple “customer” executable bpel process. the customer process
+places an order, waits for an orderresponse, then places a ch angeorder, waits for
+two orderchangeresponses, and then exits. we deployed the e xecutable bpel
+processes on two diﬀerent oracle bpel servers.
+subsequently, we created instances of the executable bpel p rocesses and we
+executed these instances using the console and worklist han dler provided by the
+oracle bpel platform. this allowed us to generate soap messa ges between two
+oracle bpel servers (one for the supplier and one for the cust omer), which we
+then altered to introduce diﬀerent types of deviations.
+unfortunately, we were unable to obtain the soap messages di rectly from or-
+acle bpel. no option existed to log all soap messages sent and /or received
+to a ﬁle, and they were also not stored in the database underly ing the oracle
+bpel server. as a result, we had to use a tcp tunneling techniq ue to ob-
+tain the soap messages. with this technique, it is fairly eas y to eavesdrop
+on a speciﬁc combination of host and port. typically, incomi ng messages all
+go to the same combination of host and port, but outgoing mess ages can be
+directed to a multitude of combinations of hosts and ports. a s a result, it is
+more convenient to eavesdrop on the incoming messages on eac h server. exam-
+ples of collected soap message logs from both servers are giv en in a technical
+report [aalst et al. 2005]. from the soap message logs, it is s traightforward
+to generate a log as shown in figure 12. since oracle bpel, by d efault, relies
+on ws-addressing, the ﬁrst message (the order) contains a unique message id
+(e.g.bpel://localhost/default/customer ~1.1/301-bpinv0-bpseq0.3-3 ), and
+all other related messages refer to this message id.
+both the wf-net corresponding to the abstract supplier proc ess (cf. figure 11)
+and the log from figure 12 can be imported by the prom framewor k to check their
+conformance.
+6.2 conformance checking
+having demonstrated that it is feasible to obtain an event lo g (such as in figure 12)
+from service executions, we now use conformance checking te chniques (see also
+section 3) to validate the supplier service speciﬁcation fo r a number of interaction
+scenarios. table i shows ﬁve execution sequences which shou ld be valid for the
+supplier service as speciﬁed in section 4.1 and eight which s hould not.
+scenarios 1 – 5 reﬂect message sequences which should be comp liant with the
+process speciﬁcation (note that scenario 5 corresponds to t he example from fig-
+6see:www.oracle.com/technology/products/ias/bpel/ .
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·23
+<?xml version="1.0" encoding="utf-8"?>
+<workflowlog>
+<source
+program="oracle bpel, using tcp tunneling"
+/>
+<process
+id="http://services.qut.com/supplier"
+description="supplier 1.1, using customer 1.1 as customer stub"
+>
+<processinstance
+id="bpel://localhost/default/customer~1.1/301-bpinv 0-bpseq0.3-3"
+description="instance 301"
+>
+<audittrailentry>
+<workflowmodelelement>order</workflowmodelelement>
+<eventtype>complete</eventtype>
+<timestamp>2005-10-20t11:54:09-00:00</timestamp>
+</audittrailentry>
+<audittrailentry>
+<workflowmodelelement>orderresponse</workflowmodele lement>
+<eventtype>complete</eventtype>
+<timestamp>2005-10-20t11:58:08-00:00</timestamp>
+</audittrailentry>
+<audittrailentry>
+<workflowmodelelement>change</workflowmodelelement>
+<eventtype>complete</eventtype>
+<timestamp>2005-10-20t11:58:20-00:00</timestamp>
+</audittrailentry>
+<audittrailentry>
+<workflowmodelelement>orderchangeresponse</workflow modelelement>
+<eventtype>complete</eventtype>
+<timestamp>2005-10-20t11:58:35-00:00</timestamp>
+</audittrailentry>
+<audittrailentry>
+<workflowmodelelement>orderchangeresponse</workflow modelelement>
+<eventtype>complete</eventtype>
+<timestamp>2005-10-20t11:58:43-00:00</timestamp>
+</audittrailentry>
+</processinstance>
+</process>
+</workflowlog>
+fig. 12. a small fragment of a soap-based log in mxml format.
+ure 12). they all start with an initiating order, followed by one or more orderre-
+sponses , and potentially complete with a change request and one or more order-
+changeresponses .
+scenarios 6 – 13 represent conceivable settings of misbehav ior, whereas 6 – 9 cor-
+respond to possible violations by the supplier service and 1 0 – 13 contain violations
+by the client or environment of the service. both scenario 6 a nd 7 show situations
+acm journal name, vol. v, no. n, month 20yy.24·wil m.p. van der aalst et al.
+table i. desirable and undesirable scenarios for the suppli er service execution.
+log trace
+(order, orderresponse)
+(order, orderresponse, orderresponse, orderresponse )
+(order, orderresponse, change, orderchangeresponse)
+(order, orderresponse, orderresponse, change, order changeresponse)
+(order, orderresponse, change, orderchangeresponse,  orderchangeresponse)
+(order)
+(order, orderresponse, change)
+(orderresponse)
+(order, orderresponse, change, orderresponse, order changeresponse)
+(order, change, orderchangeresponse)
+(change)
+(order, orderresponse, change, orderchangeresponse,  change)
+(order, orderresponse, change, change, orderchanger esponse)scenario
+1
+2
+3
+4
+5
+6
+7
+8
+9
+10
+11
+12
+13fitness
+1.0
+1.0
+1.0
+1.0
+1.0
+0.625
+0.749
+0.905
+1.0
+0.759
+0.0
+0.914
+0.971desirable
+behaviorundesirable
+behavior
+where the conversation has not been completed properly as af ter having received
+theorder request the service needs to send at least one orderresponse (missing in
+scenario 6), and following a change request at least one orderchangeresponse must
+be sent (missing in scenario 7). in scenario 8 the supplier se rvice sends an orderre-
+sponse which is not correlated with a previous order, and in scenario 9 it still sends
+another orderresponse although a change request has been received already (and
+thus only orderchangeresponses should be sent). scenario 10 shows the situation
+where the environment invokes a change request although the ﬁrst orderresponse
+has not been sent by the service yet. in scenario 11 a change request is invoked
+which is not even related to a previous order. both scenario 12 and 13 show a
+situation in which a second change is requested by the client, which is not allowed.
+in order to verify the given scenarios with respect to the sup plier service spec-
+iﬁcation from section 4.1 we use the reduced petri net model g enerated from the
+abstract bpel process, shown in figure 11. having imported i t into the prom
+framework, the conformance checker [rozinat and aalst 2006 ] is able to replay
+the log containing the scenarios in the model. based on the nu mber of missing
+and remaining tokens the ﬁtness measurement is calculated i ndicating whether a
+scenario corresponds to a valid execution sequence for that process. if not, the
+depiction of missing and remaining tokens aids in locating t he problem.
+consider for example figure 13(a), in which the conformance checker shows a
+part of the model after the replay of scenario 8. in this situa tion a single orderre-
+sponse was sent without having received any previous order, which is not allowed.
+the place in the upper left corner which has no incoming arcs r epresents the start
+place of the whole process (i.e., a token will be put there in o rder to start the replay
+of the scenario). following the control ﬂow of the model it ca n be observed that
+theorder transition is supposed to ﬁre ﬁrst in order to produce a token in the en-
+larged place on the right, which can be consumed by the orderresponse transition
+afterwards. however, since the log replay is carried out fro m a log-based perspec-
+tive the missing tokens (indicated by a −sign) are created artiﬁcially and the task
+belonging to the observed message in the model (i.e., the orderresponse transition)
+is executed immediately. the fact that it had been forced to d o so is recorded and
+the task is marked as having failed successful execution (i. e., it was not enabled).
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·25
+(a) the fitness analysis of scenario no. 8 shows th at ‘orderresponse’ was not ready to be executed whe n 
+it occurred (tokens were missing), and that ‘order’ was expected to occur but did not happen (tokens we re 
+remaining)
+(b) the behavioral appropriateness analysis based o n the desirable scenarios reveals that the model 
+allows for more behavior than expected. due to inte rmediate states it is possible to send an 
+‘orderresponse’ after a ‘change’ request has been rec eived 
+fig. 13. the conformance checker analyzing the scenarios fr om table i.
+furthermore, there are tokens remaining in the enlarged pla ces in the upper and
+the lower left corner (indicated by a + sign), which leads to t heorder transition
+remaining enabled after replay has ﬁnished. remaining task s are visualized with
+the help of a shaded rectangle in the background and they poin t to situations where
+a task was expected to be executed but did not occur.
+now reconsider table i, where the fitness column indicates f or each scenario
+whether it corresponds to a valid execution sequence for our supplier service (i.e.,
+during replay there were neither tokens missing nor remaini ng and therefore ﬁtness
+= 1.0) or not (i.e., ﬁtness <1.0). as it shows 100% ﬁtness for scenario 1 – 5 the
+abstract bpel process has been proven to be a valid speciﬁcat ion with respect to
+the “well-behaving” conversation scenarios we thought of. however, it also allows
+acm journal name, vol. v, no. n, month 20yy.26·wil m.p. van der aalst et al.
+for an execution sequence that we have classiﬁed as undesira ble behavior, namely
+scenario 9: although another orderresponse is sent after a change request has been
+received already (and thus only orderchangeresponses should be sent) the scenario
+proved to comply with the given abstract bpel process speciﬁ cation. this is an
+interesting result as it makes us aware of the fact that—due t o a number of interme-
+diate states—the chosen fault/event handler construct doe s not completely capture
+the intended constraint. the same conclusion can be drawn fr om the behavioral
+appropriateness analysis with the conformance checker bas ed on the ﬁve desirable
+scenarios only, where a screenshot of the result is depicted in figure 13(b). the dis-
+played part visualizes that, although according to the mode l achange request could
+be followed by an orderresponse , this never happened in the log (as the analysis is
+based on scenarios 1 – 5).
+the small case study presented in this section demonstrates that conformance
+checking not only helps to detect deviations in terms of viol ations of the speciﬁed
+control-ﬂow, but can also point to undesirable behavior whi ch is captured by the
+model.
+7. related work
+several attempts have been made to capture the semantics of b pel by means of
+translations into formal languages. some have deﬁned trans lations from bpel to
+ﬁnite state machines [fisteus et al. 2004], others to proces s algebra [ferrara 2004],
+abstract state machines [fahland and reisig 2005] or petri n ets [ouyang et al.
+2005a; ouyang et al. 2005b; hinz et al. 2005]. this paper uses the translation to
+petri nets presented in [ouyang et al. 2005b] which is very de tailed in terms of its
+coverage of control-ﬂow constructs.
+this paper builds on earlier work on process mining, i.e., th e extraction of knowl-
+edge from event logs (e.g., process models or social network s). for example, the
+α-algorithm [aalst et al. 2004] can derive a petri net from an e vent log. for an
+overview of process mining techniques, the reader is referr ed to [aalst et al. 2003].
+in this paper we use the conformance checking techniques des cribed in prelim-
+inary form in [rozinat and aalst 2006] and implemented in the prom framework
+[dongen et al. 2005]. the notion of conformance has also been discussed in the
+context of security [aalst and medeiros 2004], business ali gnment [aalst 2005], and
+genetic mining [medeiros et al. 2006].
+the need for monitoring web services has been raised by other researchers. for
+example, several research groups have been experimenting w ith adding monitor
+facilities via soap monitors in axis ( ws.apache.org/axis/ ). [lazovik et al. 2004]
+introduces an assertion language for expressing business r ules and a framework to
+plan and monitor the execution of these rules. [baresi et al. 2004] uses a monitoring
+approach based on bpel. monitors are deﬁned as additional se rvices and linked to
+the original service composition. another framework for mo nitoring the compliance
+of systems composed of web-services is proposed in [mahbub a nd spanoudakis
+2004]. this approach uses event calculus to specify require ments. [ludwig et al.
+2004] is an approach based on ws-agreement deﬁning the crona framework for the
+creation and monitoring of agreements. in [gombotz and dust dar 2005; dustdar
+et al. 2004], dustdar et al. discuss the concept of web servic es mining and envision
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·27
+various levels (web service operations, interactions, and workﬂows) and approaches.
+our approach ﬁts in their framework and shows that web servic es mining is indeed
+possible. in [pauw et al. 2005] a tool named the web service na vigator is presented
+to visualize the execution of web services based on soap mess ages. the authors use
+message sequence charts (mscs) and graph-based representa tions of the system
+topology. our work diﬀers from these papers in two ways. firs t of all, we use a
+process model to check conformance rather than visualizing and analyzing frequent
+interaction patterns (i.e. scenarios). typically, it is ea sier to specify a process
+rather than a complete set of scenarios, although scenarios can help in designing
+and analyzing a process. moreover, a process speciﬁcation e nables a more intuitive
+visualization of the problem areas such as deviations from t he intended behavior.
+second, we consider the problem of correlation in more detai l than these papers.
+8. conclusion
+service-oriented systems are composed of relatively auton omous entities (i.e., ser-
+vices). unlike many classical systems there is not one entit y controlling a monolithic
+system. therefore, it is essential that each of the services involved in such a system
+behaves as the other services expect it to behave. in this pap er we demonstrated the
+feasibility of conformance checking of service behavior, t hat is, comparing message
+logs with service behavior speciﬁcations to detect and to qu antify deviations.
+although conformance checking of service behavior can be ap plied to a wide va-
+riety of settings, we focused on a particular usage scenario involving (1) abstract
+bpel as the speciﬁcation language of a single service and (2) soap messages
+exchanged between this service and other services. we demon strated that speciﬁ-
+cations in terms of abstract bpel can be mapped onto petri net s and the soap
+messages exchanged between the various services can be mapp ed onto the mxml
+log format. given a set of messages and an abstract bpel speci ﬁcation we can
+then measure ﬁtness and appropriateness. moreover, if the o bserved behavior does
+not match the speciﬁed behavior, the deviations can be shown in both the log
+and the model. using a case study utilizing oracle bpel as a pr ocess engine, we
+demonstrated that our approach is indeed applicable using c urrent technology. we
+have implemented three tools to achieve this: (1) bpel2pnml (for the mapping
+from bpel to pnml), (2) wofbpel (for process veriﬁcation and cleaning up the
+automatically generated petri net), and (3) the prom conformance checker .
+although this paper focused on abstract bpel, other languag es could also be
+supported by replacing bpel2pnml by a component providing t he mapping onto
+petri nets for the selected alternative language. in fact, w e consider languages
+such as bpel and ws-cdl not really suitable for the speciﬁcat ion of services.
+they tend to describe things at a too low level, i.e., a level s uitable for execution
+but less suitable for describing what the diﬀerent services need to agree upon.
+hence future research will aim at conformance checking in th e context of more
+declarative languages such as decserflow [aalst and pesic 2006] and let’s dance
+[zaha et al. 2006]. moreover, we would like to apply our appro ach to more real-life
+case studies. one of the problems we are facing is that at this point in time only few
+organizations use bpel and can provide us with soap logs. cle arly, conformance
+checking can be applied in many domains ranging from auditin g (cf. the sarbanes-
+acm journal name, vol. v, no. n, month 20yy.28·wil m.p. van der aalst et al.
+oxley act) to software testing. therefore, we plan to consid er a wide variety of
+applications and not limit ourselves to web services. anoth er topic for further
+research is the visualization of behavior conformance, for example, by combining
+the ideas presented in [pauw et al. 2005] with our process-or iented approach.
+references
+aalst, van der w. 1998. the application of petri nets to workﬂow management. the journal
+of circuits, systems and computers 8, 1, 21–66.
+aalst, van der w. 2005. business alignment: using process mining as a tool for delta analysis
+and conformance testing. requirements engineering journal 10, 3, 198–211.
+aalst, van der w. ,dumas, m. ,ouyang, c. ,rozinat, a. ,and verbeek, h. 2005. choreogra-
+phy conformance checking: an approach based on bpel and petr i nets (extended version).
+bpm center report bpm-05-25, bpmcenter.org.
+aalst, van der w. and medeiros, a. 2004. process mining and security: detecting anomalous
+process executions and checking process conformance. in second international workshop
+on security issues with petri nets and other computational m odels (wisp 2004) , n. busi,
+r. gorrieri, and f. martinelli, eds. star, servizio tipogra ﬁco area della ricerca, cnr pisa,
+italy, 69–84.
+aalst, van der w. and pesic, m. 2006. decserflow: towards a truly declarative service flow
+language. in international conference on web services and formal method s (ws-fm 2006) ,
+m. bravetti, m. nunez, and g. zavattaro, eds. lecture notes i n computer science, vol. 4184.
+springer-verlag, berlin, 1–23.
+aalst, van der w. ,dongen, van b. ,herbst, j. ,maruster, l. ,schimm, g. ,and weijters,
+a.2003. workﬂow mining: a survey of issues and approaches. data and knowledge engi-
+neering 47, 2, 237–267.
+aalst, van der w. ,weijters, a. ,and maruster, l. 2004. workﬂow mining: discovering
+process models from event logs. ieee transactions on knowledge and data engineer-
+ing 16, 9, 1128–1142.
+andrews, t. ,curbera, f. ,dholakia, h. ,goland, y. ,klein, j. ,leymann, f. ,liu, k. ,
+roller, d. ,smith, d. ,thatte, s. ,trickovic, i. ,and weerawarana, s. 2003. business
+process execution language for web services, version 1.1. s tandards proposal by bea sys-
+tems, international business machines corporation, and mi crosoft corporation.
+jordan, d. ,evdemon, j. , et al. 2006. web services business process execution langu age
+version 2.0. public review draft (august 2006), oasis ws-bp el technical committee.
+baresi, l. ,ghezzi, c. ,and guinea, s. 2004. smart monitors for composed services. in icsoc
+’04: proceedings of the 2nd international conference on ser vice oriented computing . acm
+press, new york, ny, usa, 193–202.
+box, d. ,ehnebuske, d. ,kakivaya, g. ,layman, a. ,mendelsohn, n. ,nielsen, h. ,
+thatte, s. ,and winer, d. 2000. simple object access protocol (soap) 1.1.
+http://www.w3.org/tr/soap.
+cardoso, j. ,sheth, a. ,miller, j. ,arnold, j. ,and kochut, k. 2004. quality of service for
+workﬂows and web service processes. journal of web semantics 1, 3, 281–308.
+desel, j. ,reisig, w. ,and rozenberg, g. , eds. 2004. lectures on concurrency and petri nets .
+lecture notes in computer science, vol. 3098. springer-ver lag, berlin.
+dongen, van b. ,medeiros, a. ,verbeek, h. ,weijters, a. ,and aalst, van der w. 2005.
+the prom framework: a new era in process mining tool support. inapplication and theory
+of petri nets 2005 , g. ciardo and p. darondeau, eds. lecture notes in computer s cience, vol.
+3536. springer-verlag, berlin, 444–454.
+dustdar, s. ,gombotz, r. ,and baina, k. 2004. web services interaction mining. technical
+report tuv-1841-2004-16, information systems institute, vienna university of technology,
+wien, austria.
+acm journal name, vol. v, no. n, month 20yy.conformance checking of service behavior ·29
+fahland, d. and reisig, w. 2005. asm-based semantics for bpel: the negative control ﬂo w.
+inproc. 12th international workshop on abstract state machin es, d. beauquier and e. b¨ orger
+and a. slissenko, ed. paris, france, 131–151.
+ferrara, a. 2004. web services: a process algebra approach. in proceedings of the 2nd interna-
+tional conference on service oriented computing . acm press, new york, ny, usa, 242–251.
+fisteus, j. ,fern´andez, l. ,and kloos, c. 2004. formal veriﬁcation of bpel4ws business
+collaborations. in proceedings of the 5th international conference on electro nic commerce
+and web technologies (ec-web ’04) , k. bauknecht, m. bichler, and b. proll, eds. lecture
+notes in computer science, vol. 3182. springer-verlag, ber lin, zaragoza, spain, 79–94.
+glabbeek, r. and weijland, w. 1996. branching time and abstraction in bisimulation se-
+mantics. journal of the acm 43, 3, 555–600.
+gombotz, r. and dustdar, s. 2005. on web services mining. in bpm 2005 workshops
+(workshop on business process intelligence) , c. bussler et al., ed. lecture notes in computer
+science, vol. 3812. springer-verlag, berlin, 216–228.
+hinz, s. ,schmidt, k. ,and stahl, c. 2005. transforming bpel to petri nets. in international
+conference on business process management (bpm 2005) , w. van der aalst, a. ter hofstede,
+and m. weske, eds. lecture notes in computer science, vol. 26 78. springer-verlag, berlin,
+220–235.
+lazovik, a. ,aiello, m. ,and papazoglou, m. 2004. associating assertions with business
+processes and monitoring their execution. in icsoc ’04: proceedings of the 2nd international
+conference on service oriented computing . acm press, new york, ny, usa, 94–104.
+ludwig, h. ,dan, a. ,and kearney, r. 2004. crona: an architecture and library for cre-
+ation and monitoring of ws-agreements. in icsoc ’04: proceedings of the 2nd international
+conference on service oriented computing . acm press, new york, ny, usa, 65–74.
+mahbub, k. and spanoudakis, g. 2004. a framework for requirents monitoring of service
+based systems. in icsoc ’04: proceedings of the 2nd international conference on service
+oriented computing . acm press, new york, ny, usa, 84–93.
+medeiros, a. ,weijters, a. ,and aalst, van der w. 2006. genetic process mining: a basic
+approach and its challenges. in bpm 2005 workshops (workshop on business process intel-
+ligence) , c. bussler et al., ed. lecture notes in computer science, vo l. 3812. springer-verlag,
+berlin, 203–215.
+murata, t. 1989. petri nets: properties, analysis and applications. proceedings of the
+ieee 77, 4 (april), 541–580.
+ouyang, c. ,verbeek, h. ,aalst, van der w. ,breutel, s. ,dumas, m. ,and hofstede, ter
+a.2005. wofbpel: a tool for automated analysis of bpel process es. in proceedings of
+service-oriented computing (icsoc 2005) , b. benatallah, f. casati, and p. traverso, eds.
+lecture notes in computer science, vol. 3826. springer-ver lag, berlin, 484–489.
+ouyang, c. ,aalst, van der w. ,breutel, s. ,dumas, m. ,hofstede, ter a. ,and verbeek,
+h.2005. formal semantics and analysis of control flow in ws-bp el (revised version). bpm
+center report bpm-05-15, bpmcenter.org.
+pauw, w. ,lei, m. ,pring, e. ,villard, l. ,arnold, m. ,and morar, j. 2005. web services
+navigator: visualizing the execution of web services. ibm systems journal 44, 4, 821–845.
+rozinat, a. and aalst, van der w. 2006. conformance testing: measuring the fit and ap-
+propriateness of event logs and process models. in bpm 2005 workshops (workshop on
+business process intelligence) , c. bussler et al., ed. lecture notes in computer science, vo l.
+3812. springer-verlag, berlin, 163–176.
+verbeek, h. ,basten, t. ,and aalst, van der w. 2001. diagnosing workﬂow processes using
+woﬂan. the computer journal 44, 4, 246–279.
+zaha, j. ,barros, a. ,dumas, m. ,and hofstede, ter a. 2006. lets dance: a language for
+service behavior modeling. in otm proceedings, 14th international conference on coopera tive
+information systems (coopis 2006) , r. meersman and z. t. et al., eds. lecture notes in
+computer science, vol. 4275. springer-verlag, berlin, 145 –162.
+received october 2005; august 2006; accepted january 2007
+acm journal name, vol. v, no. n, month 20yy.

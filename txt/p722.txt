@@ -1,0 +1,688 @@
+enhancing declare maps based on event correlations
+r.p. jagadeesh chandra bose1, fabrizio m. maggi2and wil m.p. van der aalst1
+1eindhoven university of technology, the netherlands.
+2university of tartu, estonia.
+abstract. traditionally, most process mining techniques aim at discovering pro-
+cedural process models (e.g., petri nets, bpmn, and epcs) from event data.
+however, the variability present in less-structured ﬂexible processes complicates
+the discovery of such procedural models. the “open world” assumption used by
+declarative models makes it easier to handle this variability. however, initial at-
+tempts to automatically discover declarative process models result in cluttered
+diagrams showing misleading constraints. moreover, additional data attributes in
+event logs are not used to discover meaningful causalities. in this paper, we use
+correlations to prune constraints and to disambiguate event associations. as a
+result, the discovered process maps only show the more meaningful constraints.
+moreover, the data attributes used for correlation and disambiguation are also
+used to ﬁnd discriminatory patterns , identify outliers , and analyze bottlenecks
+(e.g., when do people violate constraints or miss deadlines). the approach has
+been implemented in prom and experiments demonstrate the improved quality of
+process maps and diagnostics.
+1 introduction
+processes executed in today’s world are often supported and controlled by information
+systems, which record events, like messages and transactions, in so-called event logs .
+process mining aims at discovering, monitoring and improving real-life processes by
+extracting knowledge from event logs. process discovery ,conformance checking , and
+process enhancement are three main process mining tasks [3]. in particular, process
+enhancement aims at enriching and extending existing process models with information
+retrieved from logs, e.g., a process model can be extended with performance-related
+information such as ﬂow time and waiting time.
+choosing a suitable representational bias for process discovery, visualization, and
+analysis is one of the challenges in process mining [11]. process characteristics play
+a signiﬁcant role in the selection of a suitable representational bias. processes work-
+ing in stable environments are typically highly predictable, i.e., it is easy to determine
+in advance the way how processes execute and behave (e.g., a process for handling
+travel requests). procedural languages, such as bpmn, uml ads, epcs, and petri
+nets, are suitable for describing such processes because it is easy to explicitly represent
+all allowed behavior of the process at hand [4, 22]. in contrast, processes operating in
+ﬂexible/turbulent environments are often more complex and less predictable. here, pro-
+cess participants make decisions based on multiple (possibly conﬂicting) objectives and
+have a lot of freedom in the process execution (e.g., a doctor in a healthcare process).declarative process modeling languages like declare [4] are more suitable for such en-
+vironments. declarative models describe a process as a list of constraints that must be
+satisﬁed during the process execution. in declarative languages, an “open world” is as-
+sumed where everything is allowed unless it is explicitly forbidden. declarative models
+are widely used in domains and applications where processes cannot be “straightjack-
+eted” into a procedural model [7, 15, 16, 25].
+declare is a declarative language introduced in [4] that combines a formal semantics
+grounded in linear temporal logic (ltl) with a graphical representation for users.3a
+declare map is a set of declare constraints each one with its own graphical represen-
+tation and ltl semantics (see [4] for a full overview of declare). in recent years, ap-
+proaches to discover declare models from event logs [17–19] and approaches to check
+conformance of declare models with respect to event logs [9, 13] have been proposed.
+although promising, these approaches face several challenges and limitations when
+being applied to real-life event logs. first of all, discovery approaches typically generate
+too many constraints resulting in incomprehensible declare maps. most of the gener-
+ated constraints have no domain signiﬁcance and are uninteresting for experts/analysts.
+second, when evaluating the satisfaction of a constraint, one often faces ambiguities
+in connecting events that “activate” the constraint (activations) and events that “ful-
+ﬁll” it (target events). for example, consider trace t=ha;a;b;biand the constraint
+response(a,b).4it is unclear which instance of activity bcan be associated to the two
+instances of activity a. such ambiguities inhibit a correct evaluation of constraints in
+terms of satisfaction/violation and the application of certain types of analysis such as
+performance analysis (e.g., computing the response time of constraints).
+one of the main reasons for these ambiguities and incomprehensible maps is the
+exclusive focus on the control-ﬂow perspective. typically, event logs contain additional
+information in the form of attributes and values. let t=ha(x= 1;y= 2);a(x=
+2;y= 1);b(x= 2;y= 0);b(x= 1;y= 4)ibe the above trace with its data
+attributes. the additional information suggests that the ﬁrst instance of ais related to
+the second instance of band the second instance of ais related to the ﬁrst instance of
+bbecause they share the same value for attribute x.
+in this paper, we propose an approach to automatically discover signiﬁcant event
+correlations between events involved in a constraint and use these correlations to (i)
+enhance (annotate) a discovered declare map and improve its comprehensibility (see
+fig. 1), (ii) prune discovered constraints that are uninteresting, (iii) disambiguate events
+so that correct events are correlated, (iv) extend a declare map with meaningful perfor-
+mance information, and (v) improve the diagnostic abilities by ﬁnding discriminatory
+patterns (if any) between different classes of behavior (e.g., patterns that may discrimi-
+nate between conformant and non-conformant activations of a constraint).
+we evaluate the proposed approach using a real-life event log provided for the 2011
+bpi challenge [2], which pertains to the treatment of patients diagnosed with cancer
+in a large dutch academic hospital. fig. 2 depicts the declare maps obtained using
+the hospital’s event log for the response andprecedence constraints with and with-
+out correlations (the correlations used are a.org:group = b.org:group and a.producer
+3in the remainder, ltl refers to the version of ltl tailored towards ﬁnite traces.
+4response( a,b)= ifaoccurs , then eventually bfollows aftera.
+2a
+first outpatient consultationb
+administrative fee-the ﬁrst pol responsea.org :group =b.org :group
+a.producercode =b.producercode
+c
+unconjugated bilirubind
+bilirubin - total response|c.time :timestamp−d.time :timestamp|≤4days
+e
+rhesus factor d-centrifuge methodf
+red cell antibody screening precedencee.time :timestamp =f.time :timestampfig. 1. a declare map annotated with correlations.
+(a) without correlations
+(b) with correlations
+fig. 2. declare maps discovered for a hospital’s event log [2] using the response and precedence
+constraints with and without correlations.
+code = b.producer code). we can clearly see that the map obtained using correlations
+(fig. 2(b)) is much simpler and more comprehensible than the map using the conven-
+tional approach (fig. 2(a)).
+3the remainder of this paper is organized as follows. section 2 presents some pre-
+liminaries on event logs and the declare language. section 3 presents some of the issues
+in contemporary approaches in the discovery of declare maps and highlights how cor-
+relations can help address them. section 4 presents our approach to discovering event
+correlations and discriminatory patterns between different classes of constraint behav-
+ior. section 5 presents and discusses the experimental results. related work is presented
+in section 6. finally, section 7 concludes the paper.
+2 preliminaries
+in this section, we introduce some preliminary notions. in particular, in section 2.1, we
+summarize what an event log is and, in section 2.2, we give an overview of the declare
+language.
+2.1 event logs
+an event log captures the manifestation of events pertaining to the instances of a single
+process. a process instance is also referred to as a case. each event in the log corre-
+sponds to a single case and can be related to an activity or a task. events within a case
+need to be ordered . an event may also carry optional additional information like times-
+tamp ,transaction type ,resource ,costs , etc. for analysis, we need a function that maps
+any eventeonto its classe. in this paper, we assume that each event is classiﬁed based
+on its activity. we use the following notations:
+–adenotes the set of activities .a+is the set of all non-empty ﬁnite sequences of
+activities froma.
+–aprocess instance (i.e., a case) is described as a trace overa, i.e., a ﬁnite sequence
+of activities. examples of traces are t1=ha;b;c;diandt2=ha;b;b;b;a;di.
+–lett=ht(1);t(2);:::; t(n)i2a+be a trace overa.jtj=ndenotes the length
+of trace t.t(k)represents the kthactivity in the trace.
+–anevent log ,l, corresponds to a multi-set (or bag) of traces from a+. for ex-
+ample,l= [ha;b;c;di;ha;b;c;di;ha;b;b;b;a;di]is a log consisting
+of three cases. two cases follow trace ha;b;c;diand one case follows trace
+ha;b;b;b;a;di.
+2.2 declare: some basic notions
+declare is a declarative process modeling language introduced by pesic and van der
+aalst in [4]. a declare map is a set of constraints that must hold in conjunction during
+the process execution. declare constraints are equipped with graphical notations and
+ltl semantics. the most frequently used declare constraints are shown in table 1.
+however, the language is extensible and new constraints can be added by providing
+a graphical representation and corresponding ltl semantics. the results discussed in
+this paper only refer to positive relation constraints and not to negative relations (last
+three rows in table 1). indeed, since negative relation constraints forbid the occurrence
+of events, it is less natural to deﬁne the notion of correlation for these constraints.
+4table 1. graphical notation and textual description of some declare constraints.
+constraint meaning ltl semantics graphical notation
+responded existence(a,b)if a occurs then
+a!b
+ b occurs before
+or after a
+co-existence(a,b)if a occurs then b occurs
+a$b
+ before or after a
+and vice versa
+response(a,b)if a occurs then
+(a!b)
+ eventually b occurs
+after a
+precedence(a,b)if b occurs then
+(:bta)_(:b)
+ a occurs
+before b
+succession(a,b)for a and b (a!b)
+both precedence and ^
+response hold (:bta)_(:b)
+alternate response(a,b)if a occurs then eventually
+(a! (:atb))
+ b occurs after a without other
+occurrences of a in between
+alternate precedence(a,b)if b occurs then ((:bta)_(:b))
+a occurs before b without ^
+other occurrences of b in between (b! ((:bta)_(:b)))
+alternate succession(a,b)for a and b (a) (:a ub ))^
+both alternate precedence (((:bta)_(:b))^
+and alternate response hold (b! ((:bta)_(:b))))
+chain response(a,b)if a occurs then
+(a!b)
+ b occurs in the next
+position after a
+chain precedence(a,b)if b occurs then
+(b!a)
+ a occurs in the next
+position before b
+chain succession(a,b)for a and b (a!b)
+both chain precedence ^
+and chain response hold (b!a)
+not co-existence(a,b)a and b
+:(a^b)
+ cannot occur
+together
+not succession(a,b)if a occurs then
+(a!: (b))
+ b cannot eventually occur
+after a
+not chain succession(a,b)if a occurs then
+(a! (:b))
+ b cannot occur in the next
+position after a
+consider the response constraint (a!b). this constraint indicates that if
+aoccurs ,bmust eventually follow . therefore, this constraint is satisﬁed for traces
+such as t1=ha;a;b;ci,t2=hb;b;c;di, and t3=ha;b;c;bi, but not for
+t4=ha;b;a;cibecause t4(3), i.e., the second instance of a, is not followed by
+ab. note that, in t2, the response constraint is satisﬁed in a trivial way because a
+never occurs. in this case, we say that the constraint is vacuously satisﬁed [12]. in [9],
+the authors introduce the notion of behavioral vacuity detection according to which a
+constraint is non-vacuously satisﬁed in a trace when it is activated in that trace. an
+activation of a constraint in a trace is an event whose occurrence imposes, because of
+that constraint, some obligations on other events in the same trace. for example, ais
+an activation for the response constraint because the execution of aforcesbto be
+executed eventually.
+an activation of a constraint results in either a fulﬁllment (the obligation is met) or
+aviolation (e.g.,ais not followed by bin a response constraint). a trace is perfectly
+5compliant if there are no violations. consider, again, the response constraint. in trace t1,
+the constraint is activated and fulﬁlled twice, whereas, in trace t3, the same constraint
+is activated and fulﬁlled only once. when a trace is not compliant w.r.t. a constraint,
+at least one activation leads to a violation. in trace t4, for example, the response con-
+straint is activated twice (at t4(1)andt4(3)): the activation at t4(1)leads to a fulﬁllment
+(eventuallyboccurs), but the activation at t4(3)leads to a violation ( bdoes not occur
+subsequently). an algorithm to discriminate between fulﬁllments and violations for a
+constraint in a trace is presented in [9].
+3 correlations as a means of enhancing declare maps
+techniques for the automated discovery of declare maps from event logs have been
+proposed in [17–19]. these approaches, although promising, typically generate maps
+with too many constraints, have difﬁculties in correctly associating events, and do not
+provide diagnostic information. this can be attributed to the fact that these techniques
+exploit only the control-ﬂow perspective. several of today’s event logs contain rich
+information in the form of (event) attributes pertaining to the data,resource , and time
+perspectives.
+in this paper, we advocate the use of these additional perspectives and investigate
+the correlations between event attributes as a means of addressing some of the above
+mentioned issues. correlations are deﬁned over event attributes and linked through re-
+lationship operators between them. for example, two events are correlated if they act
+upon common data elements of the process or if they are executed by the same re-
+source etc. such correlations can be used in conjunction to the control-ﬂow relationship
+between events (deﬁned in the form of declare constraints) to further assess the rele-
+vance/signiﬁcance of a constraint. correlations can help us to:
+–prune uninteresting constraints: we conjecture that constraints involving activities
+are interesting from a domain point of view only in cases where they share some
+common (data) elements of a process. for example, consider an insurance claim
+process where, apart from the handling of a claim application, applicants are asked
+to ﬁll out a regular questionnaire. clearly, in this process, the portion soliciting
+feedback does not interfere with the claim handling. subsequently, the control-ﬂow
+constraints between the activities involved in the claim handling and the activities
+involved in the questionnaire handling are less interesting to experts. this might be
+reﬂected in the activities in these two portions of the process sharing no or very few
+attributes (and thereby there are not signiﬁcant correlations between them). pruning
+such constraints will help reduce the number of uncovered constraints and improve
+the comprehensibility of a declare map.
+–disambiguate events: event associations that are ambiguous purely from a control-
+ﬂow point of view can be disambiguated with additional conditions on their at-
+tributes. for example, consider trace t1=ha;b;c;biand the response constraint
+(a!b). let us assume that activities aandbhave a common attribute x
+and that we have an additional condition a:x=b:x correlating these attributes
+for this constraint, i.e., the constraint now reads as “if aoccurs, then beventually
+follows and the value of attribute xis the same for both aandb”. now let us
+6assume that t1(1):x= 1,t1(2):x= 2, and t1(4):x= 1. using the correlation, we
+can now clearly identify that the instance of batt1(4)is the one to be associated
+to the activation at t1(1). disambiguation of events facilitates a correct association
+of events involved in a constraint and thereby helps in performance analysis of a
+process (e.g., computing the response time more accurately).
+–improve diagnostic capabilities: event correlations can be used for a plethora of di-
+agnostic insights on process execution. one may use the discovered correlations to
+identify any potential exceptional executions/outliers. for example, let us assume
+that the correlation a:x=b:x holds for 98% of the fulﬁllments of a response
+constraint (a!b). the 2%of the activations where the correlation does not
+hold (but considered as fulﬁllments purely from a control-ﬂow perspective) may
+potentially be outliers or can be considered as a fulﬁllment due to wrong associa-
+tion of events for the constraint. similarly, one may try to ﬁnd if any discriminatory
+correlation patterns exist between different classes of behavior, e.g., between acti-
+vations that are fulﬁllments and activations that are violations. for example, in an
+insurance claim, one may learn that a constraint is violated if the claim amount is
+greater than 1000 euros.
+furthermore, correlations can be used in deﬁning conceptual groupings of activities.
+different correlations between events can be used to deﬁne different conceptual group-
+ings. for example, one may deﬁne equivalence classes based on a common attribute
+and consider all activities in that equivalence class as one conceptual group, e.g., the
+activities involving all events that are executed within the same department can be de-
+ﬁned as one conceptual group. such conceptual groupings of activities can be used for
+guiding the discovery of declare maps towards results that are more signiﬁcant from an
+application domain point of view [18].
+for a categorization of correlations we refer to [6]. in this paper we use:
+–property-based correlation , i.e., events are classiﬁed based on a function operat-
+ing on their attributes. for example, all claim applications referring to an amount
+greater than 1000 euros are grouped together.
+–reference-based correlation , i.e., two events are correlated if an attribute of the ﬁrst
+event (identiﬁer attribute) and an attribute of the second event (reference attribute)
+have the same value.
+–moving time-window correlation , i.e., two events are correlated if they occur within
+a given duration of one another (e.g., one hour).
+we use an extended deﬁnition of reference-based correlation according to which two
+events are correlated if there is a function connecting an attribute of the ﬁrst event
+with an attribute of the second event. this function can include not only equality but
+also operators such as greater than ,less than , and not equal to . for example, an event
+of producing a document is correlated to an event of checking it if the resource that
+produces the document is different from the resource that checks it.
+4 discovering correlations from event logs
+correlations can be provided by a domain expert, or alternatively, one can try to learn
+these correlations automatically from event logs. in this section, we focus on the auto-
+7mated discovery of correlations and discriminatory (correlation) patterns between dif-
+ferent classes of behavior from event logs.
+the xes standard [1] for event logs allows for events having attributes. xes sup-
+ports data types such as string, date, boolean, int, and ﬂoat (henceforth, we consider
+int and ﬂoat types as continuous ). depending on the type, standard operators are sup-
+ported. for example, we use the ;;<;>; =;6=operators for continuous attributes
+and=;6=for string and boolean attributes. timestamp (date) attributes are related using
+before;after operators in addition to all relation operations (i.e., ;;<;>; =;6=) over
+the time difference between two events.
+we are interested in correlations between comparable attributes of different events,
+e.g., in an insurance claim process, attribute amount claimed is comparable to amount
+issued , but not to, say, location . if a priori knowledge about the domain is available, we
+can use that knowledge to identify/group attributes that are comparable. in the absence
+of prior domain knowledge, we consider attributes having the same data type to be
+comparable. standard event attributes in xes are handled differently, e.g., although the
+attributes concept:name andorg:group are of string type, they are not comparable.
+using the above correlation notion, we generate all feasible correlations for a given
+constraint. for discovering signiﬁcant correlations, we partition the constraint activa-
+tions into ambiguous activations and non-ambiguous activations. the deﬁnition of what
+constitutes an ambiguous activation is speciﬁc for each constraint type. we consider a
+fulﬁlled activation as non-ambiguous if there is only one possible target that can be
+associated to it. for example, for the response constraint (a!b), the activations
+in traces t1=ha;c;biandt2=ha;a;c;biare non-ambiguous whereas the acti-
+vations in traces t3=ha;b;c;biandt4=ha;a;b;biare ambiguous. one may
+argue that the activations in trace t2are also ambiguous because bcan be associated
+to either of the two a’s. we consider the scenario in t1asstrongly non-ambiguous and
+the scenario in t2asweakly non-ambiguous . for each feasible correlation, we evaluate
+itssupport considering only non-ambiguous activations. the support of a correlation is
+deﬁned as the ratio between the number of activations in which that correlation is true
+and the total number of non-ambiguous activations . we consider a feasible correlation
+assigniﬁcant if its support is greater than a (user-speciﬁed) threshold. for correlations
+involving an attribute and a constant value, e.g., b:timestamp a:timestamp< ,
+is derived based on the mean and standard deviation time difference of all non-
+ambiguous activations (for example can be set to +).
+signiﬁcant correlations thus discovered from non-ambiguous activations of a con-
+straint can then be used to address the issues highlighted before, e.g., to disambiguate
+ambiguous activations. for each signiﬁcant correlation, its degree of disambiguation is
+deﬁned as the ratio between the number of ambiguous activations that can be disam-
+biguated and the total number of ambiguous activations . furthermore, different correla-
+tions can be combined using conjunctions or disjunctions to form complex correlations.
+fig. 3 depicts the block diagram of discovering constraint correlations.
+discovering discriminant correlations an event log may exhibit several classes of
+behavior. for example, certain activations of a constraint may be eventually fulﬁlled
+while others may not. as another example, one may observe differences in the response
+8event logconstraint
+identify
+activationsidentify
+feasible
+correlations
+constraint
+activationsfeasible
+correlations
+fulﬁlled
+activations
+violated
+activationsnon-ambiguous
+activations
+ambiguous
+activationsassess
+signiﬁcance
+signiﬁcant
+correlations
+disambiguatefig. 3. correlations are discovered for non-ambiguous activations and are subsequently used to
+disambiguate other (ambiguous) activations.
+time for different activations of a constraint (one may distinguish the activations into
+slow,medium , and fastbased on their response time). such differences in behavior may
+be attributed to some of the characteristics of the events/traces, e.g., one may perceive
+differences in the response time of a constraint based on the resources involved in the
+execution of the activities or based on the attribute values (such as the claim amount
+or geography in a loan handling process). an analyst would be interested in uncov-
+ering any signiﬁcant discriminatory correlations that can explain the different classes
+of behavior among the activations. we ﬁnd such discriminatory correlations using the
+following three classiﬁcation steps:
+step 1: class labeling. first, we select all the activations of a constraint and asso-
+ciate a class label to them. different strategies for labeling can be adopted. for example,
+one can classify them as conformant ornon-conformant based on whether they corre-
+spond to a fulﬁllment or to a violation. one can also consider all the fulﬁlled activations
+of a constraint and classify them as slow,medium , and fastbased on their response time.
+step 2: feature extraction and selection. the attributes of the events involved in a
+constraint and the process instance (case) attributes are considered as primitive features
+for ﬁnding discriminatory patterns. if all activations of a constraint (i.e., both fulﬁlled
+and violated) are selected in the previous step, then we only consider the correlations
+between attributes of the activations. if only fulﬁlled activations of a constraint are
+selected, then the correlations between attributes of the activations and attributes of the
+target events are also considered. this is due to the fact that a correlation involving
+an attribute of an activation and a target event can only be deﬁned if the constraint is
+fulﬁlled (only in this case both activation and target event occur).5
+letc=fc1;c2;:::;c ngbe the set of feasible correlations for a constraint, a=
+fa1;a2;:::;a mgbe the set of attributes of the activation of a constraint, and p=
+fp1;p2;:::;p kgbe the set of case attributes corresponding to an activation. each acti-
+vation of a constraint can be translated into a vector where the dimensions correspond
+toc[a[p[f clg;clis a special feature called the class label. the values of the
+features for each activation correspond to:
+5this is true only for positive relation constraints (which are the ones considered in this paper).
+for negative relations the opposite applies (i.e., a correlation involving an attribute of an acti-
+vation and a target event can only be deﬁned if the constraint is violated because only in this
+case both activation and target event occur).
+9–ftrue, falsegif the feature is a correlation feature. the value is trueif the correlation
+holds in the activation and false if it does not hold,
+–the value of the attribute in the event corresponding to the activation of the con-
+straint if the feature corresponds to ai2a,
+–the value of the case attribute corresponding to the process instance of the activation
+if the feature corresponds to pi2p, and
+–the class label of the activation if the feature is the class label.
+the set of all activations upon transformation into a vector space can be seen as a dataset
+as depicted in table 2.
+table 2. a labeled dataset deﬁned by features.
+activation c1c2. . .cna1a2. . .amp1p2. . .pkcl
+1 true false . . .true 50xyz. . .1.5 1000 p. . .rconformant
+2 true false . . .false 110abc. . .3.25 500 q. . .snon-conformant
+3 false true . . .true 64ted. . .0.2 275 p. . .tnon-conformant
+4 false true . . .true 15xyz. . .0.87 1255 u. . .sconformant
+............
+step 3: discovering discriminatory patterns. given a dataset as depicted in table 2,
+the goal of this step is to discover the patterns over the features, which are strongly cor-
+related to the class label (e.g., conformant and non-conformant). we adopt standard data
+mining techniques, i.e., decision tree learning [23] and association rule mining [5, 14].
+for the association rule mining, we adopt the special subset called the class associa-
+tion rules [14], which is an integration of classiﬁcation rule mining and association rule
+mining. the details of these algorithms are beyond the scope of this paper. the result
+of this step are rules such as:
+ifcn=true anda150anda2=xyz andp11000 then conformant ;
+ifa160anda26=xyz andp1500then non-conformant .
+each rule can be associated with metrics such as the number of true positives (tp),
+false positives (fp), support and conﬁdence. the quality of the entire set of discrim-
+inatory patterns uncovered can be assessed using standard metrics such as accuracy ,
+sensitivity ,speciﬁcity ,precision , and f1-score .
+5 experiments and results
+the concepts presented in this paper have been implemented as the extend declare
+map with correlations andextend declare map with time information plug-ins
+in prom6. the former deals with the discovery and evaluation of correlations while
+the latter deals with performance analysis of declare constraints (e.g., computing the
+6prom is an extensible framework that provides a comprehensive set of tools/plug-ins for the
+discovery and analysis of process models from event logs. see www.processmining.org
+for more information and to download prom.
+10response times). the plug-ins take a declare map and an event log as input and pro-
+duce an enhanced declare map annotated with data correlations and/or performance
+information. the input declare map can either be discovered using the declare maps
+miner plug-in or provided by a domain expert.
+we have applied the proposed approach to the bpi challenge 2011 event log [2]
+pertaining to the treatment of patients diagnosed with cancer in a large dutch academic
+hospital. the event log contains 1143 cases and 150;291 events distributed across
+623event classes (activities). the event log contains domain speciﬁc attributes, e.g.,
+producer code ,section ,activity code ,number of executions , and specialism code in
+addition to the standard xes attributes for events: concept:name ,lifecycle:transition ,
+time:timestamp , and org:group . we considered attributes with the same name to be
+comparable (i.e., an attribute xof the activation event is comparable only to attribute x
+of the target event) and explored the feasible correlations for various attributes.
+we ﬁrst generated a declare map from this event log using the declare maps
+miner plug-in and considered constraints with a support of 50%. activations that are
+fulﬁllments are further partitioned into ambiguous and non-ambiguous activations. ta-
+ble 3 depicts the number of ambiguous and non-ambiguous activations for some con-
+straints. using the non-ambiguous activations we evaluated the support for the various
+correlations. some signiﬁcant correlations are depicted in table 3 (refer columns cor-
+relation and support (correl.)).
+from the table, we can see that for the response constraint (a!b)(where
+acorresponds to first outpatient consultation andbcorresponds to administrative
+fee - the ﬁrst pol ), there are 559 ambiguous activations. correlation a.org:group =
+b.org:group (i.e., both activities aandbare performed in the same department) holds
+for94% of the 517non-ambiguous activations. it is expected that the fee is decided and
+collected by the same department that performed the activation activity. however, it is
+interesting to see that 6%of the activations do not satisfy this correlation. it could be the
+case that by considering only the control-ﬂow perspective, we have wrongly associated
+some administrative fee events thereby incorrectly evaluating the constraint as fulﬁll-
+ment for these activations. this correlation is able to disambiguate 57:96% of the 559
+ambiguous activations. there exists another correlation a.producer code = b.producer
+code for this constraint, whose support is 93:61% in the non-ambiguous activations.
+this correlation is able to disambiguate 61:53% of the ambiguous activations.
+for the response constraint (c!d)(whereccorresponds to unconjugated
+bilirubin anddcorresponds to bilirubin - total ), we discover the correlation
+jc.time:timestamp d.time:timestampj4days (i.e., activity dshould be performed
+within 4days of performing activity c). this event log exhibits coarse granular times-
+tamps (recorded at the level of a day). the threshold of 4days corresponds to +
+whereandcorrespond to the mean and standard deviation time difference for all
+non-ambiguous activations of this constraint. this correlation holds in 99:63% of the
+non-ambiguous activations. the remaining 0:37% are most likely outliers . this corre-
+lation is able to disambiguate 81:61% of the ambiguous activations.
+as another example, for the precedence constraint (:fte)_(:f)(whereecor-
+responds to rhesus factor d - centrifuge method andfcorresponds to red cell antibody
+screening ), there are 603and932non-ambiguous and ambiguous activations respec-
+11table 3. correlations discovered for some constraints and their support and degree of disam-
+biguation. the encoded activities correspond to a = first outpatient consultation, b = adminis-
+trative fee - the ﬁrst pol, c = unconjugated bilirubin, d = bilirubin - total, e = rhesus factor d -
+centrifuge method, f = red cell antibody screening.
+constraint support #non- #ambig. correlation support degree of
+(constr.) ambig. inst. (correl.) disambig-
+(%) inst. (%)uation( %)
+response (a,b) 57:39 517 559a.org:group =
+b.org:group94:00 57:96
+a.producer code =
+b.producer code93:61 61:53
+response (c,d) 52:40 542 359jc.time:timestamp  
+d.time:timestampj 
+4days99:63 81:61
+precedence (e,f) 54:85 603 932 e.time:timestamp =
+f.time:timestamp100:00 96:45
+tively. we discover that the correlation e.time:timestamp = f .time:timestamp holds in
+all the non-ambiguous activations (i.e., both these activities are performed on the same
+day). using this correlation, we are able to disambiguate 96:45% of the ambiguous
+activations.
+although we discussed the applicability of correlations in disambiguation for the
+response and precedence templates, correlations exhibit a similar behavior for other
+templates too. table 4 depicts the average and maximum degree of disambiguation
+across various constraints (with a support of 50%) for different templates. from the
+table, we can see that the approach proposed above is able to assist in disambiguation
+signiﬁcantly.
+table 4. degree of disambiguation for different templates.
+template #constraints avg #activations deg. of disamb.
+per constraint avg. (%) max. (%)
+non-ambi. ambi.
+response 86 402 1321 51.68 95.76
+precedence 250 842 1536 32.17 96.45
+alternate response 53 733 601 70.67 100.00
+alternate precedence 52 807 715 41.86 100.00
+responded existence 584 682 2365 20.52 97.62
+the discovered correlations can be used to reassess the fulﬁllment of constraint ac-
+tivations. for example, a response constraint (a!b)can be compounded with
+a correlation condition, a.org:group = b.org:group (i.e., in addition to beventually
+followinga, it is also required that they are executed by the same resource/department
+for an activation to be considered as fulﬁlled). some activations that were deemed to be
+fulﬁlled when considering only the control-ﬂow perspective, may no longer be fulﬁlled
+thereby impacting the support of the constraint, whose value, if less than a threshold,
+renders the constraint insigniﬁcant and a candidate for pruning. table 5 illustrates how
+12correlations assist in pruning constraints. the ﬁrst row in each constraint type depicts
+the number of constraints for varying support thresholds and without considering cor-
+relations, e.g., 371response constraints have a support of at least 30% in the event log.
+the subsequent rows show the effect of adding correlations. for example, by adding a
+correlation based on org:group , the number of response constraints with a support of
+at least 30% reduces from 371to229(a reduction of 38:3%). adding the correlation
+requirement a.producer code = b.producer code results in a reduction from 371to100
+response constraints.
+table 5. pruning of constraints using correlations. the number of constraints reported are without
+ﬁltering transitive reductions.
+constraint correlation#constraints
+supp= 30supp= 35supp= 40supp= 45
+response(a,b)hhno correlationii 371 286 225 125
+a.org:group = b.org:group 229 180 163 114
+a.producer code = b.producer
+code100 85 83 71
+ja.time:timestamp  
+b.time:timestampj4 days226 172 139 112
+precedence(a,b)hhno correlationii 458 403 352 261
+a.org:group = b.org:group 274 249 240 237
+a.producer code = b.producer
+code113 106 104 104
+ja.time:timestamp  
+b.time:timestampj4 days325 281 274 217
+we further analyzed the log for discriminatory patterns that may exist between ful-
+ﬁllments and violations of some constraints. here, we present one such example of
+theresponse(a,b)constraint (where acorresponds to first outpatient consultation and
+bcorresponds to administrative fee - the ﬁrst pol ). the event log contains 517(non-
+ambiguous) fulﬁllments and 60violations of this constraint. we considered the event
+attributes of first outpatient consultation , correlations involving these attributes, and
+the case attributes pertaining to the traces involving these activations.
+the event log contains several case level attributes such as diagnosis and treatment
+codes (the reader is referred to [8] for a detailed description on these case attributes).
+we have grouped different variants of similar case attributes into a single attribute (e.g.,
+the16diagnosis code attribute values are captured as a set of values under a single
+attribute). we have transformed the 577activations into vector space using these at-
+tributes and their correlations and applied the j48 [23] decision tree learning algorithm.
+out of the 60non-conformant activations, we could ﬁnd discriminant patterns covering
+23activations using these features. for example, ﬁve of the six activations whose value
+ofa.section issection 5 andc.diagnosiscodeset isf106;823gare non-conformant,
+i.e., tp=5 and fp=1 ( csigniﬁes a case-level attribute). similarly, three of the four acti-
+vations whose value of a.section is not equal to section 5 anda.producercode issgsx
+are non-conformant, i.e., tp=3 and fp=1.
+13fig. 4 depicts the annotation of a declare map with performance information using
+theextend declare map with time information plug-in. the map is color coded to
+easily pin-point bottlenecks based on ﬂow times and the plug-in allows for the interac-
+tive exploration of a wealth of diagnostic information e.g., #activations, #fulﬁllments,
+etc. on the constraints.
+histogram showing the
+distribution of ﬂow
+time of activations of
+the selected constraintstatistics (mean,
+std.dev, min, and max)
+on the ﬂow time of the
+selected constraintdiagnostic information
+(#activations, #fulﬁll-
+ments, #violations) on
+the selected constranitcolor coding of constraints
+helps us identify bottlenecks
+fig. 4. interactive visualization of a declare map with diagnostic information such as ﬂow time
+and bottlenecks.
+6 related work
+techniques for the automated discovery of declare maps from event logs have been pro-
+posed in [17–19]. in [19], the authors rely on a combinatorial exploration of all feasible
+constraint activations and evaluate the constraints’ goodness based on their activation
+ratio, i.e., the percentage of traces where a constraint is activated. in [17], the authors
+adopt the classic apriori algorithm [5] to ﬁnd frequent item sets in data mining to iden-
+tify signiﬁcant activations and propose several metrics such as support and conﬁdence to
+prune uninteresting constraints. in [18], the authors extend the work of [17] through the
+incorporation of domain knowledge and techniques for pruning redundant constraints
+to uncover interesting constraints. none of these approaches exploit the availability of
+rich information in the form of data attributes in event logs.
+correlation is a critical topic when applying process mining techniques to event
+data recorded by non-bpm/wfm systems. indeed, these systems just generate a list
+of events without providing a properly structured event log. to generate an event log,
+it is necessary to correlate events into process instances. in [21], the authors present
+an event correlation algorithm to discover the best correlation conditions from a set of
+candidates. this algorithm is used to generate an event log from a set of uncorrelated
+events. a probabilistic approach based on the expectation-maximization (em) princi-
+ple has been proposed in [10] for correlating events from unlabeled event logs (where
+case ids are not available).
+14in [20], the authors identify different types of correlations and investigate the prob-
+lem of discovering event correlation from data recorded by service oriented systems.
+the authors also introduce the concept of process view to represent the process result-
+ing from a certain way of event correlation. they argue that correlation is subjective and
+that multiple views are possible. for example, in a process for customer order handling,
+in one view, orders can be considered from the viewpoint of order lines and, in another
+view, the same orders can be considered from the viewpoint of deliveries. a collection
+of process views is called the process space .
+rozsnyai et al [24] propose approaches for automatically deriving correlations from
+arbitrary sources of data. an interesting part of their work is the automatic identiﬁcation
+of attributes that might be correlated based on properties such as their type, cardinality
+and the domain of values. in this paper, we used the heuristic of considering attributes
+of similar type as comparable. it would be interesting to explore the applicability of the
+concepts proposed in [24] for correlating events for declare map discovery.
+7 conclusions and future work
+declarative process maps discovered from event logs without any consideration for
+event and case attributes tend to result in inaccurate and incomprehensible results. in
+this paper, we exploited the data present in event logs to discover process maps only
+showing relevant and accurate constraints. we proposed a means of discovering sig-
+niﬁcant correlations that exist between events and use these correlations to prune con-
+straints , todisambiguate event associations , and to provide additional diagnostic in-
+formation . our evaluation using real-life logs demonstrates that the proposed approach
+is very promising, e.g., we are able to disambiguate up to 96:45% of events in a hos-
+pital log. in this paper, we focused only on positive relation constraints involving two
+activities. in the future, we would like to extend this to also cover constraints involv-
+ing multiple activities and negative relations (e.g., not co-existence and not succession
+in table 1). also, the proposed approach relies on some heuristics such as the use of
+of time difference for temporal correlations and the correlations of likeattribute
+types. as future work, we would like to study the trade-off between completeness and
+efﬁciency of mining. furthermore, we would like to evaluate our approach using more
+case studies.
+references
+1. xes standard deﬁnition (2009), www.xes-standard.org
+2. 3tu data center: bpi challenge 2011 event log (2011), doi:10.4121/uuid:d9769f3d-0ab0-
+4fb8-803b-0d1120ffcf54
+3. van der aalst, w.m.p.: process mining: discovery, conformance and enhancement of busi-
+ness processes. springer (2011)
+4. van der aalst, w.m.p., pesic, m., schonenberg, h.: declarative workﬂows: balancing be-
+tween flexibility and support. computer science - r&d pp. 99–113 (2009)
+5. agrawal, r., srikant, r.: fast algorithms for mining association rules. in: vldb. pp.
+487–499 (1994)
+156. barros, a., decker, g., dumas, m., weber, f.: correlation patterns in service-oriented ar-
+chitectures. in: fase. lncs, vol. 4422, pp. 245–259. springer, berlin (2007)
+7. binder, m., dorda, w., duftschmid, g., dunkl, r., fr ¨oschl, k.a., gall, w., grossmann,
+w., harmankaya, k., hronsky, m., rinderle-ma, s., rinner, c., weber, s.: on analyzing
+process compliance in skin cancer treatment: an experience report from the evidence-
+based medical compliance cluster (ebmc2). in: caise. lncs, vol. 7328, pp. 398–413
+(2012)
+8. bose, r.p.j.c., van der aalst, w.m.p.: analysis of patient treatment procedures: the bpi
+challenge case study. technical report bpm-11-18, bpmcenter.org (2011)
+9. burattin, a., maggi, f.m., van der aalst, w.m.p., sperduti, a.: techniques for a posteriori
+analysis of declarative processes. in: edoc. pp. 41–50 (2012)
+10. ferreira, d.r., gillblad, d.: discovering process models from unlabelled event logs. in:
+bpm. lncs, vol. 5701, pp. 143–158. springer, berlin (2009)
+11. ieee task force on process mining: process mining manifesto. in: bpm 2011 workshops.
+lnbip, vol. 99, pp. 169–194. springer, berlin (2011)
+12. kupferman, o., vardi, m.y .: vacuity detection in temporal model checking. international
+journal on software tools for technology transfer pp. 224–233 (2003)
+13. de leoni, m., maggi, f.m., van der aalst, w.m.p.: aligning event logs and declarative
+process models for conformance checking. in: bpm. lncs, vol. 7841, pp. 82–97. springer
+(2012)
+14. liu, b., hsu, w., ma, y .: integrating classiﬁcation and association rule mining. in: kdd.
+pp. 80–86. the aaai press (1998)
+15. ly, l.t., indiono, c., mangler, j., rinderle-ma, s.: data transformation and semantic log
+purging for process mining. in: caise. lncs, vol. 7328, pp. 238–253 (2012)
+16. ly, l.t., rinderle-ma, s., knuplesch, d., dadam, p.: monitoring business process compli-
+ance using compliance rule graphs. in: otm conferences (1). lncs, vol. 7044, pp. 82–99
+(2011)
+17. maggi, f.m., bose, r.p.j.c., van der aalst, w.m.p.: efﬁcient discovery of understandable
+declarative models from event logs. in: caise. lncs, vol. 7328, pp. 270–285. springer,
+berlin (2012)
+18. maggi, f.m., bose, r.p.j.c., van der aalst, w.m.p.: a knowledge-based integrated ap-
+proach for discovering and repairing declare maps. in: caise (2013), to appear
+19. maggi, f.m., mooij, a.j., van der aalst, w.m.p.: user-guided discovery of declarative
+process models. in: ieee symposium on computational intelligence and data mining. vol.
+2725, pp. 192–199. ieee computer society (2011)
+20. motahari-nezhad, h.r., saint-paul, r., casati, f., benatallah, b.: event correlation for pro-
+cess discovery from web service interaction logs. the vldb journal 20(3), 417–444
+(2011)
+21. perez-castillo, r., weber, b., guzmn, i.r., piattini, m., pinggera, j.: assessing event corre-
+lation in non-process-aware information systems. software & systems modeling pp. 1–23
+(2012)
+22. pichler, p., weber, b., zugal, s., pinggera, j., mendling, j., reijers, h.a.: imperative versus
+declarative process modeling languages: an empirical investigation. in: bpm workshops.
+lnbip, vol. 99, pp. 383–394 (2011)
+23. quinlan, j.r.: c4.5: programs for machine learning. morgan kaufmann (1993)
+24. rozsnyai, s., slominski, a., lakshmanan, g.t.: discovering event correlation rules for
+semi-structured business processes. in: debs. pp. 75–86 (2011)
+25. schulte, s., schuller, d., steinmetz, r., abels, s.: plug-and-play virtual factories. ieee
+internet computing 16(5), 78–82 (2012)
+16

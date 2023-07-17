@@ -1,0 +1,1365 @@
+a recommendation system for predicting risks across
+multiple business process instances
+raaele confortia, massimiliano de leonic,b, marcello la rosaa,d,
+wil m. p. van der aalstb,a, arthur h. m. ter hofstedea,b
+aqueensland university of technology, australia
+fraaele.conforti,m.larosa,a.terhofstede g@qut.edu.au
+beindhoven university of technology, the netherlands, australia
+fm.d.leoni,w.m.p.v.d.aalst g@tue.nl
+cuniversity of padua, italy
+dnicta queensland lab, brisbane, australia
+abstract
+this paper proposes a recommendation system that supports process participants in taking risk-informed
+decisions, with the goal of reducing risks that may arise during process execution. risk reduction involves
+decreasing the likelihood and severity of a process fault from occurring. given a business process exposed
+to risks, e.g. a nancial process exposed to a risk of reputation loss, we enact this process and whenever a
+process participant needs to provide input to the process, e.g. by selecting the next task to execute or by
+lling out a form, we suggest the participant the action to perform which minimizes the predicted process
+risk. risks are predicted by traversing decision trees generated from the logs of past process executions,
+which consider process data, involved resources, task durations and other information elements like task
+frequencies. when applied in the context of multiple process instances running concurrently, a second
+technique is employed that uses integer linear programming to compute the optimal assignment of resources
+to tasks to be performed, in order to deal with the interplay between risks relative to dierent instances. the
+recommendation system has been implemented as a set of components on top of the yawl bpm system
+and its eectiveness has been evaluated using a real-life scenario, in collaboration with risk analysts of a
+large insurance company. the results, based on a simulation of the real-life scenario and its comparison with
+the event data provided by the company, show that the process instances executed concurrently complete
+with signicantly fewer faults and with lower fault severities, when the recommendations provided by our
+recommendation system are taken into account.
+keywords: business process management, risk management, risk prediction, job scheduling, work
+distribution, yawl.
+1. introduction
+aprocess-related risk measures the likelihood and the severity that a negative outcome, also called fault,
+will impact on the process objectives [1]. failing to address process-related risks can result in substan-
+preprint submitted to decision support systems november 11, 2014tial nancial and reputational consequences, potentially threatening an organization's existence. take for
+example the case of soci et e g en erale, which went bankrupt after a e4.9b loss due to fraud.
+legislative initiatives like basel ii [2] and the sarbanes-oxley act1reect the need to better manage
+business process risks. in line with these initiatives, organizations have started to incorporate process risks
+as a distinct view in their operational management, with the aim to eectively control such risks. however,
+to date there is little guidance as to how this can be concretely achieved.
+as part of an end-to-end approach for risk-aware business process management (bpm), in [3, 4, 5] we
+proposed several techniques to model risks in executable business process models, detect them as early as
+possible during process execution, and support process administrators in mitigating these risks by applying
+changes to the running process instances. however, the limitation of these eorts is that risks are not
+prevented , but rather acted upon when their likelihood exceeds a tolerance threshold. for example, a
+mitigation action may entail skipping some tasks when the process instance is very likely to exceed the dened
+maximum cycle time. while eective, mitigation comes at the cost of modifying the process instance, often
+by skipping tasks or rolling back previously-executed tasks, which may not always be acceptable. moreover,
+we have shown that it is not always possible to mitigate all process risks [4]. for example, rolling back a
+task for the sake of mitigating a risk of cost overrun, may not allow the full recovery of the costs incurred
+in the execution of that task.
+to address these limitations we propose a recommendation system that supports process participants
+in taking risk-informed decisions, with the aim to reduce process risks preemptively. a process participant
+takes a decision whenever they have to choose the next task to execute out of those assigned to them at
+a given process state, or via the data they enter in a user form. this input from the participant may
+inuence the risk of a process fault to occur. for each such input, the technique returns a risk prediction in
+terms of the likelihood and severity that a fault will occur if the process instance is carried out using that
+input. this prediction is obtained via decision trees which are trained using historical process data such
+as process variables, resources, task durations and frequencies. the historical data of a process is observed
+using decision trees which are built from the execution logs of the process, as recorded by the it systems of
+an organization.
+this way, the participant can take a risk-informed decision as to which task to execute next, or can
+learn the predicted risk of submitting a form with particular data. if the instance is subjected to multiple
+potential faults, the predictor can return the weighted sum of all fault likelihoods and severities, as well as
+the individual gures for each fault. the weight of each fault can be determined based on the severity of
+the fault's impact on the process objectives.
+the above technique only provides \local" risk predictions, i.e. predictions relative to a specic process
+1www.gpo.gov/fdsys/pkg/plaw-107publ204
+2instance. in reality, however, multiple instances of (dierent) business processes may be executed at any
+time. thus, we need to nd a risk prediction for a specic process instance that does not aect the prediction
+for other instances. the interplay between risks relative to dierent instances can be caused by the sharing
+of the same pool of process participants: two instances may require the same scarce resource. in this setting,
+a sub-optimal distribution of process participants to the set of tasks to be executed, may result in a risk
+increase (e.g. overtime or cost overrun risk). to solve this problem, we equipped our recommendation system
+with a second technique, based on integer linear programming, which takes input from the risk prediction
+technique, to nd an optimal distribution of process participants to tasks. by optimal distribution we mean
+one that minimizes the overall execution time (i.e. the time taken to complete allrunning instances) while
+minimizing the overall level of risk. this distribution is used by the recommendation system to suggest
+process participants the next task to perform.
+we operationalized our recommendation system on top of the yawl bpm system by extending an
+existing yawl plug-in and by implementing two new custom yawl services. this implementation prompts
+process participants with risk predictions upon lling out a form or for each task that can be executed. we
+then evaluated the eectiveness of our recommendation system by conducting experiments using a claims
+handling process in use at a large insurance company. with input from a team of risk analysts from the
+company, this process has been extensively simulated on the basis of a log recording one year of completed
+instances of this process. the recommendations provided by our recommendation system signicantly
+reduced the number and severity of faults in a simulation of a real life scenario, compared to the process
+executed by the company as reected by the event data. further, the results show that it is feasible to
+predict risks across multiple process instances without impacting on the execution performance of the bpm
+system.
+the remainder of this paper is organized as follows. section 2 discusses related work. section 3 contex-
+tualizes the recommendation system within our approach for managing process-related risks, while section 4
+presents the yawl language as part of a running example. next, section 5 denes the notions of event logs
+and faults which are required to explain our techniques. section 6 describes the technique for predicting
+risks in a single process instance while section 7 extends this technique to the realm of multiple process
+instances running concurrently. section 8 and section 9 discuss the implementation and evaluation of the
+recommendation system, respectively. finally, section 10 concludes the paper. the appendix provides the
+formal denition of a yawl specication, the algorithms to generate a prediction function, and technical
+proofs of two lemmas presented in section 7.
+32. related work
+the approach presented in this paper is related to work on risk prediction, job scheduling, operational
+support and work-item distribution for business processes. in this section we review the state of the art in
+these elds to motivate the need for our approach.
+2.1. risk prediction
+various risk analysis methods such as octave [6], cramm [7] and coras [8] have been dened which
+provide elements of risk-aware process management. meantime, academics have recognized the importance of
+managing process-related risks. however, risk analysis methods only provide guidelines for the identication
+of risks and their mitigation, while academic eorts mostly focus on risk-aware bpm methodologies in
+general, rather than on concrete approaches for risk prediction [9].
+an exception is made by the works of pika et al. [10] and suriadi et al. [11]. pika et al. propose
+an approach for predicting overtime risks based on statistical analysis. they identify ve process risk
+indicators whereby the occurrence of these indicators in a trace indicates the possibility of a delay. suriadi
+et al. propose an approach for root cause analysis based on classication algorithms. after enriching a log
+with information like workload, occurrence of delay, and involvement of resources, they use decision trees
+to identify the causes of overtime faults. the cause of a fault is obtained as a disjunction of conjunctions
+of the enriching information. despite looking at the same problem from dierent prospectives, these two
+approaches result to be quite similar. these two approaches suer from the limitation of not considering
+the data prospective. further, they limit their scope to the identication of indicators of risks or of causes
+of faults to support overtime risks only.
+in previous work, we presented a wider approach which aims to bridge the gap between risk and process
+management. this approach consists of two techniques. the rst one [3, 5] allows process modelers to
+specify process-related faults and related risks on top of (executable) process models, and to detect them
+at run-time when their risk likelihood exceeds a tolerance threshold. risks are specied as conditions over
+control-ow, resources and data aspects of the process model. the second technique [4] builds on top of the
+rst one to cover risk mitigation. as soon as one or more risks are detected which are no longer tolerable,
+the technique proposes a set of alternative mitigation actions that can be applied by process administrators.
+a mitigation action is a sequence of controlled changes on a process instance aected by risks, which takes
+into account a snapshot of the process resources and data, and the current status of the system in which
+the process is executed.
+for a comprehensive review and comparative analysis of work at the intersection of risk management
+and bpm, we refer to [9].
+42.2. job scheduling
+the problem of distributing work items to resources in business process execution shares several simi-
+larities with the job-shop scheduling [12, 13, 14, 15]. job-shop scheduling concerns mjobs that needs to be
+assigned to a nmachines, with n <m , while trying to minimize the make-span, i.e. the total length of the
+schedule. jobs may have constraints, e.g. job ineeds to nish before job jcan be started, certain jobs can
+only be performed by given machines.
+unfortunately, these approaches are intended for dierent settings and cannot be specialized for risk-
+informed work-item assignment. to our knowledge, techniques of job-shop scheduling are unaware of the
+concept of cases or process instances, since typically jobs are not associated with a case.
+the concept of case is crucial when dealing with process-aware information systems. work items are
+executed within process instances and many process instances can be running at the same time, like so
+many work items may be enabled for execution at the same time. dierent instances may be worked on
+by the same resources and, hence, the allocation within a instances may aect the performance of other
+instances. without considering the instances in which work items are executed, an important aspect is not
+considered and, hence, the overall allocation is not really optimized. moreover, applying job-scheduling for
+work-item distribution, such work items will be distributed with a push method, i.e. a work item is pushed
+to a single qualifying resource. this is also related to the fact the jobs are usually assumed to be executed
+by machines, whereas, in process-aware information systems, work items are normally being executed by
+human resources. work items may also be executed by automatic software services, but this is not the
+situation in the majority of setting. in [16], it is shown that push strategies already perform very poorly
+when the resource work-load is moderately high. therefore, work items ought to be distributed with a pull
+mechanism, i.e. enabled work items are put in a common pool and oered to qualifying resources, which
+can freely pick any of them. as a matter of fact, a pull metho is far the most common used in current-day
+process-aware information systems.
+2.3. operational support
+the work proposed in this paper is also related to body of work that is concerned with devising frame-
+works and architectures to provide operational support for business processes as a service. for instance,
+nakatumba et al. [17] propose a service for operational support which generalizes what is proposed in [18].
+this service is implemented in prom, a pluggable framework to implement process-aware techniques in a
+standardized environment. on its own, the service does not implement recommendation algorithms but pro-
+vides an architecture where such algorithms can be easily plugged in. for instance, the prediction technique
+in [19] is an example of algorithm plugged into this architecture (more details on this work are provided
+in the next subsection). another example is the work in [20], which concerns a recommendation algorithm
+5table 1: comparison of dierent approaches for operational support in process-aware information systems
+approach weight process perspectives optimal objective assignment
+computation distribution method
+kim et al. [21] dynamic control-flow, resource - time, cost -
+yang [22] static - instance level customizable push
+kumar et al. [23] dynamic control-flow, resource instance level cooperationapush
+kumar et al. [16] static - instance level suitability, urgency, workload push/pullb
+huang et al. [24] dynamic control-flow, resource, data, time instance level customizable push
+van der aalst et al. [25] dynamic control-flow - time -
+folino et al. [26] dynamic control-flow, resource, data, time - time -
+van der spoel et al. [27] dynamic control-flow - cost -
+cabanillas et al. [28] static control-flow, resource process level user preferencecpush
+barba et al. [29] static control-flow, resource instance level time pull
+maggi et al. [19] dynamic control-flow, resource, data - customizable ltl formulasd-
+awork items are distributed to maximize the quality of the cooperation among resources. this approach assumes that some resources can cooperate
+better than others when working on a process instance.
+bresources declare their interest in picking some work items for performance. the approach assigns each work item to the interested resource that
+guarantees the better distribution.
+cat design time, users provide preferences for work items. at run time, the system allocates work items to resources to maximize such preferences.
+dthe expressiveness power of business goals in the form of a single ltl formula is lower than what our approach allows for. in principle, multiple
+ltl formulas can be provided though one has to balance contrasting recommendations for the satisfiability of such formulas.
+based on monitoring the satisfaction of business constraints. this work does not make any form of prediction
+nor automatic optimal work-items' distribution.
+as a matter of fact, there is no conceptual or technical limitation that would prevent our approach from
+being implemented as a plug-in for an operational-support service.
+2.4. work-item distribution
+our work on work-item distribution to minimize risks shares commonalities with operational support
+and decision support systems (dsss). we aim to provide recommendations to process participants to take
+risk-informed decisions. our work fully embraces the aim of these systems to improve decision making
+within work systems [30], by providing an extension to existing process-aware information systems.
+mainstream commercial and open-source bpm systems do not feature work-item prioritization. they
+only allow one to indicate a static priority for tasks (e.g. low, medium or high priority), independently of the
+characteristics of the process instance and of the qualied resources. similarly, the yawl system, which is
+the one we extended, does not provide means for operational support, besides the extension proposed by de
+leoni et al. [31], which, however, denes very basic metrics only.
+several approaches have been proposed in the literature. table 1 summarizes and compares the most
+signicant ones, using dierent criteria:
+weight computation. in order to perform an optimal distribution, every work item needs to be assigned
+a weight, which may also depend on the resources that is going to perform it or on the moment in
+time when such work item is performed. these weights can be dened either statically by analysts or
+dynamically computed on the basis of the past history recorded in an event log.
+6process perspective. when weights are dynamically dened, they may be computed considering dierent
+perspectives: control-ow, resources, data and time.
+optimal assignment. the optimization of work-item distribution can be computed by considering single
+instances in isolation or trying to optimize the overall performances of all running instances.
+objective. the work-item distribution can be optimized with respect to several factors, such as minimizing
+the cost, time or maximizing the cooperation. only few approaches allow one to customize the objective
+function to minimize/maximize.
+assignment method. once an optimal distribution is computed, each work item can be pushed to a single
+qualied resource (push method), or it can be put in a common pool and simply recommended to a
+given resource within this pool, that can then pull the work item (pull method). note that in this last
+method dierent resources within the same pool other than the one the work item was recommended
+to, may still execute the work item. method
+among the available approaches only the one by cabanillas et al. [28] computes the optimal allocation
+of resources at the process level. specically, this work proposes a priority-based resource allocation, where
+resources are ranked according to preferences dened using the semantic ontology of user preferences [32].
+once a work item needs to be executed it is pushed to the resource ranking the highest on the basis of the
+expressed preferences.
+among the approaches providing optimal distribution only two approaches support a pull assignment.
+the approach of barba et al. [29] optimizes process performances, using constraint programming (planning
+and scheduling problem) where constrains are dened considering control-ow and resources only. on the
+other hand, the approach of kumar et al. [16] aims to obtain the right balance between execution time
+and quality. this approach uses work allocation metrics and various quality attributes to nd the optimal
+allocation strategy keeping into consideration the preference of resources for certain work items.
+the approach of yang [22], similar to all the approaches discussed so far, assigns a static weight to
+each work item. this approach optimizes process execution time and total execution cost according to
+user preferences. preferences are dened using a multi-attribute utility function that is optimized using
+the particle swarm optimization algorithm. a second approach by kumar et al. [23], and the approach of
+huang et al. [24], conclude the list of approaches providing optimal distribution of work items. kumar et
+al. [23] propose an approach for optimal resource cooperation using integer linear programming to identify
+the group of resources with the best synergy to perform a process instance while huang et al. [24] propose
+to use task operation models.
+there are also approaches that focus on prediction only. van der aalst et al. [25] propose an approach
+to predict total execution time and remaining execution time. the approach uses logs to generate transition
+7systems annotated with timing information. transition systems are employed to provide predictions using
+similarly completed executions as a reference. folino et al. [26] use a combination of clustering techniques
+and transition systems. using clustering they identify process variants in a log and for each cluster they
+generate a transition system. when a prediction is required, using decision trees the authors identify which
+cluster the current instance belongs to, and then use the associated transition system to provide a prediction.
+van der spoel et al. [27] propose an approach to predict the cash ow of a process. this approach uses
+a combination of process ow prediction, i.e. predicting how the process execution will proceed, and cost
+prediction, i.e. predicting how much the execution of a predicted activity will cost. kim et al. [21] propose
+the use of decision trees to minimize completion time or total labor cost, where the resource with the lowest
+predicted completion time or total labor cost is suggested.
+finally, maggi et al. [19] propose a predictive approach to prevent process constraints violation. users
+can dene linear temporal logic constraints at any point in time during the execution of a process. then,
+when a prediction is required, the approach retrieves all traces having a similar prex of the current instance.
+these instances are then used to generate a decision tree that is used to predict how the process execution
+should proceed to satisfy the predened constraints.
+there are also approaches (e.g.,[33, 34, 35]) that mine association rules from event logs to dene the
+preferable distribution of work items. however, in the end a resource manager needs to manually assign
+work items to resources. manual distributions are clearly inecient because they are both unlikely to be
+optimal and some work items probably remain unassigned for a certain amount of time until the manager
+takes charge of their assignment. moreover, the mined rules consider process instances in isolation.
+on the basis of the insights emerging from table 1, we propose a technique that satises the following
+requirements: it should i) use information form dierent process perspectives to provide predictions; ii)
+use such predictions to compute an optimal distribution that is not local to individual process instances
+(instance level) but global across all running instances, which can be from dierent processes (process level);
+iii) use user-dened faults as objective functions; iv) leave process participants the nal choice of whether
+to execute a recommended work item (pull assignment method).
+this paper is an extended version of the conference paper in [36]. with respect to the conference paper,
+the main extension relates to the provision of support for multi-instance risk prediction. this is achieved by
+combining our existing technique for risk estimation [36], with a technique for identifying the best distribution
+of resources to work items of concurrent process instances, using integer linear programming. this technique
+has been implemented via a new yawl custom service, the multi instance prediction service. further, the
+evaluation has been completely redone using a real-life business process in use at a large insurance company.
+with input from a team of risk analysts from the company, this process has been extensively simulated
+on the basis of an event log recording one year of completed instances of this process, to show that it is
+feasible to predict risks across multiple process instances without impacting on performance, and that the
+8recommendations provided by our recommendation system signicantly reduce the number and severity of
+faults, for all instances simulated.
+3. risk framework
+in this section we elaborate on the type of process-related risks that we can address and on the basis of
+this, we illustrate an overarching approach for managing process-related risks within which the contribution
+of this paper ts.
+3.1. process-related risk
+in this paper we focus on process-related risks that can be identied within the boundaries of a business
+process. in particular, we only consider process-related risks which depend on information available during
+process execution, e.g. task input and output data, allocated resources, time performance. this implies
+that process-related risks depending on information outside the process boundaries, i.e. the process context
+(e.g. market uctuations or weather forecast), cannot be detected. for this reason organizational risks in
+general are not addressed, such as those related to partners going bankrupt, or price of the fuel going up.
+moreover, since we require process execution information we only consider executable business processes.
+these processes should either be executed by a bpms on the basis of a process model or be supported by
+an information system that produces event logs [37], i.e. logs of process-related information which we can
+use to reconstruct the process instances being executed by aggregating events, such that each instance can
+be unequivocally identied.
+3.2. risk approach
+the technique proposed in this paper can be seen as part of a wider approach for the management of
+process-related risks. this approach aims to enrich the four phases of the traditional bpm lifecycle (process
+design, implementation, enactment and diagnosis) [38] with elements of risk management (cf. figure 1).
+process 
+implementation
+risk-aware workflow 
+implementation
+risk
+identification
+risk analysisrisk-annotated
+ modelsrisk-annotated
+workflows
+current
+process data
+historical
+process datarisk-related 
+improvementsprocess design
+risk-aware 
+process modelling12
+3
+4process diagnosis
+risk monitoring and 
+mitigationprocess 
+enactment
+risk-aware 
+workflow execution 
+risk-related 
+improvements
+reportingrisks
+figure 1: risk-aware bpm lifecycle.before the process design phase,
+we dene an initial phase, namely
+risk identication , where existing
+techniques for risk analysis such as
+fault tree analysis [39] or root
+cause analysis [40] can be used to
+identify possible risks of faults that
+may eventuate during the execution
+of a business process. faults and
+their risks identied in this phase are
+9mapped onto specic aspects of the process model during the process design phase, obtaining a risk-
+annotated process model. in the process implementation phase, a more detailed mapping is conducted
+linking each risk and fault to specic aspects of the process model, such as the content of data variables and
+resource states. in the process enactment phase such a risk-annotated process model can be executed to
+ensure risk-aware process execution. finally, in the process diagnosis phase, information produced during
+process enactment is used in combination with historical data to monitor the occurrence of risks and faults
+as process instances are executed. this monitoring may trigger mitigation actions in order to (partially)
+recover the process instance from a fault.
+the technique presented in this paper ts in this latter phase, since it aims to provide run-time support
+in terms of risk prediction, by combining information on risks and faults with historical data. the techniques
+developed to support the other phases of our risk-aware bpm approach fall outside the scope of this paper,
+but have beed addressed in our earlier work [3, 5, 4].
+4. yawl specication and running example
+we developed our technique on top of the yawl language [41] for several reasons. first, this language is
+very expressive as it provides comprehensive support for the workow patterns2, patterns covering all main
+process prospective such as control-ow, data-ow, resources, and exceptions. further, it is an executable
+language supported by an open-source bpm system, namely the yawl system. this system is based on a
+service-oriented architecture, which facilitates the seamless addition of new services, like the ones developed
+as part of this work. further, the open-source license facilitates its distribution among academics and
+practitioners (the system has been downloaded over 100,000 times since its rst inception in the open-source
+community). however the elements of the yawl language used by our technique are common to all process
+modeling languages, so our technique can in principle be applied to other executable process modeling
+languages such as bpmn 2.0.
+in this section we introduce the basic ingredients of the yawl language and present them in the context
+of a running example. this example, whose yawl model is shown in figure 2, captures the carrier
+appointment subprocess of an order fulllment process, which is subjected to several risks. this process is
+inspired by the vics industry standard for logistics [42], a standard endorsed by 100+ companies worldwide.
+the carrier appointment subprocess (see figure 2) starts when a purchase order conrmation is
+received. a shipment planner then estimates the trailer usage and prepares a route guide. once ready, a
+supply ocer prepares a quote for the transportation indicating the cost of the shipment, the number of
+packages and the total freight volume.
+2www.workflowpatterns.com
+10figure 2: the carrier appointment subprocess of an order fulllment process, shown in yawl.
+if the total volume is over 10,000 lbs a full trackload is required. in this case two dierent client liaisons
+will try to arrange a pickup appointment and a delivery appointment. before these two tasks are performed,
+a senior supply ocer may create a shipment information document. in case the shipment information
+document is prepared before the appointments are arranged, a warehouse ocer will arrange a pickup
+appointment and a supply ocer will arrange a delivery appointment, with the possibility of modifying
+these appointments until a warehouse admin ocer produces a shipment notice, after which the freight
+will be picked up from the warehouse.
+if the total volume is up to 10,000 lbs and there is more than one package, a warehouse ocer arranges
+the pickup appointment while a client liaison may arrange the delivery appointment. afterwards, a senior
+supply ocer creates a bill of lading, a document similar to the shipment information. if a delivery
+appointment is missing a supply ocer takes care of it, after which the rest of the process is the same as
+for the full trackload option.
+finally, if a single package is to be shipped, a supply ocer has to arrange a pickup appointment, a
+delivery appointment, and create a carrier manifest, after which a warehouse admin ocer can produce
+a shipment notice.
+in yawl, a process model is encoded via a yawl specication. a specication is made up of one or
+more nets (each modeling a subprocess), organized hierarchically in a root net and zero or more subnets.
+each net is dened as a set of conditions (represented as circles), an input condition, an output condition,
+and a set of tasks (represented as boxes). tasks are connected to conditions via ow relations (represented
+as arcs). in yawl trivial conditions, i.e. those having a single incoming ow and a single outgoing ow, can
+be hidden. to simplify the discussion in the paper, without loss of generality, we assume a strict alternation
+11between tasks and conditions.
+conditions denote states of execution, for example the state before executing a task or that resulting
+from its execution. conditions can also be used for routing purposes when they have more than one incoming
+and/or outgoing ow relation. in particular, a condition followed by multiple tasks, like condition ftl in
+figure 2, represents a deferred choice , i.e. a choice which is not determined by some process data, but rather
+by the rst process participant that is going to start one of the outgoing tasks of this condition. in the
+example, the deferred choice is between tasks arrange delivery appointment, arrange pickup appointment
+and create shipment information document, each assigned to a dierent process participant. when the
+choice is based on data, this is captured in yawl by an xor-split, if only one outgoing arc can be taken
+like after executing prepare transportation quote. if one or more outgoing arcs can be taken it is captured
+by an or-split like after executing create shipment information document. similarly, we have xor-joins
+and or-joing that merge multiple incoming arcs in to one. if among all the incoming arcs only one is active
+we use a xor-join like before executing produce shipment notice, while if among all incoming arcs one or
+more arcs are active we use a or-join like before executing task create bill of lading. finally, an and-split
+is used when all outgoing arcs need to be taken, like after receive conrmation order, while an and-join
+is used to synchronize parallel arcs like before executing prepare transportation quote. splits and joins are
+represented as decorators on the task's box.
+tasks are considered to be descriptions of a piece of work that forms part of the overall process. thus,
+control-ow, data, and resourcing specications are all dened with reference to tasks at design time. at
+runtime, each task acts as a template for the instantiation of one or more work items. a work item
+w= (ta;id ) is the run-time instantiation of a task tafor a process instance id.
+a new process instance idis started and initialized by placing a token in the input condition of a yawl
+net. the token represents the thread of control and ows through the net as work items are executed. the
+execution of a work item ( ta;id ) consumes one token from some of ta's input conditions (depending on the
+task's type of join) and produces one token in some of ta's output conditions (depending on the task's type
+of split). in yawl, work items are performed by either process participants ( user tasks ) or software services
+(automated tasks ). an example of an automated task is receive conrmation order in figure 2, while an
+example of user task is estimate trailer usage.
+finally, the presettof a tasktis the set of its input conditions. similarly, the postset tof a tasktis
+the set of its output conditions. the preset and postset of a condition can be dened analogously.
+the notions presented above are formalized in the appendix.
+5. event logs and fault severity
+the execution of completed and running process instances can be stored in an event log:
+12denition 1 (event log). lettandvbe a set of tasks and variables, respectively. let ube the set of
+values that can be assigned to variables. let rbe the set of resources that are potentially involved during the
+execution. let dbe the universe of timestamps. let be the set of all partial functions v6!uthat dene
+an assignment of values to a sub set of variables in v. an event loglis a multiset of traces where each
+trace (a.k.a. process instance) is a sequence of events of the form (t;r;d; ), wheret2tis a task,r2ris
+the resource performing t,d2nis the event's timestamp, 2is an assignment of values to a sub set of
+variables in v. in other words, l2b ((trn)).3
+each completed trace of the event log is assigned a fault's severity between 0 and 1, where 0 identies
+an execution with no fault and 1 identies a fault with the highest severity. to model this, a risk analyst
+needs to provide a fault function f. the set of all such functions is:
+f= (trn)![0;1]
+in many settings, processes are associated with dierent faults. these faults can be combined together by
+assigning dierent weights. let us suppose to have nfaultsff1;:::;fngf , we can have a composite fault :
+bf() =p
+1inwifi()p
+1inwi2f
+wherewiis the weight of the fault fi, with 1in.
+a complete trace of our carrier appointment process, can be aected by three faults:
+over-time fault. this fault is linked to a service level agreement (sla) which establishes that the
+process must terminate within a predened maximum cycle time dmct(e.g. 21 hours), in order to
+avoid pecuniary penalties that will incur as consequence of a violation of the sla. the severity of the
+fault grows with the amount of time that the process execution exceeds dmct. letdbe the duration
+of the process instance, i.e. dierence between the timestamps of the last and rst event of . letdmax
+be the maximum duration among all process instances already completed (including ). the severity
+of an overtime fault is measured as follows:
+ftime() = maxd dmct
+max(dmax dmct;1);0
+reputation-loss fault. during the execution of the process when a \pickup appointment" or a \delivery
+appointment" is arranged, errors with location or time of the appointment may occur due to a mis-
+understanding between the company's employee and the customer. in order to keep the reputation
+high, the company wants to avoid these misunderstandings and having to call the customer again.
+the severity of this fault is:
+frep() =8
+>>>>>>>><
+>>>>>>>>:0 if tasks modify delivery appointment and modify pick-up appointment
+do not appear in 
+1 if both modify delivery appointment and modify pick-up appointment
+appear in
+0.5 otherwise
+3b(x) is the set of all multisets over x
+13cost overrun fault. during the execution of this process, several activities need to be executed, and each
+of these has an execution cost associated with it. since the prot of the company decreases with a
+higher shipping cost of a good (or goods), the company wants to reduce them. of course, there is a
+prot cost beyond which the company will not make any prot. the severity increases as the cost
+goes beyond the prot cost. let cmaxbe the greatest cost associated with any process instance that
+has already been completed (including ). letcbe the cost of andcminbe the prot cost. the
+severity of a cost fault is:
+fcost() = minmax(c cmin;0)
+max(cmax cmin;1);1
+moreover, we assume that the company considers reputation-loss fault to be less signicant than the other
+faults. the company could decide to dene a composite fault where the reputation weights half:
+fcar() = 
+fcost() +ftime() + 0:5frep()
+=2:5
+the risk is the product of the estimation of the fault's severity at the end of the process-instance execution
+and the accuracy of such an estimation.
+when a process instance is being executed, many factors may inuence the risk and, ultimately, the
+severity of a possible fault. for instance, a specic order in which a certain set of tasks is performed may
+increase or decrease the risk, compared to any other. nonetheless, it is opportune to leave freedom to
+resources to decide the order of their preference. indeed, there may be factors outside the system that let
+resources opt for a specic order. for similar reasons, when there are alternative tasks that are all enabled for
+execution, a risk-aware decision support may highlight those tasks whose execution yields less risk, anyway
+leaving the nal decision up to the resource.
+6. risk estimation
+we aim to provide work-items' recommendation to minimize the risk corresponding to the highest product
+of fault severity and likelihood. for this purpose, it is necessary to predict the most likely fault severity
+associated with continuing the execution of a process instance for each enabled task. the problem of
+providing such a prediction can be translated into the problem of nding the best estimator of a function.
+denition 2 (function estimator). letx1;:::;xnbennite or innite domains. let ybe a nite
+domain. let f:x1x2:::xn!y. an estimator of function fis a function  f:y!
+2x1x2:::xn[0;1], such that, for each y2y, f(y)returns a set of tuples (x1;:::;xn;l)where (x1;:::;xn)2
+(x1x2:::xn)is an input domain tuple for which the expected output is yandlis the accuracy of
+such an estimation. moreover, (x1;:::;xn;l1)2 f(y1)^(x1;:::;xn;l2)2 f(y2))l1=l2^y1=y2.
+the function estimator is trained through a set of observation instances. an observation instance is a
+pair (  !x;y) where  !x2x1x2:::xnis the observed input and y2yis the observed output.
+14the function estimator can easily be built using a number of machine learning techniques. in this paper,
+we employ the c4.5 algorithm to build decision trees. we decided to use decision tree classication, and
+specically the c4.5 algorithm, for the following reasons: i) it can handle both continuous and discrete
+(categorical) attributes; ii) it can handle training data with missing attribute values; iii) it can build models
+that can be easily interpreted; iv) it can deal with noise; v) it automatically nds a subset of the features
+that are relevant to the classication (i.e. no need for feature selection); and vi) it automatically discretizes
+continuous features. this last function helps us signicantly simplify the problem of nding an optimal
+distribution of work items to resources, as we will discuss in section 7.
+decision trees classify instances by sorting them down in a tree from the root to some leaf node. each
+non-leaf node species a test of some attribute x1;:::;xnand each branch descending from that node
+corresponds to a range of possible values for this attribute. in general, a decision tree represents a disjunction
+of conjunctions of expressions: each path from the tree root to a leaf corresponds to an expression that is,
+in fact, a conjunction of attribute tests. each leaf node is assigned one of the possible output values: if an
+expressioneis associated with a path to a leaf node y, every tuple  !x2x1x2:::xnsatisfyingeis
+expected to return yas output.
+we link the accuracy of a prediction for  f(y) to the quality of eas classifying expression. let ibe
+the set of observation instances used to construct the decision tree. let ie=f(  !x;y)2ij  !xsatiseseg
+andie;y=f(  !x;y)2iejy=yg. the accuracy is l=jie;yj=jiej; therefore, for all (( x1;:::;xn);y)2
+ie;(x1;:::;xn;l)2 f(y).
+figure 3 shows an example of a possible decision tree. it is the estimator  f^cof a function that returns
+a value belonging to the set hcontaining the numbers between 0 and 1 with no more than 2 decimals. it is
+obtained through a set of observation instances based on all data attributes generated during the execution
+of the process. for example, having as data attributes a resource, a task, the cost of a good, and a process
+instance's elapsed time, we obtained the following function f^c:resourcetaskgoodcosttimeelapsed!
+h. for instance, let us consider the value y= 0:6. analyzing the tree, the value is associated with two
+expressions: e1is (resource =michaelbrown^task =arrangepickupappointment ) ande2is (resource6=
+michaelbrown^goodcost<3157^timeelapsed <30^task =createshipmentinformationdocument ).
+let us suppose that, among observation instances ( resource ,task ,goodcost ,timeelapsed ;y) s.t.e1ore2
+evaluates to true, y= 0:6 occurs 60% or 80% of times, respectively. therefore,  f^c(0:6) contains the tuples
+(resource;task;goodcost;timeelapsed ;0:6) satisfying e1, along with tuples ( resource ,task ,goodcost ,
+timeelapsed , 0:8) satisfying e2. regarding computational complexity, if decision trees are used, training
+ fwithmobservation instances is computed in quadratic time with respect to the dimension n(i.e. the
+number of attributes) of the input tuple, specically o(n2m) [43].
+15resource
+var goodcost taskmichael brown ¬michael brown
+0.85
+0.6create
+shipment
+information
+documentarrange
+delivery
+appointment
+time 
+elapsed< 3157
+0.7 0.6≥ 3157
+≥ 30 < 300.4arrange
+pickup
+appointment task
+0.5
+0.2create
+shipment
+information
+documentarrange
+delivery
+appointment
+0.1arrange
+pickup
+appointmenttask
+0.45create
+shipment
+information
+documentarrange
+delivery
+appointment
+0.2arrange
+pickup
+appointmentfigure 3: an example of decision tree used to build a
+function estimator.as mentioned before, it is necessary to predict the
+most likely fault severity associated with continuing
+the execution of a process instance with each task en-
+abled for execution. function estimators are used for
+such a prediction.
+letn= (tn;cn;rn;vn;un;cann) be a yawl
+net. in order to provide accurate risks associated with
+performing work items of a certain process instance,
+it is important to incorporate the execution history
+of that process instance into the analysis. in order
+to avoid overtting predictive functions the history
+needs to be abstracted. specically, we abstract the
+execution history as two functions: cr:tn!r
+denoting the last executor of each task and ct:tn!
+ndenoting the number of times that each task has
+been performed in the past. pairs ( cr;ct)2crct
+are called contextual information . given the execution trace of a (running) instance 02(tnrnn),
+we introduce function getcontextinformation (0) that returns the contextual information ( cr;ct) that can be
+constructed from 0.
+let  be the set of all possible assignments of values to variables, i.e. the set of all partial functions
+vn6!un. each condition c2cncan be associated with a function fc: crnncrct!h.
+iffc(;t;r;n;c r;ct) =y, at the end of the execution of the process instance, the fault's severity is going to
+beyif the instance continues with resource r2rnthat performs task t2cat timenwith contextual
+information ( cr;ct) when variables are assigned values as for function . of course, this function is not
+known but it needs to be estimated, based on the behavior observed in an event log l. therefore, we need
+to build am estimator  fcforfc. let us consider condition cftl(see figure 2), and the associated function
+estimator fcftl. let us suppose that the accuracy is 1, i.e. for each t2cftl, fcftl(t) always returns 1.
+if the execution is such that there is a token in ftl,goodcost<3157, executing tasks arrange
+pickup appointment ,arrange delivery appointment are associated with a risk of 0 :2 and 0:45, respectively.
+conversely, executing task create shipment information document is given a risk of either 0 :6 or 0:7,
+depending on the moment in which task create shipment information document is started. therefore, it
+is evident that it is less \risky" to execute arrange pickup appointment .
+the generation of function estimators is obtained as follows. for each process instance in the log and for
+each event generated during the execution of each process instance, we retrieve context information, time
+elapsed, and data variables produced. these three elements together constitute an observation instance.
+16this observation instance is assigned to the decision point which precedes the activity generating the event.
+once all observation instances are generated, the observation instances associated with each decision point
+are used to build the function estimator associated with the decision point, using, for example, decision
+trees. in the appendix we formalize this algorithm (see algorithm 1).
+in this section, we presented a technique to generate prediction functions. it is important to observe
+that the number of risks that may eventuate during the execution of a process does not aect the prediction
+algorithm, since we consider the combined risk level of all risks. specically, we do so by assigning a relative
+weight to each risk. this weight system allows process administrators to ne tune the predictive function
+on the basis of the relative importance of each risk.
+7. multi-instance work-item distribution
+with the technique presented so far, each resource is given local risk advice as to what work item to
+perform next, i.e. a resource is suggested to perform the work item with the lowest overall risk for that
+combination of process instance and resource, without looking at other resources that may be assigned work
+items within the same instance or in other instances running concurrently. clearly, such a local work-item
+distribution is not optimal, since work items have to compete for resources and this may not guarantee the
+best allocation from a risk viewpoint. for example, let us consider two resources r1andr2and two work
+itemswaandwbsuch that the risk of r1performing wais 0:2, and the risk of r1performing wbis 0:6,
+while the risk of r2performing wais 0:1 and the risk of r2performing wais 0:4. moreover for the company
+executing these work items, it is equally important to minimize the eventuation of risks as well as the overall
+execution time. if wais assigned to r2because locally this resource has the lowest risk, r1will be forced to
+performwbleading to an overall risk of 0 :7. another option is to assign both work items to r2, yielding an
+overall risk of 0 :5. both these solutions are non-optimal distributions: the former because the overall risk is
+too high, the latter, despite the lower risk, because the workload between the two resources is unbalanced,
+with the result of increasing the overall execution time.
+in this section we combine our technique for risk prediction with a technique for computing an optimal
+distribution of work items to resources (available or busy). by optimal distribution we mean a distribution
+that minimizes the weighted sum of overall execution time and overall risk across all running instances. in
+other words, the algorithm aims to balance the distribution of work items across resources while keeping
+the risk low. this distribution can then be used to provide work item recommendations to resources, such
+that these can be aided in selecting the best work item to perform. in the example above, the optimal
+distribution is r1-waandr2-wbwith an overall risk of 0 :6. while this is higher than 0 :5 obtained with the
+second solution, r1andr2will work in parallel thus reducing the overall execution time.
+177.1. optimal work-item distribution
+let fbe a certain (composite) fault function and assuming we at time . leti=fid1;:::;idngbe the set
+of running instances of n. given an instance id2i,timeelapsed (id)2ndenotes the time elapsed since
+instanceidhas started and varassign (id)2(vn!un) is the current assignment of values to variables.
+moreover, let us denote a function usen:rn!2tnithat associates each resource with the work items
+that he/she is executing within the set iof running process instances. let we be the set of work items
+being executed, i.e. we=x
+r2rnusen(r). letwtnibe the set of work items that are enabled but not
+started yet. section 4 has discussed the concept of deferred choice, highlighting that some of the enabled
+work items are mutually exclusive. therefore, we introduce an equivalence relation between elements of
+w, such that wawbif, pickingwa2wfor execution disables wb2wor vice versa. let wbe the
+partition of waccording to relation .
+for each enabled work item w2w, we perform an estimation time(w) of the expected duration of work
+itemw. for each started work item w2we, we also perform an estimation time(w) of the amount of time
+needed bywto be completed. to compute such estimations, we employ the technique proposed in [25] using
+event loglas input.
+let 	 be the set of function estimators that are computed through algorithm 1, using net n, event log
+land given fault function fas input. for each work item w2w, let us denote with riskr;w;t the risk of
+starting a work item wat timet. for example, given a work item w, this can be computed by retrieving the
+estimation function associated with each decision point preceding wand taking the maximum value of the
+predicted risk: riskr;w;t=calcrisk (n; f;r;t;w; 	). see algorithm 2 in the appendix for a formal denition
+of this algorithm.
+letmaxtime =x
+w2w[wetime(w) be the maximum duration of executing all work items that are
+currently enabled and started. this corresponds to the situation in which work items are just executed
+sequentially, i.e. a new work item starts only when no other work item is being executed. given a resource
+r2rnand a work item ( ta;id )2wsuch thatta2cann(r), we compute the set of moments in time in
+which the risk of rperforming ( ta;id ):startr;w=ft2[;+maxtime ]jriskr;w;t6=riskr;w;t 1g[fg.
+certainly, this can be naively computed by computing the risk for all moments in time between and
++maxtime . nonetheless, it can be done more eciently by observing the occurrences of splits on the time
+variable that are present in the decision trees. for instance, let us consider the decision tree in figure 3: the
+only time reference is 30. this reference occurs in a root-to-leaf path in which resource r6=michael brown
+andtask =create shipment information . therefore, for each resource r2rnfmichael browngand work-
+itemw= (create shipment information ;id)2w,startr;w=f;elapsed (id)+30g. moreover, for each work
+itemw= (ta;id )2wwithta6=create shipment information and for each resource r2r,startr;w=fg.
+similarly, for each work item w= (ta;id )2w,startr0;w=fgwithr0=michael brown .
+18given a work item w, a resource rand a time t, r;w(t) denotes the rst moment t0in time after tin
+which the risk changes, i.e. t0> t,t02startr;wand there exists no t002startr;wsuch thatt0> t00> t. if
+such a moment t0does not exist,  r;w(t) =+maxtime .
+we formulate the problem of distributing work items as a mixed-integer linear programming (milp)
+problem. the following two sets of variables are introduced:
+for each resource r2rnand work-item w= (ta;id )2wsuch thatta2cann(r), there exists a
+variablexr;w;t. if the solution of the milp problem is such that xr;w;t = 1,ris expected to start
+performing win interval between tand r;w(t),xr;w;t= 1; otherwise, xr;w;t= 0;
+for each work item w2w[we (i.e., running or enabled), we introduce a variable war;w. if work
+itemwis not being executed at time and is eventually distributed to resource r, the milp solution
+assigns towar;wa value that is equal to the moment in time when resource ris expected to start work
+itemw. ifwis not expected to be started by r,war;w= 0; ifwis already being executed by rat time
+(i.e.w2we),war;wis statically assigned value .
+the milp problem aims to minimize the weighted sum of the expected total execution time and the overall
+risk:
+min0
+@
+maxtimex
+r2rnx
+w2w[wewar;w+ (1 )x
+r2rnx
+w2w\cann(r)x
+t2startr;wriskr;w;txr;w;t1
+a
+where2[0;1] is the weight of the expected total execution time w.r.t. the overall risk.
+this milp problem is subject to a number of constraints:
+for eachr2rnandw= (ta;id )2wsuch thatta2cann(r), ifrstarts performing win the interval
+betweentand r;w(t),xr;w;t must be equal to 1 (and vice versa):
+xr;w;t = 1,r;w(t)>war;w^war;wt; (1)
+for each partition d2w, only one work item in dcan be executed and it can only be executed by
+one resource and can only start within one interval:
+x
+r2rnx
+w2d\cann(r)x
+t2startr;wxr;w;t = 1 (2)
+every resource r2rncannot execute more than one work item at any time. therefore, for each
+r2rnand for each pairs of partitions d1;d22w:
+x
+wa2d1war;wa x
+wb2d2war;wbx
+wb2d2x
+t2startr;wbtime(wb)xr;wb;t
+_x
+wb2d2war;wb x
+wa2d1war;wax
+wa2d1x
+t2startr;watime(wa)xr;wa;t
+(3)
+in the appendix, we show how constraints in equation 1 and in equation 3 can be translated into an
+equivalent set of linear constraints.
+we observe that we can compute  r;w(t) only if we use a machine-learning method, such as decision trees,
+that can automatically discretize continuous features such as the time feature in this case. by automatically
+19identifying those time moments that discriminate over risk values, we can split the time feature in time
+intervals and thus base our predictions on such intervals (e.g., \if elapsed time <tor elapsed time t")
+instead of working with individual time moments (\if elapsed time = t1or elapsed time = t2or elapsed
+time =t3..."). if such automatic discretization of continuous features was not available, we could not
+compute  r;w(t) and consequently we would need to introduce a dierent variable xr;w;t for each moment t
+in time. this would lead to an increase of the complexity of nding a solution to the milp problem, which
+is exponential on the number of variables.
+as an example of an instance of the class of milp problems, let us consider a case where at time we
+want to schedule three work items wa;wbandwc, and we have two resources, r1andr2, who can perform
+them. we know that waandwbare mutually exclusive generating the following partitions d1=fwa;wbg,
+andd2=fwcg. moreover, we know that the expected duration of each work item is time(wa) = 30 mins,
+time(wb) = 10 mins, and time(wc) = 40 mins. we also know that the risk associated with each work
+item does not change over time. finally, we know that when performed by resource r1the work items
+have the following expected risk levels: riskr1;wa;= 0:2,riskr1;wb;= 0:7, andriskr1;wc;= 0:6 while
+when performed by resource r2the work items have the following expected risk levels: riskr2;wa;= 0:1,
+riskr2;wb;= 0:7, andriskr2;wc;= 0:4.
+the milp problem for distributing work items will take the following form (assuming = 0:5):
+minimize0:5
++ 80(war1;wa+war1;wb+war1;wc+war2;wa+war2;wb+war2;wc)
++ 0:5(0:2xr1;wa;+ 0:7xr1;wb;+ 0:6xr1;wc;+ 0:1xr2;wa;+ 0:7xr2;wb;+ 0:4xr2;wc;)
+subject to the following constraints:
+either work item waorwbis executed, whereas wchas to (instantiation of equation 2):
+xr1;wa;+xr1;wb;+xr2;wa;+xr2;wb;= 1
+xr1;wc;+xr2;wc;= 1
+at any time, all resources, i.e. r1andr2, can only perform one work item (equation 3):
+ 
+war1;wc war1;wa war1;wb30xr1;wa;+ 10xr1;wb;
+_ 
+war1;wa+war1;wb war1;wc40xr1;wc;
+ 
+war2;wc war2;wa war2;wb30xr2;wa;+ 10xr2;wb;
+_ 
+war2;wa+war2;wb war2;wc40xr2;wc;
+instantiation of equation 1 for resources r1andr2and work items wa,wbandwc:
+xr1;wa;= 1,war1;wa^war1;wa<+ 80xr1;wa;= 1,war2;wa^war2;wa<+ 80
+xr1;wb;= 1,war1;wb^war1;wb<+ 80xr1;wb;= 1,war2;wb^war2;wb<+ 80
+xr1;wc;= 1,war1;wc^war1;wc<+ 80xr1;wc;= 1,war2;wc^war2;wc<+ 80
+20the optimal solution to this problem is war1;wa= 1,war1;wb= 0,war1;wc= 0,war2;wa= 0,war2;wb= 0,
+war2;wc= 1,xr1;wa;= 1,xr1;wb;= 0,xr1;wc;= 0,xr2;wa;= 0,xr2;wb;= 0,xr2;wc;= 1, that is a schedule
+where resource r1performs work item waand resource r2performs work item wc.
+7.2. recommendations for work items execution
+after the optimal distribution is computed, we need to provide a recommendation to rfor executing any
+w2w\cann(r). for any work item w, the recommendation rec(w;r) is a value between 0 and 1, where
+0 is assigned to the work item with the highest recommendation and 1 to the work item with the least one.
+let us consider an optimal solution sof the milp problem to distribute work items while minimizing risks.
+the work-item recommendations for each resource rare given as follows:
+if there exists a work item w2w\cann(r) such thatxr;w; = 1 for solution s, the optimal distribution
+suggestswto be performed by rat the current time. therefore, rec(w;r) = 0. for any other work
+itemw0, the value rec(w0;r) is strictly greater than 0 and lower than or equal to 1:
+rec(w0;r) =riskr;w0;+riskr;w;
+riskr;w; + 1
+rec(w0;r) grows proportionally to riskr;w0;, withrec(w0;r) = 1 ifriskr;w0;= 1.
+otherwise, ris supposed to start no work item at the current time. however, since recommendations
+need to be provided also to resources that are not supposed to execute any work item, for each
+w2w\cann(r), we setrec(w;r) =riskr;w;.
+it is possible that the optimal distribution assigns no work item to a resource rat the current time. this is
+the case when ris already performing a work item (i.e., no additional work item should suggested) or there
+are more resources available than work items to assign.
+let us consider the problem illustrated at the end of section 7.1. in this problem we have two resources
+r1andr2and three work items wa,wb, andwc. we recall that the expected risk levels associated with a
+resource performing a given work item were: riskr1;wa;= 0:2,riskr1;wb;= 0:7, andriskr1;wc;= 0:6 for
+resourcer1, andriskr2;wa;= 0:1,riskr2;wb;= 0:7, andriskr2;wc;= 0:4 for resource r2. we can then derive
+that the best allocation requires that resource r1performs work item waand resource r2performs work item
+wc. finally, when recommendations about which work item should be performed and by whom will they
+be required, the recommendation system will return the following values: rec(r1;wa) = 0, rec(r1;wb) = 0:75
+and rec(r1;wc) = 0:67 for resource r1, and rec(r2;wa) = 0:36,rec(r2;wb) = 0:79 and rec(r2;wc) = 0 for
+resourcer2.
+7.3. recommendations for filling out forms
+in addition to providing risk-informed decision support when picking work items for execution, we provide
+support during the execution of the work items themselves. human resources usually perform work items
+21by lling out a form with the required data. the data that are provided may also inuence a process risk.
+therefore, we want to highlight the expected risk whenever a piece of data is inserted by the resource into
+the form.
+the risk associated with lling a form with particular data is also computed using algorithm 2. when
+used to compute the risk associated with lling a form to perform a work item ( ta;id ),varassign (id) is the
+variable assignment that would result by submitting a form using the data the resource has inserted so far.
+8. implementation
+we operationalized our recommendation system on top of the yawl bpm system, by extending an
+existing yawl plug-in and by implementing two new custom yawl services. this way we realized a
+risk-aware bpm system supporting multi-instance work distribution and forms lling-out.
+the intent of our recommendation system is to \drive" participants during the execution of process
+instances. this goal can be achieved if participants can easily understand the suggestions proposed by
+our tool. for this we decided to extend a previous plug-in for the yawl worklist handler, named map
+visualizer [31]. this plug-in provides a graphical user interface to suggest process participants the work
+items to execute, along with assisting them during the execution of such work items. the tool is based
+on two orthogonal concepts: maps and metrics. a map can be a geographical map, a process model, an
+organizational diagram, etc. for each map, work items can be visualized by dots which are located in a
+meaningful position (e.g., for a geographic map, work items are projected onto the locations where they need
+to be executed, or for a process-model map onto the boxes of the corresponding tasks in the model). dots
+can also be colored according to certain metrics , which determine the suggested level of priority of a work
+item. this approach oers advantages over traditional bpm systems, which are only equipped with basic
+client applications where work items available for execution are simply enlisted, and sorted according to
+given criteria. when users are confronted with hundreds of items, this visualization does not scale well. the
+validity of the metaphors of maps and metrics used for decision support in process execution was conrmed
+through a set of experiments reported in [31]. de leoni et al. [31] only dene very basic metrics. we have
+extended the repertoire of these metrics with a new metric that is computed by employing the technique
+described in section 7.
+figure 4a shows a screenshot of the map visualizer where a risk-based metric is employed. the map
+shows the process model using the yawl notation and dots are projected onto the corresponding elements
+of the model. each dot corresponds to a dierent work item and is colored according to the risks for the
+three faults dened before. when multiple dots are positioned on the same coordinates, they are merged
+into a single larger dot whose diameter grows with the number of dots being amalgamated. colors go from
+white to black, passing through intermediate shades of yellow, orange, red, purple and brown. the white
+22(a) the ui to support participants in choosing
+the next work item to perform based on risks.
+(b) the ui to support participants in lling
+out a form based on risks.
+figure 4: screenshots of the map visualizer extension for risk-aware prediction in yawl.
+and black colors identify work items associated with a risk of 0 and 1, respectively. the screenshot in
+figure 4a refers to a conguration where multiple process instances are being carried out at the same time
+and, hence, the work items refer to dierent process instances. the conguration of dots highlights that
+the risk is lower if the process participant performs a work item of task estimate trailer usage ,arrange
+pickup appointment orarrange delivery appointment for a certain instance. when clicking on the dot,
+the participant is shown the process instance of the relative work item(s).
+as discussed in section 7.3, the activity of compiling a form is also supported. figure 4b shows a
+screenshot where, while lling in a form, participants are shown the risk associated with that specic input
+for that form via a vertical bar (showing a value of 45% in the example, which means a risk of 0 :45). while
+a participant changes the data in the form, the risk value is recomputed accordingly.
+besides the extension to the map visualizer, we implemented two new custom services for yawl,
+namely the prediction service and multi instance prediction service . the prediction service provides risk
+prediction and recommendation. it implements the technique described in section 6 and constructs decision
+trees through j48, which is the implementation of the c4.5 algorithm in the weka toolkit for data mining.4
+since the algorithm is not capable of predicting continuous values, in order to provide a risk prediction we
+grouped risk levels that are close to each other in intervals of 0.05 (e.g. all risk likelihoods from 0 to 0.04
+are considered as 0, from 0.05 to 0.09 as 0.1 and so on).
+the prediction service communicates with the log abstraction layer described in [3], to be able to
+4the weka toolkit is available at www.cs.waikato.ac.nz/ml/weka/
+23figure 5: the integration of the implemented tools with the yawl system.
+retrieve event logs from textual les, such as from openxes event logs, or directly from the yawl database,
+which stores both historical information and the current system's state.
+the multi instance prediction service , similarly to the prediction service , provides risk prediction and
+recommendation. the dierence between these two services is that in the former a recommendation takes
+into account allprocess instances currently running in the system. the multi instance prediction service
+interacts with the prediction service to obtain \local" predictions that, in combination with other informa-
+tion derived from the log (e.g. expected task duration, other running instances), are used to nd the optimal
+resource allocation using the technique described in section 7. to this purpose, the multi instance predic-
+tion service also interacts with the milp solver. the milp solver provides an interface for the interaction
+with dierent integer linear programming solvers. so far we support gurobi5, scip6and lpsolve7. finally,
+the multi instance prediction service is invoked by the map visualizer to obtain the risk predictions and
+recommendations and show these to process participants in the form of maps. the map visualizer works
+with the standard worklist handler provided by yawl to obtain the up-to-date distribution of work to
+resources. figure 5 shows the diagram of these connections.
+9. evaluation
+we evaluated our recommendation system using the claims handling process and related event data, of
+a large insurance company kept under condition of anonymity. the event data recording about one year of
+completed instances (total: 1 ;065 traces) was used as a benchmark for our evaluation. the claims handling
+process, modeled in figure 6, starts when a new claim is received from a customer. upon receipt of a
+claim, a le review is conducted in order to assess the claim, then the customer is contacted and informed
+5available at www.gurobi.com
+6available at scip.zib.de
+7available at lpsolve.sourceforge.net
+24figure 6: the claims handling process used for the evaluation.
+about the result of the assessment. the customer may provide additional documents (\receive incoming
+correspondence"), which need to be processed (\process additional information") and the claim may need
+to be reassessed. after the customer has been contacted, a payment order is generated and authorized in
+order to process the payment. during the execution of the process model, several updates about the status
+of the claim may need to be provided to the customer as follow-ups. the claim is closed once the payment
+has been authorized.
+as one can see from the model, this process contains several loops, each of which is executed multiple
+times, in general.
+four risk analysts working in this insurance company were consulted through an iterative interview
+process, to identify the risks this process is exposed to.8they reported about three equally-important faults
+related to complete traces of the claim handling process:
+over-time fault. this fault is the same as the over-time fault described in section 5. for this risk we set
+the maximum cycle time dmct= 30 (i.e. 30 days) and the maximum duration dmax= 300 (i.e. 300
+days). the severity of an overtime fault is measured as follows:
+ftime() = maxd dmct
+max(dmax dmct;1);0
+customer-dissatisfaction fault. during the execution of the process, if a customer is not updated reg-
+ularly on their claim, they may feel \unheeded". a customer dissatised may generate negative con-
+sequences such as negative publicity for the insurance company, leading to bad reputation. in order
+to avoid this kind of situations, the company's policy is to contact their customers at least once every
+15 days. given the set  = f(t;r;d; )2jt= request follow up _t= receive new claim _t=
+close claimgof events belonging to task request follow up , to task receive new claim , or to task
+8three interviews were conducted for a total of four hours of audio recording
+25close claim , ordered by timestamp, the severity of this fault is:
+fdissatisfaction () =x
+1ikkmax(0;di+1 di 15days)
+wherediis the time stamp of ithevent2.
+cost overrun fault. each task has an execution cost associated with it, e.g. the cost of utilizing a resource
+to perform a task. since the prot of the company decreases with a higher number of tasks executed,
+the company clearly aims to minimize the number of tasks required to process a claim, for example by
+reducing the number of follow-ups with the claimant or the need for processing additional documents,
+and reassessing the claim, once the process has started. the severity of the cost overrun fault increases
+as the cost goes beyond the minimum. let cbe the number of work items executed in ,cmaxbe
+the maximum number of work items (e.g. 30) that should be executed in any process instance that
+has already been completed (including ), andcminbe the number of work items with unique label
+executed in . the severity of a cost overrun fault is:
+fcost() = minc cmin
+max(cmax cmin;1);1
+the occurrence of these three faults in the logs is checked using the technique that we proposed in [5],
+which was originally designed for run-time detection of process-related risks.
+trialling our recommendation system within the company was not possible, as the claims handling process
+concerns thousands of dollars, which cannot be put in danger with experiments. so we had to simulate the
+execution of this process and the resource behavior using cpn tools.9we mined the control-ow of our
+simulation model from the original log and rened it with the help of business analysts of the company, and
+added the data, resource utilization (i.e. who does what), and tasks duration, which we also obtained from
+the log. we then add the frequency of occurrence of each of these elements, on the basis on that observed
+from the log. this log was also used to train the function estimators.
+the cpn tools model we created is a hierarchical model composed of ten nets that all together count
+65 transitions and 62 places. the main net is based on the model showed in figure 6, with additional places
+and transitions in order to guarantee the interaction with our recommendation system. the remaining nine
+nets dene the behavior of each one of the nine tasks showed in figure 6.
+we used this model to simulate a constant workload of 50 active instances, in order to maintain a similar
+ratio to the original log (in the original log we had 271 active instances on average). in order to maintain
+the ratio between active instances and resources, we reduced the number of resources utilized to one-sixth
+of the original number observed in the log. finally, we analyzed the fault distribution of the generated log
+using the technique presented in [5].
+9available at www.cpntools.org
+260%10%20%30%40%50%60%70%80%90%
+0 0.05 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5 0.55 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1% faulty instances
+fault severityoriginal
+simulated
+simulated α = 0.0
+simulated α = 0.25
+simulated α = 0.5
+simulated α = 0.75
+simulated α = 1(a) results following 100% of the suggestions provided.
+0%10%20%30%40%50%60%70%
+0 0.05 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5 0.55 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1% faulty instances
+fault severityoriginal
+simulated
+simulated 66% α = 0.0
+simulated 66% α = 0.25
+simulated 66% α = 0.5
+simulated 66% α = 0.75
+simulated 66% α = 1
+60%
+(b) results following 66% of the suggestions provided.
+0%10%20%30%40%50%60%
+0 0.05 0.1 0.15 0.2 0.25 0.3 0.35 0.4 0.45 0.5 0.55 0.6 0.65 0.7 0.75 0.8 0.85 0.9 0.95 1% faulty instances
+fault severityoriginal
+simulated
+simulated 33% α = 0.0
+simulated 33% α = 0.25
+simulated 33% α = 0.5
+simulated 33% α = 0.75
+simulated 33% α = 1
+50%
+(c) results following 33% of the suggestions provided.
+figure 7: comparison of the fault severity when recommendations are and are not followed, with 0 denoting absence of faults.
+thex-axis represents the severity of the composite fault and the y-axis represents the percentage of instances that completed
+with a certain severity.
+the model created with cpn tools was able to reproduce the behavior of the original log. the
+kolmogorov-smirnov z two-samples test ( kolmogorov smirnovz= 0:763, p = 0:605>0:05) shows no sig-
+nicant dierence between the distribution of the composite fault in the original log and that in the simulated
+log. this result is conrmed by the mann-whitney test (u= 109;163:0,z= 0:875,p= 0:381>0:05).
+we performed three sets of experiments. in the rst set, all the suggestions provided by the recommen-
+dation system were followed. in the second set, only 66% of the times the suggestions were followed, and
+executing the process as the company would have done for the remaining 33% of the times. finally, in the
+27reference logs # traces % faulty instances average median
+original 1065 89.4% 0.22 0.10
+simulation model 1065 92.5% 0.22 0.15
+suggestions 100% suggestions 66% suggestions 33%
+test logs # traces% faulty
+avg mdn% faulty
+avg mdn% faulty
+avg mdn
+instances instances instances
+simulated aggregated 1065 26.8% 0.02 0.00 43.9% 0.03 0.00 76.3% 0.07 0.05
+- simulated = 0:0 213 31.9% 0.02 0.00 53.1% 0.03 0.05 80.3% 0.08 0.05
+- simulated = 0:25 213 24.9% 0.02 0.00 42.7% 0.02 0.05 76.5% 0.07 0.05
+- simulated = 0:5 213 14.1% 0.01 0.00 37.1% 0.02 0.05 71.4% 0.07 0.05
+- simulated = 0:75 213 22.1% 0.01 0.00 38.0% 0.02 0.05 77.5% 0.07 0.05
+- simulated = 1:0 213 40.8% 0.03 0.00 48.8% 0.03 0.05 75.6% 0.08 0.05
+table 2: percentage of faulty instances, mean and median fault severity occurring in the reference logs, i.e. original log and
+simulation model log. percentage of faulty instances, mean and median fault severity occurring in the test logs aggregated into
+a unique log, i.e. simulated aggregated, and for each value of , reported for each of the three sets of experiments (33%, 66%
+and 100% suggestions used).
+third set of experiments, only 33% of the times the suggestions provided by our recommendation system
+were followed. moreover, for each set of experiments we tested several values of (i.e. 0:0, 0:25, 0:5, 0:75
+and 1:0), whereequal to 0 will shift focus on reducing risks, while equal to 1 on reducing the overall
+execution time (see section 7).
+all experiments were executed simulating the execution of the process by means of the cpn tools model.
+for each experiment we generated a new log containing 213 fresh log traces (a fth of the traces contained
+in the original log). we used a computer with an intel core i7 cpu (2.2 ghz), 4gb of ram, running
+lubuntu v13.10 (64bit). we used gurobi 5.6 as milp solver as this is the most ecient solver among the
+three that we support [44]10and imposed a time limit of 60 seconds, within which a solution needs to be
+provided for each problem. for mission-critical processes, the time limit can also be reduced. if a time limit
+is set and gurobi cannot nd a solution within the limit, a sub-optimal solution is returned, i.e. the best
+solution found so far. the experiments have shown that, practically, the returned solution is always so close
+to the optimal that it does not inuence the nal fault's magnitude.
+figure 7 shows the results of each of the three sets of experiments, comparing the fault severity of the
+original log with that obtained when recommendations are followed. it is worth highlighting how the results
+are given in terms of severity measured for completed instances. risks are relative to running instances and
+estimate the expected fault severity and likelihood when such instances complete.
+table 2 shows the results of the experiments. in this table we show percentage of faulty instances, mean
+and median fault severity obtained during our tests. the values are shown for the original log and the log
+obtained by our simulation model without using our recommendation system (simulation model). same
+values are also reported for each log obtained using our recommendation system, both in an aggregated log
+10gurobi is free of use for academic purposes but is not open-source. this is the reason why we also support other two
+implementations: scip and lpsolve.
+28(simulated aggregated) and for each value of , over the three sets of experiments (33%, 66% and 100%
+suggestions used). in the best case (simulated log with = 0:5), our recommendation system was able to
+reduce the percentage of instances terminating with a fault from 89 :4% to 14:1% and the average fault severity
+from 0:216 to 0:01. in particular, the use of our recommendation system signicantly reduced the number
+of instances terminating with faults, as evidenced by the result of the person's2test (2(1) = 857:848,
+p<0:001 for the rst set of experiments, 2(1) = 494:907,p<0:001 for the second set, and 2(1) = 64:663,
+p <0:001 for the third one, computed over the original log and the simulated aggregated log). based on
+theodds ratio , the odds of an instance completing without a fault are respectively 23 :06, 10:75, and 2:62
+times higher if our suggestions are followed. moreover, we tested if the number of suggestions followed
+inuences the eectiveness of our recommendation system. the kruskal-wallis test (h(3) = 1;603:61,
+p <0:001) shows that the overall fault severity among the three sets of experiments (using the simulated
+overall dataset, i.e. independently of the value of the parameter ) and the original log is signicantly
+dierent, and as revealed by jonkheere's test (j= 1;658;630:5,z= 41:034,r= 0:63,p <0:001), the
+median fault severity decreases as more suggestions are followed (see figure 8). these two tests indicate
+that our recommendation system is capable of preventing the occurrence of faults and of reducing their
+severity. clearly, it is preferable to follow as many suggestions as possible in order to obtain the best results
+though this may not always be possible.
+experimentexp100 exp66 exp33 originalfault severity1.0000
+.8000
+.6000
+.4000
+.2000
+.0000
+page 1
+figure 8: boxplot showing the fault severity occurring
+in instances of each of the three experiments and of the
+original log.we tested how the value of the parameter inu-
+ences the eectiveness of our recommendation system.
+we compared the performances obtained with each
+value offor each set of experiment. the kruskal-
+wallis test (h(4) = 46:176,p < 0:001 for the rst
+set of experiments, h(4) = 17:191,p= 0:002<0:05
+for the second one, h(4) = 5:558,p= 0:235>0:05
+for the third one) shows how the value of the parame-
+tersignicantly inuences the median fault severity
+if the suggestions proposed are followed in at least
+66% of the instances. jonkheere's test (j= 251;305,
+z= 5:577,r= 0:17,p < 0:001 for the rst set of
+experiments, j= 246;322:5,z= 3:918,r= 0:12,
+p <0:001 for the second one) revealed that the me-
+dian fault severity increases when the value of diverges from 0 :5 moving either toward 0 or 1.
+in the case study taken in exam, the duration of an instance has an inuence over the over-time fault
+and the cost overrun fault. a short execution time will directly minimize the duration of an instance (thus
+preventing the over-time fault) but also reduce the number of activities that are executed inside such an
+29number	  acjvites	  0%	  10%	  20%	  30%	  40%	  50%	  60%	  70%	  80%	  90%	  
+0	  0.05	  0.1	  0.15	  0.2	  0.25	  0.3	  0.35	  0.4	  0.45	  0.5	  0.55	  0.6	  0.65	  0.7	  0.75	  0.8	  0.85	  0.9	  0.95	  1	  %	  faulty	  instances	  fault	  severity	  simulated	  60	  secs	  simulated	  40	  secs	  simulated	  20	  secs	  simulated	  10	  secs	  simulated	  5	  secs	  figure 9: fault severity distribution using dierent time limits.
+instance (thus preventing the cost overrun fault). in light of so, it is not strange that the best results are
+obtained with = 0:5 which strikes a good balance between minimizing risks and overall execution time.
+finally, we performed a sensitivity test over the time limit granted to the milp solver. we tested
+our recommendation system with ve dierent time limits, while keeping the value of equal to 0:5 and
+following all suggestions (best conguration for risk prevention). the time limits used were: 5, 10, 20, 40
+and 60 seconds. figure 9 shows the distribution of fault severities obtained using these dierent time limits.
+we can observe that changing the time limit yields statistically dierent distributions, as revealed by the
+kruskal-wallis test (h(4) = 74:738,p<0:001). moreover, the jonkheere's test (j= 186;238,z= 8:631,
+r= 0:264,p <0:001) reveals that the median fault severity decreases when more time is granted to the
+milp solver. from a practical point of view though, it is interesting to observe that even with a time limit
+of 5 seconds the approach can still notably reduce the faults severity, with 90% of the instances terminating
+with a fault severity up to 0.05 out of 1. this suggests that users may set the time limit to be granted to
+the milp solver on the basis of the number of process activities that are critical, i.e. using a low time limit
+if the number of critical activities is low and a high time limit if that number is high.
+based on the results of our experiments we can conclude that the approach produces a signicant
+reduction in the number of faults and their severity. specically, for the case study in question we achieved
+the best results with equal to 0:5, with a time limits of 60 seconds. we observe that this parameter
+can be customized based on the priorities of the company where our approach would be deployed, e.g. an
+organization may use lower values of if risk reduction is prioritized over reduction of process duration.
+10. conclusion
+this paper proposes a recommendation system that allows users to take risk-informed decisions when
+partaking in multiple process instances running concurrently. using historical information extracted from
+process execution logs, for each state of a process instance where input is required from a process participant,
+the recommendation system determines the risk that a fault (or set of faults) will occur if the participant's
+input is going to be used to carry on the process instance. this input can be in the form of data used to ll
+30out a user form, or in terms of the next work item chosen to be executed.
+the recommendation system relies on two techniques: one for predicting risks, the other for identifying
+the best assignment of participants to the work items currently on oer. the objective is to minimize both
+the overall risk of each process instance (i.e. the combined risk for all faults) and the execution time of all
+running process instances.
+we designed the recommendation system in a language-independent manner, using common notions of
+executable process models such as tasks and work items borrowed from the yawl language. we then
+implemented the recommendation system as a set of components for the yawl system. for each user
+decision, the recommendation system provides recommendations to participants in the form of visual aids
+on top of yawl models. we also extended the yawl user form visualizer, to show a risk prole based on
+the data inserted by the participant for a given form. although we implemented our ideas in the context
+of the yawl system, our recommendation system can easily be integrated with other bpm systems by
+implementing an interface that allows the communication through the \log abstraction layer" (in [5] we
+showed how it can be integrated with the oracle bpel 10g database), and by extending the map-based
+worklist handler in order to list work items belonging to a dierent bpm system than the yawl system.
+we simulated a real-life process model based on one year of execution logs extracted from a large insur-
+ance company, and in collaboration with risk analysts from the company we identied the risks aecting this
+process. we used these logs to train our recommendation system. then we performed various statistical
+tests while simulating new process instances following the recommendations provided by our recommen-
+dation system, and measured the number and severity of the faults upon instance completion. since in
+reality it might not always be feasible to follow the recommendations provided, we varied the percentage
+of recommendations to be followed by the simulated instances. even when following one recommendation
+out of three, the recommendation system was able to signicantly reduce the number and severity of faults.
+further, results show that risks can be predicted online, i.e. while business processes are being executed,
+without impacting on execution performance.
+the proposed recommendation system can only address process-related risks in so far as these depend
+on information available during process execution, i.e. task input and output data, allocated resources and
+time performance. this implies that risks depending on information outside the boundaries of a process,
+i.e. its context (e.g. market uctuations or weather forecast) cannot be detected.
+while our approach is independent of any specic machine-learning method, in this paper we leveraged
+on decision-tree classication. decision trees have, among others, the advantage of automatically discretizing
+continuous features. we used this information to drastically simplify the milp problem in order to nd an
+optimal work-item allocation to resources. however, decision trees cannot deal with class attributes that are
+dened over a continuous domain, such as the fault severity. to overcome this issue, we had to discretize
+the range of fault severity values (between 0 to 1) into intervals of 0.05. this limitation could be lifted by
+31using methods that combine classication and regression trees, such as cart methods. this is certainly a
+direction for future work.
+another limitation is that we cannot guarantee to nd the optimal solution, because of the time bound
+that we impose on the milp solver for eciency reasons. however, our experiments show that this time
+limit can be as short as 5 seconds (i.e. near real-time), to obtain a signicant reduction in the number of
+faults.
+the recommendation system we propose relies on a couple of assumptions. while we deal with multiple
+process instances sharing the same pool of participants, we assume no sharing of data between instances.
+further, we only assume that one participant can perform a single task at a time. these assumptions
+oer opportunities for future work. for example, for the sharing of data between instances we need to
+reformulate the milp problem in order to consider that the risk estimation of a work item may change as a
+consequence of the modication of data by work items that have been scheduled to be performed rst. for
+allowing participants to perform multiple tasks at a time we need to assign a capacity to each resource as
+the maximum number of work items that resource can perform in parallel. our milp problem needs to be
+reformulated in order to take this capacity into account.
+acknowledgments this research is partly funded by the arc discovery project \risk-aware business
+process management" (dp110100091). nicta is funded by the australian government as represented
+by the department of broadband, communications and the digital economy and the australian research
+council through the ict centre of excellence program.
+references
+[1] standards australia and standards new zealand, standard as/nzs iso 31000, 2009.
+[2] basel committee on bankin supervision, basel ii - international convergence of capital measurement and capital
+standards, 2006.
+[3] r. conforti, g. fortino, m. la rosa, a. ter hofstede, history-aware, real-time risk detection in business processes, in:
+proc. of coopis, volume 7044 of lncs , springer, 2011.
+[4] r. conforti, a. h. m. ter hofstede, m. la rosa, m. adams, automated risk mitigation in business processes, in: proc.
+of coopis, volume 7565 of lncs , springer, 2012.
+[5] r. conforti, m. la rosa, g. fortino, a. ter hofstede, j. recker, m. adams, real-time risk monitoring in business
+processes: a sensor-based approach, journal of systems and software 86 (2013) 29392965.
+[6] c. alberts, a. dorofee, octave criteria, version 2.0, technical report cmu/sei-2001-tr-016, carnegie mellon uni-
+versity, 2001.
+[7] b. barber, j. davey, the use of the ccta risk analysis and management methodology cramm in health information
+systems, in: medinfo, north holland publishing, 1992.
+[8] m. lund, b. solhaug, k. stlen, model-driven risk analysis - the coras approach, springer, 2011.
+[9] s. suriadi, b. wei, a. winkelmann, a. ter hofstede, m. adams, r. conforti, c. fidge, m. la rosa, c. ouyang,
+32m. rosemann, a. pika, m. wynn, current research in risk-aware business process management - overview, comparison,
+and gap analysis, communications of the association for information systems (2014 (forthcoming)).
+[10] a. pika, w. van der aalst, c. fidge, a. ter hofstede, m. wynn, predicting deadline transgressions using event logs, in:
+proc. of bpm workshop 2012, volume 132 of lnbip , springer, 2013.
+[11] s. suriadi, c. ouyang, w. van der aalst, a. ter hofstede, root cause analysis with enriched process logs, in: proc. of
+bpm workshop 2012, volume 132 of lnbip , springer, 2013.
+[12] d. vengerov, a reinforcement learning approach to dynamic resource allocation, engineering applications of articial
+intelligence 20 (2007) 383{390.
+[13] s. e. elmaghraby, resource allocation via dynamic programming in activity networks, european journal of operational
+research 64 (1993) 199 { 215.
+[14] k. baker, introduction to sequencing and scheduling, wiley, 1974.
+[15] w. zhang, t. g. dietterich, a reinforcement learning approach to job-shop scheduling, in: proceedings of the 14th
+international joint conference on articial intelligence - volume 2, ijcai'95, morgan kaufmann publishers inc., san
+francisco, ca, usa, 1995, pp. 1114{1120.
+[16] a. kumar, w. m. p. van der aalst, e. m. w. verbeek, dynamic work distribution in workow management systems:
+how to balance quality and performance, journal of management information systems 18 (2002) 157{193.
+[17] j. nakatumba, m. westergaard, w. m. p. van der aalst, a meta-model for operational support, bpm center report
+bpm-12-05, bpmcenter.org, 2012.
+[18] h. schonenberg, b. weber, b. f. dongen, w. m. p. aalst, supporting exible processes through recommendations based
+on history, in: proceedings of the 6th conference business process management (bpm 2008), volume 5240 of lncs ,
+springer berlin heidelberg, 2008.
+[19] f. m. maggi, c. di francescomarino, m. dumas, c. ghidini, predictive monitoring of business processes, in: m. jarke,
+j. mylopoulos, c. quix, c. rolland, y. manolopoulos, h. mouratidis, j. horko (eds.), proceedings of the 26th interna-
+tional conference on advanced information systems engineering (caise'14), volume 8484 of lecture notes in computer
+science , springer international publishing, 2014, pp. 457{472.
+[20] m. montali, f. m. maggi, f. chesani, p. mello, w. m. p. v. d. aalst, monitoring business constraints with the event
+calculus, acm transactions on intelligent systems and technology 5 (2013) 17:1{17:30.
+[21] a. kim, j. obregon, j.-y. jung, constructing decision trees from process logs for performer recommendation, in:
+proceedings of 2013 business process management workshops, lnbip, springer, 2014. to appear.
+[22] i.-t. yang, utility-based decision support system for schedule optimization, decision support systems 44 (2008) 595 {
+605.
+[23] a. kumar, r. dijkman, m. song, optimal resource assignment in workows for maximizing cooperation, in: business
+process management, volume 8094 of lncs , springer berlin heidelberg, 2013, pp. 235{250.
+[24] z. huang, x. lu, h. duan, a task operation model for resource allocation optimization in business process management,
+ieee transactions on systems, man and cybernetics, part a: systems and humans 42 (2012) 1256 { 1270.
+[25] w. m. p. van der aalst, m. h. schonenberg, m. song, time prediction based on process mining, information systems 36
+(2011) 450{475.
+[26] f. folino, m. guarascio, l. pontieri, discovering context-aware models for predicting business process performances, in:
+proceedings of cooperative information systems (coopis 2012), volume 7565 of lncs , springer, 2012.
+[27] s. van der spoel, m. van keulen, c. amrit, process prediction in noisy data sets: a case study in a dutch hospital,
+in: proceedings of the second international symposium on data-driven process discovery and analysis, simpda 2012,
+volume 162 of lnbip , springer verlag, 2013, pp. 60{83.
+[28] c. cabanillas, j. m. garc a, m. resinas, d. ruiz, j. mendling, a. ruiz-cort es, priority-based human resource allocation
+33in business processes, in: proceedings of 11th international conference on service oriented computing (icsoc 2013),
+volume 8274 of lncs , 2013, pp. 374{388.
+[29] i. barba, b. weber, c. valle, supporting the optimized execution of business processes through recommendations, in:
+business process management workshops, volume 99 of lnbip , springer berlin heidelberg, 2012, pp. 135{140.
+[30] s. alter, a work system view of dss in its fourth decade, decision support systems 38 (2004) 319{327.
+[31] m. de leoni, m. adams, w. m. p. van der aalst, a. h. m. ter hofstede, visual support for work assignment in process-
+aware information systems: framework formalisation and implementation, decision support systems 54 (2012) 345{361.
+[32] j. garca, d. ruiz, a. ruiz-corts, a model of user preferences for semantic services discovery and ranking, in: l. aroyo,
+g. antoniou, e. hyvnen, a. ten teije, h. stuckenschmidt, l. cabral, t. tudorache (eds.), the semantic web: research
+and applications, volume 6089 of lncs , springer, 2010, pp. 1{14.
+[33] s. rinderle-ma, w. m. van der aalst, life-cycle support for sta assignment rules in process-aware information
+systems, technical report wp 213, eindhoven university of technology, beta working paper series, 2007.
+[34] z. huang, x. lu, h. duan, mining association rules to support resource allocation in business process management,
+expert systems with applications 38 (2011) 9483{9490.
+[35] y. liu, j. wang, y. yang, j. sun, a semi-automatic approach for workow sta assignment, computers in industry 59
+(2008) 463 { 476.
+[36] r. conforti, m. de leoni, m. la rosa, w. m. van der aalst, supporting risk-informed decisions during business process
+execution, in: proceedings of caise, volume 7908 of lncs , springer, 2013, pp. 116{132.
+[37] w. aalst, process mining - discovery, conformance and enhancement of business processes, springer, 2011.
+[38] m. dumas, w. m. p. van der aalst, a. h. m. ter hofstede, process-aware information systems: bridging people and
+software through process technology, wiley & sons, 2005.
+[39] i. e. commission, iec 61025 fault tree analysis (fta), 1990.
+[40] w. johnson, mort - the management oversight and risk tree, u.s. atomic energy commission, 1973.
+[41] a. h. m. ter hofstede, w. m. p. van der aalst, m. adams, n. russell (eds.), modern business process automation:
+yawl and its support environment, springer, 2010.
+[42] voluntary interindustry commerce solutions association, voluntary inter-industry commerce standard (vics),
+http://www.vics.org. accessed: june 2011.
+[43] j. r. quinlan, c4.5: programs for machine learning, morgan kaufmann publishers inc., 1993.
+[44] t. koch, t. achterberg, e. andersen, o. bastert, t. berthold, r. bixby, e. danna, g. gamrath, a. gleixner, s. heinz,
+a. lodi, h. mittelmann, t. ralphs, d. salvagnin, d. stey, k. wolter, miplib 2010, mathematical programming
+computation 3 (2011) 103{163.
+[45] n. russell, w. m. p. van der aalst, a. h. m. ter hofstede, d. edmond, workow resource patterns: identication,
+representation and tool support, in: proceedings of caise, volume 3520 of lncs , springer, 2005, pp. 216{232.
+34appendix a.
+this appendix provides the formal denition of yawl, the algorithms discussed in section 6, and the
+mathematical proofs of lemma 1 and lemma 2 discussed in section 7.1.
+yawl denition
+denition 3. a yawl net n2n is a tuplen= (tn;cn;i;o;fn;rn;vn;un;cann)where:
+tnis the set of tasks of n;
+cnis the set of conditions of n;
+i2cnis the input condition;
+o2cnis the output condition;
+a ow relation fn(cnnfogtn)[(tncnnfig);
+rnis the set of resources authorized to perform any tasks in tn;
+vnis the set of variables that are dened in the net;
+unis the set of values that can be assigned to variables;
+cann:rn!2tnis a function that associates resources with the tasks that are authorized to perform.
+compared to [41] we use a simplied denition of yawl nets, which describes those parts that are
+relevant for the article. yawl supports sophisticated authorization mechanisms as described in the resource
+patterns [45]. the above denition describes a simplied version where authorizations are specied at task
+level and applies to all work items of a certain task. as such, this denition is generalizable to other
+executable process modeling languages.
+we use the following auxiliary functions from [41]. the preset of a task tis the set of its input conditions:
+t=fc2cnj(c;t)2fng. similarly, the postset of a task tis the set of its output conditions: t=fc2
+cnj(t;c)2fng. the preset and postset of a condition can be dened analogously.
+35algorithms
+algorithm 1: generatefunctionestimatorsforriskprediction
+data :n= (tn;cn;rn;vn;un;cann) { a yawl net, l{ an event log, f2f{ a fault function
+result : a function 	 that associates each condition c2cnwith a function estimator  c
+1letibe a function whose domain is the set of conditions c2cn, and initially for all c2cn,i(c) =;.
+2foreach trace=h(t1;r1;d1;1);:::; (tn;r1;dn;n)i2l do
+3 setfunctionasuch that dom(a) =;
+4 fori 1tondo
+5 (cr;ct) getcontextinformation (h(t1;r1;d1;1);:::; (ti;ri;di;i)i)
+6 time elapsed d (di d1)
+7j (a(ti;ri;d)crct);f())
+8 foreachc2tidoi(c) i(c)[fjg;
+9 foreach variablev2dom(i)doa(v) i(v) ;
+10 end
+11end
+12setfunction 	 such that dom(	) =;
+13foreach conditionc2cndo	(c) buildfunctionestimator 
+i(c)
+;
+14return 	
+algorithm 1 details how function estimators  fccan be constructed. in the algorithm, we use to con-
+catenate tuples: given two tuples  !x= (x1;:::;xn) and  !y= (y1;:::;ym),  !x  !y= (x1;:::;xn;y1;:::;ym).
+operatorcan also be overloaded to deal with functions dened on a nite and ordered domain. let
+f:w!zbe a function dened on an ordered domain w=fw1;:::;wog. if we denote zi=f(wi) with
+1io,f  !x= (z1;:::;zo;x1;:::;xn).
+algorithm 1 is periodically executed, e.g., every week or after every kprocess instances are completed.
+in this way, the predictions are updated according to the recent process executions. the input parameters
+of the algorithm are a yawl net n, an event log with traces referring to past executions of instances of
+the process modelled by n, and a fault function. the output is a function 	 that associates each condition
+cwith function estimator  fc. initially, in line 1, we initialize function iwhich is going to associate each
+conditioncwith the set of observation instances associated with the executions of tasks in the postset of p.
+from line 2 to line 12, we iteratively replay all traces to build the observation instances. while replaying,
+a functionakeeps the current value's assignment to variables (line 3). for each trace's event ( ti;ri;di;i),
+rst we build the tuple cof the contextual information (line 5) and compute the elapsed time d(line 6).
+then, we build an observation instance jwhere tuple ( a(ti;ri;d)crct) is the observed input and
+the fault severity f() is the observed output. this observation instance is put into the set of observation
+instances relative to each condition c2ti. in lines 11-13, we update the current value's assignment during
+the replay, i.e. we rewrite function a. finally, in lines 16-19, we build each function estimator  fcfor
+conditionfcby the relative observation instances and rewrite 	 s.t. 	( c) = c.
+36algorithm 2: calcrisk
+data :n= (tn;cn;rn;vn;un;cann) { a yawl net, f2f{ a fault function, r{ resource, t{ time, (ta;id ) { work item
+result : a risk value
+1risk 0
+2 varassign (id)
+3d timeelapsed (id)
+4(cr;ct) getcontextinformation (history (id))
+5foreach conditionc2tdo
+6  	(c)
+7 pick (severity;l ) such that ( ;ta;r;d;cr;ct;l)2 (severity )
+8risk max(severityl;risk )
+9end
+algorithm 2 details how to calculate the risk associated with the execution of a work item. when a
+prediction for the execution of work item wby resource ris required, the algorithm retrieves the values of
+all variables during the execution, the elapsed time (i.e. the time passed from the start of the process), and
+contextual information about the process instance to which the work item belongs to.
+the algorithm then retrieves the function estimator associated with each decision point in the pre-set of
+w. from each of these function estimators, an prediction of the risk resulting from rexecutingwis obtained.
+the variable assignments, the elapsed time, the contextual information, w, andrare used as input for the
+function estimator. finally, the prediction having the highest product between predicted fault severity and
+likelihood of the prediction is returned.
+lemmas
+lemma 1. constraints of the form as in equation 1 can be rewritten into sets of equivalent constraints of
+the form as in equations a.1.
+ war;w m(1 xr;w;t) t
+war;w m(1 xr;w;t)<r;w(t)
+war;w mxr;w;t mo0
+r;w;t<t
+ war;w mxr;w;t m(1 o0
+r;w;t) r;w(t)(a.1)
+wheremis a suciently large number (e.g., the largest machine-representable number) and or;w;t is a
+boolean variable that needs to be introduced in the milp problem.
+proof of lemma 1 let us consider xr;w;t and its possible values 1 and 0. if xr;w;t = 1 then the last two
+constraints will be satised by  mxr;w;tt war;wand mxr;w;t  r;w(t) war;w. in order to
+satisfy the rst two constraints, since m(1 xr;w;t) = 0, war;wmust bewar;wt^war;w<r;w(t), that
+is exactly the second part of the constraint dened in equations 1.
+37ifxr;w;t= 0 then m(1 xr;w;t) =m. this satises the rst two constraints since  m(1 xr;w;t)
+ t+war;wand m(1 xr;w;t)r;w(t) war;w. the third constraint can be satised only if war;w<tor
+ifo0
+r;w;t= 1, similar thing can be said for the fourth constraint that will be satised only if war;wr;w(t)
+or ifo0
+r;w;t= 0. we can derive that in order to satisfy the last two constraints we either have war;w<tand
+o0
+r;w;t= 0, or we have war;wr;w(t) ando0
+r;w;t= 1. as we can see for xr;w;t= 0 the only way to satisfy
+the constraints of equations a.1 is to violate the second part of the constraint dened in equations 1. 
+lemma 2. constraints of the form as in equations 3 can be rewritten into sets of equivalent constraints of
+the form as in equations a.2.
+similarly, the constraints in equation 3 can be transformed into a set of linear constraints as follows:
+x
+wb2d2war;wb x
+wa2d1war;wa+x
+wb2d2x
+t2startr;wbtime(wb)xr;wb;t mor;d1;d2;t0
+x
+wa2d1war;wa x
+wb2d2war;wb+x
+wa2d1x
+t2startr;watime(wa)xr;wa;t m(1 or;d1;d2;t)0(a.2)
+wheremis a suciently large number and or;d1;d2;tis a boolean variable that needs to be introduced in
+the milp problem.
+proof of lemma 2 let us consider the constraints in equations a.2, and let introduce for readability
+purposes the following equality:
+x
+wb2d2war;wb x
+wa2d1war;wa+x
+wb2d2x
+t2startr;wbtime(wb)xr;wb;t=a
+x
+wa2d1war;wa x
+wb2d2war;wb+x
+wa2d1x
+t2startr;watime(wa)xr;wa;t=b:
+we can then rewrite equations a.2 as:
+a mor;d1;d2;t0
+b m(1 or;d1;d2;t)0
+the rst constraint in equations a.2 can only be satised if either a0 or if mor;d1;d2;t0. similarly,
+the second constraint can only be satised if either b0 or if m(1 or;d1;d2;t)0. sinceor;d1;d2;tcan
+only be 0 or 1, we can see that in order to satisfy both constraints either a0 orb0 must be satised
+that is exactly the constraint dened in equations 3. 
+38

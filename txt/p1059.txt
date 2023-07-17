@@ -1,0 +1,688 @@
+reviving token-based replay: increasing speed
+while improving diagnostics
+alessandro berti[0000−0003−1830−4013]and wil van der aalst[0000−0002−0955−6940]
+process and data science group, lehrstuhl f¨ ur informatik 9 52074 aachen, rwth
+aachen university, germany
+abstract. token-based replay used to be the standard way to conduct
+conformance checking. with the uptake of more advanced techniques
+(e.g., alignment based), token-based replay got abandoned. however,
+despite decomposition approaches and heuristics to speed-up computa-
+tion, the more advanced conformance checking techniques have limited
+scalability, especially when traces get longer and process models more
+complex. this paper presents an improved token-based replay approach
+that is much faster and scalable. moreover, the approach provides more
+accurate diagnostics that avoid known problems (e.g., “token ﬂooding”)
+and help to pinpoint compliance problems. the novel token-based replay
+technique has been implemented in the pm4py process mining library.
+we will show that the replay technique outperforms state-of-the-art tech-
+niques in terms of speed and/or diagnostics.
+keywords: log-model replay ·process diagnostics ·localized con-
+formance checking
+1 introduction
+the importance of conformance checking is growing as is illustrated by the new
+book on conformance checking [8] and the gartner report which states “we see
+a signiﬁcant trend toward more focus on conformance and enhancement process
+mining types” [9]. conformance checking aims to compare an event log and a
+process model in order to discover deviations and obtain diagnostics information
+[15]. deviations are related to process executions not following the process model
+(for example, the execution of some activities may be missing, or the activities
+are not happening in the correct order), and are usually associated with higher
+throughput times and lower quality levels. hence, it is important to detect them,
+understand their causes and re-engineer the process in order to avoid such devi-
+ations. a prerequisite for both conformance checking and performance analysis
+is a replay technique, that relates and compares the behavior observed in the
+log with the behavior observed in the model. diﬀerent replay techniques have
+been proposed, like token-based replay [17] and alignments [8, 6]. in recent years,
+alignments have become the standard-de-facto technique since they are able to
+ﬁnd an optimal match between the process model and a process execution con-
+tained in the event log. unfortunately, their performance on complex process
+models and large event logs is poor.87
+token-based replay used to be the default technique, but has been almost
+abandoned in recent years, because the handling of invisible transitions, that
+are contained in the output models of algorithms like the heuristics miner or
+the inductive miner, is based on heuristics and the technique suﬀer of several
+know drawbacks. for example, models may get ﬂooded with tokens in highly
+non-conforming executions, enabling unwanted parts of the process model and
+hampering the overall ﬁtness evaluation. moreover, detailed diagnostics have
+been introduced only for alignments.
+in this paper, a revival of token-based replay is proposed by addressing some
+of the weaknesses of traditional token-based replay techniques. the new ap-
+proach is supported by the pm4py process mining library1.
+the remainder of the paper is organized as follows: in section 2 an introduc-
+tion to token-based replay and alignments is provided. section 3 presents the
+novel approach which modiﬁes the original technique and uses a diﬀerent im-
+plementation strategy. section 4 proposes diﬀerent ways to localize conformance
+checking both prior (simplifying the model, reducing the complexity and the
+time required to do token-based replay) and after the replay (evaluating which
+elements of the petri net are used and/or have encountered problems during the
+replay operation). in section 5, additional diagnostics are introduced based on
+the localized replay output. section 6 concludes the paper.
+2 background and related work
+petri nets are the most widely used process model in process mining frame-
+works: popular discovery algorithms like the alpha miner and the inductive miner
+(through conversion of the resulting process tree) can produce petri nets. an ac-
+cepting petri net is a petri net along with a ﬁnal marking.
+deﬁnition 1 (accepting petri nets). a (labeled, marked) accepting petri net
+is a net of the form pn= (p,t,f,w,m 0,mf,l), which extends the elementary
+net so that:
+–(p,t,f )is a net (pandtare disjoint ﬁnite sets of places and transitions;
+f⊆(p×t)∪(t×p)is a set of arcs).
+–w:f→nis an arc multiset, so that the count (or weight) for each arc is
+a measure of the arc multiplicity.
+–m0:p→nis the initial marking2.
+–mf:p→nis the ﬁnal marking.
+–l:t→/summationtext∪{τ}is a labeling function that assigns to each transition t∈t
+either a symbol from/summationtext(the set of labels) or the empty string τ.
+the preset of a place,•p, is the set of all transitions t∈tsuch that (t,p)∈f.
+the postset of a place,p•, is the set of all transitions t∈tsuch that (p,t)∈f.
+the preset and postset of a transition could be deﬁned in a similar way. a
+1the oﬃcial website of the library is http://www.pm4py.org
+2a marking m:p→nis a place multiset.88transitiontis said to be visible ifl(t)∈/summationtext; is said to be hidden ifl(t) =τ. if
+for allt∈tsuch thatl(t)/negationslash=τ,|{t/prime∈t|l(t/prime) =l(t)}|= 1, then the petri net
+contains unique visible transitions; otherwise, it contains duplicate transitions.
+the initial marking is corresponding the initial state of a process execution.
+process discovery algorithms may associate also a ﬁnal marking to the petri
+net, that is the state in which the process execution should end. the execution
+semantics of a petri net is the following:
+–a transition t∈tisenabled (it may ﬁre) inmif there are enough tokens in
+its input places for the consumptions to be possible, i.e. iﬀ ∀s∈•t:m(s)≥
+w(s,t).
+–firing a transition t∈tin marking mconsumesw(s,t) tokens from each
+of its input places s, and produces w(t,s) tokens in each of its output places
+s.
+for a process supported by an information system, an event log is a set of
+cases, each one corresponding to a diﬀerent execution of the process. a case
+contains the list of events that are executed (in the information system) in order
+to complete the case. to each case and event, some attributes can be assigned
+(e.g. the activity and the timestamp at the event level). a classiﬁcation of the
+event is a string describing the event (e.g. the activity is a classiﬁcation of the
+event). for each case, given a classiﬁcation function, the corresponding trace is
+the list of classiﬁcations associated with the events of the case.
+the application of token-based replay is done on a trace of an event log and
+an accepting petri net. the output of the replay operation is a list of transi-
+tions enabled during the replay, along with some numbers: cis the number of
+consumed tokens (during the replay), pis the number of produced tokens, mis
+the number of missing tokens, ris the number of remaining tokens. at the start
+of the replay, it is assumed that the tokens in the initial marking are inserted
+by the environment, increasing paccordingly (for example, if the initial marking
+consists of one token in one place, then the replay starts with p= 1). the replay
+operation considers, in order, the activities of the trace. in each step, the set of
+enabled transitions in the current marking is retrieved. if there is a transition
+corresponding to the current activity, then it is ﬁred, a number of tokens equal
+to the sum of the weight of input arcs is added to c, and a number of tokens
+equal to the sum of the weight of output arcs is added to p. if there is not a
+transition corresponding to the current activity enabled in the current mark-
+ing, then a transition in the model corresponding to the activity is searched (if
+there are duplicate corresponding transitions, then [17] provides an algorithm to
+choose between them). since the transition could not ﬁre in the current marking,
+the marking is modiﬁed by inserting the token(s) needed to enable it, and mis
+increased accordingly. at the end of the replay, if the ﬁnal marking is reached,
+it is assumed that the environment consumes the tokens from the ﬁnal marking,
+andcis increased accordingly. if the marking reached after the replay of the
+trace is diﬀerent from the ﬁnal marking, then missing tokens are inserted and
+remaining tokens rare set accordingly.89the following relations hold during the replay: c≤p+mandm≤c. the
+relationp+m=c+rholds at the end of the replay. a ﬁtness value could be
+calculated for the trace as:
+fσ=1
+2/parenleftbig
+1−m
+c/parenrightbig
++1
+2/parenleftbigg
+1−r
+p/parenrightbigg
+for each case liof the event log l, letcibe the number of consumed tokens,
+pithe number of produced tokens, mithe number of missing tokens and rithe
+number of remaining tokens. then, the following formula calculates the ﬁtness
+at the log level
+fl=1
+2/parenleftbigg
+1−/summationtext
+li∈lmi/summationtext
+li∈lci/parenrightbigg
++1
+2/parenleftbigg
+1−/summationtext
+li∈lri/summationtext
+li∈lpi/parenrightbigg
+this quantity is diﬀerent from the average of ﬁtness values at trace level. when,
+during the replay, a transition corresponding to the activity could not be enabled,
+and invisible transitions are present in the model, a technique is deployed to
+traverse the state space (see [17]) and possibly reach a marking in which the
+given transition is enabled. a heuristic (see [17]) that uses the shortest sequence
+of invisible that enables a visible task is proposed. this heuristic tries to minimize
+the possibility that the execution of an invisible transition interferes with the
+future ﬁring of another activity.
+a well-known problem for token-based replay is the token ﬂooding problem [8].
+indeed, when the case diﬀers much from the model, and a lot of missing tokens
+are inserted during the replay, it happens that also a lot of tokens remain unused
+and many transitions are enabled. this leads to misleading diagnostics because
+unwanted parts of the model may be activated, and so the ﬁtness value for
+highly problematic executions may be too high. to illustrate the token-ﬂooding
+problem consider a process model without concurrency (only loops, sequences,
+and choices) represented as a petri net. at any stage, there should be at most
+one token in the petri net. however, each time there is a deviation, a token may
+be added resulting in a state which was never reachable from the initial state.
+the original token-based replay implementation [17] was only implemented
+in earlier versions of the prom framework (prom4 and prom5) and proposes
+localized metrics on places of the petri net that help to understand which parts
+of the model are more problematic. to improve performance in the original
+implementation, a preprocessing step could be used to group cases having the
+same trace. in this way, the replay of a unique trace is done once by the token-
+based replay. alternatively, more ad-hoc token-based replay approaches were
+used by the heuristic miner and the genetic miner. in the latter approach, the
+qualities of candidate models are derived. these techniques tend to put multiple
+dimensions (replay ﬁtness, precision, etc.) into a single ﬁtness measure.
+currently, the standard replay technique on petri nets is the computation
+of alignments. there are diﬀerent approaches on alignments [8, 6]. in the as-
+sessment, we are considering the approach described in [6]. execution speed of90alignments on process models containing a lot of diﬀerent states may be prob-
+lematic, although some techniques have been proposed, such as decomposing
+alignments [2] and recomposing them [10]. moreover, the approach described in
+[18] is also helping to handle bigger instances, making the user decide about the
+granularity of the alignment steps.
+3 improved token-based replay
+3.1 changes to the approach
+the approach proposed in [17] is relatively fast when there are no duplicate or
+silent transitions. however, in comparison to the alignments, managing invisible
+transitions may be time-consuming due to the necessary state-space explorations.
+the idea proposed in this paper is to perform a pre-processing step in order
+to store a map of the shortest paths between places, and then use this map
+when hidden transitions need to be traversed. this saves the time necessary to
+perform the state-space explorations. therefore, the proposed approach works
+with accepting petri nets that have no invisible transitions with empty preset or
+postset, since they would not belong to any shortest path between places.
+3.2 preprocessing step: shortest paths between places
+given an accepting petri net pn = (p,t,f,w,m 0,mf,l), it is possible to
+deﬁne a directed graph g= (v,a) such that the vertices vare the places pof
+the petri net, and a⊆p×pis such that ( p1,p2)∈aif and only if at least one
+invisible transition connects p1top2. then, to each arc ( p1,p2)∈a, a transition
+τ(p1,p2) could be associated picking one of the invisible transitions connecting
+p1top2.
+using an informed search algorithm for traversing the graph g, the shortest
+paths between nodes are found. these are a sequence of edges /angbracketlefta1,...an/angbracketrightof
+minimal length, that correspond to a sequence of transitions /angbracketleftt1,...,tn/angbracketrightusing
+the mapping provided by τ.
+given a marking msuch thatm(p1)>0 andm(p2) = 0, a marking m/prime
+wherem/prime(p2)>0 could be reached by ﬁring the sequence /angbracketleftt1,...,tn/angbracketrightthat is the
+shortest path in gbetweenp1andp2. the following subsection will explain how
+to apply the shortest paths to traverse invisible transitions and reach a marking
+where a transition is enabled.
+3.3 enabling transitions
+the approach described in this subsection helps to enable a transition tthrough
+the traversal of invisible transitions. this helps in avoiding the insertion of miss-
+ing tokens when an activity needs to be replayed on the model, but no corre-
+sponding transition is enabled in the current marking m. moreover, it helps to
+avoid time-consuming state-space explorations that are required by the approach
+proposed in [17].
+for a marking mand a transition t, it is possible to deﬁne the following sets:91–∆(m,t) ={p∈•t|m(p)< w (p,t)}is the set of places that miss some
+tokens to enable transition t. if the set∆(m,t) is not empty, then the tran-
+sitiontcould not be enabled in the marking m.
+–λ(m,t) ={p∈p|w(p,t) = 0∧m(p)>0}is the set of places for which
+the marking has at least one token and tdoes not require any of these places
+to be enabled.
+whentis not enabled, the set ∆(m,t) is not empty. the idea is about using
+places inλ(m,t) (that are not useful to enable t) and, through the shortest
+paths, reach a marking m/primewheretis enabled.
+given a place p1∈λ(m,t) and a place p2∈∆(m,t), if a path exists
+betweenp1andp2ing, then it is useful to see if the corresponding short-
+est path/angbracketleftt1,...,tn/angbracketrightcould ﬁre in marking m. if that is the case, a marking
+m/primecould be reached having at least one token in p2. however, the path may
+not be not realizable, or may require a token from one of the input places of
+t. so, the set ∆(m/prime,t) may be smaller than ∆(m,t), sincep2gets at least
+one token. the approach is about considering all the combinations of places
+(p1,p2)∈λ(m,t)×∆(m,t) such that a path exists between p1andp2ing.
+these combinations, namely {(p1,p2),(p/prime
+1,p/prime
+2),(p/prime/prime
+1,p/prime/prime
+2)...}, are corresponding to
+some shortest paths s={/angbracketleftt1,...,tm/angbracketright,/angbracketleftt/prime
+1,...,t/prime
+n/angbracketright,/angbracketleftt/prime/prime
+1,...,t/prime/prime
+o/angbracketright}ing.
+the algorithm to enable transition tthrough the traversal of invisible tran-
+sitions considers the sequences of transitions in s, ordered by length, and tries
+to ﬁre them. if the path can be executed, a marking m/primeis reached, and the set
+∆(m/prime,t) may be smaller than ∆(m,t), since a place in ∆(m,t) gets at least
+one token in m/prime. however, one of the following situations could happen: 1) no
+shortest path between combinations of places ( p1,p2)∈λ(m,t)×∆(m,t) could
+ﬁre: in that case, we are “stuck” in the marking m, and the token-based replay
+is forced to insert the missing tokens; 2) a marking m/primeis reached, but ∆(m/prime,t)
+is not empty, hence tis still not enabled in marking m/prime. in that case, the ap-
+proach is iterated on the marking m/prime; 3) a marking m/primeis reached, and ∆(m/prime,t)
+is empty, so tis enabled in marking m/prime. when situation (2) happens, the ap-
+proach is iterated. a limit on the number of iterations may be set, and if it is
+exceeded then the token-based replay proceeds to insert the missing tokens in
+markingm.
+the approach is straightforward when sound workﬂow nets without concur-
+rency (only loops, sequences, and choices) are considered, since in the considered
+setting (mmarking where transition tis not enabled) both sets λ(m,t) and
+∆(m,t) have a single element, a single combination ( p1,p2)∈λ(m,t)×∆(m,t)
+exists and, if a path exists between p1andp2ing, and the shortest path could
+ﬁre in marking m, a marking m/primewill be reached such that ∆(m/prime,t) =∅and
+transitiontis enabled. moreover, it performs particularly well on models that
+are output of popular process discovery algorithms, e.g., inductive miner, heuris-
+tics miner, etc., where potentially long chains of invisible (skip, loop) transitions
+needs to be traversed in order to enable a transition. the approach described in
+this subsection can also manage duplicate transitions corresponding to the activ-
+ity that needs to be replayed. in that case, we are looking to enable any one of the92transitions belonging to the set tc⊆tthat contains all the transitions corre-
+sponding to the activity in the trace. the approach is then applied on the shortest
+paths between places ( p1,p2)∈∪t∈tcλ(m,t)×∆(m,t). a similar approach can
+be applied to reach the ﬁnal marking when, at the end of the replay of a trace,
+a markingmis reached that is not corresponding to the ﬁnal marking. in that
+case,∆={p∈p|m(p)<mf(p)}andλ={p∈p|mf(p) = 0∧m(p)>0}.
+this does not cover the case where the reached marking contains the ﬁnal mark-
+ing but has too many tokens.
+3.4 token flooding problem
+to address the token ﬂooding problem, which is one of the most severe problems
+when using token-based replay, we propose several strategies. the ﬁnal goal
+of these strategies is to avoid the activation of transitions that shall not be
+enabled, keeping the ﬁtness value low for problematic parts of the model. the
+common pattern behind these strategies is to determine superﬂuous tokens , that
+are tokens that cannot be used anymore. during the replay, f(initially set to
+0) is an additional variable that stores the number of “frozen” tokens. when
+a token is detected as superﬂuous, it is “frozen”: that means, it is removed
+from the marking and fis increased. frozen tokens, like remaining tokens, are
+tokens that are produced in the replay but never consumed. hence, at the end
+of the replay p+m=c+r+f. to each token in the marking, an age(number of
+iterations of the replay for which the token has been in the marking without being
+consumed) is assigned. the tokens with the highest age are the best candidates
+for removal. the techniques to detect superﬂuous tokens are deployed when a
+transition required the insertion of missing tokens to ﬁre, since the marking
+would then possibly contain more tokens. one of the following strategies can be
+used:
+1. using a decomposition of the petri net in semi-positive invariants [11] or
+s-components [1] to restrict the set of allowed markings. considering s-
+components, each s-component should hold at most 1 token, so it is safe to
+remove the oldest tokens if they belong to a common s-component.
+2. using place bounds [12]: if a place is bounded to ntokens and during the
+replay operation the marking contains m > n tokens for the place, the
+“oldest” tokens according to the age are removed.
+3.5 changes to the implementation to improve performance
+the implementation of the approach proposed in [17] has been made more ef-
+ﬁcient thanks to ideas adopted from the alignments implementation in prom6
+[5]:
+1.post-ﬁx caching : a post-ﬁx is the ﬁnal part of a case. during the replay of
+a case, the couple marking+post-ﬁx is saved in a dictionary along with the
+list of transitions enabled from that point to reach the ﬁnal marking of the93model. for the next replayed cases, if one of them reaches exactly a marking
++ post-ﬁx setting saved in the dictionary, the ﬁnal part of the replay could
+be retrieved from the dictionary.
+2.activity caching : activity caching means saving in a dictionary, during the
+replay of a case, the list of hidden transitions enabled from a given marking
+to reach a marking where a particular transition is enabled. for the next
+replayed cases, if one of them reaches a marking + target transition setting
+saved in the dictionary, then the corresponding hidden transitions are ﬁred
+accordingly to enable the target transition.
+3.6 evaluation
+in this section, the token-based replay (as implemented in the pm4py library)
+is assessed, looking at the speed and the output of the replay, against the align-
+ments approach (as implemented in the “replay a log on petri net for con-
+formance analysis” plug-in of prom6). alignments produce results that diﬀer
+from token-based replay, so results are not directly comparable. both are replay
+techniques, so the goal of both techniques is to provide information about how
+much a process execution is ﬁt according to the process model (albeit the ﬁt-
+ness measures are deﬁned in a diﬀerent way, and so are intrinsically diﬀerent).
+this is valid in particular for the comparison of execution times: a trace may
+be judged ﬁtting according to a process model in a signiﬁcantly lower amount
+of time using token-based replay in comparison to alignments. if an execution is
+unﬁt according to the model, it can also be judged unﬁt in a signiﬁcantly lower
+amount of time. for a comparison between the two approaches, read section 8 .4
+of book [8] or consult [16, 3].
+table 1: performance of pm4py token-based replayer on real-life logs in com-
+parison to the alignments approach implemented in prom6 on models extracted
+by the inductive miner implementation in pm4py.
+log cases variants t.i.p4pys a.i.p6s speedup
+repairex 1104 77 0.06 0 .2 3.3
+reviewing 100 96 0.10 0 .4 4.0
+bpic2017 42995 16 0.30 1 .5 5.0
+receipt 1434 116 0.09 0 .8 8.9
+roadtraﬃc 150370 231 1.03 5 .5 5.3
+billing 100000 1020 1.36 8 .0 5.9
+in table 1, an evaluation of the performance of the token-based replayer on
+real-life logs respectively is provided. tests have been done on a intel i7-5500u
+powered computer with 16 gb ddr4 ram. the logs can be retrieved from the
+4tu log repository3. the t.i.p4pys column shows the execution time (in sec-
+onds) of the token-based replay implementation in pm4py on a model extracted
+by the inductive miner approach on the given log, the a.i.p6s column shows the
+3the logs are available at the url https://data.4tu.nl/repository/collection:event logs94execution time of the alignment-based implementation in prom6 on the same
+log and model. the speedup column shows how many times the token-based
+replay is faster than the alignment-based implementation. for real-life logs and
+models extracted by the inductive miner, the token-based replay implementation
+in pm4py is 5 times faster on average. even for large logs, the replay time is
+less than a few seconds.
+fig. 1: model extracted by the inductive miner implementation in pm4py on
+a ﬁltered version of the ”receipt phase of an environmental permit application
+process” event log. excluding the activities of the log that are not in the model,
+only 53% of cases of the original log are ﬁtting according to this model.
+table 2: comparison in token-based replay execution times on models extracted
+by inductive miner on the given logs with or without postﬁx and activity caching.
+log no caching(s) pc(s) ac(s) pc + ac(s)
+repairex 0.10 0.08 0.08 0.06
+reviewing 0.33 0.42 0.14 0.10
+bpic2017 0.37 0.42 0.30 0.30
+receipt 0.17 0.15 0.12 0.09
+roadtraﬃc 1.58 2.08 1.18 1.03
+billing 2.23 1.91 1.45 1.36
+in table 2, the eﬀectiveness of the implementation is evaluated in order
+to understand how the improvements in the implementation contribute to the
+overall eﬃciency of the approach. columns in the table represent the execution
+time of the replay approach when no caching, only post-ﬁx caching, only activity95caching and the sum of post-ﬁx caching and activity caching is deployed. in the
+vast majority of logs, the combination of post-ﬁx caching and activity caching
+provides the best eﬃciency.
+table 3: fitness evaluation comparison between the pm4py token-based replayer
+(without the token ﬂood cleaning procedure), the token-based replayer in prom5
+and the alignments approach implemented in prom6 on models extracted by the
+alpha miner and the inductive miner implementations in pm4py. since inductive
+miner returns a petri net with perfect ﬁtness, it is expected that the token-based
+replayer is able to replay the log returning ﬁtness 1 .0 for all such combinations.
+on models extracted by the alpha miner, that do not generally provide perfect
+ﬁtness, it is expected that the implementation in pm4py (without the token
+ﬂood cleaning procedure) is equivalent to the token-based replay implementation
+in prom5.
+log f.i.pm4py f.i.p5 f.i.p6 f.a.pm4py f.a.p5
+repairex 1.0 1.0 1.0 0.88 0.88
+reviewing 1.0 1.0 1.0 1.0 1.0
+bpic2017 1.0 1.0 0.72
+receipt 1.0 1.0 1.0 0.39 0.39
+roadtraﬃc 1.0 1.0 0.62
+billing 1.0 1.0 0.69
+in table 3, a comparison between the ﬁtness values recorded by the token-
+based replay implementation in pm4py, the token-based replay implementation
+in prom5 and the alignments implementation in prom6 is provided, for both
+alpha miner and inductive miner models. the meaning of the columns is the
+following: f.i.pm4py is the ﬁtness value achieved by the token-based replay
+implementation in pm4py on a model extracted by the inductive miner ap-
+proach on the given log, f.i.p5 is the ﬁtness value achieved by the token-based
+replay implementation in prom5 on a model extracted by the inductive miner
+approach on the given log, f.i.p6 is the ﬁtness value achieved by the alignments
+implementation in prom6 on a model extracted by the inductive miner approach
+on the given log, f.a.pm4py is the ﬁtness value achieved by the token-based
+replay implementation in pm4py on a model extracted by the alpha miner ap-
+proach on the given log, f.a.p5 is the ﬁtness value achieved by the token-based
+replay implementation in prom5 on a model extracted by the alpha miner ap-
+proach on the given log. for some real-life logs (bpic2017, roadtraﬃc, billing) the
+token-based replay implementation in prom5 did not succeed in the replay in
+10 minutes (an empty space has been reported in the corresponding columns).
+alignments have not been evaluated on the models extracted by alpha miner
+since it is not assured to have a sound workﬂow net to start with. the ﬁtness
+values obtained in table 3 show that the token-based replay implementation
+in pm4py (without the token ﬂood cleaning procedure), on these logs and the
+models extracted from them by the inductive miner, is as eﬀective in exploring
+hidden transitions as the token-based replay implementation in prom5 and the
+alignments implementation in prom6.96table 4: comparison between the output of the token-based and alignments
+applied on some logs and the models extracted by the inductive miner imple-
+mentation in pm4py on a ﬁltered version of these logs (using the auto ﬁlter
+method of pm4py). the set of transitions activated in the model by the token-
+based replay and the alignments for each case has been considered (the middle
+columns report the overall number of transitions activated in the model by both
+approaches). then, a similarity score has been calculated for each case consid-
+ering the size of the intersection between the two sets and the size of the union.
+the minimum, maximum, average and median similarity score for the cases in
+the log has been reported in the right columns of the table, along with the ﬁtness
+values provided by alignments and token-based replay.
+log tot.t.al. tot.t.tr. min.s. max.s. avg.s. med.s. fit.al. fit.tr.
+repairex 18879 18459 0.538 1.0 0.977 1.0 0.977 0.986
+reviewing 2658 2621 0.88 1.0 0.935 0.928 0.900 0.946
+bpic2017 171980 171980 1.0 1.0 1.0 1.0 1.0 1.0
+roadtraﬃc 1368414 815326 0.333 1.0 0.591 0.667 0.667 0.758
+in order to compare token-based replay and alignments, a comparison be-
+tween the output of the two approaches has been proposed in table 4. some
+popular logs, that are taken into account also for previous evaluations, are being
+ﬁltered in order to discover a model (using inductive miner) that is not perfectly
+ﬁt against the original log. instead of comparing the ﬁtness values, the compari-
+son is done on the similarity between the set of transitions that were activated in
+the model during the alignments and the set of transitions that were activated
+in the model during the token-based replay. the more similar are the two sets,
+the higher should be the value of similarity. the similarity is calculated as the
+ratio of the size of the intersection of the two sets and the size of the union of
+the two sets. this is a simple approach, with some limitations: 1) transitions are
+counted once during the replay 2) the order in which transitions are activated
+is not important 3) the number of transitions activated by the alignments is in-
+trinsically higher: while token-based replay could just insert missing tokens and
+proceed, alignments have to ﬁnd a path in the model from the initial marking
+to the ﬁnal marking, so a higher number of transitions is expected. in table 4,
+the meaning of the columns is the following: tot.t.al. is the number of transi-
+tions activated by the alignments approach (a path leading from the initial to
+the ﬁnal marking); tot.t.tr. is the number of transititions activated by the
+token-based replay approach (that is not necessarily a path from the initial to
+the ﬁnal marking); min.sim. is the minimum similarity score between the align-
+ments and the token-based replay approach on a case; max.sim. is the maximum
+similarity score; avg.sim. is the average similarity score; med.sim. is the median
+similarity score; fit.al. is the ﬁtness value provided by alignments, fit.tr. is the
+ﬁtness value provided by token-based replay. this comparison, aside ﬁtness val-
+ues, conﬁrm that the result of the two replay operations, represented as a set97of transitions activated in the model, is very similar, with the exception of the
+”road traﬃc fine management process” log. for this log, the auto-ﬁltering
+procedure of pm4py produces an overly simple model, where token-based re-
+play could survive by inserting missing tokens, but alignments cannot, hence the
+signiﬁcantly larger number of transitions activated in the model to explain the
+behavior observed in the log. table 4 provides some evidence, aside from ﬁtness
+values, that the output of the two replay techniques is comparable.
+to illustrate the importance of handling the token ﬂooding problem, we con-
+sider the ”receipt phase of an environmental permit application process” event
+log. on this log, a sound workﬂow net has been extracted which is represented
+in figure 1. for this log and model, token ﬂooding occurs because the order
+of activities is interchanged in some variants of the log. as missing tokens are
+inserted multiple activities become enabled due to the surplus of tokens. as a
+result, token-based replay using the original approach yields diagnostics very
+diﬀerent from the alignment-based approaches. the original values of average
+trace ﬁtness and log ﬁtness are 0 .92 and 0.93 respectively. applying the token
+ﬂooding cleaning procedure, the values go down to 0 .86 and 0.87 respectively,
+because the activation of unwanted parts of the process model is avoided. albeit
+the underlying concepts/ﬁtness formula are diﬀerent (see section 8 .4 of [8]), it
+may be useful to see that the ﬁtness value provided by alignments is 0 .82, so with
+the token ﬂooding cleaning procedure a more similar value of ﬁtness is obtained.
+3.7 problems not addressed
+the pre-processing step that stores a map of shortest paths between places is
+sensible to the presence in the model of implicit/redundant places. indeed, two
+models with the same behavior can give diﬀerent values. however, implicit places
+can be removed as a pre-processing step on the model. token-based replay can
+return a list of transitions that have been activated in the model to replay the
+trace. however, this does not imply that a path through the model, from the
+initial to the ﬁnal marking, is provided, since the insertion of missing tokens can
+happen if a transition needs to be enabled.
+4 approach: localization of conformance checking
+results
+next to providing an overall measure for conformance, conformance checking
+should also provide diagnostics pinpointing compliance problems. therefore, we
+propose two localization approaches:
+–the simpliﬁcation of the original petri net, in order to make the replay exe-
+cution speed faster considering only the most problematic parts of a process
+model.
+–the localization of problems encountered during the replay, that permits to
+understand where deviations happened and their eﬀects.98fig. 2: petri net, obtained from the ”running example” log, projected on a spe-
+ciﬁc place. this kind of simpliﬁcation helps to reduce the execution time of
+the replay operation, and to avoid the token ﬂooding problem. the diagnostics
+obtained by applying our improved token-based replay are represented.
+4.1 simpliﬁcation of the original petri net
+replay operations on large models may take too much time. however, it is pos-
+sible to simplify the model, keeping only parts that are problematic, in order to
+reduce the execution time of the replay operation.
+the decomposition techniques presented in [2, 13, 14, 7] have been used to
+decompose a petri net in several subnets for performance reasons. however, for
+diagnostic purposes an automated decomposition driven only by the model’s
+structure is undesirable. therefore, we provide the possibility to specify a list of
+activities in the log and corresponding transitions in the model to check. this is
+particularly useful when the user knows already which parts of the process are
+or could be problematic. we also add the possibility to get detailed information
+about a single element (place or transition) of the petri net. this information is
+valuable when comparing ﬁtting executions versus non-ﬁtting executions.
+with token-based replay, we propose two simpliﬁcation approaches to focus
+attention:
+–projection on a speciﬁc place : when the preset and the postset of the place
+are not empty and contain only unique visible transitions, then it is possible
+to obtain a petri net containing only the place and the transitions belonging
+to the preset and the postset. this is particularly useful to detect instances
+where some tokens are missing / are remaining on the speciﬁc place, while
+not being aﬀected by problems like token ﬂooding. a representation of a petri
+net projected on a speciﬁc place, obtained from the ”running example” log,
+is shown in figure 2.
+–projection on a set of activities : it is possible to make selected transitions
+invisible and retain only the transitions that have a label belonging to a spec-
+iﬁed set of activities as visible. then reduction rules are applied to simplify
+the model with respect to the invisible transitions [4]. this guarantees to get99a petri net that, for the speciﬁc set of activities, has the same language as
+the original petri net.
+from pm4py . o b j e c t s . log . importer . xes import f a c t o r y as xes importer
+from pm4py . algo . discovery . inductive import f a c t o r y as inductive miner
+from pm4py . algo . conformance . tokenreplay import f a c t o r y
+as token based replay
+from pm4py . evaluation . r e p l a y f i t n e s s import f a c t o r y
+as r e p l a y f i t n e s s f a c t o r y
+log = xes importer . apply ( ”c:\\running−example . xes ” )
+net , im , fm = inductive miner . apply ( log )
+a l i g n e d t r a c e s = token based replay . apply ( log , net , im , fm)
+f i t n e s s = r e p l a y f i t n e s s f a c t o r y . apply ( log , net , im , fm)
+fig. 3: example pm4py code to apply token-based replay to a log and an ac-
+cepting petri net.
+4.2 localization of the replay results
+localizing ﬁtness issues in the process model is an essential step in the provision
+of more detailed diagnostics. the approach described in [17] already provided
+some diagnostics aimed at localizing the problem:
+–place underfedness : when missing tokens are inserted in the place during
+the replay operation of a case, the place is signed as underfed (it has fewer
+tokens than needed at some stage) for the speciﬁc case.
+–place overfedness : when remaining tokens are in the place after the end of
+the replay of a case, the place is signed as overfed (it has more tokens than
+needed) for the speciﬁc case.
+table 5: localization of the replay result at place level on the ﬁltered model,
+represented in figure 1, obtained from the ”receipt phase” log (only places with
+problems have been reported).
+place # cases underfed # cases overfed
+p8 1 0
+p4 35 0
+p7 521 0
+to introduce additional localized diagnostics at the transition level, it is
+important to notice that, when the transition is ﬁred during the replay of a case,
+is possible to register the current case status , for example recording all values of
+the attributes of the current and of the previous events of the case. the easiest
+option is to keep a single value for each attribute, that is corresponding to the
+value of the last occurrence of the given attribute. so, the following localized
+information could be introduced at the transition level:
+–transition underfedness : some tokens needed to ﬁre the transition are miss-
+ing. it is possible to ﬂag a transition as underfed for the speciﬁc case, saving
+also the status of the case when the transition has been ﬁred.100–transition ﬁtness : the transition could be ﬁred regularly. in this case, it is
+possible to save the status of the case when the transition has been ﬁred.
+it is important also the save information for events with an activity that is not
+corresponding to any transition in the model. this could be done saving the
+current case status when such activities happen.
+table 6: localization of the replay result at the transition level on the ﬁltered
+model, represented in figure 1, obtained from the ”receipt phase” log (only
+transitions with problems have been reported).
+transition # cases underfed # cases fit
+t05 1 1299
+t02 35 1316
+t06 521 830
+the result of localization on a ﬁltered version of the ”receipt phase of an
+environmental permit application process” event log, and the model represented
+in figure 1, is shown in table 5 (for places with problems) and table 6 (for
+transitions with problems). moreover, in figure 2 the ﬁtness information has
+been projected visually on the elements of the petri net.
+5 advanced diagnostics
+the localized information is useful to compare, for each problematic entity, the
+set of cases of the log that are ﬁt according to the given entity and the set of
+cases of the log that are not ﬁt according to the given entity (called “unﬁt”). in
+particular, the following questions can be answered:
+1. if a given transition is executed in an unﬁt way, what is the eﬀect on the
+throughput time?
+2. if a given activity that is not contained in the process model is executed,
+what is the eﬀect on the throughput time?
+these questions can be answered by throughput time analysis. essentially,
+an aggregation (for example, the median) of the throughput times of ﬁt and
+unﬁt cases is taken into account, and the results compared. usually, transitions
+executed in an unﬁt way are corresponding to higher throughput times.
+the comparison between the throughput time in non-ﬁtting cases and ﬁtting
+cases permits to understand, for each kind of deviation, whether it is important
+or not important for the throughput time. for evaluating this, the ”receipt phase
+of an environmental permit application process” log is taken. after some ﬁltering
+operations, the model represented in figure 1 is obtained. several activities that
+are in the log are missing according to the model, while some transitions have
+ﬁtness issues. after doing the token-based replay enabling the local informa-
+tion retrieval, and applying the duration diagnostics.diagnose from trans ﬁtness
+function to the log and the transitions ﬁtness object, it can be seen that transition101t06 determine necessity of stop advice is executed in an unﬁt way in 521 cases.
+for the cases where this transition is enabled according to the model the median
+throughput time is around 20 minutes, while in the cases where this transition is
+executed in an unﬁt way the median throughput time is 1 .2 days. so, the through-
+put time of unﬁt cases is 146 times higher in median than the throughput time of
+ﬁt cases. considering activities of the log that are not in the model, that are likely
+to make the throughput time of the process higher since they are executed rarely,
+applying the duration diagnostics.diagnose from notexisting activities method
+it is possible to retrieve the median execution of cases containing these activi-
+ties, and compare it with the median execution time of cases that do not contain
+them (that is 20 minutes). taking into account activity t12 check document x
+request unlicensed , it is contained in 44 cases, which median throughput time is
+6.9 days (505 times higher than standard).
+6 conclusion
+in this paper, an improved token-based replay approach has been proposed and
+has been implemented in the python process mining library pm4py4. a set of
+process discovery, conformance checking and enhancement algorithms are pro-
+vided in the library. an example script, that loads a log, calculates a model,
+and does conformance checking, is shown in figure 3. this illustrates that the
+conformance checking technique presented in this paper can be combined easily
+with many other process mining and machine learning approaches.
+the approach has shown to be more scalable than existing approaches. due
+to a better handling of invisible transitions and improved intermediate storage
+techniques, the approach outperforms the original token-based approaches, and
+proves to be faster than alignment-based approaches also for models with invis-
+ible transitions.
+next to an increase is speed, the problem of token ﬂooding is addressed by
+“freezing” superﬂuous tokens (see section 3.4). this way replay does not lead
+to markings with many more tokens than what would be possible according to
+the model, avoiding the activation of unwanted parts of the process models and
+leading to lower values of ﬁtness for problematic parts of the model.
+localization of conformance checking using token-based replay can be used
+to simplify the model prior to replay and help to better diagnose where the
+deviation happened. moreover, we showed that we are able to diagnose the eﬀects
+of deviations on the case throughput time.
+the approach has been fully implemented in the pm4py process mining
+library. we hope that this will trigger a revival of token-based replay, a technique
+that seemed abandoned in recent years. especially when dealing with large logs,
+complex models, and real-time applications, the ﬂexible tradeoﬀ between quality
+and speed provided by our implementation is beneﬁcial.
+4it can be installed in python ≥3.6 through the command pip install pm4py . see
+http://pm4py.pads.rwth-aachen.de/installation/ for details.102references
+1. van der aalst, w.: structural characterizations of sound workﬂow nets. computing
+science reports 96(23), 18–22 (1996)
+2. van der aalst, w.: decomposing petri nets for process mining: a generic approach.
+distributed and parallel databases 31(4), 471–507 (2013)
+3. van der aalst, w., adriansyah, a., van dongen, b.: replaying history on process
+models for conformance checking and performance analysis. wiley interdisciplinary
+reviews: data mining and knowledge discovery 2(2), 182–192 (2012)
+4. van der aalst, w., van hee, k.m., ter hofstede, a.h., sidorova, n., verbeek, h.,
+voorhoeve, m., wynn, m.t.: soundness of workﬂow nets: classiﬁcation, decidabil-
+ity, and analysis. formal aspects of computing 23(3), 333–363 (2011)
+5. adriansyah, a.: aligning observed and modeled behavior (2014)
+6. adriansyah, a., sidorova, n., van dongen, b.: cost-based ﬁtness in conformance
+checking. in: application of concurrency to system design (acsd), 2011 11th
+international conference on. pp. 57–66. ieee (2011)
+7. van den broucke, s.k., munoz-gama, j., carmona, j., baesens, b., vanthienen, j.:
+event-based real-time decomposed conformance analysis. in: otm confederated
+international conferences” on the move to meaningful internet systems”. pp.
+345–363. springer (2014)
+8. carmona, j., dongen, b., solti, a., weidlich, m.: conformance checking: relating
+processes and models. springer (2018)
+9. kerremans, m.: gartner market guide for process mining, research note
+g00353970 (2018), www.gartner.com
+10. lee, w.l.j., verbeek, h., munoz-gama, j., van der aalst, w., sep´ ulveda, m.: re-
+composing conformance: closing the circle on decomposed alignment-based con-
+formance checking in process mining. information sciences 466, 55–91 (2018)
+11. mart´ ınez, j., silva, m.: a simple and fast algorithm to obtain all invariants of
+a generalised petri net. in: application and theory of petri nets, pp. 301–310.
+springer (1982)
+12. miyamoto, t., kumagai, s.: calculating place capacity for petri nets using unfold-
+ings. in: application of concurrency to system design, 1998. proceedings., 1998
+international conference on. pp. 143–151. ieee (1998)
+13. munoz-gama, j., carmona, j., van der aalst, w.: conformance checking in the
+large: partitioning and topology. in: business process management, pp. 130–145.
+springer (2013)
+14. munoz-gama, j., carmona, j., van der aalst, w.: single-entry single-exit decom-
+posed conformance checking. information systems 46, 102–122 (2014)
+15. rogge-solti, a., senderovich, a., weidlich, m., mendling, j., gal, a.: in log and
+model we trust? a generalized conformance checking framework. in: international
+conference on business process management. pp. 179–196. springer (2016)
+16. rozinat, a., van der aalst, w.: conformance testing: measuring the alignment
+between event logs and process models. citeseer (2005)
+17. rozinat, a., van der aalst, w.: conformance checking of processes based on mon-
+itoring real behavior. information systems 33(1), 64–95 (2008)
+18. taymouri, f., carmona, j.: a recursive paradigm for aligning observed behavior of
+large structured process models. in: international conference on business process
+management. pp. 197–214. springer (2016)103

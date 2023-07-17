@@ -1,0 +1,1623 @@
+scalable process discovery and conformance
+checking
+sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+eindhoven university of technology, the netherlands
+fs.j.j.leemans, d.fahland, w.m.p.v.d.aalst g@tue.nl
+abstract considerable amounts of data, including process event data,
+are collected and stored by organisations nowadays. discovering a process
+model from recorded process event data and verication of the quality of
+discovered models are important steps in process mining. many discovery
+techniques have been proposed, but none combines scalability with qual-
+ity guarantees. we would like such techniques to handle billions of events
+or thousands of activities, to produce sound models (without deadlocks
+and other anomalies), and to guarantee that the underlying process can
+be rediscovered when sucient information is available. in this paper, we
+introduce a framework for process discovery that ensures these properties
+while passing over the log only once and we introduce three algorithms
+using the framework. to measure the quality of discovered models on
+these large logs, we introduce a model-model and model-log comparison
+framework that applies a divide-and-conquer strategy to measure recall,
+tness and precision. we experimentally show that these discovery and
+measuring techniques sacrice little compared to other algorithms, while
+gaining the ability to cope with event logs of 100,000,000 traces and
+processes of 10,000 activities.
+keywords: big data, scalable process mining, block-structured process discov-
+ery, directly-follows graphs, algorithm evaluation, rediscoverability, conformance
+checking
+1 introduction
+considerable amounts of data are collected and stored by organisations nowadays.
+for instance, erp systems log business transaction events, high tech systems
+such as x-ray machines record software and hardware events, and web servers
+log page visits. typically, each action of a user executed with the system, e.g. a
+customer lling in a form or a machine being switched on, can be recorded by
+the system as an event; all events related to the same process execution, e.g. a
+customer order or an x-ray diagnosis, are grouped in a trace (ordered by their
+time); an event log contains all recorded traces of the system. process mining
+aims to extract information from such event logs, for instance social networks,
+business process models, compliance to rules and regulations, and performance
+information (e.g. bottlenecks) [6].2 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+system
+system-
+modellog model
+implemented byexecutes discoverlog-conformance
+model-conformance
+figure 1: process discovery and conformance checking in their context. the box
+contains a typical process mining project's scope.
+in this paper, we focus on two challenges of process mining: process discovery
+and conformance checking. figure 1 shows the context of these two challenges:
+a real-life business process (a system ) is running, and the executed process steps
+are recorded in an event log. in process discovery , one assumes that the inner
+workings of the system are unknown to the analyst and cannot be obtained
+otherwise. therefore, process discovery aims to learn a process model from an
+event log, which describes the system as it actually happened (in contrast to what
+is assumed has happened) [2]. two main challenges exist in process discovery:
+rst, one would like to learn an easy to understand model that captures the
+actual behaviour. second, the model should have a proper formal interpretation,
+i.e. have well-dened behavioural semantics and be free of deadlocks and other
+anomalies (be sound ) [43]. in section 2, we explore these challenges in more
+detail and explore how they are realised in existing algorithms and settings. few
+existing algorithms solve both challenges together.
+in contrast, conformance checking studies the dierences between a process
+model and reality. we distinguish two types of conformance checking. first, the
+model can be compared with a log. such log-conformance checking can provide
+insight into the real behaviour of an organisation, by highlighting which traces
+deviate from the model, and where in the model deviations occur [2]. second,
+the model can be compared with a model of the system (if that is available).
+model-conformance checking can be used to highlight dierences between dif-
+ferent snapshots of a process, or to verify that a process model conforms to a
+design made earlier [27]. moreover, model-conformance checking can be used to
+evaluate discovery algorithms by choosing a system-model and quantifying the
+similarity between this chosen model and the models discovered by a discovery
+algorithms. in section 2 we discuss both log and model conformance checking in
+more detail.
+large event logs. current process discovery and conformance checking tech-
+niques work reasonably well on smaller event logs, but might have diculties
+handling larger event logs. for instance, discovery techniques typically require
+the event log to t in main memory and require the log to be rather complete,
+i.e. most of the possible behaviour must be present. reducing the log size to t
+in memory, e.g. through sampling, may yield incomplete event logs, which forscalable process discovery and conformance checking 3
+discovery may lead to over-tting models (showing only the behaviour of the
+sample but not of the system) or under-tting models (showing arbitrary beha-
+viour beyond the sample log) (for discovery). for conformance checking, such
+logs may lead to skewed measurements [2].
+event logs might be larger on two dimensions: the number of events or the
+number of activities (i.e. the dierent process steps). from our experiments (sec-
+tion 6), we identied relevant gradations for these dimensions: for the number
+of activities we identied complex logs, i.e. containing hundreds of activities,
+andmore complex logs, i.e. containing thousands of activities. for the number
+of events we identied medium logs, i.e. containing tens of thousands of events,
+large logs, i.e. containing millions of events, and larger logs, i.e. containing
+billions of events. in contrast, event logs typically considered in process mining
+aremedium andsimple , i.e. containing tens of activities, e.g. [29].
+# of activities# of events101103105107109
+101102103104100αhmimd (this paper)
+imbpic11sl
+cscomplex
+morecomplexlargelargerlhc
+medium
+figure 2: dots: maximum number of events
+several discovery algorithms could handle
+(section 6). (connected for readability, al-
+gorithms see section 2); circles: logs.in our experiments we ob-
+served that existing process dis-
+covery algorithms with strong
+quality guarantees, e.g. sound-
+ness, can handle medium logs (see
+imin figure 2; the algorithms
+will be introduced later). al-
+gorithms not providing such guar-
+antees (, hm) can handle large
+logs, but fail on larger logs.
+in the dimension of the num-
+ber of dierent activities, ex-
+periments showed that most al-
+gorithms could not handle com-
+plex processes. current conform-
+ance checking techniques in our
+experiments and [50] seem to
+be unable to handle medium or
+complex event logs.
+such numbers of events and
+activities might seem large for a
+complaint-handling process in an
+airline, however processes of much
+larger complexity exist. for in-
+stance, even simple software tools
+contains hundreds or thousands
+of dierent methods. to study
+or reverse engineer such software,
+studies [39] have recorded method
+calls in event logs (at various
+levels of granularity), and process
+mining and software mining techniques have been used on small examples to4 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+perform the analyses [51,39]; we obtained a large andcomplex log (sl). com-
+plex logs can for instance be found in hospitals: the bpi challenge log of 2011
+(bpic11) [28] was recorded in the emergency department of a dutch hospital
+and contains over 600 activities [28]. even though this log is just complex and
+medium , current discovery techniques have diculties with this log (we will use
+it in the evaluation). other areas in which more complex logs appear are click-
+stream data from web-sites, such as the web-site of a dot-com start-up, which
+produced an event log containing 3300 activities (cl) [37]. even more dicult
+logs could be extracted from large machines, such as the large hadron collider,
+in which over 25,000 distributed communicating components form just a part of
+the control systems [36], resulting in complicated behaviour that could be ana-
+lysed using scalable process mining techniques. in the future, we aim to extract
+such logs and apply our techniques to it, but currently, we would only discover a
+model buy not be able to process the discovered model further (no conformance
+checking and no visualisation on that scale). nevertheless, we will show in our
+evaluation that our discovery techniques are able to handle such logs.
+problem denition and contribution. in this paper, we address two problems:
+applying process discovery to larger andmore complex logs, and conform-
+ance checking to medium andcomplex logs. we introduce two scalable frame-
+works: one for process discovery, the inductive miner - directly-follows framework
+(imd framework), and one for conformance checking: the projected conformance
+checking framework (pcc framework). we instantiate these frameworks to ob-
+tain several algorithms, each with their specic purposes. for discovery, we show
+how to adapt an existing family of algorithms that oers several quality guaran-
+tees (the inductive miner framework ( imframework) [40]), such that is scales
+better and works on larger andmore complex logs. we show that the recur-
+sion on event logs used by the imframework can be replaced by recursion on
+an abstraction (i.e. the so-called directly-follows graph [40]), which can be com-
+puted in a single pass over the event log. we show that this principle can also be
+applied to incomplete event logs (when a discovery technique has to infer miss-
+ing information) and logs with infrequent behaviour or noise (when a discovery
+algorithm has to identify and lter the events that would degrade model qual-
+ity); we present corresponding algorithms. incompleteness and infrequency/noise
+pose opposing challenges to discovery algorithms, i.e. not enough and too much
+information. for these purposes, we introduce dierent algorithms. for conform-
+ance checking, we introduce the congurable divide-and-conquer pccframework
+to compare logs to models and models to models. instead of comparing the com-
+plete behaviour over all activities, we decompose the problem into comparing
+behaviour for subsets of activities. for each such subset, a recall, tness or pre-
+cision measure is computed. the average over these subsets provides the nal
+measure, while the subsets with low values give information about the location
+in the model/log/system-model where deviations occur.
+results. we conducted a series of experiments in which we tested how well al-
+gorithms handle large logs and complex processes, in which we found that thescalable process discovery and conformance checking 5
+imd framework provides the scalability to handle all kinds of logs up to larger
+andmore complex logs (see figure 2). in a second series of experiments we
+investigated the ability of several discovery algorithms to rediscover the original
+system-model: we experimented to analyse the inuence of log sizes, i.e. com-
+pleteness of the logs, to analyse the inuence of noise, i.e. randomly appearing
+or missing events in process executions, and to assess the inuence of infrequent
+behaviour, i.e. structural deviations from the system-model during execution.
+we found that the new discovery algorithms perform comparable to existing
+algorithms, while providing much better scalability. in a third experiment, we
+explored how the new discovery algorithms handle large andcomplex real-life
+logs.
+in all these experiments, the new pcc framework was applied to assess the
+quality of the discovered models with respect to the log and where applicable the
+system, as existing conformance checking techniques could not handle medium
+orcomplex logs and systems. we compared the new conformance checking
+techniques to existing techniques, and the results suggest that the new techniques
+might be able to replace existing less-scalable techniques. in particular, model
+quality with respect to a log can now be assessed in situations where existing
+techniques fail, up to large andcomplex logs.
+relation to earlier papers. this paper extends the work presented in [41]. we
+present the new pcc framework, which is able to cope with medium andcom-
+plex logs and models. this allows us to analyse and compare the quality of the
+imd framework to other algorithms on such event logs in detail.
+outline. first, process mining is discussed in more detail in section 2. second,
+process trees, directly-follows graphs and cuts are introduced in section 3. in
+section 4, the imd framework and three algorithms using it are introduced.
+we introduce the pccframework in section 5. the algorithms are evaluated in
+section 6 using this pccframework. section 7 concludes the paper.
+2 process mining
+in this section, we discuss conformance checking and process discovery in more
+detail.
+2.1 conformance checking
+the aim of conformance checking is to verify a process model against reality.
+as shown in figure 1, two types of conformance checking exist: log-model con-
+formance checking and model-model conformance checking. in log-model con-
+formance checking, reality is assumed to be represented by an event log, while in
+model-model conformance checking, a representation of the system is assumed
+to be present and to represent reality. such a system is usually given as another
+process model, to which we refer to as system-model .6 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+log-model conformance checking. to compare a process model to an
+event log, several quality measures have been proposed [9]. for instance, tness
+expresses the part of the event log that is represented by the model, log-precision
+expresses the behaviour in the model that is present in the event log, general-
+isation expresses the likelihood that future behaviour will be representible by
+the model, and simplicity expresses the absence of complexity in a model [9] to
+represent its behaviour.
+several techniques and measures have been proposed to measure tness and
+precision, such as token-based replay [54], alignments [9,10] and many more:
+for an overview, see [56]. some techniques that were proposed earlier, such as
+token-based replay [54], cannot handle non-determinism well, i.e. silent activ-
+ities () and duplicate activities. later techniques, such as alignments [9], can
+handle non-determinism by exhaustively searching for the model trace that has
+the least deviations from a given log trace (according to some cost function).
+however, even optimised implementations of these techniques cannot deal with
+medium orcomplex event logs and models [50]. to alleviate this problem, de-
+composition techniques have been proposed, for instance using passages [3,4]
+or single-entry-single-exit decompositions [50]. the pccframework presented in
+this paper can be seen as a generalisation of these techniques, that takes the
+context of decomposed nets into account.
+model-model conformance checking. for a more elaborate overview of
+this eld, we refer to [27] and [14].
+typically, the quality of a process discovery algorithm is measured using
+log-conformance checking, i.e. a discovered model is compared to an event log.
+alternatively, discovered model and system-model could be compared directly.
+ideally, both would be compared on branching bisimilarity or even stronger
+notions of equivalence [33], thereby taking the moments of choice into account.
+however, as an event log describes a language and does not contain information
+about choices, the discovered model will lack this information as well and we
+consider comparison based on languages (trace equivalence, a language is the set
+of traces of a log, or the set of traces that a model can produce).
+one such technique is [12]. this approach translates the models into partially-
+ordered runs annotated with exclusive relationships (event structures), which
+can be generated from process models as well [12]. however, event structures
+have diculties supporting loops by their acyclic nature and constructing them
+requires a full state-space exploration.
+as noted in [27], many model-model comparison techniques suer from ex-
+ponential complexity due to concurrency and loops in the models. to overcome
+this problem, several techniques apply an abstraction, for instance using causal
+footprints [30], weak order relations [65] or behavioural proles [58,38]. another
+technique to reduce the state space is decompose the model in pieces and perform
+the computations on these pieces individually [38]. our approach ( pcc frame-
+work, which applies to both log-model and model-model conformance checking)
+applies an abstraction using a dierent angle: we project on subsets of activ-scalable process discovery and conformance checking 7
+ities, thereby generalising over many of these abstractions, i.e. many relations
+between the projected activities are captured. moreover, our approach handles
+any formalism of which the executable semantics can be described by determin-
+istic finite automata, which includes labelled petri nets, i.e. duplicate activities,
+silent transitions, and even some unsound models.
+2.2 process discovery
+process discovery aims at discovering a process model from an event log (see
+figure 1). we rst sketch some challenges that discovery algorithms face, after
+which we discuss existing discovery approaches.
+challenges. several factors challenge process discovery algorithms. one such
+challenge is that the resulting process model should have well-dened behavi-
+oural semantics and be sound [2]. even though an unsound process model or a
+model without a language, i.e. without a denition of traces the model expresses,
+might be useful for manual analysis, conformance checking and other automated
+techniques can obviously not provide accurate measures on such models [55,43].
+theimd framework uses its representational bias to provide a language and
+to guarantee soundness: it discovers an abstract hierarchical view on workow
+nets [2], process trees , that is guaranteed to be sound [20].
+another challenge of process discovery is that for many event logs the meas-
+ures tness, log-precision, generalisation and simplicity are competing, i.e. there
+might not exist a model that scores well on all criteria [21]. thus, discovery
+algorithms have to balance these measures, and this balance might depend on
+the use case at hand, e.g. auditing questions are best answered using a model
+with high tness, optimisations are best performed on a model with high log-
+precision, implementations might require a model with high generalisation, and
+human interpretation is eased by a simple model [21].
+a desirable property of discovery algorithms is having the ability to redis-
+cover the language of the system ( rediscoverability ); we assume the system and
+the system-model to have the same behaviour for rediscoverability. rediscov-
+erability is usually proven using assumptions on both system and event log:
+the system typically must be of a certain class, and the event log must contain
+enough correct information to describe the system well [40]. therefore, three
+more challenges of process discovery algorithms are to handle 1) noise in the
+event log, i.e. random absence or presence of events [19], 2) infrequent beha-
+viour , i.e. behaviour that occurs less frequent than `normal' behaviour, i.e. the
+exceptional cases. for instance, most complaints sent to an airline are handled
+according to a model, but a few complaints are so complicated that they require
+ad-hoc solutions. this behaviour could be of interest or not, which depends on
+the goal of the analysis [2]. 3) incompleteness , i.e. the event log does not con-
+tain \enough" information. the notion of what \enough" means depends on the
+discovery algorithm [13,40]. even though rediscoverability is desirable, it is a
+formal property, and it is not easy to compare algorithms using it. however, the8 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+pccframework allows to perform experiments to quantify how rediscoverability
+is inuenced by noise, infrequent behaviour and incompleteness.
+a last challenge arises from the main focus of this paper, i.e. highly scal-
+able environments. ideally, a discovery technique should linearly pass over the
+event log once, which removes the need to keep the event log in memory. in the
+remainder of this section, we discuss related process discovery techniques and
+their application in scalable environments.
+sound process discovery algorithms. process discovery techniques such as the
+evolutionary tree miner (etm) [20], the constructs competition miner (ccm)
+[52], maximal pattern mining (mpm) [46] and inductive miner (im) [40] provide
+several quality guarantees, in particular soundness and some oer rediscoverab-
+ility, but do not manage to discover a model in a single pass. etm applies a
+genetic strategy, i.e. generates an initial population, and then applies random
+crossover steps, selects the `best' individuals from the population and repeats.
+while etm is very exible towards the desired log-measures to which respect
+the model should be `best' and guarantees soundness, it requires multiple passes
+over the event log and does not provide rediscoverability.
+ccm and imuse a divide-and-conquer strategy on event logs. in the in-
+ductive miner imframework, rst an appropriate cut of the process activities
+is selected; second, that cut is used to split the event log into sub logs; third,
+these sub logs are recursed on, until a base case is encountered. if no appropri-
+ate cut can be found, a fall-through (`anything can happen') is returned. ccm
+works similarly by having several process constructs compete with one another.
+while both ccm and the imframework guarantee soundness and imguaran-
+tees rediscoverability (for the class of models described in [42, appendix a]),
+both require multiple passes through the event log (the event log is being split
+and recursed on).
+mpm rst constructs a prex-tree of the event log. second, it folds leaves to
+obtain a process model, thereby applying local generalisations to detect concur-
+rency. the mpm technique guarantees soundness and tness, allows for noise
+ltering and can reach high precision, but it does so at the cost of simplicity: typ-
+ically, lots of activities are duplicated. inherently, the mpm technique requires
+random access to the event log and a single pass does not suce.
+other process discovery algorithms. other process discovery techniques are
+for instance the -algorithm () and its derivatives [7,61,62], the heuristics
+miner [59] (hm), the integer linear programming miner [63] (ilp) and sev-
+eral commercial tools, such as fluxicon disco (fd) [34] and perceptive process
+mining (two versions: pm1 and pm2).
+some of these guarantee soundness, but do not support explicit concurrency
+(fd, pm1) [45]. the ilp miner guarantees tness and can guarantee that the
+model is empty after completion, but only for the traces seen in the event log,
+i.e. the models produced by ilp are usually not sound. however, most of these
+algorithms ( , hm, ilp, pm2) do not guarantee soundness or even provide
+a nal marking, which makes it dicult to determine their language (see [42,scalable process discovery and conformance checking 9
+appendix e]), thus their models are dicult to analyse automatically (though,
+such unsound models can still be useful for manual analysis).
+several techniques ( , hm) satisfy the single-pass requirement. these al-
+gorithms rst obtain an abstraction from the log, which denotes what activities
+directly follow one another; in hm, this abstraction is ltered. second, from this
+abstraction a process model is constructed. both and hm have been demon-
+strated to be applicable in highly-scalable environments: event logs of 5 million
+traces have been processed using map-reduce techniques [31]. moreover, guar-
+antees rediscoverability, but neither nor hm guarantees soundness. we show
+that our approach oers the same scalability as hm and , but provides both
+soundness and rediscoverability.
+some commercial tools such as fd and pm1 oer high scalability, but do
+not support explicit concurrency [45]. other discovery techniques, such as the
+language-based region miner [17,18] or the state-based region miner [25] guar-
+antee tness but neither soundness nor rediscoverability nor work in single pass.
+software mining. in the eld of software mining, similar techniques have been
+used to discover formal specications of software. for instance, in [51] and [11],
+execution sequences of software runs (i.e. traces) are recorded in an event log,
+from which techniques extract e.g. valid execution sequences on the methods of
+an api. such valid execution sequences can then be used to generate document-
+ation. process discovery diers from software mining in focus and challenges:
+process discovery aims to nd process models with soundness and concurrency
+and is challenged e.g. by deviations from the model (noise, infrequent behaviour)
+and readability requirements of the discovered models, while for software mining
+techniques, the system is xed and challenges arise from e.g. nesting levels [51],
+programmed exceptions [64] and collaborating components [32].
+streams. another set of approaches that aims to handle even bigger logs assumes
+that the event log is an unbounded stream of events. some approaches such as
+[26,35] work on click-stream data, i.e. the sequence of web pages users visit, to
+extract for instance clusters of similar users or web pages. however, we aim to
+extract end-to-end process models, in particular containing parallelism. hm, 
+and ccm have been shown to be applicable in streaming environments [23,53].
+while streaming algorithms could handle event logs containing billions of events
+by feeding them as streams, these algorithms assume the log can never be ex-
+amined completely and, as of the unbounded stream, eventually cannot store
+information for an event without throwing away information about an earlier
+seen event. in this paper, we assume the log is bounded and we investigate how
+far we can get using all information in it.
+3 preliminaries
+to overcome the limitations of process discovery on large event logs, we will com-
+bine the single-pass property of directly-follows graphs with a divide-and-conquer10 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+strategy. this section recalls these existing concepts. the new algorithms are in-
+troduced in section 4.
+3.1 basic notions
+event logs. anevent log is a multiset of traces that denote process executions.
+for instance, the event log [ ha;b;ci;hb;di2] denotes the event log in which the
+trace consisting of the activity afollowed by the activity bfollowed by the activity
+cwas executed once, and the trace consisting of bfollowed by dwas executed
+twice.
+process trees. aprocess tree is an abstract representation of a block-structured
+hierarchical process model, in which the leaves represent the activities , i.e. the
+basic process steps, and the operators describe how their children are to be com-
+bined [20].denotes the activity whose execution is not visible in the event log.
+we consider four operators: ,!,^and	.describes the exclusive choice
+between its children, !the sequential composition and ^the parallel composi-
+tion. the rst child of a loop 	is the body of the loop, all other children are redo
+children. first, the body must be executed, followed by zero or more iterations
+of a redo child and the body. a formal denition is given in [42, appendix a]; we
+give an example here: figure 3 shows the petri net corresponding to the process
+tree!((^(a;b);c);(	(!(d;e);f);g)). process trees are inherently sound.
+b
+cd ef
+ga
+figure 3: a block-structured hierarchical workow net; the block-structure is
+denoted by lled regions (image taken from [44]).
+directly-follows graphs. adirectly-follows graph can be derived from a log and
+describes what activities follow one another directly, and with which activities
+a trace starts or ends. in a directly-follows graph, there is an edge from an
+activityato an activity bifais followed directly by b. the weight of an edge
+denotes how often that happened. for instance, the directly-follows graph of our
+example log [ha;b;ci;hb;di2] is shown in figure 4. note that the multiset of start
+activities is [ a;b2] and the multiset of end activities is [ c;d2]. a directly-follows
+graph can be obtained in a single pass over the event log with minimal memory
+requirements [31].scalable process discovery and conformance checking 11
+a b
+cd1 221
+1
+12
+figure 4: example of a directly-follows graph.
+cuts, characteristics and the inductive miner framework. apartition is a non-
+overlapping division of the activities of a directly-follows graph. for instance,
+(fa;bg;fc;dg) is a binary partition of the directly-follows graph in figure 4. a cut
+is a partition combined with a process tree operator, for instance ( !;fa;bg;fc;dg).
+in the imframework, nding a cut is an essential step: its operator becomes the
+root of the process tree, and its partition determines how the log is split.
+theimframework [40] discovers the main cut, and projects the given log
+onto the activity partition. in case of loops, each iteration becomes a new trace
+in the projected sub-log. subsequently, for each sub-log its main cut is detected
+and recursion continues until reaching partitions with singleton elements; these
+become the leaves of the process tree. if no cut can be found, a generalising fall-
+through is returned that allows for any behaviour (a \ower model"). by the
+use of process trees, the imframework guarantees sound models, and makes it
+easy to guarantee tness. the imframework is formalised in [42, appendix a].
+suppose that the log is produced by a process which can be represented by a
+process tree t. then, the root of tleaves certain characteristics in the log and
+in the directly-follows graph. the most basic algorithm that uses the imframe-
+work, i.e. im[40], searches for a cut that matches these characteristics perfectly.
+other algorithms using the imframework are the infrequent-behaviour-ltering
+inductive miner - infrequent ( imf) [43] and the incompleteness-handling in-
+ductive miner - incompleteness ( imc) [44].
+3.2 cut detection
+cut denitions are given [42, appendix a]. here we describe how the cut de-
+tection works. each of the four process tree operators ,!,^and	leaves a
+dierent characteristic footprint in the directly-follows graph. figure 5 visual-
+ises these characteristics: for exclusive choice, the activities of one sub-tree will
+never occur in the same trace as activities of another sub-tree. hence, activities
+of the dierent sub-trees form clusters that are not connected by edges in the
+directly-follows graph. thus, the cut is computed by taking the connected
+components of the directly-follows graph.
+if two sub-trees are sequentially ordered, all activities of the rst sub-tree
+strictly precede all activists of the second sub-tree; in the directly-follows graph
+we expect to see a chain of clusters without edges going back. the procedure to12 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+...sequence:
+...exclusive choice:
+...parallel:
+...loop:
+figure 5: cut characteristics.
+discover a sequence cut is as follows: each activity starts as a singleton set. first,
+the strongly connected components of the directly-follows graph are computed
+and merged. by denition, two activities are in a strongly connected component
+if they are pairwise reachable, and therefore they cannot sequential. second,
+pairwise unreachable sets are merged, as if there is no way to reach two nodes in
+the same trace, they cannot be sequential. finally, the remaining sets are sorted
+based on reachability.
+the activities of two parallel subtrees can occur in any intertwined order; we
+expect all possible connections to be present between the child-clusters in the
+directly-follows graph. to detect parallelism, the graph is negated: the negated
+graph gets no edge between two activities if both directly-follows edges between
+these activities are present. if either edge is missing, the negated graph will
+contain an edge between these two activities. in this negated graph, the partition
+of the parallel cut is the set of connected components.
+in a loop, the directly-follows graph must contain a clear set of start and end
+activities; all connections between clusters must go through these activities. to
+detect a loop cut, rst the connected components of the directly-follows graph
+are computed, while excluding the start and end activities. please note that start
+and end activities by denition belong to the body of the loop. second, for each
+component reachability is used to determine whether it is directed from a start
+activity to an end activity (body part), or directed the other way round (a redo).
+4 process discovery using a directly-follows graph
+algorithms using the imframework guarantee soundness, and some even redis-
+coverability, but do not satisfy the single-pass property, as the log is traversed
+and even copied during each recursive step. therefore, we introduce an adapted
+framework: inductive miner - directly-follows (imd framework) that recurses
+on the directly-follows graph instead of the event log. in this section, we rstscalable process discovery and conformance checking 13
+ab
+c
+ei
+dhg
+f9
+33
+3
+33
+31 11
+1
+11
+1 16
+16
+33633
+9
+figure 6: directly-follows graph d1ofl. in a next step, the partition
+(fag;fb;c;d;eg;ff;g;hg;fig), denoted by the dashed lines, will be used.
+introduce the imd framework and a basic algorithm using it. second, we intro-
+duce two more algorithms: one to handle infrequent behaviour; another one that
+handles incompleteness.
+4.1 inductive miner - directly-follows
+as a rst algorithm that uses the framework, we introduce inductive miner -
+directly-follows (imd). we explain the stages of imd in more detail by means
+of an example: let lbe [ha;b;c;f;g;h;ii,ha;b;c;g;h;f;ii,ha;b;c;h;f;g;ii,
+ha;c;b;f;g;h;ii,ha;c;b;g;h;f;ii,ha;c;b;h;f;g;ii,ha;d;f;g;h;ii,
+ha;d;e;d;g;h;f;ii,ha;d;e;d;e;d;h;f;g;i i]. the directly-follows graph d1ofl
+is shown in figure 6.
+cut detection. imd searches for a cut that perfectly matches the characteristics
+mentioned in section 3. as explained, cut detection has been implemented using
+standard graph algorithms (connected components, strongly connected compon-
+ents), which run in polynomial time, given the number of activities ( o(n)) and
+directly-follows edges ( o(n2)) in the graph.
+in our example, the cut ( !;fag;fb;c;d;eg;ff;g;hg;fig) is selected: as shown
+in figure 5, every edge crosses the cut lines from left to right. therefore, it
+perfectly matches the sequence cut characteristic. using this cut, the sequence
+is recorded and the directly-follows graph can be split.
+directly-follows graph splitting. given a cut, the imd framework splits the
+directly-follows-graph in disjoint subgraphs. the idea is to keep the internal
+structure of each of the clusters of the cut by simply projecting a graph on
+the cluster. figure 7 gives an example of how d1(figure 6) is split using the14 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+sequence cut that was discovered in our example. if the operator of the cut is !
+or	, the start and end activities of a child might be dierent from the start and
+end activities of its parent. therefore, every edge that enters a cluster is counted
+as a start activity, and an edge leaving a cluster is counted as an end activity. in
+our example, the start activities of cluster ff;g;hgare those having an incoming
+edge not starting in ff;g;hg, and correspondingly for end activities. the result
+is shown in figure 7a. in case of , no edges leave any cluster and hence the start
+and end activities remain unchanged. in case of ^, removed edges express the
+arbitrary interleaving of activities in parallel clusters; removing this interleaving
+information does not change with which activities a cluster may start or end,
+thus start and end activities remain unchanged.
+the choices for a sequence cut and the split directly-follows graphs are re-
+corded in an intermediate tree: !((d2);(d3);(d4);(d5)), denoting a sequence
+operator with 4 unknown sub-trees that are to be derived from 4 directly-follows
+graphs.
+a9 9
+(a)d2offag
+b
+c
+ed3
+3 33 3
+33
+3 3
+3 (b)d3offb;c;d;eg
+hg
+f63 3
+3 3
+3 36
+6(c)d4offf;g;hg
+i9 9 (d)d5offig
+figure 7: split directly-follows graphs of d1. the dashed line is used in a next
+step and denotes another partition.
+recursion. next, imd recurses on each of the new directly-follows graphs (nd
+cut, split, . . . ) until a base case (see below) is reached or no perfectly matching
+cut can be found. each of these recursions returns a process tree, which in turn
+can be inserted as a child of an operator identied in an earlier recursion step.
+base case. directly-follows graphs d2(figure 7a) and d5(figure 7d) contain
+base cases: in both graphs, only a single activity is left. the algorithm turns
+these into leaves of the process tree and inserts them at the respective spot of
+the parent operator. in our example, detecting the base cases of d2andd5
+yields the intermediate tree !(a;(d3);(d4);i), in which d3andd4indicate
+directly-follows graphs that are not base cases and will be recursed on later.
+fall-through. considerd4as, shown in figure 7c. d4does not contain uncon-
+nected parts, so does not contain an exclusive choice cut. there is no sequencescalable process discovery and conformance checking 15
+cut possible, as f,gandhform a strongly connected component. there is no
+parallel cut as there are no dually connected parts, and no loop cut as all activit-
+ies are start and end activities. thus, imd selects a fall-through, being a process
+tree that allows for any behaviour consisting of f,gandh(a ower model
+	(;f;g;h ), having the language ( fjgjh)). the intermediate tree of our ex-
+ample up till now becomes !(a;(d3);	(;f;g;h );i) (remember that denotes
+the activity of which the execution is invisible).
+example continued. ind3, shown in figure 7b, a cut is present: ( ;fb;cg;fd;eg):
+no edge ind3crosses this cut. the directly-follows graphs d6andd7, shown in
+figures 8a and 8b, result after splitting d3. the tree of our example up till now
+becomes!(a;((d6);(d7));	(;f;g;h );i).
+ind6, shown in figure 8a, a parallel cut is present, as all possible edges cross
+the cut, i.e. the dashed line, in both ways. the dashed line in d7(figure 8b)
+denotes a loop cut, as all connections between fdgandfeggo via the set of start
+and end activities fdg. four more base cases give us the complete process tree
+!(a;(^(b;c);	(d;e));	(;f;g;h );i).
+b
+c3
+3 33
+3 3
+(a)d6offb;cgind3
+ed
+3 33 3 (b)d7offd;egind3
+figure 8: split directly-follows graphs. dashed lines denote cuts, which are used
+in the next steps.
+to summarise: imd selects a cut, splits the directly-follows graph and re-
+curses until a base case is encountered or a fall-through is necessary. as each
+recursion removes at least one activity from the graph and cut detection is o(n2),
+imd runs ino(n3), in which nis the number of activities in the directly-follows
+graph.
+by the nature of process trees, the returned model is sound. by reasoning
+similar to im[40],imd guarantees rediscoverability on the same class of models
+(see [42, appendix a]), i.e. assuming that the model is representable by a process
+tree without using duplicate activities, and it is not possible to start loops with
+an activity they can also end with [40]. this makes imd the rst single-pass
+algorithm to oer these guarantees.
+4.2 handling infrequency and incompleteness
+the basic algorithm imd guarantees rediscoverability, but, as will be shown in
+this section, is sensitive to both infrequent and incomplete behaviour. to solve
+this, we introduce two more algorithms using the imd framework.16 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+infrequent behaviour. infrequent behaviour in an event log is behaviour that
+occurs less frequent than `normal' behaviour, i.e. the exceptional cases. for in-
+stance, most complaints sent to an airline are handled according to a model, but
+a few complaints are so complicated that they require ad-hoc solutions. this
+behaviour could be of interest or not, which depends on the goal of the analysis.
+consider again directly-follows graph d3, shown in figure 7b, and sup-
+pose that there is a single directly-follows edge added, from ctod. then,
+(;fb;cg;fd;eg) is not a perfectly matching cut, as with the addition of this
+edge the two parts fb;cgandfd;egbecame connected. nevertheless, as 9 traces
+showed exclusive-choice behaviour and only one did not, this single trace is
+probably an outlier and in most cases, a model ignoring this trace would be
+preferable.
+to handle these infrequent cases, we apply a strategy similar to imf [43]
+and use the imd framework to dene another discovery algorithm: inductive
+miner - infrequent - directly-follows (imfd ). infrequent behaviour introduces
+edges in the directly-follows graph that violate cut requirements. as a result, a
+single edge makes it impossible to detect an otherwise very strong cut. to handle
+this,imfd rst searches for existing cuts as described in section 4.1. if none is
+found (when imd would select a fall through), the graph is ltered by removing
+edges which are infrequent with respect to their neighbours. technically, for a
+parameter 0h1, for an activity awe keep the outgoing edges that occur
+more thanhtimes the most occurring outgoing edge of a(a formal denition is
+given in [42, appendix a]). start and end activities are ltered similarly.
+a b
+c d3
+2 11
+32 3
+2 3211
+1
+figure 9: an incomplete directly-follows graph.
+incompleteness. a log in a \big-data setting" can be assumed to contain lots of
+behaviour. however, we only see example behaviour and we cannot assume to
+have seen all possible traces, even if we use the rather weak notion of directly-
+follows completeness [44] as we do here. moreover, sometimes smaller subsets
+of the log are considered, for instance when performing slicing and dicing in
+the context of process cubes [5]. for instance, an airline might be interested in
+comparing the complaint handling process for several groups of customers, to
+gain insight in how the process relates to age, city and frequent-yer level of
+the customer. then, there might be combinations of age, city and frequent-yerscalable process discovery and conformance checking 17
+level that rarely occur and the log for these customers might contain too little
+information.
+if the log contains little information, edges might be missing from the directly-
+follows graph and the underlying real process might not be rediscovered. fig-
+ure 9 shows an example: the cut ( fa;bg;fc;dg) is not a parallel cut as the edge
+(c;b) is missing. as the event log only provides example behaviour, it could be
+that this edge is possible in the process, but has not been seen yet. given this
+directly-follows graph, imd can only give up and return a fall-through ower
+model, which yields a very imprecise model. however, choosing the parallel cut
+(fa;bg;fc;dg) would obviously be a better choice here, providing a better preci-
+sion.
+to handle incompleteness, we introduce inductive miner - incompleteness -
+directly-follows (imcd ), which adopts ideas of imc [44] into the imd frame-
+work. imcd rst applies the cut detection of imd and searches for a cut that
+perfectly matches a characteristic. if that fails, instead of a perfectly matching
+cut,imcd searches for the most probable cut of the directly-follows graph at
+hand.
+imcd does so by rst estimating the most probable behavioural relation
+between any two activities in the directly-follows graph. in figure 9, the activities
+aandbare most likely in a sequential relation as there is an edge from atob.
+aandcare most likely in parallel as there are edges in both directions. loops
+and choices have similar local characteristics. for each pair of activities xandy
+the probability pr(x;y) thatxandyare in relation ris determined. the best
+cut is then a partition into sets of activities xandysuch that the average
+probabilities that x2xandy2yare in relation ris maximal. for a formal
+denition, please refer to [44].
+in our example, the probability of cut ( ^;fa;bg;fc;dg) is the average prob-
+ability that ( a;c), (a;d), (b;c) and (b;d) are parallel. imcd chooses the cut with
+highest probability, using optimisation techniques. this approach gives imcd a
+run time exponential in the number of activities, but still requires a single pass
+over the event log.
+4.3 limitations
+theimd framework imposes some limitations on process discovery. we dis-
+cuss limiting factors on the challenges identied in section 2: rediscoverability,
+handling incompleteness, handling noise and handling infrequent behaviour, and
+balancing tness, precision, generalisation and simplicity.
+limitations on rediscoverability of the imd framework are similar to the im
+framework: the system must be a process tree and adhere to some restrictions,
+and the log must be directly-follows complete (as discussed before). if the sys-
+tem does not adhere to the restrictions, then imd framework will not give up
+but rather try to discover as much process-tree like behaviour as possible. for
+instance, if a part of the process is sequential, then imd framework might be
+able to discover this, even though the other parts of the process are not block-
+structured. therefore, in practice, such models can be useful [22,16]. to formally18 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+investigate what happens on non-block structured models would be an interest-
+ing subject of further study. for the remaining non-block structured parts, the
+exibility of imd framework easily allows for future customisations, e.g. [48].
+if the log is incomplete, in some cases log-based discovery techniques might
+handle this incompleteness better. for instance, take the process tree p1=
+^(a;b;c ) and an event log l=fha;b;ci;hc;b;ai;hb;a;ci;ha;c;big. figure 10a
+shows the directly-follows graph of l. loglis not directly-follows complete
+with respect to p1, as the edge ( c;a) is missing. both imandimd will rst
+detect a concurrent cut ( ^;fa;cg;fbg). the sub-logs after splitting by imare
+fha;ci;hc;aigandfhbig, in which the missing directly-follows edge a;cpops up
+and enables the rediscovery of p1. inimd, however, the directly-follows graph
+is split, resulting in the directly-follows graph for a;cshown in figure 10b, from
+whichp1cannot be rediscovered. in section 6, we will illustrate that the eect
+of this limitation is limited on larger examples.
+a
+bc
+(a) directly-follows graph of
+l.a c
+(b) after splitting by imd.a
+cb
+(c) the directly-follows graph
+of bothp2andl2.
+figure 10: a directly-follows graph that does not suce to discover concurrency
+where the log does (a, b) and an ambiguous directly-follows graph (c).
+if the log contains noise and/or infrequent behaviour, then the imd frame-
+work might choose a wrong cut at some point (as discussed in section 4.2),
+possibly preventing rediscovery of the system. the noise handling abilities of log-
+based and directly-follows based algorithms dier in details; in both, noise and
+infrequent behaviour manifest as superuous edges in a directly-follows graph.
+on one hand, in im, such wrong edges might pop up during recursion by reas-
+oning similar to the incompleteness case (which could be harmful), while using
+the same reasoning, log-based algorithms might have more information available
+to lter such edges again (which could be benecial). in the evaluation, we will
+investigate this dierence further.
+given an event log, both types of algorithms have to balance tness, precision,
+generalisation and simplicity. for directly-follows based algorithms, this balance
+might be dierent.
+for instance, a desirable property of discovery algorithms is the ability to pre-
+serve tness, i.e. to discover a model that is guaranteed to include all behaviourscalable process discovery and conformance checking 19
+seen in the event log. for directly-follows based algorithms, this is challenging.
+for instance, figure 10c shows a complete directly-follows graph of the pro-
+cess treep2=^(!(a;b);c). however, it is also the directly-follows graph of
+the event log l2=fha;c;b;c;a;bi;hcig. hence, if a tness-preserving directly-
+follows based discovery algorithm would be applied to the directly-follows graph
+in figure 10c, this algorithm could not return p2and has to seriously under-
+t/generalise to preserve tness since the behaviour of both needs to be included.
+hence,p2could never be returned. therefore, we chose the imd framework to
+not guarantee tness, while the imframework by its log splitting indirectly takes
+such concurrency dependencies into account. please note that this holds for any
+pure directly-follows based process discovery algorithm (see the limitations of
+the-algorithm). generalisation, i.e. the likelihood that future behaviour will
+be representable by the model, is similarly inuenced.
+algorithms of the imframework can achieve a high log-precision if it can
+avoid fall-throughs such as the ower model [43]. thus, imframework achieves
+the highest log-precision if it can nd a cut. the same holds for imd framework,
+and therefore we expect log-precision to largely depend on the cut selection. in
+the evaluation, we will investigate log-precision further.
+the inuence of directly-follows based algorithms on simplicity highly de-
+pends on the chosen simplicity measure: both imframework and imd framework
+return models in which each activity appears once.
+5 comparing models to logs and models
+we want to evaluate and compare our algorithm to other algorithms regarding
+several criteria.
+{first, we want to compare algorithms based on the size of event logs they
+can handle, as well as the quality of the produced models. in particular both
+recall/tness and precision (with respect to the given system-model or log)
+need to be compared, as trivial models exist that achieve either perfect recall
+or perfect precision, but not both.
+{second, we want to assess under which conditions the new algorithms achieve
+rediscoverability, i.e. under which conditions the partial or incorrect inform-
+ation in the event log allows to obtain a model that has exactly the same
+behaviour as the original system that produced the event log. more formally,
+under which conditions (and up to which sizes of systems) has the discovered
+model the same language as the original system.
+measuring model quality is crucial in typical process mining workows as
+shown in the introduction. however, as discussed in section 2, existing tech-
+niques for measuring model quality (on log or model) cannot handle large and
+complex logs and processes. our technique has to overcome two diculties: (1)
+it has to compute precision and recall of very large, possibly innite languages;
+and (2) it should allow a ne-grained measurement of precision and recall allow-
+ing to identify particular activities or behavioural relations where the the model
+and the log/other model dier.20 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+we rst introduce this technique for measuring recall and precision of two
+models - with the aim of analysing rediscoverability of process mining algorithms
+(section 5.1). second, we adopt this technique to also compare a discovered
+model to a (possibly very large) event log (section 5.2). we use the techniques
+in our evaluation in section 6.
+5.1 model-model comparison
+the recall of a model sand a model mdescribes the part of the behaviour of
+sthat is captured by m(compare to the conventional tness notion in process
+mining), while precision captures the part of the behaviour of mthat is also
+possible in s.
+for a complex model sand a complex model m, direct language-based com-
+parison of the two models by constructing and comparing their state spaces might
+suer from the state explosion problem, and hence be prohibitively expensive.
+therefore, the framework approximates recall and precision by measuring them
+on subsets of activities, i.e. we avoid the state explosion problem by considering
+small submodels, and averaging over all such subsets. the framework is applic-
+able to any process model formalism and process discovery algorithm, as long as
+the languages of the models used can be described as deterministic nite auto-
+mata (dfas). we rst introduce the general idea of the framework, after which
+we describe its steps in more detail.
+process model
+project on a1 ... akproject on a1 ... ak
+dfa dfa
+recall
+precisionprocess model
+figure 11: evaluation framework for process discovery algorithms.
+framework figure 11 gives an overview of the model-model evaluation frame-
+work; formally, the framework takes as input a model s, a modelmand an
+integerk.sandmmust be process models, but can be represented using any
+formalism with executable semantics.
+to measure recall and precision of sandm, we introduce a parameterised
+technique in which kdenes the size of the subsets of activities for which recallscalable process discovery and conformance checking 21
+and precision shall be computed. take a subset of activities a=fa1:::akg,
+such thata(m)[(s), andjaj=k. then,sandmare projected onto
+a, yieldingsjaandmja(we will show how the projection is performed below).
+from these projected sjaandmja, deterministic nite automata (dfas) are
+generated, which are compared to quantify recall and precision. these steps are
+repeated for all such subsets a, and the average recall and precision over all
+subsets is reported.
+as we aim to apply this method to test rediscoverability, a desirable property
+is that precision and recall should be 1 if and only if l(s) =l(m). theorem 1,
+given later, states that this is the case for the class of process trees used in this
+paper.
+as a running example, we will compare two models, being a process tree and
+a petri net. both are shown in figure 12.
+(^(a;b);	(c;d))
+(a) process tree s.a
+cb
+(b) petri net m.
+figure 12: example models sandm.
+in the remainder of this section, we describe the steps of the framework in
+more detail after which we give an example and prove theorem 1.
+projection many process formalisms allow for projection on subsets of activ-
+ities; we give a denition for process trees here and sketch projection for petri
+nets in [42, appendix e].
+a process tree can be projected on a set of activities a=fa1:::akgby
+replacing every leaf that is not in awith: (in whichis any process tree
+operator)
+aja= ifa2athenaelse
+ja=
+(m1:::mn)ja=(m1ja:::mnja)
+after projection, a major problem reduction (and speedup) can be achieved by
+applying structural language-preserving reduction rules to the process tree, such
+as the rules described in [42, appendix b].
+in principle, any further language preserving state-space reduction rules can
+be applied; we will not explore further options in this paper.
+if we project our example process tree and petri net onto activities aandb,
+we obtain the models as shown in figure 13.22 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+(^(a;b);	(;))
+(a)sja;b.(^(a;b);)
+(b)sja;breduced.a
+b
+(c)mja;b.
+figure 13: example models sandmprojected/reduced.
+process model to deterministic finite automaton anautomaton de-
+scribes a language based on an alphabet . the automaton starts in its initial
+state; from each state, transitions labelled with activities from denote the pos-
+sible steps that can be taken from that state. a state can be an accepting state,
+which denotes that a trace which execution ends in that state is accepted by
+the automaton. an automaton with a nite set of states is a non-deterministic
+nite automaton (nfa). in case that the automaton does not contain a state
+from which two transitions with the same activity leave, the automaton is a
+deterministic nite automaton (dfa). each nfa can be translated into a dfa
+and a language for which a dfa exist is a regular language; for each dfa, there
+exists a reduced unique minimal version [47].
+process tree are dened using regular expressions in [42, appendix a], which
+can be transformed straightforwardly into an nfa (we used the implementa-
+tion [49], which provides a shue-operator). secondly, a simple procedure trans-
+forms the nfa into a dfa [47].
+the translation of our example sjfa;bgandmjfa;bgto dfas results in the
+automata shown in gures 14a and 14b.
+s1 s2
+s3 s4a
+b b
+a
+(a) dfa(sjfa;bg).m1m2
+m3a
+bb
+(b) dfa(mjfa;bg).s1m1s2m2
+s3m3a
+b
+(c) dfac(s;m;fa;bg).
+figure 14: dfas for sandmprojected tofa;bgand reduced, and their con-
+junction.
+comparing deterministic finite automata precision is dened as the
+part of behaviour in mjathat is also in sja. therefore, rst the conjunctionscalable process discovery and conformance checking 23
+table 1: outgoing edge counting of our running example.
+recall for activity subset fa;bg
+state in dfa( sjfa;bg)outgoing edges state in dfac( s;m;fa;bg)outgoing edges
+s1 3 s1m1 1
+s2 1 s2m2 1
+s3 1 s3m3 1
+s4 1 - 0
+precision for activity subset fa;bg
+state in dfa( mjfa;bg)outgoing edges state in dfac( s;m;fa;bg)outgoing edges
+m1 2 s1m1 1
+m2 1 s2m2 1
+m3 1 s3m3 1
+dfa(sja)\dfa(mja) (which we abbreviate to dfac( s;m;a )) of these dfas is
+constructed, which accepts the traces accepted by both sjaandmja. figure 14c
+shows the conjunctive dfa of our running example. then, precision is measured
+similarly to several existing precision metrics, such as [8]: we count the outgoing
+edges of all states in dfa( mja), and compare that to the outgoing edges of the
+corresponding states ( s;m) in dfac(s;m;a ) (for ease of notation, we consider
+an automaton as a set of states here):
+precision (s;m;a ) =p
+m2dfa(mja)p
+(s;m)2dfac(s;m;a )outgoing edges of ( s;m) in dfac( s;m;a )
+p
+m2dfa(mja)p
+(s;m)2dfac(s;m;a )outgoing edges of min dfa(mja)
+if dfa(mja) has no edges at all (i.e. describes the empty language), we dene
+precision (s;m;a ) =(
+0 if dfac( s;m;a ) has edges
+1 if dfac( s;m;a ) has no edges
+please note that we count acceptance as an outgoing edge, and that states may
+be counted multiple times if they are used multiple times in dfac. recall is
+dened as the part of behaviour in sjathat is not in mja, i.e.recall (s;m;a ) =
+precision (m;s;a ). in our example (see table 1), recall for ( a;b) is1+1+1
+3+1+1+1=
+0:5; precision is1+1+1
+2+1+1= 0:75.
+over all activities for an alphabet , nally the previous steps are repeated
+for each set of activities fa1:::akgof sizekand the results are averaged:
+recall (s;m;k ) =p
+a(s)[(m)^jaj=krecall (s;m;a 1:::ak)
+jfa(s)[(m)^jaj=kgj
+precision (s;m;k ) =recall (m;s;k )24 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+note that we assume a closed-world here, i.e. the alphabet is assumed to
+be the same for sandm. if an activity is missing from m, we therefore consider
+mto express that the activity can never happen.
+framework guarantees using these denitions, we prove that the framework
+is able to detect language equivalence between process trees of the class that can
+be rediscovered by imandimd. this theorem will be useful in later evaluations,
+where from recall and precision being 1, we can conclude that the system was
+rediscovered.
+theorem 1. letsandmbe process trees without duplicate activities and
+withouts. then,recall (s;m; 2) = 1^precision (s;m; 2) = 1,l(s) =l(m).
+the proof strategy is to prove the two directions of the implication separ-
+ately, using that for such trees, there exists a language-unique normal form [40,
+corollary 15]. for a detailed proof, see [42, appendix c]. as for sound free-choice
+unlabeled workow nets without short loops the directly-follows graph denes a
+unique language [57], theorem 1 applies to these nets as well.
+corollary 2. letsandmbe sound free-choice unlabelled workow nets without
+short loops. then, recall (s;m; 2) = 1^precision (s;m; 2) = 1,l(s) =l(m).
+unfortunately, this theorem does not hold for general process trees. for in-
+stance, take s=(a;b;c; ) andm=(a;b;c ). fork= 2, the framework will
+consider the subtrees (a;b; ),(a;c; ) and(b;c; ) for bothsandm, thus
+will not spot any dierence: recall = 1 andprecision = 1, even though the
+languages of sandmare clearly dierent. only for k= 3, the framework will
+detect the dierence.
+in section 6, we use the algorithm framework to test incompleteness, noise
+and infrequent behaviour on large models. before that, we rst show that the
+ideas of the framework can also be used to compare models to event logs.
+5.2 log-model comparison
+in order to evaluate models with respect to event logs, the framework in sec-
+tion 5.1 is adapted as follows: figure 15 shows an overview: the framework
+starts from an event log land a model m(in a process mining setting, m
+would have been discovered from l). first,landmare projected on a set
+of activities a. a log is projected by removing the non-projected events, e.g.
+fha;b;ci;hc;digjfa;bg=fha;bi;hig. second, from both projections a dfa is con-
+structed. precision is computed as in section 5.2, i.e. by comparing dfa( lja)
+and dfa(mja). for tness, it is desirable that the frequencies of traces are taken
+into account, such that a trace that appears 10,000 times in lcontributes more
+to the tness value than a trace that appears just once. therefore, we compute
+tness as the fraction of traces of ljathat can be replayed on dfa( mja):
+fitness (l;m;a ) =j[t2ljajt2dfa(mja)]j
+jljajscalable process discovery and conformance checking 25
+event log process model
+project on a1 ... akproject on a1 ... ak
+dfa
+/f_itness precisiondfa
+figure 15: evaluation approach for logs vs models.
+if the log contains no traces, we dene tness to be 1.
+note thatlis a multiset: if a trace appears multiple times in l, it contrib-
+utes multiple times as well. this is repeated for all subsets of activities aof a
+certain length k, similarly to the model-model comparison. note that besides a
+tness/precision number, the subsets aalso provide clues where deviations in
+the log and model occur.
+6 evaluation
+to understand the impact of \big data" event logs on process discovery and
+quality assessment, we conducted a series of experiments to answer the following
+research questions:
+rq1 what is the largest event log (number of events/traces or number of activ-
+ities) that process discovery algorithms can handle?
+rq2 are single-pass algorithms such as the algorithms of the imd framework
+able to rediscover the system? how large do event logs have to be in order
+to enable this rediscovery? how do these algorithms compare to classical
+algorithms?
+rq3 can the system also be rediscovered if an event log contains unstructured
+noise or structured infrequent behaviour? how does model quality of the
+newly introduced algorithms suer compared to other algorithms?
+rq4 can pccframework handle logs that existing measures cannot handle? how
+do both sets of measures compare on smaller logs?26 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+to answer the rst three questions, we conducted four similar experiments, as
+shown in figure 16: we choose a system, generate an event log and discover a
+process model, after which we measure how well the discovered model represents
+the system using log-precision and recall. of these experiments, one focuses
+on scalability, i.e. the ability in handling big event logs and complex systems
+(section 6.1); handling incompleteness (section 6.2), handling noise (section 6.3)
+and handling infrequent behaviour (section 6.4).
+event log process model systemdiscover generate
+recall
+log-precision
+figure 16: set-up of our evaluation.
+to answer rq4, we conducted another experiment: we use real-life logs, apply
+discovery algorithms and measure tness and log-precision, using both the pcc
+framework and existing measures (section 6.5). all algorithms of the imd frame-
+work and pccframework are implemented as plug-ins of the prom framework1,
+taking as input a directly-follows graph. directly-follows graphs were generated
+using an external python script. for more details on the set-up, please refer to
+[42, appendix d].
+6.1 scalability of imd vs other discovery algorithms
+first, we compare the imd algorithms with several other discovery algorithms
+in their ability to handle big event logs and complex systems using limited main
+memory.
+set-up. all algorithms were tested on the same set of xes event logs, which
+have been created randomly from three process trees, of (a) 40 activities, (b)
+1,000 activities and (c) 10,000 activities. the three trees have been generated
+randomly.
+for each tree, we rst generate a random log of ttraces, starting tat 1.
+second, we test whether an algorithm returns a model for that log when allocated
+2gb of main memory, i.e. the algorithm terminates with a result and does not
+crash. if successful, we multiply tby 10 and repeat the procedure. the maximum
+tis recorded for each algorithm and process tree a, b and c.
+1available for download at http://promtools.orgscalable process discovery and conformance checking 27
+besides the new algorithms introduced in this paper, the following algorithms
+were included in the experiment:
+-algorithm ( ) [7] prom 6.5.1a
+heuristics miner (hm) [60] prom 6.5.1a
+integer linear programming (ilp) [63] prom 6.5.1a
+immediately follows cnet from log (p-if) [24] pmlab
+pnfrom ts (p-pt) [24] pmlab
+inductive miner ( im) [40] prom 6.5.1a
+inductive miner - infrequent ( imf) [43] prom 6.5.1a
+inductive miner - incompleteness ( imc) [44] prom 6.5.1a
+im - directly-follows ( imd) this paper prom 6.5.1a
+im - infrequent - directly-follows ( imfd ) this paper prom 6.5.1a
+im - incompleteness - directly-follows ( imcd ) this paper prom 6.5.1a
+the soundness-guaranteeing algorithms etm, ccm and mpm were not in-
+cluded, as etm is a non-deterministic algorithm and there is no implementation
+available for ccm and mpm. it would be interesting to test these as well.
+event logs. the complexities of the event logs are shown in table 2; they were
+generated randomly from trees a, b or c. from this table, we can deduce that
+the average trace length in (a) is 37 events, in (b) 109 and in (c) 764; [42,
+appendix f] shows additional statistics. thus, the average trace length increases
+with the number of activities.
+the largest log we could generate for a was 217gb (108traces), limited by
+disk space. for the trees b and c, the largest logs we could generated were 106
+and 105traces, limited by ram. for the bigger logs, the traces were directly
+transformed into a directly-follows graph and the log itself was not stored. in
+table 2, these logs are marked with *.
+compared with [41], tree b was added and the logs of trees a and c were
+regenerated. therefore, the log generated for these trees are slightly dierent
+from [41]. however, the conclusions were not inuenced by this.
+results. table 3 shows the results. results that could not be obtained are marked
+with * (for instance, imc andimcd ran for over a week without returning a
+result).
+this experiment clearly shows the scalability of the imd framework, which
+handles larger andmore complex logs easily ( imd andimfd handle 108
+traces, 71010events and 104activities). moreover, it shows the inability of ex-
+isting approaches to handle larger andcomplex logs: the most scalable other
+algorithms were imandimf, that both handled only 1,000 traces. furthermore,
+it shows the limited use sampling would have on such logs (logs manageable for
+other algorithms, i.e. 1,000 traces for tree c, do not contain all activities yet).
+we discuss the results in detail in [42, appendix g].
+time. timewise, it took a day to obtain a directly-follows graph from the log of
+108traces of tree a, (using the pre-processing python script) after that discover-
+ing a process model was a matter of seconds for imd andimfd . for the largest28 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+table 2: log complexity (* denotes that a directly-follows graph was generated).
+a: 40 activities b: 1,000 activities c: 10,000 activities
+complex more complex
+traces events activities events activities events activities
+1 21 21 190 52 81 66
+10 309 40 922 359 8,796 1,932
+1023,567 40 9,577 802 77,664 7,195
+10337,415 40 112,821 973 780,535 9,589
+104370,687 40 1,106,495 999 7,641,398 9,991
+1053,697,424 40 10,908,461 1,000 76,663,981 10,000
+10636,970,718 40 109,147,057 1,000 764,585,193 *10,000
+107369,999,523 40 1,090,802,965 *1,000 7,644,466,866 *10,000
+1083,700,046,394 40 10,908,051,834 *1,000 76,477,175,661 *10,000
+table 3: scalability: maximum number of traces an algorithm could handle.
+a: 40 activities b: 1,000 activities c: 10,000 activities
+traces traces traces
+ 10,000 100 1
+hm 1,000,000 1,000,000 1
+ilp 1,000 100 1
+p-if 10,000 *0 *1
+p-pt 10,000 *0 *1
+im 100,000 100,000 1,000
+imd 100,000,000 100,000,000 100,000,000
+imf 100,000 100,000 1,000
+imfd 100,000,000 100,000,000 100,000,000
+imcy100,000 1 *10
+imcdy100,000,000 1 *10
+logs they could handle, p-if, , hm, im,imf andimc took a few minutes;
+p-pt took days, ilp a few hours. in comparison, on the logs that ilp could
+handle, creating a directly-follows graph took a few seconds, just as applying
+imd.
+6.2 the inuence of incompleteness on rediscoverability
+to answer rq2, i.e. whether single-pass algorithms are able to rediscover the
+system, how large logs need to be in order to enable rediscovery, and how these
+algorithms compare to classical algorithms, we performed a second experiment.
+in complex processes, such as b and c, information can be missing from logs
+if the logs are not large enough: table 2 shows that in our example, 105traces
+were necessary for b to have all activities appear in the log.
+set-up. for each model generated in the scalability experiment, we measure
+recall and precision with respect to tree a, b or c using the pcc framework.scalable process discovery and conformance checking 29
+given the results of the scalability experiment, we include the algorithms im,
+imf,imc, hm, imd,imfd ,imcd , and a baseline model allowing for any
+behaviour (a ower model ).
+as hm does not guarantee to return a sound model, nor provides a nal
+marking, we obtain a nal marking using the method described in [42, ap-
+pendix e]. however, even with this method we were unable to determine the
+languages of the models returned by hm, thus these were excluded.
+results. figure 17 shows that for model a (40 activities) both imandimd
+rediscover the language of a (a model that has 1.0 model-precision and recall
+with respect to a) on a log of 104traces. imd could rediscover the language of b
+at 108traces, imdid not succeed as the largest log it could handle (105traces)
+did not contain enough information to rediscover the language of b. the largest
+log we generated for tree c, i.e. containing 108traces, did not contain enough
+information to rediscover the language of c: imfd discovered a model with a
+recall of running. . . and a model-precision of running. . . . corresponding results
+have been obtained for imf/imfd andimc/imcd ; see [42, appendix h] for
+all details. the ower model provided the baseline for precision: it achieved recall
+1.0 at 101(a) and 102(b) traces, and achieves a model-precision of 0.8.
+10010210410600:20:40:60:81
+number of tracesrecall/precisionim
+10010210410600:20:40:60:81
+number of tracesimd
+recall; precision
+figure 17: incompleteness results for process tree a (40 activities).
+we conclude that algorithms of the imd framework are capable of rediscov-
+ering the original system, even in case of very large systems (trees b and c), and
+that these algorithms do not require larger logs than other algorithms to do so:
+imandimd rediscovered the models on logs of the same sizes; for smaller logs
+imd performed slightly better than imfd . overall, imd andimfd have a sim-
+ilar robustness to incomplete event logs as their imcounterparts, which makes
+them more robust than other algorithms as well [44]. we discuss the results in
+detail in [42, appendix g].30 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+10010310610900:20:40:60:81
+number of tracesrecall/precisionim
+10010310610900:20:40:60:81
+number of tracesimd
+recall; precision
+figure 18: incompleteness results for process tree b (1000 activities).
+6.3 the inuence of noise on rediscoverability
+to answer rq3, we tested how noise in the event log inuences rediscovery. we
+took the event log of 104traces of tree b, as that log was well-handled by several
+algorithms but did not reach perfect recall and precision in the incompleteness
+experiment, indicating that discovery is possible but challenging. to this 104
+traces, we add nnoisy traces with some noise, for 10-fold increasing nfrom 1 to
+105, i.e. the logs have 10,001 to 110,000 traces. a noisy trace is obtained from a
+normal trace by adding or removing a random event (both with 0.5 probability).
+by the representational bias of the process trees used in the generation, such a
+trace is guaranteed to not t the original model. to each of these logs, we applied
+im,imf,imd andimfd and measured recall and precision with respect to the
+unchanged system b. no articial ram limit was enforced.
+notice that when 105noisy traces are added, only 9% of the traces remains
+noise free. the directly-follows graph of this noisy log contains 118,262 directly-
+follows edges, while the graph of the model would just have 32,012. moreover,
+almost all activities are observed as start activities (946) and end activities
+(929) in this log (vs 244/231 in the model). it is clear that without serious noise
+ltering, no algorithm could make any sense of this log.
+results. figure 19 compares the 2 noise ltering algorithms imf andimfd on
+the logs of b with various noise levels. surprisingly, imfd performs better than
+imf:imfd achieves consistently higher precision at only slight drop in recall
+compared to imf whose precision drops to 0.8, which is close to the ower model
+(i.e., no actual restriction of behaviour). the perfect recall obtained by im on
+large lots can be explained by the fall-throughs of imd andim: if no cut can
+be found, a ower model is selected. for imandimd, we consistently observed
+lower precision scores for all models compared to both imf andimfd but a
+consistent tness of 1.0 (which is easily explained by their lack of noise handling
+capabilities); exact numbers and more details are available in [42, appendix h].scalable process discovery and conformance checking 31
+10010110210310410500:20:40:60:81
+noisy traces addedrecall/precisionimf 0.2
+10010110210310410500:20:40:60:81
+noisy traces addedimfd 0.2
+recall; precision
+figure 19: algorithms applied to logs with noisy traces (tree b (1,000 activities)).
+a manual inspection of the models returned shows that all models still give
+information on the overall structure of the system, while for larger parts of the
+model no structure could be discovered and a ower sub-model was discovered.
+in this limited experiment, imfd is the clear winner: it keeps precision highest
+in return for a little drop in recall. we suspect that this is due to imfd using
+less information than imf and therefore the introduced noise has a larger impact
+(see section 4.3). more experiments need to evaluate this hypothesis.
+6.4 the inuence of infrequent behaviour on rediscoverability
+to answer the second part of rq3 we investigated how infrequent behaviour,
+i.e. structured deviations from the system, inuences rediscovery. the set-up of
+this experiment is similar to the noise experiment, i.e. tdeviating traces are
+added. each deviating trace contains one structural deviation from the model,
+e.g. for an, two children are executed. for more details, please refer to [42,
+appendix d].
+similar to the noise experiment, the log with 105added infrequent traces
+has a lot of wrong behaviour: without infrequent behaviour, its directly-follows
+graph would contain 32 ;012 edges, 244 start activities and 231 end activities,
+but the deviating log contained 118 ;262 edges, 946 start activities and 929 end
+activities. that means that if one would randomly pick an edge from the log,
+there would be only 27% chance that the chosen edge would be according to the
+model. exact numbers and more details are available in [42, appendix h].
+results. figure 20 shows the results of imf andimfd on logs of process tree
+b with various levels of added infrequent behaviour. similar to the noise exper-
+iments, imfd compared to imf trades recall (0.95 vs 0.99) for log-precision
+(0.95 vs 0.90). of the non-ltering versions imandimd, both got a recall of
+0.99,ima model-precision of around 0.90, and imd 0.92, thus imd performs a
+bit better in this experiment.32 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+10010110210310410500:20:40:60:81
+infrequent traces addedrecall/precisionimf 0.2
+10010110210310410500:20:40:60:81
+infrequent traces addedimfd 0.2
+recall; precision
+figure 20: infrequent behaviour results of process tree b (1000 activities).
+we suspect that two of the inserted types of infrequent behaviour might be
+of inuence here: skipping a child of a !or^has no troublesome impact on the
+directly-follows graph for the imframework, but log splitting will introduce a
+(false) empty trace for the imframework; imframework algorithms must decide
+to ignore this empty trace in later recursions, while imd framework algorithms
+simply don't see it. altogether, imfd performs remarkably well and stable in
+this typical case of process discovery where an event log contains structured
+deviations from the system.
+6.5 real-life model-log evaluation
+to test real-life performance of the new algorithms and to answer rq4, i.e.
+whether the newly introduced tness and precision measures can handle larger
+logs and how they compare to existing measures, we performed a fourth experi-
+ment.
+experimental set-up. in this experiment, we take four real-life event logs.
+to these event logs, we apply the algorithms , hm, im,imf,imd andimfd
+and analyse the resulting models manually. the algorithms ccm and mpm are
+not publicly available and were excluded.
+secondly, in order to evaluate the pccframework, we apply the pccframe-
+work and existing tness [1] and log-precision [10] measures to the discovered
+models. the models by hm and were unsound and had to be excluded (our
+unsoundness-handling tricks in [42, appendix e] brought no avail). furthermore,
+imandimd do not apply noise ltering and therefore their models are often
+ower models, so these were excluded as well.
+to provide a baseline for log-precision, we add a ower model to the com-
+parison: a ower model allows for all behaviour, so intuitively has the worstscalable process discovery and conformance checking 33
+precision. therefore, we scale (normalised) the log-precision according to this
+baseline:
+scaled log-precision = 1  1 log-precision of model
+1 log-precision of ower model
+intuitively, scaled precision denotes the linear precision gain with respect to a
+ower model, i.e. 0 for the ower model itself and 1 for perfect precision. the pcc
+framework-tness measure and the existing tness measure [1] are conceptually
+similar, so they are not scaled.
+logs. we analysed four real-life logs. the rst log (bpic11) originates from
+the emergency department of a dutch hospital [28]. bpic11 describes a fairly
+unstructured process, and contains 624 activities, 1,143 traces (patients) and
+150,291 events. in our classication, it is a complex andmedium log. the
+second log (bpic12) originates from a dutch nancial institution, and describes
+a mortgage application process [29]. it contains 23 activities, 13,087 traces (cli-
+ents) and 164,506 events, and is therefore a medium log. bpic12 was ltered to
+only contain events having the \complete" life cycle transition, i.e. \schedule"
+and \start" events were removed. the resulting log was included, as well as three
+activity-subsets: activities prexed by respectively a,oorw(bpicja, bpicjo
+and bpicjw). the third log (sl) originates from the repeated execution of soft-
+ware: sl was obtained by recording method calls executed by rapidminer, using
+5 operators, each corresponding to plug-ins of rapidprom. the recording was
+performed using the kieker tool (see http://kieker-monitoring.net ), and re-
+peated 25 times with dierent input event logs. in total, the event log ( sl) has
+25 traces, 5,869,492 events and 271 activities, which makes it a large . its traces
+are particularly long: up to 1,151,788 events per trace. the fourth log (cs) ori-
+ginates from a web-site of a dot-com start-up, and represents click-stream data,
+i.e. every web-site visitor is a trace, and each page visited is an events [37]. cs
+contains 77,513 traces, 358,278 events and 3,300 activities, which makes it more
+complex andmedium . as described in the introduction, much bigger event logs
+exist. we were able to run imd andimfd onlarger andmore complex logs,
+but we were unable to compute metrics or even visualise the resulting models.
+therefore, we do not report on such logs in this evaluation.
+results for process discovery. the rst step in this experiment was to apply
+several process discovery algorithms.
+on bpic11, im,imf,imd andimfd produced a model.
+on bpic12, all the algorithms produced a model. we illustrate the results
+of the experiments on bpic12, ltered for activities starting with a(bpicja):
+figure 21 shows the model returned by imf; figure 22 the model by imfd .
+this illustrates the dierent trade-os made between imandimd: these models
+are very similar, except that for imf, three activities can be skipped. operating
+on the directly-follows abstraction of the log, imfd was unable to decide to34 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+make these activities skippable, which lowers tness a bit (0.816 vs 0.995) but
+increases precision (1 vs 0.606).
+figure 21: imf applied to bpic12 ja(without activity names).
+figure 22: imfd applied to bpic12 ja(without activity names).
+on the sl log, hm, im,imf,imd andimfd produced a model, and could
+not proceed beyond passing over the event log. the models discovered by hm,
+imf andimfd are shown in figure 23 (we uploaded these models to http://
+www.processmining.org/blogs/pub2015/scalable_process_discovery_and_
+evaluation ; these can be drag-and-dropped onto prom to be visualised). the
+model discovered by hm has 2 unconnected parts, of which one is not contained
+in the initial marking. hence it is not a workow model, thus not sound and, as
+discussed before, dicult to be analysed automatically. in the models discovered
+imf andimfd , the several rapidprom operators are easily recognisable. how-
+ever, the models are too complex to be analysed in detail by hand2therefore,
+in further analysis steps, problematic parts of the models by imf andimfd
+could be identied, the log ltered for them, and the analysis repeated.
+on the cs log, im,imf,imd andimfd produced a model. imd andimfd
+returned a model in less than 30 seconds using less than 1gb of ram, while
+imandimf took more than an hour and used 30gb of ram. as cs has ve
+times more activities than sl, we could not visualise it. this illustrates that
+scalable process discovery is a rst step in scalable process mining: the models
+we obtained are suitable for automatic processing, but human analysis without
+further visualisation techniques is very challenging.
+results for log-conformance checking. table 4 shows the results, exten-
+ded with the approximate running time of the techniques.
+2anecdotically: the vector-images of these models were too large to be displayed by
+adobe illustrator or adobe acrobat.scalable process discovery and conformance checking 35
+(a) impression of the model discovered by hm.
+(b) impression of the model discovered by imf.
+(c) impression of the model discovered by imfd .
+figure 23: models discovered from a software execution log.
+fitness scores according to the pcc framework dier from the tness scores
+by [1] by at most 0.05 (except for bpic12 jaimfd ). thus, this experiment
+suggests that the new tness measurement could replace the alignment-based
+tness [1] metric, while being generally faster on both smaller and larger logs,
+though additional experiments may be required to verify this hypothesis. more
+importantly, the pcc framework could handle logs (bpic11, sl, cs) that the
+existing measure could not handle.
+comparing the scaled precision measures, the pccframework and the exist-
+ing approach agree on the relative order of imf andimfd for bpic12jaand
+bpic12jo, disagree on bpic12 and are incomparable on bpic11, sl and cs due
+to failure of the existing measure. for bpic12 jw,imfd performed worse than
+the ower model according to [10] but better according to our measure. this
+model, shown in figure 24, is certainly more restrictive than a ower model,
+which is correctly reected by our new precision measure. therefore, likely the
+approach of [10] encounters an inaccuracy when computing the precision score.
+for bpic12, precision [10] ranks imf higher than imfd , whereas our preci-
+sion ranks imfd higher than imf. inspecting the models, we found that imf
+misses one activity from the log while imfd has all activities. apparently, our
+new measure penalises more for a missing activity, while the alignment-based
+existing measure penalises more for a missing structure.
+a similar eect is visible for sl: imf achieves a lower precision than the
+ower model. further analysis revealed that several activities were missing from36 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+table 4: log-measures compared on real-life logs.
+existing techniques this paper ( pccframework)
+tness log-precision [10] time tness log-precision time
+[1]measured scaled measured scaled
+bpic11 imf out of memory 0.627 0.764 0.472 25s
+imfd out of memory 0.997 0.766 0.477 1m
+ower 1.000 0.002 0.000 5h1.000 0.553 0.000 25s
+bpic12jaimf 0.995 0.606 0.9401s0.999 0.967 0.9311s
+imfd 0.816 1.000 1.0001s0.700 1.000 1.0001s
+ower 1.000 0.227 0.0001s1.000 0.520 0.0001s
+bpic12joimf 0.991 0.508 0.3511s0.981 0.809 0.4071s
+imfd 0.861 0.384 0.1871s0.862 0.794 0.3601s
+ower 1.000 0.242 0.0001s1.000 0.678 0.0001s
+bpic12jwimf 0.876 0.690 0.5531s0.875 0.836 0.6111s
+imfd 0.914 0.300 -0.0101s0.923 0.823 0.5811s
+ower 1.000 0.307 0.0001s1.000 0.578 0.0001s
+bpic12 imf 0.967 0.364 0.290 20m 0.978 0.668 0.0921s
+imfd 1.000 0.189 0.095 25m 1.000 0.693 0.1611s
+ower 1.000 0.104 0.000 30m 1.000 0.634 0.0001s
+sl imf out of memory 0.584 0.246 -0.158 30m
+imfd out of memory 0.924 0.385 0.055 30m
+ower out of memory 1.000 0.349 0.000 35m
+cs imf out of memory 0.999 0.580 0.023 1h
+imfd out of memory 0.999 0.585 0.036 6.5h
+ower out of memory 1.000 0.570 0.000 55m
+the model by imf. the following example illustrates the eect: let l=fha;big
+be a projected log and m=aa projected model. then, technically, their con-
+junction is empty and hence both precision and recall are 0. this matches intu-
+ition, as they have no trace in common. this sensitivity to missing activities is
+inherent to language-based measuring techniques. from the model discovered by
+imf, 45 activities are missing, which means that of the 36,585 pairs of activities
+that are considered for precision and recall, in 11,160 pairs a missing activity is
+involved.
+figure 24: imfd applied to bpicjw.scalable process discovery and conformance checking 37
+this experiment does not suggest that our new measure can directly replace
+the existing measure, but precision seems to be able to provide a categorisation,
+such as good/mediocre/bad precision, compared to the ower model.
+altogether we showed that our new tness and precision metrics are useful
+to quickly assess the quality of a discovered model and decide whether to con-
+tinue analyses with it or not, in particular on event logs that are too large for
+current techniques. in addition to simply providing an aggregated tness and
+precision value, both existing and our new technique allow for more ne-grained
+diagnostics of where in the model and event log tness and precision are lost.
+for instance, by looking at the subsets a1:::akof activities with a low tness or
+precision score, one can identify the activities that are not accurately represented
+by the model, and then rene the analysis of the event log accordingly.
+on most of the event logs, imfd seems to perform comparably to imf.
+however, please notice that by the nature of tness and log-precision, for each
+event log there exists a trivial model that scores perfectly on both, i.e. the model
+consisting of a choice between all traces. as such a model provides neither any
+new information nor insight, generalisation and simplicity have to be taken into
+account as well. as future work, we would like to adapt generalisation metrics
+to be applicable to large event logs and complex processes as well.
+7 conclusion
+process discovery aims to obtain process models from event logs, while conform-
+ance checking aims to obtain information from the dierences between a model
+and either an event log or a system-model. currently, there is no process discov-
+ery technique that works on larger andmore complex logs, i.e. containing
+billions of events or thousands of activities, and that guarantees both soundness
+and rediscoverability. moreover, current log-conformance checking techniques
+cannot handle medium andcomplex logs, and as current process discovery
+evaluation techniques are based on log-conformance checking, algorithms can-
+not be evaluated for medium andcomplex logs. in this paper, we pushed the
+boundary on what can be done with larger andmore complex logs.
+for process discovery, we introduced the inductive miner - directly-follows
+(imd) framework and three algorithms using it. the input of the framework
+is a directly-follows graph, which can be obtained from any event log in lin-
+ear time, even using highly-scalable techniques such as map-reduce. the im
+framework uses a divide-and-conquer strategy that recursively builds a process
+model by splitting the directly-follows graph and recursing on the sub-graphs
+until encountering a base case.
+we showed that the memory usage of algorithms of the imd framework is
+independent of the number of traces in the event log considered. in our experi-
+ments, the scalability was only limited by the logs we could generate. the imd
+framework managed to handle over 70 billion events, while using only 2gb of
+ram; some other techniques required the event log to be in main memory and
+therefore could handle at most 1 - 10 million events. besides scalability, we also38 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+investigated how the new algorithms compare qualitatively to existing techniques
+that use more knowledge, but also have higher memory requirements. the new
+algorithms handled systems of 10,000 activities in polynomial time, and were ro-
+bust to incompleteness, noise and infrequent behaviour. moreover, they always
+return sound models and suered little loss in quality compared to multi-pass
+algorithms; in some cases we even observed quality improvements.
+for conformance checking, we introduced the projected conformance checking
+framework (pcc framework), that is applicable to both log-model and model-
+model conformance checking. the pcc framework measures recall/tness and
+precision, by projecting both system and system-model/log onto subsets of activ-
+ities to determine their recall/tness and precision. using this framework, one
+can measure recall/tness and precision of arbitrary models with a bounded
+state space of (almost) arbitrary size.
+thepccframework's model-model capabilities enable a novel way to evaluate
+discovery techniques that scales well and provides new insights. we applied this
+to test robustness of various algorithms to incompleteness, noise and infrequent
+behaviour. moreover, we showed that the log-model version of the pccframework
+allows to measure tness and precision of a model with respect to an event log,
+even in cases where classical techniques fail, and can give detailed insights into
+the location of deviations in both log and model.
+altogether, we have presented the rst steps of process mining workows on
+very large data sets: discovering a model and assessing its quality. however, as
+we encountered in our evaluation, we envision further steps in the processing
+and visualisation of large models, such as using natural language based tech-
+niques [12]. to ease the analyses in contexts of big data, our algorithm evalu-
+ation framework could be combined with the approach in [15], by having our
+framework detecting the problematic sets of activities, and the approach in [15]
+focusing on these sub-models.
+furthermore, it would be interesting to study the inuence of kon the pcc
+framework, both practically and theoretically. as shown in section 5.1, there
+exist cases for which the language equivalence can only be guaranteed if kis at
+least the number of nodes minus one. however, besides for the classes for which
+theorem 1 or corollary 2 holds, there might be other classes of models for which
+a smallerksuces.
+references
+1. van der aalst, w., adriansyah, a., van dongen, b.: replaying history on process
+models for conformance checking and performance analysis. wiley interdisciplinary
+reviews: data mining and knowledge discovery 2(2), 182{192 (2012)
+2. van der aalst, w.m.p.: process mining - discovery, conformance and en-
+hancement of business processes. springer (2011), http://dx.doi.org/10.1007/
+978-3-642-19345-3
+3. van der aalst, w.m.p.: decomposing process mining problems using pas-
+sages. in: petri nets 2012. pp. 72{91 (2012), http://dx.doi.org/10.1007/
+978-3-642-31131-4_5scalable process discovery and conformance checking 39
+4. van der aalst, w.m.p.: decomposing petri nets for process mining: a generic
+approach. distributed and parallel databases 31(4), 471{507 (2013), http://dx.
+doi.org/10.1007/s10619-013-7127-5
+5. van der aalst, w.m.p.: process cubes: slicing, dicing, rolling up and drilling down
+event data for process mining. in: ap-bpm 2013. pp. 1{22 (2013), http://dx.
+doi.org/10.1007/978-3-319-02922-1_1
+6. van der aalst, w.m.p., et al.: process mining manifesto. in: business process
+management workshops 2011. pp. 169{194 (2011), http://dx.doi.org/10.1007/
+978-3-642-28108-2_19
+7. van der aalst, w., weijters, a., maruster, l.: workow mining: discovering pro-
+cess models from event logs. ieee trans. knowl. data eng. 16(9), 1128{1142
+(2004)
+8. adriansyah, a.: aligning observed and modeled behavior. ph.d. thesis, eindhoven
+university of technology (2014)
+9. adriansyah, a., van dongen, b.f., van der aalst, w.m.p.: conformance checking
+using cost-based tness analysis. in: ieee edoc 2011. pp. 55{64 (2011), http:
+//dx.doi.org/10.1109/edoc.2011.12
+10. adriansyah, a., munoz-gama, j., carmona, j., van dongen, b.f., van der
+aalst, w.m.p.: alignment based precision checking. in: business process man-
+agement workshops 2012. pp. 137{149 (2012), http://dx.doi.org/10.1007/
+978-3-642-36285-9_15
+11. ammons, g., bod k, r., larus, j.r.: mining specications. in: popl sigplan-
+sigact 2002. pp. 4{16 (2002), http://doi.acm.org/10.1145/503272.503275
+12. armas-cervantes, a., baldan, p., dumas, m., garc a-ba~ nuelos, l.: beha-
+vioral comparison of process models based on canonically reduced event
+structures. in: bpm 2014. pp. 267{282 (2014), http://dx.doi.org/10.1007/
+978-3-319-10172-9_17
+13. badouel, e.: on the -reconstructibility of workow nets. in: petri nets'12. lncs,
+vol. 7347, pp. 128{147. springer (2012)
+14. becker, m., laue, r.: a comparative survey of business process similarity measures.
+computers in industry 63(2), 148{167 (2012), http://dx.doi.org/10.1016/j.
+compind.2011.11.003
+15. van beest, n.r.t.p., dumas, m., garc a-ba~ nuelos, l., rosa, m.l.: log delta ana-
+lysis: interpretable dierencing of business process event logs. in: bpm 2015. pp.
+386{405 (2015), http://dx.doi.org/10.1007/978-3-319-23063-4_26
+16. benner-wickner, m., br uckmann, t., gruhn, v., book, m.: process mining for
+knowledge-intensive business processes. in: i-know 2015. pp. 4:1{4:8 (2015),
+http://doi.acm.org/10.1145/2809563.2809580
+17. bergenthum, r., desel, j., lorenz, r., mauser, s.: process mining based on regions
+of languages. business process management pp. 375{383 (2007)
+18. bergenthum, r., desel, j., mauser, s., lorenz, r.: synthesis of petri nets from
+term based representations of innite partial languages. fundam. inform. 95(1),
+187{217 (2009)
+19. buijs, j.c.a.m.: flexible evolutionary algorithms for mining structured process
+models. ph.d. thesis, eindhoven university of technology (2014)
+20. buijs, j., van dongen, b., van der aalst, w.: a genetic algorithm for discovering
+process trees. in: ieee congress on evolutionary computation. pp. 1{8 (2012)
+21. buijs, j.c.a.m., van dongen, b.f., van der aalst, w.m.p.: on the role of tness,
+precision, generalization and simplicity in process discovery. in: otm. lncs, vol.
+7565, pp. 305{322 (2012), http://dx.doi.org/10.1007/978-3-642-33606-5_1940 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+22. burattin, a.: plg2: multiperspective processes randomization and simulation for
+online and oine settings. corr abs/1506.08415 (2015), http://arxiv.org/abs/
+1506.08415
+23. burattin, a., sperduti, a., van der aalst, w.m.p.: control-ow discovery from
+event streams. in: ieee congress on evolutionary computation. pp. 2420{2427
+(2014), http://dx.doi.org/10.1109/cec.2014.6900341
+24. carmona, j., sol e, m.: pmlab: an scripting environment for process mining. in:
+bpm demos. ceur-wp, vol. 1295, p. 16 (2014)
+25. cortadella, j., kishinevsky, m., lavagno, l., yakovlev, a.: deriving petri nets
+from nite transition systems. computers, ieee transactions on 47(8), 859{882
+(1998)
+26. datta, s., bhaduri, k., giannella, c., wol, r., kargupta, h.: distributed data
+mining in peer-to-peer networks. ieee internet computing 10(4), 18{26 (2006),
+http://doi.ieeecomputersociety.org/10.1109/mic.2006.74
+27. dijkman, r.m., van dongen, b.f., dumas, m., garc a-ba~ nuelos, l., kunze, m.,
+leopold, h., mendling, j., uba, r., weidlich, m., weske, m., yan, z.: a short
+survey on process model similarity. in: seminal contributions to information sys-
+tems engineering, 25 years of caise, pp. 421{427 (2013), http://dx.doi.org/
+10.1007/978-3-642-36926-1_34
+28. van dongen, b.: bpi challenge 2011 dataset (2011), http://dx.doi.org/10.
+4121/uuid:d9769f3d-0ab0-4fb8-803b-0d1120ffcf54
+29. van dongen, b.: bpi challenge 2012 dataset (2012), http://dx.doi.org/10.
+4121/uuid:3926db30-f712-4394-aebc-75976070e91f
+30. van dongen, b.f., dijkman, r.m., mendling, j.: measuring similarity between
+business process models. in: seminal contributions to information systems en-
+gineering, 25 years of caise, pp. 405{419 (2013), http://dx.doi.org/10.1007/
+978-3-642-36926-1_33
+31. evermann, j.: scalable process discovery using map-reduce. in: ieee transactions
+on services computing. vol. to appear (2014)
+32. gabel, m., su, z.: javert: fully automatic mining of general temporal properties
+from dynamic traces. in: acm sigsoft 2008. pp. 339{349 (2008), http://doi.
+acm.org/10.1145/1453101.1453150
+33. van glabbeek, r.j., weijland, w.p.: branching time and abstraction in bisimu-
+lation semantics. j. acm 43(3), 555{600 (1996), http://doi.acm.org/10.1145/
+233551.233556
+34. g unther, c., rozinat, a.: disco: discover your processes. in: bpm (demos). pp.
+40{44 (2012)
+35. hay, b., wets, g., vanhoof, k.: mining navigation patterns using a sequence align-
+ment method. knowl. inf. syst. 6(2), 150{163 (2004)
+36. hwong, y., keiren, j.j.a., kusters, v.j.j., leemans, s.j.j., willemse, t.a.c.:
+formalising and analysing the control software of the compact muon solenoid ex-
+periment at the large hadron collider. sci. comput. program. 78(12), 2435{2452
+(2013), http://dx.doi.org/10.1016/j.scico.2012.11.009
+37. kohavi, r., brodley, c.e., frasca, b., mason, l., zheng, z.: kdd-cup 2000 or-
+ganizers' report: peeling the onion. sigkdd explorations 2(2), 86{98 (2000),
+http://doi.acm.org/10.1145/380995.381033
+38. kunze, m., weidlich, m., weske, m.: querying process models by behavior in-
+clusion. software and system modeling 14(3), 1105{1125 (2015), http://dx.doi.
+org/10.1007/s10270-013-0389-6scalable process discovery and conformance checking 41
+39. leemans, m., van der aalst, w.: process mining in software systems. acm/ieee
+international conference on model driven engineering languages and systems p.
+to appear (2015)
+40. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured
+process models from event logs - a constructive approach. in: petri nets 2013. pp.
+311{329 (2013), http://dx.doi.org/10.1007/978-3-642-38697-8_17
+41. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: scalable process discovery
+with guarantees. in: bpmds 2015. pp. 85{101 (2015), http://dx.doi.org/10.
+1007/978-3-319-19237-6_6
+42. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: scalable process discov-
+ery and conformance checking. bpm center report bpm-16-03, bpmcenter.org
+(2016)
+43. leemans, s., fahland, d., van der aalst, w.: discovering block-structured pro-
+cess models from event logs containing infrequent behaviour. in: business process
+management workshops. pp. 66{78 (2013)
+44. leemans, s., fahland, d., van der aalst, w.: discovering block-structured process
+models from incomplete event logs. in: petri nets 2014. vol. 8489, pp. 91{110 (2014),
+http://dx.doi.org/10.1007/978-3-319-07734-5_6
+45. leemans, s., fahland, d., van der aalst, w.: exploring processes and deviations.
+in: business process management workshops. p. to appear (2014)
+46. liesaputra, v., yongchareon, s., chaisiri, s.: ecient process model discovery
+using maximal pattern mining. in: bpm 2015. pp. 441{456 (2015), http://dx.
+doi.org/10.1007/978-3-319-23063-4_29
+47. linz, p.: an introduction to formal languages and automata. jones & bartlett
+learning (2011)
+48. lu, x., fahland, d., van den biggelaar, f.j., van der aalst, w.m.: label renement
+for handling duplicated tasks in process discovery. in: bpm. p. submitted (2016)
+49. mller, a.: dk.brics.automaton { nite-state automata and regular expressions for
+java (2010), http://www.brics.dk/automaton/
+50. munoz-gama, j., carmona, j., van der aalst, w.m.p.: single-entry single-exit
+decomposed conformance checking. inf. syst. 46, 102{122 (2014), http://dx.doi.
+org/10.1016/j.is.2014.04.003
+51. pradel, m., gross, t.r.: automatic generation of object usage specications from
+large method traces. in: ase 2009. pp. 371{382. ieee computer society (2009),
+http://dx.doi.org/10.1109/ase.2009.60
+52. redlich, d., molka, t., gilani, w., blair, g.s., rashid, a.: constructs com-
+petition miner: process control-ow discovery of bp-domain constructs. in:
+bpm 2014. lncs, vol. 8659, pp. 134{150 (2014), http://dx.doi.org/10.1007/
+978-3-319-10172-9_9
+53. redlich, d., molka, t., gilani, w., blair, g.s., rashid, a.: scalable dynamic busi-
+ness process discovery with the constructs competition miner. in: simpda 2014.
+ceur-wp, vol. 1293, pp. 91{107 (2014)
+54. rozinat, a., van der aalst, w.m.p.: conformance checking of processes based on
+monitoring real behavior. inf. syst. 33(1), 64{95 (2008), http://dx.doi.org/10.
+1016/j.is.2007.07.001
+55. vanhatalo, j., v olzer, h., leymann, f.: faster and more focused control-ow ana-
+lysis for business process models through sese decomposition. in: icsoc 2007.
+pp. 43{55 (2007), http://dx.doi.org/10.1007/978-3-540-74974-5_4
+56. weerdt, j.d., backer, m.d., vanthienen, j., baesens, b.: a multi-dimensional qual-
+ity assessment of state-of-the-art process discovery algorithms using real-life event
+logs. inf. syst. 37(7), 654{676 (2012)42 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+57. weidlich, m., van der werf, j.: on proles and footprints - relational semantics
+for petri nets. in: petri nets. pp. 148{167 (2012)
+58. weidlich, m., polyvyanyy, a., mendling, j., weske, m.: causal behavioural proles
+- ecient computation, applications, and evaluation. fundam. inform. 113(3-4),
+399{435 (2011)
+59. weijters, a., van der aalst, w., de medeiros, a.: process mining with the heur-
+istics miner-algorithm. beta working paper series 166, eindhoven university of
+technology (2006)
+60. weijters, a., ribeiro, j.: flexible heuristics miner. in: cidm. pp. 310{317 (2011)
+61. wen, l., van der aalst, w., wang, j., sun, j.: mining process models with non-free-
+choice constructs. data mining and knowledge discovery 15(2), 145{180 (2007)
+62. wen, l., wang, j., sun, j.: mining invisible tasks from event logs. advances in
+data and web management pp. 358{365 (2007)
+63. van der werf, j., van dongen, b., hurkens, c., serebrenik, a.: process discovery
+using integer linear programming. fundam. inform. 94(3-4), 387{412 (2009)
+64. yang, j., evans, d., bhardwaj, d., bhat, t., das, m.: perracotta: mining temporal
+api rules from imperfect traces. in: icse 2006. pp. 282{291 (2006), http://doi.
+acm.org/10.1145/1134325
+65. zha, h., wang, j., wen, l., wang, c., sun, j.: a workow net similarity measure
+based on transition adjacency relations. computers in industry 61(5), 463{471
+(2010), http://dx.doi.org/10.1016/j.compind.2010.01.001

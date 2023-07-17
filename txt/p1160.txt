@@ -1,0 +1,792 @@
+scalable discovery of hybrid process models 
+in a cloud computing environment
+long cheng , boudewijn f. van dongen, and wil m. p. van der aalst, senior member, ieee
+abstract— process descriptions are used to create products and deliver services. to lead better processes and services, the ﬁrst step
+is to learn a process model. process discovery is such a technique which can automatically extract process models from event logs.
+although various discovery techniques have been proposed, they focus on either constructing formal models which are very powerful
+but complex, or creating informal models which are intuitive but lack semantics. in this work, we introduce a novel method that returnshybrid process models to bridge this gap. moreover, to cope with today’s big event logs, we propose an efﬁcient method, called f-hmd,
+aims at scalable hybrid model discovery in a cloud computing environment. we present the detailed implementation of our approachover the spark framework, and our experimental results demonstrate that the proposed method is efﬁcient and scalable.
+index terms— process discovery, hybrid process model, event log, big data, service computing, cloud computing
+ç
+1i ntroduction
+event data collected by modern information systems can
+be used to extract non-trivial knowledge and interesting
+insights using process mining techniques [1]. speciﬁcally, pro-
+cess discovery , as one of the core tasks in process mining, can
+automatically extract a process model from a given event
+log and such a model can be used to create products and
+deliver services [2]. examples include, but are not limited tothe domains of telecom and insurance [3], [4].
+up to now, various discovery approaches have been pro-
+posed in the process mining domain. according to their dis-covered models, all the techniques can be divided into twomain categories: (1) formal models , which explicitly and
+unambiguously specify all possible orderings of behavior.this model can be acquired by various discovery algorithmssuch as the inductive miner [5]; and (2) informal models ,
+which provide insights using diagrams that have no formal
+semantics and can not be used to reason about behavioral
+properties.
+generally, formal models explicitly offer guidance for
+processes, which undoubtedly can provide value for processexecution. regardless, they are typically inclined to enforceguidelines [6], which is inﬂexible in terms of covering all thepossible variability. moreover, this kind of models hasstrong semantics that govern the overall interplay of theactions and objects of a process. this makes discoverychallenging, and the resulting models could be also complexand hard to understand for non-professional users. in com-parison, informal models allow users to describe a processthrough simple “boxes and arcs”, which makes the discoveryprocess much easier and discovered models more intuitive.
+however, informal models do not have clear semantics
+which are actually important for operational processes inpractice.
+considering the advantages of the two models above, it
+makes sense to try and combine the best of both worlds inthe form of a hybrid process model. such models only for-malize the parts that are clear and supported by the data.things that are less clear or not supported by enough evi-dence, result in informal annotations that are still useful forusers. however, with the spectacular growth of event data,it will be very challenging to discover such a hybrid model
+in a scalable way.
+to handle the problem, efﬁcient hybrid model discovery
+over cloud-based platforms such as mapreduce [7] and
+spark [8] becomes desirable. the reason is that these plat-forms can efﬁciently extend the amount of available com-puting resources to provide a straightfoward scale-outcapability [9]. moreover, these platforms have integratedparallelization, fault tolerance and load balancing in a sim-ple programming framework, and thus allow their imple-mentations for a easy deployment in cloud.
+in this paper, we focus on efﬁcient hybrid process model
+discovery in a cloud computing environment. to achievethis goal, we propose an approach, called f-hmd ( filter-
+based hybrid process model discovery). on a reference
+cloud-based implementation, we experimental demonstratethe effectiveness and efﬁciency of our method. the maincontributions of this paper can be summarized as follows:
+/c15we introduce a hybrid process model and propose amethod (hmd) to discover such a model over bigevent logs in a cloud computing environment.
+/c15l. cheng is with the school of computer science, university college dublin,
+dublin 4, ireland. e-mail: long.cheng@ucd.ie.
+/c15b.f. van dongen is with the department of mathematics and computerscience, eindhoven university of technology, eindhoven 5600mb, thenetherlands. e-mail: b.f.v.dongen@tue.nl.
+/c15w.m.p. van der aalst is with the lehrstuhl f €ur informatik 9 / process and
+data science, rwth aachen university, aachen d-52056, germany.
+e-mail: wvdaalst@pads.rwth-aachen.de.
+manuscript received 15 june 2017; revised 11 jan. 2019; accepted 8 mar.2019. date of publication 19 mar. 2019; date of current version 15 apr. 2020.
+(corresponding author: long cheng.)
+digital object identiﬁer no. 10.1109/tsc.2019.2906203
+1939-1374 /c2232019 ieee. personal use is permitted, but republication/redistribution requires ieee permission.
+see ht _tp://www.ieee.org/publications/rights/index.html for more information./c15we analyze the performance issues of hmd and pro-
+pose two strategies to speed up its discovery process.speciﬁcally, we incorporate two light-weight ﬁltersin hmd (i.e., 2 f-hmd) to reduce its computation
+workloads.
+/c15we present the detailed implementation of ourapproach over the spark framework [8]. as ﬁlteringmay change the ﬁnal output, we discuss about thesafety of our ﬁlters and theoretically provide the safe
+ranges for implementation parameters.
+/c15we conduct a detailed experimental evaluation of our
+approach and the results demonstrate our approachis efﬁcient and scalable. speciﬁcally, it can process2.52 million traces having about 100 million events inabout 1 minute over 16 nodes (64 cores).
+the remainder of this paper is organized as follows.
+section 2 gives a brief introduction about related conceptsin process discovery. section 3 introduces the detaileddesign of our approach. section 4 presents our implementa-tion in details. we report the experimental results in
+section 5 and discuss the related work in section 6. we
+ﬁnally conclude this paper in section 7.
+2p reliminaries
+in this section, we brieﬂy describe some of the basic con-cepts in process discovery. for more formal deﬁnitions andexamples, we refer to the book [1].
+2.1 event log
+anevent log is a collection of traces (process instances), where
+every trace is a temporally ordered sequence of events, andeach event is represented by a set of attribute values (e.g.,name, resource and timestamp, etc.). for example, fig. 1ashows an event log, which is composed of six distinct traces.moreover, in each trace, each event is represented by itsactivity name. other attributes such as time, resource, etc.have been abstracted away. in total, the log contains 5/c24þ
+4/c22¼28events, and the number of unique activities is 6.
+for this condition, the log is also referred to as an activity log,
+which is an abstraction of the event logs as found in prac-tice [1]. in the remainder of this paper, without sacriﬁcinggenerality, we focus on discovering a hybrid model fromsuch an activity log.
+2.2 dfg
+an informal process model is always represented in the formof adirectly-follows graph (dfg), which can be derived from a
+log and describes what activities follow one another directly,and with which activities a trace starts or ends. in a dfg,there is an arc from an activity ato an activity bifais fol-
+lowed directly by b, and the weight of the arc denotes how
+often that happened. in practice, based on either domainknowledge or statistical information (e.g., frequency), somearcs could be removed from a dfg.
+because a dfg can represent processes in a direct, simple
+and visual way, it has become the mainstream model in cur-rent process mining products. commercial process miningtools such as disco [10], celonis [11], processgold [12] and
+minit [13] often generate informal models based on such
+dfgs, and most of them produce dfgs where infrequentactivities and arcs are removed using sliders. as dfgs do notcontain any execution semantics and have difﬁculties dealingwith concurrency, we consider dfgs only as an intermediateresult, not suitable to show the real process logic. in thispaper, we construct a dfg from an event log without remov-
+ing any of the discovered arcs, and show that this can bedone in a parallel manner in a cloud computing environment.
+2.3 petri net
+a formal process model can be modeled in terms of petri
+nets [14], using three types of elements: places ,transitions ,
+and arcs. we have incorporated an uncompleted petri net in
+a hybrid model as demonstrated in fig. 2. there, each activ-ity represents a transition, each circle represents a place,and places and transitions are connected by arcs (havingpurple /gray color).
+compared to an informal model, a formal one can pro-
+vide more explicit information on the possible process exe-cutions. for instance, we only know that the activitiesfb; c; egfollow ain some traces from the dfg in fig. 1b, but
+it remains unclear what can happen after ain a process. in
+contrast, using semantics from the petri net as shown infig. 2, we know that once the transition ais ﬁred, two tokens
+will be produced: one for each output place. after aeither e
+or both bandchappen. the ordering of bandcis not ﬁxed.
+2.4 bpmn
+business process model and notation (bpmn) is a rich language
+that provides modelers with a large collection of object typesto represent various aspects of a business process, includ-ing the control-ﬂow, data, resources and exceptions [15].
+compared to petri nets, bpmn is speciﬁcally tailored to
+modeling business processes at a conceptual level, meaningthat they are often used for communication between stake-holders in the processes. therefore, we will visualize ourﬁnal models using bpmn, and restrict ourselves to a smallsubset of bpmn having clear execution semantics.
+to transform a process model from petri nets to bpmn, a
+typical way is using logical gateways to replace the places .fig. 1. an event log and informal model (we ignore the initial and end
+notations in the model for simpliﬁcation).fig. 2. an example of hybrid process model.cheng et al.: scalable discovery of hybrid process models in a cloud computing environment 369there are three rules for this transformation: (1) every transi-
+tion/activity with input places has an and-join gateway con-
+nected with precise arcs; (2) every transition with outputplaces has an and-split gateway connected with precise arcs;
+and (3) all places are replaced by xor-gateways. moreover,
+six reduction rules can be applied to simplify the replacedmodel by reducing its gateways, and fig. 3a shows three ofthem: (1) a gateway can be removed if it has only one input a
+and one output b; (2) two sets of fully connected and gate-
+ways can be simpliﬁed when there are only inputs for one setand outputs for the other; and (3) for the case that a set ofand gateways are fully connected with a set of xor gate-ways, if there is only one input for each and and only oneoutput for each xor, then the gateways can be simpliﬁed.these three rules also work when replacing the and gate-ways with xor while replacing the xor gateways with
+and (i.e., another three rules). after these replacement and
+simpliﬁcation operations, the model in fig. 1b can be trans-formed into the hybrid model as demonstrated in fig. 3b.
+3o urapproach
+in this section, we present the details of our approach andshow how we realize the approach in a cloud computingenviroment (e.g., over spark [8]).
+3.1 overview
+as we have described, end-users like to use informal processmodels, and it is unlikely that this will change. moreover,
+petri nets (and the like) are perceived as being too complex
+in terms of discovering and understanding. futhermore, cur-rent mining algorithms are often not sure about some parts ofa model, and forcing explicit semantics only provides fakecertainty [16]. in comparison, informal models are simple,but lack execution semantics. in fact, parts of an informalmodel can actually be enhanced by formalizing the parts thatcan be captured in precise modeling constructs with goodconﬁdence.
+our discovery technique only inserts formal dependen-
+cies between activities if they have a good quality, i.e., there
+is sufﬁcient evidence in the event log to support such formal-
+ization. by replacing informal dependencies with formalones whenever possible, we aim to construct a hybrid pro-cess model to bridge the gap between the two different mod-els and consequently combine their advantages in a singlemodel, i.e., a hybrid process model. generally, our modeldiscovery process can be divided into the following threesteps:–step 1 : construct a dfg from an event log.
+–step 2 : discover places in the dfg by checking the fea-
+sibility of such places based on the evidence in theevent log in a exhaustive way.
+–step 3 : replace the discovered places with logical
+gateways from bpmn and simplify the gateways byapplying reduction rules.
+as an example, for the event log in fig. 1a, we can ﬁrst get
+a dfg as shown in fig. 1b. then, we examine all the possibleplaces over the input log and extend the dfg model withdiscovered places. as a result, we get a model as illustratedin fig. 2. finally, we replace the places and output a hybridmodel as shown in fig. 3b. compared to a fuzzy model (i.e.,dfg), all the precise part (arcs and gateways) in our hybridmodel will be marked in a conﬁgurable color (e.g., purple in
+our case) to highlight the parts that have formal semantics.
+in the meantime, the rest parts (arcs) are kept as normal, indi-
+cating that there is no conﬁdent semantics between theresponsible activities.
+3.2 hybrid model discovery
+based on the above steps, algorithm 1 describes the imple-mentation of our hybrid model discovery (hmd).
+3.2.1 dfg discovery
+all the traces in an input log lcan be easily partitioned in a
+distributed enviroment. for example, in a cloud withhdfs [17], the partitioning can be done automatically whenuploading the log. speciﬁcally, the number of traces of eachpartition can be balanced, by explicitly assigning the numberof partitions when reading the log (using spark). it should benoticed that the partitioning is done in trace-level and thusall the directly-follows relationships are well maintained.
+on the above basis, a directly-follows graph can then be
+computed in a single pass over the event log in parallel. asshown in algorithm 1 lines 1-7, for each sublog l
+kat each
+node,1we examine the directly-follows relationships for all
+the neighbored activities (line 4) and record them in a localmatrix f
+k(i.e., line 5, increasing the counter number by 1).
+this statistics can be done in parallel on all the computingnodes. this is because the computing is done on each trace s,
+and all the traces are distributed and independent to eachother. after that, all the values in f
+kat each node kare aggre-
+gated based on their indexes to construct a new matrix f.
+this matrix represents all the directly-follows relationshipsfig. 3. some reduction rules and the ﬁnal hybrid model returned by our approach.
+1.we focus on describing our algorithm at a conceptual level only.
+in this context, a node here refers a computing unit.370 ieee transactions on services computing, vol. 13, no. 2, march/april 2020of the log (line 8). namely, if fx;y¼0, the activity axis never
+followed by the activity ay, otherwise, axis followed by ayat
+least once and thus we add an arc between the two activities
+in the discovered dfg.
+algorithm 1. hybrid model discovery (hmd)
+dfg discovery:
+1:forlk2lat each node kparallel do
+2: initialize a 2d matrix fk
+3:fors2lkdo
+4:8ðax;ayþ2sandax ay,
+5: fk
+x;yþ¼ 1// follows relation
+6:end for
+7:end for
+8: combine all fkto construct a dfg
+place discovery:
+9: generate all the place candidates xbased on the discovered
+dfg.
+10:forlk2lat each node kparallel do
+11: forxj2x;s2lkdo
+12: if!(a\s¼;^ b\s¼;)then
+13: ifs:rule 3then // rule 3
+14: dkj¼1
+15: end if
+16: end if
+17: end for
+18:end for
+19:forxj2xdo
+20: iffðp
+kdkjþ<t 3then
+21: x¼x/c0xj// pruning
+22: end if
+23:end for
+post-processing:
+24: partition dfg into g0
+1andg2using x
+25: add places to g0
+1and replace them with logical gateways
+26:while gn
+16¼gn/c01
+1do
+27: gn
+1¼rðgn/c01
+1þ// simplifying
+28:end while
+29:hm¼ðgn
+1;g2þ
+30: visualize hm
+3.2.2 place discovery
+our target is to add feasible places between activities for the
+discovered dfg to enhance its execution semantics. to getsuch places, we use a generating-and-pruning scheme, i.e., for
+an input dfg, we ﬁrst generate all the place candidates x,
+and then prune the ones that do not meet standard petrinets semantics. the details of this process are presented inalgorithm 1 lines 9-28.
+candidate generating. for a dfg, a place could appear
+between two or multiple activities including directly-followsrelations. therefore, a place candidate x
+j2xcan be repre-
+sented in the form of an arc cluster ða; bþ, where aandbare
+activity sets. for generality, let bfollow a, and xjappears
+between them. to quickly get all such candidates, we ﬁrstrepresent the dfg using an adjacency list. then, we constructan invert-list based on all the possible combinations (andselections) of the neighbors of each vertex and treat each com-bination as a vertex. finally, we generate all the candidatesbased on all the possible combinations of neighbors of eachvertex in the invert-list. an example of such a processing isshown in fig. 4. there, the dfg shown in fig. 4a can be repre-sented as an adjacency list fhajb; c; ei;hgjb; c; eig, and the
+neighbors of the two vertexes aandgarefb; c; eg. there are 7
+different combinations for the three nodes, e.g., fbg,fb; cg
+andfb; c; egetc., therefore we can construct an invert list
+shown as fig. 4b, in which aandgare the neighboring nodes.
+followed by that, there are 3 possible combinations for aand
+g, i.e.,fag,fggandfa; gg, thus ﬁnally we have 21 place candi-
+dates, which are listed in fig. 4c.
+candidate pruning. we prune the generated place candi-
+dates based on the semantics of petri nets. for a candidatex
+j¼ða; bþ, lettis a subset of l, and there is t¼lnfsja
+\s¼;^ b\s¼;;8s2lg. namely, we guarantee that
+for each trace sint, there exists at least one activity in aor
+bthat appears in the trace. here we look for places having
+input set a(transitions producing a token for the place) and
+output set b(transitions consuming a token for the place).
+using standard petri nets semantics we need to check that:(1) we never consume a token from an empty place, and (2)at the end the place is empty. namely, for each trace, the fre-
+quencies of transitions in ashould be no less than the transi-
+tions in bat any time point. meanwhile, the frequencies of
+transitions in ashould match the frequencies of transitions
+inbat the end of the trace.
+letsðiþdenote the ﬁrst ielements of a trace s,jsjbe the
+length of the trace, #
+vube the frequency of the transitions
+inuappearing in v. then, the above two rules can be for-
+malized as:8s2t, there is
+#sðiþa/c21#sðiþb;8i2½1;jsjþ
+#sa¼#sb(rule 3)/c26
+:
+ifaandbsatisfy the above rule, then a place with input
+transitions aand output transitions bwill be added in the
+dfg. in our previous example in fig. 1b, the case a¼fag
+andb¼fb; egsatisﬁes above rule 3, thus there is a place
+between them as shown in fig. 2.
+noise or infrequent behavior could occur in an event log,
+and such kind of data would greatly impact our pruning
+processing if we follow rule 3 in a very strict way (i.e.,8s2t). to handle this problem, we adopt an approxima-
+tion for rule 3. speciﬁcally, we use a parameter gto repre-
+sent the approximation
+g¼#s;s:rule 3
+jtj: (approx. 3)
+it means that for a place candidate ða; bþ, we check whether
+the majority of the traces in tmeet the rule 3. in our tests,
+we set a threshold t3¼90% as default, namely there will be
+a place between aandbif and only if g/c21t3. this ensuresfig. 4. an example of candidate generation process for a given dfg.cheng et al.: scalable discovery of hybrid process models in a cloud computing environment 371
+authorized licensed use limited to: universitaetsbibliothek der rwth aachen. downloaded on january 08,2021 at 15:42:08 utc from ieee xplore.  restrictions apply. that the large majority of traces indeed complies with the
+place to be added.
+based on above analysis, in our algorithm, we examine
+each candidate xjover the traces lkon each node kin paral-
+lel (lines 10-18). the collected statistical information dkjof
+rule 3 for each candidate xjon each node will be combined
+by an aggregation and the non-matched candidates will beremoved if they do not meet the conﬁgured threshold t
+3
+(lines 19-23).
+3.2.3 post-processing
+we can partition the discovered dfg into a precise part g1
+and a fuzzy part g2once we get the ﬁnal candidates x(line
+24). after adding the discovered places in g1, based on the
+replacement strategies described in section 2, we can thenreplace the places with logical gateways (line 25). followingby that, we repeatedly apply the simpliﬁcation rules to thegraph g
+1until the graph does not change any more (lines 26-
+28), and the ﬁnal output will be constructed by the reﬁnedgraph g
+1andg2(lines 29-30). because a (hybrid) business
+process model including activities and discovered places (inthe form of a graph) is typically very small, the whole post-processing will be very lightweight. therefore, we conductall the operations (i.e., replacement, simpliﬁcation and visu-alization) on a single computing node (e.g., the master node
+in spark). in fact, the post-processing for the two datasets we
+have used in our experiments in section 5 can be alwaysdone in less than 150 milliseconds.
+3.3 the f-hmd algorithm
+3.3.1 performance issues
+in above hmd algorithm, the dfg discovery can be done bya simple statistics-based job, which would be light-weight ina distributed environment. meanwhile, the candidate gener-ation in the second step and post-processing in the third stepcan be also done in a quick way as the graph is typicallysmall. clearly, the process of candidate pruning in our algo-rithm is the most time consuming one, as we need to checkall the candidates over all the traces and all their preﬁxesbased on rule 3.
+the check operations would make the place discovery
+costly, especially when the number of candidates is large. infact, this could happen even when a dfg is small, because thenumber could increase sharply with increasing either the sizeof the graph or the connections between vertexes (activities).for example, for the latest bpi challange dataset as we usedin our later evaluations (the application log [18]), the numberof generated candidates is 176,798. if we have 1 million traces,then the number of trace-level examination will be around176 billions. this will bring in great performance challenges,even when the number of computing nodes is large.
+to discover a hybrid model in a reasonable time in the
+presence of large event logs, we propose a more efﬁcientapproach, filter-based hybrid process model discovery
+(f-hmd), by incorporating effective strategies into the hmd
+algorithm. first, we identify model-level constraints, toreduce the number of generated place candidates, on thebasis of our observation on current methods in constructingprocess models. then, we employ data-level constraints fromrule 3 and use them as light-weight ﬁlters, to prune largenumbers of place candidates before the place discovery pro-cess over rule 3. both strategies are able to efﬁciently reducethe computing workloads for hmd and consequently toimprove its overall performance.
+3.3.2 model-level constraints
+as described earlier, formal models can be discovered by var-ious process discovery algorithms. we identify the model-level constraints from these approaches. considering theamount of events in large logs as well as the quality of discov-ered processes (e.g., soundness and ﬁtness), we have chosenthe inductive miner [5] as our reference. besides the fact thatthe inductive miner is the state-of-the-art process discoveryapproach, other techniques incline to produce models thatare unable to replay the log well, i.e., they either create erro-
+neous models or have excessive runtime during executions.
+the main objective of inductive miner is to discover a set
+of block-structured process models for any given logs. the
+discovered model can be represented as a process tree, whichis a compact abstract representation of a block-structuredworkﬂow net. the root in such a tree leaves certain character-istics in the log and dfg, and the leaves are labeled withactivities and all other nodes are labeled with operators [5].the operations can characterize the exclusive choice, paral-lel, sequence and loop behaviors for activities of a log. forexample, for exclusive choice, each trace will be generated
+by one child in the process tree. in fact, a workﬂow net is a
+petri net having a single start place and a single end place,modeling the start and end state of a process. moreover, allnodes are on a path from start to end [19]. in such scenarios,a block-structured workﬂow net is a hierarchical workﬂownet that can be divided recursively into parts having singleentry and exit points.
+2
+consider the discovery process in our approach, each pre-
+cise part of a hybrid model is actually able to be representedas a block. unlike the inductive miner, we will only need toconsider the potential places between a single activity andmultiple activities or reversed. this means that in our candi-
+date generation, we only need to consider a candidate ða; bþ
+with the cases that either the size of aorbis 1 (i.e., the num-
+ber of contained transitions). if there is jaj¼1, thenjbjcan
+be an arbitrary value which is not greater than the number of
+the neighboring nodes of a. if the value of jbjis large,
+although the discovered place could meet rule 3, the discov-ered hybrid model will be not realistic, since the number ofsplits (or joins) in a single block will be large. therefore, werestrict the maximum value of jaj(orjbj) to 3 in our imple-
+mentations. this conﬁguration will efﬁciently reduce thenumber of generated candidates (especially for complex
+dfgs). by exploiting this constraint, the number of gener-
+ated candidates for the dfg in fig. 4 will be 15 rather than 21.
+3.4 data-level constraints
+we are trying to speed up our candidate pruning process byusing light-weight ﬁlters at the trace and log levels, basedon the data constraints implied in rule 3.
+2.note that block-structured process models can be seen as subset of
+workﬂow nets. however, we will be able to discover models that do not
+need to be block-structured, but still satisfy predeﬁned requirements.372 ieee transactions on services computing, vol. 13, no. 2, march/april 2020trace-level filter. based on the execution semantics of
+petri nets, we can deduce that if the activity sets aandb
+meet the requirement of rule 3, it could also satisfy: 8s2t,
+there is
+#sa¼#sb: (rule 2)
+the frequencies of transitions in amatch the frequencies of
+transitions in b, if at the end of each trace the place is
+empty. similar to rule 3, we use a parameter bto represent
+the approximation in rule 2 and to check whether a candi-
+date satisﬁes rule 2 in most of the traces
+b¼#s;s:rule 2
+jtj: (approx. 2)
+for a given place candidate, computing the pruning pro-
+cess using rule 2 will be much more lightweight than rule 3,as rule 2 does not require any preﬁx checking operations.we will use rule 2 as a ﬁlter in hmd, i.e., if a candidate doesnot meet rule 2, then the candidate will be pruned directly,so as to reduce the computation workloads for rule 3. in thefollowing, we refer this algorithm as 1f-hmd.
+log-level filter. let#
+la(or#lb) be the frequency of
+transitions in a(orb) appearing in the log l, similar to
+above, for a place candidate meeting rule 2 and 3, the fol-lowing condition could also happen:
+#
+la¼#lb: (rule 1)
+namely, the overall sum of the frequencies of transitions inamatches the overall sum of the frequencies of transitions
+inbin a log level. similarly, we use a parameter adeﬁned
+as below to represent the approximation.
+3
+a¼j#la/c0#lbj
+#laþ#lb: (approx. 1)
+we will use rule 1 as a ﬁlter to reduce the computation
+workloads for rule 2, therefore we can set a threshold t1
+here, and remove a candidate if a/c21t1. we call this
+algorithm as 2f-hmd as it contains two ﬁlters.
+3.5 discussion
+in terms of discovery performance in the presence of largeevent logs, using model-level constraints, our approach canefﬁciently reduce the number of place candidates in the stepof candidate generation. in the meantime, using data-level
+constraints, we can use light-weight ﬁlters to pruning non-
+interesting candidates, i.e., if one of the two ﬁlters works,then the tested candidate will not go to the next phase. weneed additional jobs to implement rule 1 and rule 2 in2f-hmd. however, as we will shown in our later section,
+most place candidates can be excluded quickly in our2f-hmd algorithm. it can obviously improve the perfor-
+mance of the hmd algorithm, without impacting the qualityof discovered models, even in the cases that the values of t
+1
+are not theoretically safe(i.e., over-ﬁltering could occur).in fact, we can further speed up our model discovery by
+setting reasonable constraints on dfgs. for example, we canremove some arcs representing infrequent behavior in a log.these behavior occurs less frequent than “normal” behavior(e.g., the exceptional cases) and could be not interesting insome use cases. this kind of processing can simplify dfgsand consequently reduce the number of generated place can-didates. regardless, all related strategies can be treated as apre-processing for our approach and a detailed discussion
+on such aspects will be outside the scope of this work. in our
+following implementation, we focus on discovering placesover a dfg without removing any arcs from it.
+4c loud -based implementation
+in this section, we present a detailed implementation of theproposed 2f-hmd algorithm over spark [8]. to cater to dif-
+ferent dfgs in different process mining tools, we have sepa-
+rated the dfg discovery process from our hdm-based
+approaches and run it as an independent job. namely, theimplementations of the three algorithms are composed oftwo separate jobs. the source code we have used in this sec-tion and our evaluations is available at https://github.com/longcheng11/hybridm.
+4.1 an overview of spark
+spark [8] is a parallel computing platform very well suited tocloud computing. the reason is that it is elastic in terms ofboth storage (through the use of hdfs) and computation.this is in contrast with the conventional data systems whichhave to be carefully tuned to the speciﬁcation of each node.in such scenarios, our implementation will be able to be eas-ily deployed in a cloud to handle large event logs. actually,the provided jar ﬁle at the link above is ready for clouddeployments.
+we have picked spark as the underlying framework
+rather than mapreduce [7], because spark is becoming moreand more popular, and it will largely replace mapreduce asthe go-to model for big data analytics, as reported by cloudcomputing technology trends [9]. another reason is thatvarious data-parallel applications based on mapreduce canbe expressed and executed efﬁciently using spark. here, webrieﬂy introduce the fundamental data structure of spark -the resilient distributed datasets (rdd).
+rdd is a central abstraction for spark. it is a fault-tolerant
+and parallel data structure which lets users be able to store
+data in memory and control its partitioning [9]. spark pro-
+vides two types of parallel operations on rdds [8]: transfor-
+mations and actions . transformations, including operations
+likemapand ﬁlter, create a new rdd from the existing one.
+actions, such as reduce and collect , conduct computations on
+an rdd and return the result to the driver program. compu-tation in spark is expressed as functional transformations.note that a rdd cannot be modiﬁed, however, a new rddcan be constructed by transforming an existing rdd.
+4.2 parallel implementation
+as described previously, the candidate generation and post-processing in our approach can be done on a single node(i.e., master). here, in terms of parallel implementations, we3.we can also use other mathematical expressions to describe the
+approximation, but this will not impact our approach in terms of imple-
+mentations and bound analysis in the following section in principle.cheng et al.: scalable discovery of hybrid process models in a cloud computing environment 373focus on the detailed implementations of dfg discovery
+and candidate pruning.
+4.2.1 dfg discovery
+the discovery process can be implemented in a very simpleway using spark as shown in algorithm 2. there, we alsorecord the frequency for each directly-follows relationship.
+first, the activity log is placed in hdfs and read as a rdd.
+in this process, the log is automatically partitioned and eachpartition in the rdd is in the form of strings, where eachstring is a trace.
+following by that, we parse each trace into activities in the
+form of iterable½act/c138by a map operation. this operation can
+be done in parallel at each partition of the rdd by usingmappartitions (line 1). the computation of the directly-
+follows relations in each trace can be done by scanning eachiterable½act/c138(i.e., parsed trace) and on that basis to generate
+pairs in the form of hðact1; act2þ;1ifor all neighboring activi-
+ties. this can be also done in parallel as shown as line 2 in thealgorithm. after that, we can aggregate all the pairs and cal-culate their global appearing frequency using aggregationfunctions. here, we use the action reducebykey (line 3).
+namely, all the generated pairs on each partition will be ﬁrstaggregated locally, and then redistributed over the comput-ing systems based on their keys ðact1; act2þ, and ﬁnally
+aggregated again locally. this is more efﬁcient than theaction groupby in spark, especially when the log is large.
+the reason is that the ﬁrst local aggregation can highlyreduce the number of message pairs transferred over net-
+works in the shufﬂing phase.
+the aggregated results on each partition will be collected
+by the master node to construct the directly-follows graph.
+this can be done aggregating all the pairs in the form ofhact1; iterableðact2; intþiby an iteration (line 4). this graph
+represents an abstraction of the whole log and will be usedas an input to generate place candidates using the approachdescribed in section 3.2.2.
+algorithm 2. dfg discovery in 2 f-hmd
+the input log is read from underlying hdfs system, results
+in a rdd containing strings
+1: val activities = log. mappartitions( parse trace )
+2: val pairs = activities. mappartitions (iter)
+iter.ﬂatmap (generate pairs))
+3: val stat = pairs. reducebykey (_ + _). collect ()
+4: iteration over stat to extract directly-follows relations in the
+form ofðact1; iterableðact2; intþþ
+5:save directly-follows relations on hdfs
+4.2.2 candidate pruning
+parallelism. in the process of candidate pruning, as described
+in section 3.2, we have to check all the place candidates over
+all the traces when applying rule 2 and rule 3. the input loghas been automatically partitioned when read from thehdfs system, therefore we will have two options on the par-allel implementation. (1) pipeline-based parallelism: all thecandidates xare also (equal-size) partitioned, and each of
+the subsets are examined by each sublog (partition) in a pipe-line way, and we can get the ﬁnal results of the candidates inthe subset when it passes the whole log. (2) broadcast-basedparallelism: which has implied in our algorithm 1, i.e., allthe candidates are broadcasted to all the sublogs and thenthe local checking results are merged to formulate the ﬁnaloutputs.
+theoretically, the ﬁrst parallel approach will be more efﬁ-
+cient than the second one, in terms of implementations usinghigh performance computing (hpc) programming lan-guages such as x10 [20], [21] and mpi [22]. this is because
+we can track the location of each subset of xand can manu-
+ally assign them to a speciﬁed destination (i.e., sublog parti-
+tion) according to our requirements. moreover, we can letnetwork communication and local computing work in a syn-chronous way, so as to extensively use the available systemresources and consequently achieve a high performance.however, this is not straightforward for spark (or a generalcloud-based platform), since, unlike implementations usingthread-level parallelism in hpc, spark follows the data-ﬂowmodel [23]. namely, it does not allow ﬁne-grained controlson data movement and computing.
+a solution for the pipeline implementation is that we can
+ﬁrst mark the candidates in each partition of the rdd of x
+with its partition index in spark. for example, a candidateða; bþin the partition 0 will be marked as ð0;ða; bþþ. then,
+we know that this candidate is in partition 0. in this case,we manually increase the index value by one after a candi-date has been checked by a sublog and then shufﬂe all thecandidates using partitionby when all the local computing is
+done. this way each candidate can then go through thewhole log. this approach would be efﬁcient as well, regard-less, the whole implementation needs to be done with multi-
+ple phases (i.e., the number of partitions of the input log),
+which could bring in obvious overheads in terms of com-munications and computation, due to the construction ofnew rdds. compared to this, the broadcast-based parallel-ism is easier to implement and will be more efﬁcient. in fact,as we will show in our later evaluations, after the applica-tion of rule 1, the number of generated candidates is muchsmaller than the underlying traces. therefore, the parallel-ism problem can be mapped to a typical small-large case incloud computing environments, and broadcasting has beenshown to be very efﬁcient way in such scenarios [24].
+implementation. follow the above analysis, the detailed
+implementation of our candidate pruning is given in algo-rithm 3. we ﬁrst compute the frequency of each activity inthe event log with two steps (lines 1-2): (1) generate pairs inthe form ofhact;1iby going through all the activities using
+a map function, and (2) sum the number that an activityappears in all the sublog partitions by a reduce function. asthe number of unique activities is very small and the num-ber of candidates could be relatively large, we can collectthe statistics information on the master node and then per-form rule 1. in this case, a candidate will go to the second
+step if the value of its ais not greater than the parameter t
+1.
+as shown in lines 5-11 in the algorithm, to implement the
+second ﬁlter, we ﬁrst broadcast all the candidates to all the
+partitions (line 5). then, in each partition we perform twooperations: (1) create a map to record the activity frequencyfor each trace (line 7), and (2) check each candidate using rule2 (line 9). the checked results on each partition are recordedby pairs in the form of hid; booleani, where the idis the index374 ieee transactions on services computing, vol. 13, no. 2, march/april 2020of a candidate in xand the boolean records whether the can-
+didate meets rule 2 for a given trace. the index will be used
+to identify candidates after merging all the results from eachpartition. in this process, if none of the activities in aandb
+appears in a trace, then the checked results are not recorded.all the results will be collected ﬁnally to prune the candidateswhich do not meet rule 2 (lines 10-11).
+algorithm 3. candidate pruning in 2 f-hmd
+all the place candidates x have been generated on the master
+node
+1: val pairs = activities. mappartitions (iter)
+iter.ﬂatmap (generate pairs1))
+2: val stat1 = pairs. reducebykey (_ + _). collectasmap ()
+3: calculate the value aof each candidate using stat1
+4: prune the candidates in xifa>t 1
+5: val bx = sc. broadcast (x)
+6: val stat2 = activities. mappartitions (iter){
+7:for(trace iter) yield stat_map}). mappartitions(
+8: iter){ val lx = bx.value
+9: 2d_array = check2(lx, iter) })
+10: collect stat2 and calculate bof each candidate
+11: prune the candidates in xifb<t 2
+12: val bx = sc. broadcast (x)
+13: calculate stat3 based on replacing check2 with check3 by
+considering preﬁx checking in stat2
+14: collect stat3 and calculate gof each candidate
+15: prune the candidates in xifg<t 3
+the parallel implementation of rule 3 is very similar to
+rule 2 (lines 12-15). the main difference is that each candi-
+date on each partition has an additional preﬁx checking asdescribed previously. the entire pruning process terminateswhen all local checked results are merged and comparedwith the threshold t
+3. based on the output places, the ﬁnal
+hybrid process model can be then constructed as described
+in section 3.2.
+4.3 safe filtering conﬁguration
+in our above implementation, we use a threshold t2in rule
+2 to pre-prune place candidates for rule 3. as rule 2 is
+implied by rule 3, we should set t2to a lower value t2/c20t3.
+ift2/c20t3, then the ﬁltering using rule 2 does not inﬂuence
+the result, i.e., ﬁltering is safe.
+for the threshold t1in the rule 1, obviously, the smaller
+the value t1is, the stronger the ﬁlter of rule 1 will be. there-
+fore, to improve our performance, we need to set t1as small
+as possible. however, t1can not be set to a very small value
+(e.g., 0), otherwise rule 1 will become a sufﬁcient, but notnecessary condition for rule 2 and over-ﬁltering will occur.to avoid this, we must guarantee that: for a given candidateða; bþ,i fb/c21t
+2, then it should hold a/c20t1. namely, to use
+rule 1 as a ﬁlter in a safe way, we must set the threshold t1to
+value which is not smaller than the upper bound value of a.
+theorem 1. rule 1 is a safe ﬁlter for rule 2, if the threshold t1is
+set such that
+t1/c21ð1/c0t2þm
+2t2þð1/c0t2þm; (1)
+where, mis the maximal length of traces in a log.proof. let a candidateða; bþwith a¼fa1;a2;...;a ngand
+b¼fb1;b2;...;b mg. for the trace set tdeﬁned in section
+3.2.2, let the ith trace ticontainjtijactivities, and the num-
+ber of appearances of the jth transitions in a(and b)b eaij
+(and bij). rule 1 is a necessary condition for rule 2, accord-
+ing to rule 2, there are k¼jtjbtraces meeting the condi-
+tion #sa¼#sbandjtjð1/c0bþtraces do not. based on
+this, for the simplicity of our mathematical presentation,we sort all the traces, and keep that the ﬁrst ktraces satisfy
+#
+sa¼#sbwhile the rest do not. then, we have
+#la¼xk
+i¼1xn
+j¼1aijþxjtj
+i¼kþ1xn
+j¼1aij (2a)
+#lb¼xk
+i¼1xm
+j¼1bijþxjtj
+i¼kþ1xm
+j¼1bij (2b)
+xn
+j¼1aij¼xm
+j¼1bij;8i2½1;k/c138 (2c)
+xn
+j¼1aijþxm
+j¼1bij/c20jtij: (2d)
+based on the deﬁnition of aand eqs. (2a), (2b), and
+(2c), there is
+a¼jpjtj
+i¼kþ1ðpn
+j¼1aij/c0pmj¼1bijþj
+2pki¼1pnj¼1aijþpjtj
+i¼kþ1ðpnj¼1aijþpmj¼1bijþ:
+(3)
+obviously
+a/c20pjtj
+i¼kþ1pn
+j¼1aij
+2pki¼1pnj¼1aijþpjtj
+i¼kþ1pnj¼1aij¼a1: (4)
+we assume that the average frequency of activities in
+ain a trace ti(i2½kþ1;jtj/c138)i sy, from eq. (4) we have
+a1¼ðjtj/c0kþy
+2pk
+i¼1pnj¼1aijþðjtj/c0kþy: (5)
+moreover, assume that for the ﬁrst ktraces, the average
+appearing time of the activities in a(also b) in a trace ti
+(i2½1;k/c138)i sx. based on eq. (5), there is
+a1¼ðjtj/c0kþy
+2kxþðjtj/c0kþy¼ð1/c0bþy
+2bxþð1/c0bþy: (6)
+according to our deﬁnitions, we have x/c211, otherwise
+there exists at least one trace tiintthata\ti¼;^
+b\ti¼;. moreover, we have b/c21t2, therefore, we have
+a1/c20ð1/c0t2þy
+2t2þð1/c0t2þy: (7)
+from eq. (2d), we have 8i; y/c20maxfjtijg.a st is a
+subset of l, there is maxfjtijg/c20maxfjlijg¼m. there-
+fore, based on eqs. (4) and (7), we have eq. (1). t ucheng et al.: scalable discovery of hybrid process models in a cloud computing environment 375remark. based on eq. (1), we can say that for a log with the
+longest trace containing 10 activities, if we set t2¼0:9,
+then we should set t1to 0.36 to guarantee that rule 1 can
+always safely ﬁlter the place candidates, regardless of
+what the candidates and the underlying log look like.moreover, we can see that the larger mis, the larger the
+value of t
+1should be, i.e., the weaker the ﬁlter will be. in
+term of pruning performance, it should be noticed thateq. (1) just gives the theoretically worst condition. as wewill show in our evaluation in section 5, setting t
+1to a
+value which is smaller than the theoretical value, we canstill get the same places, with less time.
+5e valuation
+in this section, we present an experimental evaluation of ourapproaches.
+5.1 experimental framework
+we have implemented the hmd, 1f-hmd and 2f-hmd
+algorithms using scala over spark [8].
+platform. we evaluate our approach over a cluster. each
+node we used has 4 cpu cores running at 2.80 ghz with
+16 gb of ram. the operating system is linux kernel version
+2.6.32-279 and the software stack consists of spark version2.0.0, hadoop version 2.7.3, scala version 2.11.4 and java ver-sion 1.7.0_25. as the computational infrastructure uses non-virtualised computational resources, we believe that ourtestbed approximates commercial offerings in terms of cloudcomputing [24], and thus can characterize how our algo-rithms will behave in a cloud. in particular, our test enviro-ment closely approximates the bare metal servers in ibmsoftlayer [25] and the cluster instances in amazon ec2 [26].
+datasets. we run our performance tests over different
+datasets based on real life logs taken from the business pro-cess intelligence challenge (bpic) of the year 2017. there aretwo event logs: (1) the application event log [18], which con-
+tains 31,509 traces, the number of events is 1,202,267 and themaximum number of events in a trace is 180; and (2) the offer
+event log [27], which contains 42,995 traces, the number ofevents is 193,849 and the maximum number of events in atrace is 5. these two logs represent a large and small as wellas a complex and simple case (in terms of dfg complexity),
+for hybrid process model discovery. for simplicity, we refer
+the two event logs as log 1 and log 2 respectively.
+setup. we set the following system parameters for spark:
+spark_worker_memory and spark_executor_memory are set to
+15 gb and spark_worker_cores is to 4. there are three parame-
+terst
+1,t2andt3in our implementation, i.e., the thresholds
+for rule 1, 2 and 3 respectively. consider the safety and per-formance of the two ﬁlters in our f-hmd algorithms, as a
+default we set t
+2to a value equal to t3, and t1to the value as
+we described in our theoretical analysis in section 4.3. wewill vary the value of t
+3and use 90 percent as the default.
+in all our experiments, we read input ﬁles from the hdfs
+system [17] and output discovered hybrid process models(indot ﬁle format) to the disk of the master node. we mea-
+sure runtime as the elapsed time from job submission to thejob being reported as ﬁnished. as a default, we implementedour tests using 9 nodes, including one master node and 8worker nodes (i.e., 32 cores).
+5.2 experimental results
+in this section, we ﬁrst present the discovered hybrid mod-els using our algorithms. then, we report their runtime per-formance and scalability.
+5.2.1 discovered models
+we have evaluated our approach over log 1 and log 2 withdifferent input parameters. the discovered models in dot(and pdf) format are included in the distribution of oursoftware. for simplicity, we only present the discoveredmodels for log 2 here.
+with two different parameter conﬁgurations ð0;1þand
+ð0:217;0:9þforðt
+1;t2þ, the two discovered hybrid models
+using the 2f-hmd algorithms for log 2 are depicted in fig. 5.
+it can be seen that our approach can indeed discover hybridprocess models. these discovered models highlight theunique feature of hybrid models: they provide a mix of formal(highlighted by rectangle blocks) and informal constructs. inboth the hybrid models, there are precise semantics betweenthe activities o_create_offer ando_create . namely, the
+latter activity always follows the former one in underlyingbusiness processes of log 2. additionally, we can see that the
+fig. 5. the two discovered hybrid process models for log 2 with two different input sets of parameters.376 ieee transactions on services computing, vol. 13, no. 2, march/april 2020discovered model with input parameter ð0;1þis much simpler
+than the one with ð0:217;0:9þ, i.e., the left model has not for-
+mal gateways whereas the right model has three gateways.
+the reason is that the selectivity of places is very high when t2
+equal to 1: the discovered precise parts (models) should fol-low the petri net semantic in a strict way (i.e., without approx-
+imation), and any possible abnormal behavior or noise in a
+trace or any uncompleted traces (because the log is capturedin a certain period of time) will results in a potential candidatebeing pruned by the rules. in comparison, the approximationused in the conﬁguration with ð0:217;0:9þshows more toler-
+ances in such conditions and thus more places are discrov-ered. it should be noted that such kinds of tolerance couldmake a discovered model unsound [1] (e.g., the green/dashedblock in the model), regardless, we can reﬁne this either man-ually or using advanced techniques based on our require-ments, and detailed analysis in such aspect will be out the
+scope of this work.
+5.2.2 efﬁciency
+runtime. we conducted our tests using different input
+parameters ( t1,t2) and fig. 6 shows the detailed runtime of
+each algorithm with different input parameters over the two
+logs. it can be seen that: (1) the dfg discovery, i.e., job 1, canbe done quickly and it takes only seconds for both the logs.(2) using ﬁlters, for log 1, 1 f-hmd algorithm is faster than
+hmd, and 2 f-hmd always performs the best for different
+input parameters. regardless, for log 2, all the algorithms
+perform nearly the same. as we will explain later, the reason
+is that the workload of log 2 is comparably small for under-lying systems. furthermore, for log 1, the performanceadvantage of our 2f-hmd algorithms becomes more obvious
+with increasing values for t
+2. these can be explained by the
+fact that the job of dfg discovery is simple. in the meantime,the computing workload can be efﬁciently reduced using thetwo ﬁlters, and the ﬁltering power becomes stronger withthe increase of t
+2. speciﬁcally, when t2is set to it possible
+maximum value (i.e., 1), the job 2 of the 2f-hmd algorithm
+can be done in seconds and much faster than other twoapproaches. in contrast, we can see that the runtime 1f-hmd
+is nearly constant with varying the values of input parame-ters, the possible reason is that the number of input candi-
+dates is huge and the computing cost over rule 2 dominates
+the runtime of the approach.
+power of filters. we recorded the detailed number of can-
+didates in each phase of all the three algorithms in our execu-tions, and the results are given in fig. 7. there, for log 1, theresults demonstrate that large number of place candidates(i.e., workloads) can be pruned using ﬁlters for both the logs.for example, with parameters 0.957 and 0.8, the number canbe reduced to 39 using two ﬁlters, compared to the 5,967 inhmd. moreover, when increasing the values of the parame-ters, the numbers can be further reduced (e.g., to 5 using 2 f-
+hmd for ﬁnal case), and this brings in great performanceimprovement for the log 1 as we have observed in fig. 6a.similar to log 1, we can see that the number of candidates isalso reduced using ﬁlters for log 2. regardless, this improve-ment is not obvious, as the original number of input candi-dates is small (i.e., 57). that is also the reason why theruntime is nearly the same for the three algorithms with dif-ferent input parameters as shown in fig. 6b.
+safe versus unsafe. to avoid over-ﬁltering, we have set t
+1
+to a safe value (i.e., the worst case) in above tests, accordingto our previous theoretical analysis. to examine the impact
+oft
+1, in terms of correctness of outputs and performance of
+the2f-hmd algorithm, we vary its value in some unsafe
+conditions and report the results in fig. 8. there, we ﬁx the
+value of t2to 0.9, and it can be seen that in a wide range
+(e.g., 0.1 versus 0.909 for log 1) of t1, the number of discov-
+ered places is the same (e.g., 13 after rule 3 for log 1) foreach case. not only is the number of places the same, the setof places are the same. this implies that aggressive ﬁlteringfig. 6. runtime of each algorithm over different logs with different input parameters in safe conditions (32 cores).
+fig. 7. detailed number of candidates for each algorithm with different input sets of parameters (32 cores).
+fig. 8. number of candidates and the runtime of each execution for 2f-hmd in unsafe conditions (32 cores).cheng et al.: scalable discovery of hybrid process models in a cloud computing environment 377has no effect on the outcome although this approach is theo-
+retically unsafe. in the meantime, with decreasing the valueoft
+1, we can also observe that the runtime is decreasing
+obviously for log 1. the reason is that the power of the ﬁrstﬁlter is becoming stronger, which can be observed on the
+changes of the number of candidates in fig. 8a. in compari-
+son, the runtime over log 2 does not change, due to theoriginal workload is small as we have analyzed. addition-ally, we see that over-ﬁltering could indeed happen if t
+1is
+set to a very small value (e.g., 0.05 for log 1).
+5.2.3 scalability
+we tested the scalability of the 2f-hmd algorithm by vary-
+ing both the size of input logs and the number of executioncores. since we are targeting large and complex logs, we only
+report the results over the datasets from log 1. for general-
+ity, we ﬁx the value of t
+2to 0.9 and select the cases with t1
+equals to 0.1 and 0.5 respectively (both are proved to be safe
+on the basis of our above results).
+number of events. to evaluate our approach for larger logs,
+we ﬁrst ﬁx the number of workers to 8 (32 cores) and increasethe size of log 1 by duplicating its traces, from 31,509 (1.2million events) to 252,072 (9.6 million events). as shown infig. 9a, we can see that the runtime is increasing withincreasing the number of events for both the conﬁgurations,and the trend for the case with t
+1¼0:5is more obviously
+than t1¼0:1. moreover, both cases achieve superlinear per-
+formance. the reason is that numbers of candidates arehighly reduced in both cases, which makes the workload rel-atively small for the underlying systems though the numberof events is increased.
+number of cores. as shown in fig. 9b, we ﬁx the number of
+events to 4.8 millions and double the number of cores from8 cores to 64 cores (16 nodes) for the conditions with t
+1equals
+to 0.1 and 0.5. it can be seen the runtime of 2 f-hmd algorithm
+decreases with increasing the number of cores in both thecases. regardless, the runtime does not behave very well for
+the case with t
+1¼0:1, and also for the case t2¼0:5when
+increasing the number of cores from 32 to 64. we believe that
+the reason is the computing workload is comparably smallfor the underlying platform. to prove this, we increase theworkloads for the case with t
+1¼0:1by increasing the num-
+ber of traces to 2.5 millions (with 96 million events) and runthe tests again. from fig. 9c, it can be seen that the runtimescales very well, although the workload is still relativelysmall when the number of cores reaches 64. speciﬁcally, itcan be seen that 2 f-hmd can discover the hybrid model from
+about 100 million events, in about 1 minute using 64 cores(16 nodes).
+6r elated work
+process discovery is one of the most challenging process min-ing tasks. state-of-the-art techniques can already deal withlogs where each process instance is recorded as a case withordered events and that each event is related to exactly onecase by a case identiﬁer. examples of algorithms that learnprocess models based on event data include a-miner [19],
+heuristic miner [28], ilp miner [29] and inductive miner [5].most of these methods describe in scientiﬁc literature focus
+on discovering process models having formal semantics.
+this is in stark constraint with most of the commercial toolswhich discover informal models, not having clear semantics.the reason is that petri nets (and the like) are perceived ascomplex and also force people to be very explicit about theordering of activities. however, when there is infrequentbehavior and splits and joins are clear cut, it does not makeany sense to straitjacket reality in a very precise model. infact, none of the 20+ commercial tools is explicit about thetype of splits and joins. in comparison to this, we introducean efﬁcient way to discovery hybrid models by adding formal
+semantics to the informal models, which can be easily discov-
+ered and widely used. the approach presented here is relatedto the approach in [16] which also uses hybrid process models(hybrid petri nets). in this paper we focus on distributing thediscovery of such process models in a cloud computing envi-ronment. moreover, there are also differences in the discov-ery approach and the notation used.
+with the growing of big data, large-scale event logs start
+to challenge current process mining techniques [30]. the rea-son is that sampling technique could lead to statisticallyvalid results on mainstream behavior [31], but would not
+lead to insights into the exceptional behavior, which is typi-
+cally the goal of process mining [32]. some commercial tools,such as celonis exploit modern database techniques to han-dle big event log. however, as the amount of event log datacontinues to grow, such an approach will be no longer feasi-ble and it will be impossible to process the entire data set ona single machine, due to the hardware limitations (e.g., cpuand memory). to handle this issue, we need to resort tofig. 9. the scalability of 2 f-hmd by varying the size of input logs and the number of execution cores with different input sets of parameters over data-
+sets from log 1.378 ieee transactions on services computing, vol. 13, no. 2, march/april 2020distributed and cloud-based computing platforms (see chap-
+ter 12 in [1]). in fact, such platforms (or frameworks) such asmapreduce and spark have been used to support event cor-relation discovery, i.e., to identify the events that are part ofthe same case [33], [34]. moreover, in the context of processdiscovery, mapreduce has also been used to implement thea-miner and the flexible heuristics miner [35], [36]. although
+all these approaches have shown that they can achieve obvi-ously speedups in the presence of big event log, different
+from them, we focus on discovering hybrid process models in
+this work.
+we have implemented our approach on spark
+(over hdfs) and experimentally shown that the propo-sed 2f-hmd algorithm is efﬁcient and scalable in a cloud
+computing enviroment. we believe that the evaluation con-ducted in this work and the described results are of value tothe community as a basis for understanding the merits of theapproach. since our computing is conducted on partitionedlogs, our approach can be easily extended in more complexcomputing environments, such as that hybrid model discov-
+ery in multi-cloud (or cross-orgnization) environments [37].
+in such a case, to efﬁciently use the available computingresources, we can further divide the ﬁlter operations of2f-hmd into seperate jobs and apply advanced scheduling
+strategies on them (e.g., [38]) to achieve the best possibleperformance.
+7c onclusions
+in this paper, we have introduced an efﬁcient approach,called f-hmd, to discover hybrid process models from large
+event logs. we have described the detailed implementationof our approach in a cloud computing enviroment (i.e., overspark) and our experimental results have demonstrated that
+the proposed 2f-hmd algorithm is very efﬁcient and scalable.
+our future work lies in extending our method with more
+advanced techniques to get better hybrid models (e.g., avoid
+unsound models to avoid the situation depicted in fig. 5).moreover, we will employ parameter tuning strategies inour implementation to select safe ﬁltering parameters foreach individual candidate in a dynamial way, and conse-quently to enhance the robustness and efﬁciency of our pro-totype in production environments. finally, we plan toincorporate the proposed approach in our prior event corre-lation system [34], to develop a high-performance processdiscovery system which can automatically discover hybrid
+process models from homogeneous (and heterogeneous)
+event logs in large-scale distributed cloud scenarios.
+acknowledgments
+this work was supported by the nwo delibida researchprogram. long cheng thanks the support of the europeanunion’s horizon 2020 research and innovation programmeunder the marie sklodowska-curie grant agreement no799066. wil van der aalst thanks the alexander von hum-
+boldt (avh) stiftung for supporting his research.
+references
+[1] w. van der aalst, process mining: data science in action . berlin,
+germany: springer, 2016.[2] w. van der aalst and e. damiani, “processes meet big data: con-
+necting data science with process science,” ieee trans. services
+comput. , vol. 8, no. 6, pp. 810–819, nov./dec. 2015.
+[ 3 ] s .g o e d e r t i e r ,j .d ew e e r d t ,d .m a r t e n s ,j .v a n t h i e n e n ,a n db .b a e s e n s ,
+“process discovery in event logs: an application in the telecom
+industry,” appl. soft comput. , vol. 11, no. 2, pp. 1697–1710, 2011.
+[4] s. suriadi, m. t. wynn, c. ouyang, a. h. ter hofstede, and
+n. j. van dijk, “understanding process behaviours in a large
+insurance company in australia: a case study,” in proc. int. conf.
+adv. inf. syst. eng. , 2013, pp. 449–464.
+[5] s. j. leemans, d. fahland, and w. m. van der aalst, “discovering
+block-structured process models from event logs-a constructiveapproach,” in proc. int. conf. appl. theory petri nets concurrency ,
+2013, pp. 311–329.
+[6] w. van der aalst, m. pesic, and h. schonenberg, “declarative
+workﬂows: balancing between ﬂexibility and support,” comput.
+sci.-res. develop. , vol. 23, no. 2, pp. 99–113, 2009.
+[7] j. dean and s. ghemawat, “mapreduce: simpliﬁed data proce-
+ssing on large clusters,” commun. acm , vol. 51, no. 1, pp. 107–113,
+2008.
+[8] m. zaharia, m. chowdhury, t. das, a. dave, j. ma, m. mccauley,
+m. j. franklin, s. shenker, and i. stoica, “resilient distributed data-sets: a fault-tolerant abstraction for in-memory cluster computing,”inproc. 9th usenix conf. netw. syst. des. implementation , 2012,
+pp. 15–28.
+[9] l. cheng and s. kotoulas, “efﬁcient skew handling for outer joins
+in a cloud computing environment,” ieee trans. cloud comput. ,
+vol. 6, no. 2, pp. 558–571, apr.–jun. 2018.
+[10] disco. [online]. available: https://ﬂuxicon.com/disco/[11] celonis. [online]. available: http://www.celonis.com/en/[12] processgold. [online]. available: http://www.processgold.com/en/
+[13] minit. [online]. available: https://www.minit.io/
+[14] t. murata, “petri nets: properties, analysis and applications,” proc.
+ieee , vol. 77, no. 4, pp. 541–580, apr. 1989.
+[15] n. lohmann, e. verbeek, and r. dijkman, “petri net transformations
+for business processes—a survey,” in transactions on petri nets and
+other models of concurrency ii . berlin, germany: springer, 2009,
+pp. 46–63.
+[16] w. van der aalst, r. de masellis, c. d. francescomarino, and
+c. ghidini, “learning hybrid process models from events: processdiscovery without faking conﬁdence,” in proc. int. conf. bus. process
+manage. , 2017, pp. 59–76.
+[17] k. shvachko, h. kuang, s. radia, and r. chansler, “the hadoop
+distributed ﬁle system,” in proc. ieee 26th symp. mass storage
+syst. technol. , 2010, pp. 1–10.
+[18] b. van dongen, “bpi challenge 2017.” [online]. available: doi:
+10.4121/uuid:5f3067df-f10b-45da-b98b-86ae4c7a310b
+[19] w. van der aalst, t. weijters, and l. maruster, “workﬂow min-
+ing: discovering process models from event logs,” ieee trans.
+knowl. data eng. , vol. 16, no. 9, pp. 1128–1142, sep. 2004.
+[20] p. charles, c. grothoff, v. saraswat, c. donawa, a. kielstra,
+k. ebcioglu, c. von praun, and v. sarkar, “x10: an object-ori-ented approach to non-uniform cluster computing,” acm sig-
+plan notices , vol. 40, no. 10, pp. 519–538, 2005.
+[21] l. cheng, a. malik, s. kotoulas, t. e. ward, and g. theodoropou-
+los, “fast compression of large semantic web data using x10,”
+ieee trans. parallel distrib. syst. , vol. 27, no. 9, pp. 2603–2617,
+sep. 2016.
+[22] w. gropp, e. lusk, n. doss, and a. skjellum, “a high-performance,
+portable implementation of the mpi message passing interface
+standard,” parallel comput. , vol. 22, no. 6, pp. 789–828, 1996.
+[23] m. chowdhury, y. zhong, and i. stoica, “efﬁcient coﬂow scheduling
+with varys,” acm sigcomm comput. commun. rev. ,v o l .4 4 ,n o .4 ,
+pp. 443–454, 2014.
+[24] l. cheng, i. tachmazidis, s. kotoulas, and g. antoniou, “design
+and evaluation of small–large outer joins in cloud computingenvironments,” j. parallel distrib. comput. , vol. 110, pp. 2–15, 2017.
+[25] softlayer. [online]. available: http://www.softlayer.com/
+[26] amazon. [online]. available: https://aws.amazon.com/ec2/
+[27] b. van dongen, “bpi challenge 2017 - offer log.” [online]. avail-
+able: doi:10.4121/uuid:7e326e7e-8b93-4701-8860-71213edf0fbe
+[28] a. weijters, w. van der aalst, and a. a. de medeiros, “process min-
+ing with the heuristics miner algorithm,” technische universiteit
+eindhoven, tech. rep. wp , vol. 166, pp. 1–34, 2006.
+[29] j. m. e. van der werf, b. f. van dongen, c. a. hurkens,
+and a. serebrenik, “process discovery using integer linear pro-gramming,” in proc. int. conf. appl. theory petri nets , 2008,
+pp. 368–387.cheng et al.: scalable discovery of hybrid process models in a cloud computing environment 379[30] s. sakr, z. maamar, a. awad, b. benatallah, and w. m. van der
+aalst, “business process analytics and big data systems: a roadmap
+to bridge the gap,” ieee access , vol. 6, pp. 77 308–77 320, 2018.
+[31] c. liu, y. pei, q. zeng, and h. duan, “logrank: an approach to
+sample business process event log for efﬁcient discovery,” in proc.
+11th int. conf. knowl. sci. eng. manage. , 2018, pp. 415–425.
+[32] a. syamsiyah, b. f. van dongen, and w. van der aalst, “db-xes:
+enabling process discovery in the large,” in proc. int. symp. data-
+driven process discovery anal. , 2016, pp. 63–77.
+[33] h. reguieg, b. benatallah, h. r. m. nezhad, and f. toumani,
+“event correlation analytics: scaling process mining using map-
+reduce-aware event correlation discovery techniques,” ieee
+trans. services comput. , vol. 8, no. 6, pp. 847–860, nov./dec. 2015.
+[34] l. cheng, b. van dongen, and w. van der aalst, “efﬁcient event
+correlation over distributed systems,” in proc. 17th ieee/acm int.
+symp. cluster cloud grid comput. , 2017, pp. 1–10.
+[35] s. hern /c19andez, j. ezpeleta, s. j. v. zelst, and w. van der aalst,
+“assessing process discovery scalability in data intensive environ-
+ments,” in proc. ieee/acm int. symp. big data comput. , 2015,
+pp. 99–104.
+[36] j. evermann, “scalable process discovery using map-reduce,” ieee
+trans. services comput. , vol. 9, no. 3, pp. 469–481, may/jun. 2016.
+[37] c. liu, h. duan, z. qingtian, m. zhou, f. lu, and j. cheng,
+“towards comprehensive support for privacy preservation cross-organization business process mining,” ieee trans. services comput. ,
+2016, doi: 10.1109/tsc.2016.2617331
+[38] b. lin, w. guo, n. xiong, g. chen, a. v. vasilakos, and h. zhang,
+“a pretreatment workﬂow scheduling approach for big data appli-
+cations in multicloud environments,” ieee trans. netw. service
+manage. , vol. 13, no. 3, pp. 581–594, sep. 2016.
+long cheng received the be degree from the har-
+bin institute of technology, china, in 2007, the
+msc degree from the university of duisburg-
+essen, germany, in 2010, and the phd degreefrom the national university of ireland maynooth,in 2014. he is a marie curie fellow with the perfor-mance engineering laboratory, university collegedublin (ucd). he has worked at organizationssuch as huawei technologies, ibm research, tu
+dresden, and tu eindhoven (tu/e). his research
+interests mainly include parallel and distributedcomputing, big data, semantic web, and processmining.
+boudewijn f. van dongen is a full professor in
+computer science and chair of the process analyt-ics group, eindhoven university of technology(tu/e). the research group distinguishes itself inthe information systems discipline by its fundamen-
+tal focus on modeling, understanding, analyzing,
+and improving processes. his research focuses onconformance checking: anything where observedbehavior needs to be related to previously modeledbehavior.
+wil m. p. van der aalst a full professor with rwth
+aachen university leading the process and data
+science (pads) group. he is also part-time afﬁli-
+ated with the eindhoven university of technology(tu/e). until december 2017, he was the scientiﬁcdirector of the data science center eindhoven(dsc/e) and led the architecture of informationsystems group, tu/e. since 2003, he holds a part-
+time position with the queensland university of
+technology (qut). currently, he is also a visitingresearcher with fondazione bruno kessler (fbk)
+in trento and a member of the board of governors of tilburg university.his research interests include process mining, petri nets, business processmanagement, workﬂow management, process modeling, and processanalysis. he is a senior member of the ieee.
+"for more information on this or any other computing topic,
+please visit our digital library at www.computer.org/csdl.380 ieee transactions on services computing, vol. 13, no. 2, march/april 2020

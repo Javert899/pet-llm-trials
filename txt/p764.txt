@@ -1,0 +1,1510 @@
+chapter 1
+behavioral service substitution
+christian stahl and wil m. p. van der aalst
+abstract service-oriented design supports system evolution and encourages reuse
+and modularization. a key ingredient of service orientation is the ability to substi-
+tuteone service by another without reconﬁguring the overall system. this chapter
+aims to give an overview of the state of the art and open challenges in the area of
+service substitution . thereby, we restrict ourselves to changes of the service behav-
+ior. we present a formal model of service behavior, formalize service substitution,
+study algorithms to decide service substitution, and provide rules to construct ser-
+vices that are correct by design. beside analysis at design time , we also investigate
+analysis at runtime , where we measure the deviation of a running service (or collec-
+tion of services) from its speciﬁcation based on recorded event data (e.g., message
+or transaction logs).
+1.1 introduction
+today’s enterprises are challenged to continuously change their systems to address
+changes in their environment. on the one hand, systems are highly complex, run
+in heterogeneous environments, and are often distributed over several enterprises.
+on the other hand, because of the extensively growing acceptance of the internet
+and internet-related technologies, enterprises consider themselves to be exposed to
+intense competition and, therefore, have to act dynamically and to change and adapt
+their systems whenever necessary. for example, when some new functionality is
+added or some quality parameter of some functionality is improved, this causes a
+change in system development. instead of designing a system from scratch, existing
+systems need to be redesigned and improved iteratively.
+christian stahl and wil m. p. van der aalst
+dept. of mathematics and computer science, technische universiteit eindhoven,
+po box 513, 5600 mb eindhoven, the netherlands
+e-mail: c.stahl|w.m.p.v.d.aalst@tue.nl
+12 christian stahl and wil m. p. van der aalst
+activity
+channel channel
+interfaceservice definition service definitionservice definition
+interfaceactivity
+message
+fig. 1.1 an illustration showing the main terms used to describe services.
+service orientation [40] is a paradigm to design a complex distributed system
+by composing it from smaller building blocks called services . a service is an au-
+tonomous system that has an interface to interact with other services via message
+passing. as services are composed into more complex services, a service is usually
+stateful . the behavior of a service is described by a set of activities . an activity is
+the atomic unit of work in a service. the execution of an activity is either internal
+to the service or yields the sending or the receiving of a message. a service can
+be executed; that is, an instance of this service is created. an instance can execute
+activities. figure 1.1 illustrates these terms.
+an important property of a service composition is compositionality ; that is, the
+composition is again a service. to achieve compositionality, a service composition
+must be compatible . the modular design of services enables enterprises to substitute
+one service by another one rather than changing the entire system. substituting one
+service by another one should preserve compatibility of the overall system. veriﬁca-
+tion of compatibility is challenging, as one wants to derive correctness of the overall
+system from the correctness of the correctness of its services. service substitution —
+that is, deciding whether a service can substitute another service—is considered to
+be one of the grand challenges [42].
+in this chapter, we give an overview of the state of the art and open challenges
+in the area of service substitution. we thereby restrict ourselves to changes of the
+service behavior , which are also known as business protocol changes [41]. this
+restriction implies that we assume that nonfunctional and semantical properties are
+not violated when changing a service to another service; that is, we abstract from
+resources and consider only data and message types and not their content. figure 1.2
+illustrates how we approach this topic.
+first, in sect. 1.2, we formalize service behavior according to the illustration in
+fig. 1.1. we introduce open nets , petri nets extended with an interface, as a service
+model and formalize terms such as compatibility . suitability of this model has been
+demonstrated by feature-complete open-net semantics for various languages such as
+bpmn and ws-bpel [29].
+in sect. 1.3, we present two variants of service substitution and formalize them
+using a reﬁnement relation between the speciﬁed (i.e., the old) service spec and
+the implemented (i.e., the new) service impl. a naive way to ensure correctness
+during service substitution is to compare the sets of all controllers (i.e., admissible
+contexts) of spec andimpl. only if all controllers of spec are included in the set1 behavioral service substitution 3
+open net spec open net imp
+representation 
+of all controllers 
+of specrepresentation 
+of all controllers 
+of imprefinement
+decide 
+substitution e.g., bpelservice composition
+specificationservice composition
+implementation
+ e.g., bpmn
+measure
+runtime
+conformanceevent 
+logssoftware 
+system
+fig. 1.2 illustration of the proposed approach.
+of controllers of impl, compatibility is ensured. as these sets of controllers may be
+inﬁnite, we introduce a ﬁnite representation of these sets to decide substitution. we
+also consider service substitution in a setting where a running instance of the old
+service has to be migrated to the new service.
+besides checking whether a service can actually be substituted by another one,
+one can also guide the construction of services that are correct by design . this ap-
+proach can then be integrated in design tools and helps to speed up the design pro-
+cess. we investigate such techniques in sect. 1.4.
+compatibility and substitutability can be studied at design time under the as-
+sumption that services behave as modeled. however, organizations may – deliber-
+ately or accidently – implement a different service or services may evolve over time.
+as a result, the real service behavior deviates from the modeled behavior. the avail-
+ability of event logs of the actually implemented service impl and the existence of
+the speciﬁed service spec enables us to check conformance at runtime ; that is, we
+investigate to what extent “the real impl” deviates from spec . in sect. 1.5, we present
+techniques for ofﬂine conformance checking (diagnosis of deviations based on his-
+toric event data) and online conformance checking (generating alerts the moment a
+deviation occurs).
+section 1.6 concludes the chapter by summarizing our main ﬁndings and by dis-
+cussing open research challenges.
+1.2 formalizing service behavior
+petri nets have proven to be successful for the modeling of business processes and
+workﬂows [8, 11]. in this section, we introduce our modeling formalism for ser-4 christian stahl and wil m. p. van der aalst
+vices, open nets . we focus on service behavior, and abstract from nonfunctional
+properties, semantical information, and data. as the formalism of open nets reﬁnes
+place/transition petri nets, we ﬁrst provide the basic deﬁnitions on petri nets.
+1.2.1 basic deﬁnition on petri nets
+a petri net [46] consists of two kinds of nodes, places andtransitions , and a ﬂow
+relation on nodes. whilst transitions represent dynamic elements, for example an
+activity in a service, places represent static elements, such as causality between ac-
+tivities or an interface port. graphically, a circle represents a place, a box represents
+a transition, and the directed arcs between places and transitions represent the ﬂow
+relation. a state of the petri net is represented by a marking. a marking is a distri-
+bution of tokens over the places. graphically, a black dot represents a token.
+deﬁnition 1 (net). anet n = (p;t;f;mn;w)consists of
+a ﬁnite set pofplaces ,
+a ﬁnite set toftransitions such that pandtare disjoint,
+aﬂow relation f(pt)[(tp),
+aninitial marking m n, where a marking m2b(p)is a multiset over p, and
+a setwof ﬁnal markings.
+alabeled net is a net ntogether with an alphabet aof actions and a labeling
+function l2t!a[ftg, where t=2arepresents an invisible, internal action.
+letx2p[tbe a node of a net n. as usual,x=fyj(y;x)2fgdenotes the
+preset ofxandx=fyj(x;y)2fgthepostset ofx. we interpret presets and postsets
+as multisets when used in operations also involving multisets.
+a marking m2b(p)is a multiset over the set pof places; for example, [p1;2p2]
+denotes a marking mwith m(p1) =1,m(p2) =2, and m(p) =0 for p2pnfp1;p2g.
+we deﬁne +and for the sum and the difference of two markings and =;<;>;;
+for comparison of markings in the standard way. if m12b(p1)andm22b(p2),
+then m1+m22b(p1[p2)(i.e., the underlying set of elements is adjusted when
+needed).
+thebehavior of a net nrelies on changing the markings of nby ﬁring transitions
+ofn. a transition t2tisenabled at a marking m, denoted by mt  !, if for all
+p2t,m(p)>0. if tis enabled at m, it can ﬁre, thereby changing the marking mto
+a marking m0=m t+t. the ﬁring of tis denoted by mt  !m0; that is, tis enabled
+atmand ﬁring it results in m0.
+the behavior of ncan be extended to sequences: m1t1  !:::tk 1  ! mkis arunof
+nif for all 0 <i<k,miti  !mi+1. a marking m0isreachable from a marking mif
+there exists a (possibly empty) run m1t1  !:::tk 1  ! mkwith m=m1andm0=mk; for
+w=ht1:::tk 1i, we also write mw  !m0. marking m0isreachable ifmn=m. the set1 behavioral service substitution 5
+mnrepresents the set of all reachable markings of n, and the set of runs of nfrom
+the initial marking to a ﬁnal marking is ru(n) =fw2tj9mf2w:mnw  !mfg.
+in the case of labeled nets, we lift runs to traces: if mw  !m0andvis obtained
+from wby replacing each transition by its label and removing all t-labels, we write
+mv=)m0. for example, if w=ht1;t1;t2;t1;t2;t3i,l(t1) =a,l(t2) =t, and l(t3) =b,
+andmw  !m0, then mv=)m0with v=ha;a;a;bi. we refer to vas atrace whenever
+mnv=)mfwith mf2wandtr(n) =fs2aj9mf2w:mns=)mfgis the set
+of all traces of n.
+a net nisbounded if there exists a bound b2in such that for all reachable
+markings m2mnand p2p,m(p)b. a reachable marking m=2wofnis a
+deadlock if no transition t2tofnis enabled at m. net nis deadlock free if at least
+one transition of nis enabled at every reachable non-ﬁnal marking.
+1.2.2 open nets
+a service consists of a control structure describing its behavior and an interface to
+communicate asynchronously with other services. thereby an interface consists of a
+set of input and output ports . in order that two services can interact with each other,
+an input port of the one service has to be connected with an output port of the other
+service. these connected ports then form a channel .
+the control structure of a service can be adequately modeled as a net. we use the
+set of ﬁnal markings of a net to model the states, in which a service may success-
+fully terminate. in addition, it is necessary to model ports. to this end, we add an
+interface to our model. the service interface is reﬂected by two disjoint sets of in-
+put and output places . thereby, each interface place corresponds to a port. an input
+place has an empty preset and is used for receiving messages from a distinguished
+channel, whereas an output place has an empty postset and is used for sending mes-
+sages via a distinguished channel. in the model, we abstract from data and identify
+each message by the label of its message channel. the resulting service models are
+open nets [28, 53].
+deﬁnition 2 (open net). anopen net n is a tuple (p;t;f;mn;i;o;w)with
+(p[i[o;t;f;mn;w)is a net such that p,i,oare pairwise disjoint;
+for all p2i[o,mn(p) =0, and for all m2wandp2i[o,m(p) =0;
+the set iofinput places satisﬁes for all p2i,p=/ 0; and
+the set oofoutput places satisﬁes for all p2o,p=/ 0.
+ifi=o=/ 0, then nis aclosed net . the net inner(n)results from removing the in-
+terface places and their adjacent arcs from n. two open nets are interface equivalent
+if they have the same sets of input and output places.
+a closed net can be used to model a service choreography, whereas the inner of
+an open net reﬂects the interior of a service. graphically, we represent an open net6 christian stahl and wil m. p. van der aalst
+t1p1
+s
+b
+e
+c
+nt2
+p2
+t3
+t4t5 t6
+p3
+t7
+p4
+(a) customer nc
+t8p5
+t9
+p6
+t10
+p8s
+b
+e
+c
+nt11 t12
+t13p7 (b) translator nt
+t14p9
+t15
+p10 p11
+p13s
+b
+e
+c
+nt16t17
+t18p12
+t19
+t20 (c) translator nb
+fig. 1.3 open nets modeling a customer ( wc=f[p1];[p4]g) and two translation services ( wt=
+f[p5];[p8]gandwb=f[p9];[p13]g).
+like a net with a dashed frame around it. the interface places are depicted on the
+frame.
+figure 1.3 depicts our running example. it is a simpliﬁed (behavioral) model of a
+translation service. the example is inspired by the translation apis offered by bing
+and google. the service in fig. 1.3(b) receives a text ﬁle that must be translated.
+our example allows customers to send a small or a large ﬁle, modeled by messages
+sandb, respectively. depending on the pricing model used, the service asks for a
+cheap or a normal price (messages candn). sometimes the service may not work
+properly, for example, if too many requests are sent. in this case, the service sends
+an error message e. after having successfully translated a text ﬁle, the service enters
+a ﬁnal state. in addition, also the initial state is a ﬁnal state to allow customers to stop
+at any time if the translation service does not work properly. figure 1.3(a) depicts
+the open net of a customer who may send small and large ﬁle and, in the case of an
+error, may send the ﬁle again or terminate (ﬁnal marking [p1]).
+communication between two services takes place by connecting pairs of ports
+using a channel and exchanging messages via these channels. we model this by
+composing the respective open nets, thereby merging shared interface places and
+turn these places into internal places. such a merged interface place models a chan-
+nel and a token on such a place corresponds to a pending message in the respective
+channel.
+for the composition of open nets, we assume that the sets of transitions are pair-
+wise disjoint and that no internal place of an open net is a place of any other open
+net. in contrast, the interfaces intentionally overlap. we require that all communi-
+cation is bilateral anddirected ; that is, every shared place phas only one open net
+that sends into pand one open net that receives from p. we refer to open nets that
+fulﬁll these properties as composable .1 behavioral service substitution 7
+fig. 1.4 open net modeling a
+contract.
+t8p5
+t9
+p6
+t10
+p8s
+b
+e
+c
+nt11 t12
+t13t1p1
+t2
+p2
+t3
+t4t5 t6
+p3
+t7
+p4p7
+deﬁnition 3 (open net composition). open nets n1andn2arecomposable if(p1[
+t1[i1[o1)\(p2[t2[i2[o2) = ( i1\o2)[(i2\o1). the composition of two
+composable open nets n1andn2is the open net n1n2= (p;t;f;mn;i;o;w)
+where
+p=p1[p2[(i1\o2)[(i2\o1);
+t=t1[t2;
+f=f1[f2;
+mn=mn1+mn2;
+i= (i1[i2)n(o1[o2);
+o= (o1[o2)n(i1[i2); and
+w=fm1+m2jm12w1^m22w2g.
+ignoring the dotted line along the former interface places, fig. 1.4 shows the
+composition of the two open nets ncandntof fig. 1.3.
+open net composition models asynchronous message passing. asynchronous
+message passing means that communication is nonblocking; that is, after a service
+has sent a message it can continue its execution and does not have to wait until this
+message is received. furthermore, messages can ‘overtake’ each other; that is, the
+order in which the messages are sent is not necessarily the order in which they are
+received.
+we want the composition of a set of services to be compatible . there exist a mul-
+titude of compatibility notions in the literature, making it is impossible to list them
+all. however, almost all of these notions can be classiﬁed into three dimensions:
+the composition terminates (e.g., deadlock freedom or the possibility to always
+reach a ﬁnal marking, i.e., weak termination);
+the composition fulﬁlls a scenario (e.g., a client must always pay by credit card);
+and
+the communication schema used by the composition (beside asynchronous com-
+munication following the idea of soa, in practice also synchronous, queued, or
+mixed communications are implemented).8 christian stahl and wil m. p. van der aalst
+throughout this chapter, compatibility refers deadlock freedom or weak termina-
+tion. it will always be clear from the context, which of the two notions we consider.
+compatibility is only of interest for a service choreography, which is modeled by a
+closed net. a user that communicates with a service, such that the composition is
+compatible, can also be seen as a controller of the service. in addition, we restrict
+ourselves to ﬁnite state services—more precisely, a composition with a controller
+must be bounded. the motivation for this restriction is that we model the control
+ﬂow of service compositions and assume ﬁnitely many control states and a (ﬁnite)
+capacity of the message channels. for a reasonable concept of a service, we assume
+the inner of an open net, modeling the service interior, to be ﬁnite state. to ensure
+boundedness in the composition, controllers must not send a message if there the
+bound in the respective message channel has been reached already. technically, this
+enforces that the composition has a ﬁnite number of reachable states. pragmatically,
+it could either represent a reasonable buffer size in the middleware—for example,
+the result of a static analysis of the communication behavior of a service—or be
+chosen sufﬁciently large.
+deﬁnition 4 (controllability). an open net cis acontroller of an open net nif the
+composition ncis closed, compatible (i.e., deadlock free or weakly terminating),
+and bounded. if such a cexist, then niscontrollable .
+ifnis not controllable, then nis obviously ill-designed because it cannot prop-
+erly interact with any other open net.
+the contract in fig. 1.4 is closed, 1-bounded, and weakly terminating (i.e., it
+is always possible to reach a ﬁnal marking). as a consequence, open net ncis a
+controller of open net nt, and vice versa.
+later in this chapter, we want to analyze the behavior of a service modeled as
+an open net. the behavior of an open net is basically the reachability graph of its
+inner. to highlight which transitions are sending and receiving actions and which
+are only internal actions, we label each transition of an open net. the idea is to
+add to each transition adjacent to an interface place the respective place label and
+to all other transitions the label t(denoting the internal action). to simplify the
+labeling, we restrict ourselves to open nets where each transition is connected to at
+most one interface place. we refer to those open nets as elementary communicating .
+that way, a transition is labeled by a single label rather than a set. this restriction is
+not signiﬁcant as every open net can be transformed into an equivalent elementary
+communicating open net [28]. the respective inner is a labeled net to which we refer
+asthe synchronous environment .
+the behavior of an open net ncan now be deﬁned by the reachability graph
+rg(envs(n))of its synchronous environment. this graph has reachable markings
+menvs(n)as its nodes and a l(t)-labeled edge from mtom0whenever mt  !m0.
+figure 1.5 depicts the synchronous environment envs(nc)of the customer service
+and its behavior described by the reachability graph of envs(nc).
+we introduced open nets as a formal model for service behavior. open nets can be
+used to model service compositions, asynchronous communication, and proper ter-
+mination. open nets abstract from data and identify each message by the label of its1 behavioral service substitution 9
+fig. 1.5 synchronous envi-
+ronment of the customer and
+its reachability graph. symbol
+“?” denotes a receiving and
+“!” a sending event of nc.
+t1p1
+s b
+e
+c nt2
+p2
+t3
+t4t5 t6
+p3
+t7
+p4τ
+τ
+(a)envs(nc)
+?n?c ?e[p1]
+[p2]
+[p3] [p4]τ!s!b
+τ (b)rg(envs(nc))
+message channel. this abstraction is necessary, because the analysis techniques that
+shall be introduced in the forthcoming sections are only applicable for ﬁnite state
+models. however, our approach allows to deal with ﬁnite data domains as those do-
+mains can be unfolded—for example, if a message returns a boolean, then we could
+unfold this domain yielding two channels, one for exchanging value true and the
+other for value false. there also exist techniques to derive a ﬁnite abstraction from
+an inﬁnite data domain, but they are out of scope for this chapter. to simplify our
+analysis techniques, open nets also abstract from time information. moreover, open
+nets are a well-suited model for service behavior due to their link to workﬂows [8].
+nevertheless, also other modeling techniques have been successfully applied, for
+example, transition systems, ﬁnite automata, process algebra, and session types.
+1.3 service substitution
+in this section, we formalize multiparty contracts, introduce two substitutability no-
+tions and algorithms to decide these notions, and present variants of service substi-
+tution.
+1.3.1 multiparty contracts and accordance of services
+the service-oriented paradigm enables enterprises to publish their services via the
+internet. these services can then be automatically found and used by other enter-
+prises. however, this approach has not become accepted in practice, mainly because
+enterprises usually cooperate only with enterprises they already know. therefore,
+in practice, a more pragmatic approach is used instead. the parties that will partici-
+pate in an interorganizational cooperation specify together an abstract description of
+the overall service. this description is a choreography. the choreography consists10 christian stahl and wil m. p. van der aalst
+of a set of activities. each activity is assigned to one party. a connection between
+two activities is either internal—that is, both activities belong to the same party—or
+external—that is, both activities belong to different parties. a party’s share of the
+choreography (i.e., its public view ) is then the projection of the choreography to the
+party’s activities. the choreography serves as a common contract among the parties
+involved in the cooperation.
+the challenge of the contract approach is to balance the following two conﬂicting
+requirements: on the one hand, there is a strong need for coordination to optimize
+the ﬂow of work in and among the different parties. on the other hand, the parties
+involved in the cooperation are essentially autonomous and have the freedom to
+create or modify their services at any point in time. furthermore, the parties do not
+want to reveal their trade secrets. therefore, it has been proposed to use a contract
+that deﬁnes “rules of engagement” without describing the internal services executed
+within each party [2, 13].
+after the parties have speciﬁed the contract, each party will implement its public
+view on its own. the implementation, the private view , will usually deviate signif-
+icantly from its public view. obviously, these local modiﬁcations have to conform
+to the agreed contract. this is, in fact, a nontrivial task, because it may cause global
+errors, such as deadlocks. as all parties are autonomous, none of them owns the
+overall service (i.e., the implemented contract). therefore, none of the parties can
+verify the overall service. as a result, an approach is needed such that each party can
+check locally whether its private view guarantees global correctness of the overall
+service.
+the basic idea of the contract approach can be seen in fig. 1.2. the starting point
+is the speciﬁcation on the top left which serves as a contract. it is partitioned into
+four parties, each illustrated as a fragment of the speciﬁcation. by substituting each
+fragment by its implementation, we obtain the implementation on the top right.
+basically, we see a contract as a closed net n, where every transition is assigned
+to one of the involved parties x1;:::; xk. we impose only one restriction: if a place is
+accessed by more than one party, it should act as a directed bilateral communication
+place. this restriction reﬂects the fact that a party’s public view of the contract is a
+service again. a contract ncan be cut into parts n1;:::; nk, each representing the
+agreed public view of a single party xi(1ik). hence, we deﬁne a contract as
+the composition of the open nets n1;:::; nk.
+deﬁnition 5 (multiparty contract). letx=fx1;:::; xkgbe a set of parties. let
+fn1;:::; nkgbe a set of pairwise interface compatible open nets such that n=n1
+ nkis a closed net. then, nis acontract for x. for i=1;:::; k, open net niis
+thepublic view of x iin n.
+figure 1.4 shows a multiparty contract involving only two parties: a customer
+and a translation service. the dotted line is used to divide the composition into the
+two shares, open nets ncandnt.
+as previously mentioned, we want that every party involved in the contract can
+independently substitute its public view niwith a private view n0
+i. clearly, this sub-
+stitution should not violate compatibility of the contact. informally spoken, all the1 behavioral service substitution 11
+other services forming the environment of nimust not distinguish between niand
+n0
+i. this can be achieved if every controller of niis also a controller of n0
+i. this
+relation between the two open nets forms a reﬁnement relation to which we refer as
+accordance .
+deﬁnition 6 (accordance). letspec andimpl be interface equivalent open nets.
+open net impl accords with open net spec , denoted by implvaccspec , if every
+controller cofspec is also a controller of impl.
+the main result for multiparty contracts is that each party can substitute its public
+view by a private view independently. if each of the private views accords with
+the corresponding public view, then compatibility (here deadlock freedom) of the
+implemented contract is guaranteed.
+theorem 7 (implementation of a contract). let n be a contract between parties
+fx1;:::; xkgwhere n is compatible. if, for all i 2f1;:::; kg, n0
+iaccords with n i,
+then n0=n0
+1 n0
+kis compatible.
+figure 1.3(c) depicts a private view nbof the translation service nt. this service
+implements a more concrete pricing model compared to nt: translating a small ﬁle
+is cheap whereas for large ﬁles a normal price is asked for. if we consider deadlock
+freedom as a compatibility notion, then nbaccords with nt. with theorem 7, we
+conclude that substituting ntbynbpreserves deadlock freedom. next we show,
+how we can decide accordance for two open nets.
+1.3.2 deciding accordance using operating guidelines
+an algorithm to decide accordance for two open nets spec andimpl must decide
+whether every controller of spec is also a controller of impl. as an open net has
+potentially inﬁnitely controllers, we must check inclusion of two inﬁnite sets. for
+deadlock freedom , we can overcome this problem, because the set of all controllers
+of open nets can be represented in a ﬁnite manner using a data structure called
+operating guideline [28].
+an operating guideline og(n)of a service ndescribes how a user should suc-
+cessfully communicate with n; technically, it characterizes the behavior of the pos-
+sibly inﬁnite set of controllers of nin a ﬁnite manner. it is based on the observation
+that there exists a behavior that has the least restrictions, the most permissive behav-
+ior. the most permissive behavior is a deterministic transition system tsand serves
+as the ﬁrst ingredient for our operating guideline. every behavior of any controller is
+then just a restriction of ts. we can specify those restrictions by annotating every
+state of tswith a boolean formula, specifying which of the outgoing transitions
+must be present. thus, a literal of such a boolean formula is a transition label of n
+or the literal ﬁnal, specifying that nis in a ﬁnal state. the boolean formula are the
+second ingredient of an operating guideline. technically, an operating guideline is
+an annotated automaton.12 christian stahl and wil m. p. van der aalst
+q1: !s 
+!b 
+final
+q2: ?c 
+?n 
+?e
+q4: final!s
+q3: ?c 
+?n 
+?e!b
+?c ?n?e ?e
+qã: true
+?c ?n ?c?n?e?c?n?e
+*
+(a)og(nt)
+r1: !s 
+!b 
+final
+r2: ?c 
+?e
+r4: final!s
+r3: ?n 
+?e!b
+?c?e ?e
+rã: true
+?n?c
+?c?n?e?c?n?e
+*
+?n (b)og(nb)
+fig. 1.6 operating guidelines for the two translator services. symbol is a short hand for every
+element of the alphabet.
+figure 1.6(a) shows the operating guideline of open net nt. it is a ﬁnite automa-
+ton with ﬁve annotated states and can be read as follows. initially, a controller of nt
+either sends a (small or large) ﬁle or is in a ﬁnal state. after sending for example, a
+small ﬁle (state q2), the controller must be able to receive messages f,c, and n. the
+conjunction thereby emphasizes that any of these three messages can be sent and
+hence has to be received. receiving fyields the initial state; receiving any of the
+other messages yields state q4, where the controller must terminate. state q/ 0denotes
+a nonreachable state: it does not harm if a controller can receive more messages than
+the service will send. for example, initially ntwill not send the translated ﬁle but
+it is not wrong if a controller can receive such a message.
+to determine whether an open net cis a controller of an open net n, we check
+whether the behavior tsc=rg(envs(c))ofcmatches with the operating guideline
+ofn. matching consists of two steps. first, we check whether tscis a potential
+restriction of tsby applying a procedure similar to a weak simulation relation—
+the difference is, whenever a t-labeled transition can be performed in tsc, then ts
+remains in the same state. second, for each pair (qc;q)of states in the relation, we
+verify whether the outgoing transitions of qcand the information whether qcis a
+ﬁnal state or not evaluate the boolean formula fassigned to qto true. that way,
+we check whether tscis a valid restriction of ts.
+matching the behavior of the customer ncwith the operating guideline of nt
+yields relationf([p1];q1);([p2];q2);([p2];q3);([p3];q1);([p4];q1);([p4];q4)g. for
+example, in ([p1];q1),[p1]assigns true to all three literals of f(q1), thereby evaluat-
+ing this formula to true. similar, in ([p2];q2),[p2]assigns true to all three literals of
+f(q2), thereby evaluating this formula to true. the same holds for all other elements
+of this relation, and therefore we conclude that ncmatches with og(nt)—which
+must be the case because ncis a controller of nt.
+anoperating guideline og (n)of an open net n is the annotated automaton that
+represents all controllers of n [28]. with the operating guidelines og(spec)and
+og(impl)of two open nets spec andimpl, we can decide whether impl accords
+with spec .
+theorem 8 (deciding accordance [50]). for open nets spec and impl, with op-
+erating guidelines og (spec)and og (impl), we have that impl vaccspec iff there1 behavioral service substitution 13
+exists a minimal simulation rof og (spec)by og (impl)and, for each pair of nodes
+(qspec;qimpl)2r,f(qspec)implies f(qimpl)is a tautology.
+intuitively, the existence of the minimal simulation relation [33] guarantees that
+og(impl)simulates the behavior of every controller of spec , and the implication
+of the formulae ensures that whenever a service deadlocks with impl it does so
+with spec . the operating guideline algorithm has been implemented in the tool
+wendy [30] and the accordance check in the tool cosme [31].
+consider the operating guidelines og(nt)andog(nc). the minimal simulation
+relation is r=f(q1;r1);(q2;r2);(q3;r3);(q4;r4);(q/ 0;r/ 0)g. for each element of r,
+the tautology holds; for example, for (q2;r2)we have ? c^?n^?fimplies ? c^?fis a
+tautology. thus, nbaccords with nt.
+1.3.3 substitution in a less restrictive setting
+one of the main drivers for service evolution is that organizations have to increase
+their proﬁt and therefore continuously improve their services. service improvement
+includes ﬁguring out bottlenecks and unproﬁtable lines of business. on the level of
+the service behavior, service improvement leads to restructuring the process. re-
+structuring may also result in excluding some business functionality. for example,
+the translation service may stop offering the translation of large ﬁles if this is not
+proﬁtable. as a consequence, the improved service may have fewer controllers than
+the current service. thus, another reﬁnement notion than accordance is necessary to
+cope with this scenario. to this end, we introduce preservation , a reﬁnement rela-
+tion in which the implementation preserves only a subset of the controllers of the
+speciﬁcation.
+deﬁnition 9 (preservation). letspec andimpl be interface equivalent open nets
+andcbe a set of controllers of spec . open net impl accords with open net spec
+under preservation of c, denoted by implvacc;cspec , if every controller c2cis
+also a controller of impl.
+ifimplvacc;cspec and thus preserves ccon(spec), then impl controls every
+c2c. this, however, is equivalent to impl matches with the operating guideline
+for any c. for a ﬁnite set c, we can represent the intersection of the individual sets
+of services represented by these operating guidelines as one operating guideline.
+technically, this operating guideline has the synchronous product of the underlying
+transition systems as its structure and to every synchronized state we assign the
+conjunction of the respective boolean formulae. the following theorem formalizes
+the informally sketched decision procedure.
+theorem 10 (deciding preservation [50]). let spec and impl be interface equiv-
+alent open nets and c=fc1;:::; ckgbe a set of controllers of spec. let og (ci),
+1ik, be the operating guideline of c i, and let og
+denote the product of all
+og(ci). then, implvacc;cspec iff impl matches with og 
+.14 christian stahl and wil m. p. van der aalst
+the limitation of this result is that set cmust be ﬁnite. however, it is also possi-
+ble to constrain the set of controllers of a service by excluding or enforcing certain
+scenarios. the idea is similar: a constraint can be modeled as an (annotated) au-
+tomaton. by constructing the product of this automaton and the operating guideline
+ofspec , we can constrain the controllers of spec ; see [27, 50]. in addition, [52]
+shows how certain activities of a service (i.e., transitions in the respective open net)
+can be covered.
+1.3.4 accordance in a purely service-oriented setting
+in this section, we investigate service substitution in a purely service-oriented set-
+ting where services are composed from other published services. we want to de-
+cide when a service spec published by some party can be substituted by a modiﬁed
+version impl. clearly, service impl must accord with spec . the actual challenge
+is that the party (i.e., a service provider) does not even know in which environ-
+ment its service is executed. to illustrate that this fact matters, consider a closed net
+nn1spec with nshares interface places with n1andspec butn1andspec do
+not share interface places. in the contract setting, the provider of spec knows the
+public views of n1andnand hence can substitute spec by an accordant impl. in the
+current setting, the provider of spec does not know nnorn1, but the reﬁnement of
+spec must be compositional in the sense that an accordant impl must guarantee that
+also the composition implnaccords with specn. this argumentation is more
+difﬁcult, because the two latter open nets are not closed. a reﬁnement relation, such
+as accordance, that satisﬁes this property is a precongruence . a precongruence is
+a preorder such that if two open nets spec andimpl are related by the precongru-
+ence so are implnandspecnfor any composable open net n. in contrast, the
+reﬁnement relation necessary for ensuring theorem 7, does not need to be a precon-
+gruence but only a preorder. for more details on this setting and a precongruence
+result for accordance, we refer to [51].
+1.3.5 service instance migration
+so far, we have considered service substitution on the level of the service deﬁnition.
+however, running services may have long running instances. an example is the
+service of a life insurance company. a new legal regulation may cause a service to
+change, while instances of this service have been running for decades. in this case,
+each running instance of the old service has to be migrated to an instance of the new
+service. this problem is known as service instance migration .
+given a running instance in a state qspecofspec , instance migration is the task of
+ﬁnding some state qimplofimpl such that resuming the execution in state qimpldoes
+not affect any controller of spec . we call the transition from qspectoqimplajumper1 behavioral service substitution 15
+transition . clearly, there may be states qspecfor which there does not exist a jumper
+transition to a state qimpl. sometimes it might be necessary to continue the instance
+onspec until a state is reached, where a migration is then possible.
+in [26], an algorithm based on operating guidelines has been proposed to cal-
+culate jumper transitions for accordance in the case of deadlock freedom. the al-
+gorithm has been implemented in the tool mia. for the translation services nt
+andnb, the following pairs (mt;mb)would be calculated: ([p5];[p9]),([p6];[p10]),
+([p6];[p11]),([p7];[p12]), and ([p8];[p13]). for example, if the old instance is in
+marking [p7], then it can be migrated to marking [p12], thereby ensuring that no
+controller of ntis affected by this migration.
+1.3.6 discussion and related work
+we introduced two reﬁnement relations, accordance and preservation, and a data
+structure to decide these relations. the algorithmic solutions are tailored to deadlock
+freedom, but in recent (yet unpublished) work the procedure has been lifted to weak
+termination. case studies in [26,30] show that our approach is applicable for service
+models of industrial size. to improve the efﬁciency of the accordance check, a more
+compact operating guideline representation has been proposed in [31]. an operating
+guideline can also be encoded as an automaton without annotations, called the max-
+imal controller in [34]. this allows for another decision procedure for accordance:
+the composition of the maximal controller of service spec and service impl must be
+deadlock free. kaschner and wolf [23] showed that all noncontrollers of a service
+can be represented in a ﬁnite manner. this result (i.e., controller negation) together
+with the product of operating guidelines (i.e, intersection of sets of controllers) and
+an emptiness check yields an algebra on sets of controllers that generalizes the tech-
+niques for deciding preservation [23]. an approach to tackle preservation for more
+general properties has been proposed in [39, 43].
+closest to our work is the work of v ogler [53] who considers a more general
+notion of composition. different reﬁnement relations in a process-algebraic setting
+have been investigated, for example, in [17,20,25]. the termination criterion is usu-
+ally stronger than deadlock freedom but the communication schema is mostly syn-
+chronous. bravetti and zavattaro [18] consider different communications schemes
+for weak termination. benatallah et al. [16] investigate accordance and preservation
+in a synchronous setting and in [44], results for a timed model are presented. du-
+mas et al. [19] investigate accordance and preservation using the more expressive
+p-calculus.
+instance migration has been studied by many researchers, in particular, in the
+ﬁeld of workﬂows; see [5, 45, 47] for an overview. for services, several variants of
+this problem have been investigated in [49].16 christian stahl and wil m. p. van der aalst
+1.4 constructing substitutable services
+in the previous section, we presented an algorithm to decide for two given open
+nets spec andimpl whether impl accords with spec and thus can substitute spec
+without violating any controller of spec . however, designing impl is a nontrivial
+and error-prone task even for experienced service designers. in order to support
+service designers, we introduce an approach to construct open nets that are correct
+by design .
+1.4.1 approach
+given an open net spec , we want to incrementally transform spec to an open net
+impl such that every transformation step preserves accordance by construction. to
+this end, fragments of spec are incrementally substituted by other fragments. in this
+approach, a fragment zofspec is substituted by another fragment z0yielding the
+open net impl. we prove that if z0accords with z, then impl accords with spec .
+an open net zis afragment of an open net nif there is an open net nrestand
+the composition of zandnrestis the open net n. the set of interface places of zis
+divided into two sets: some interface places of nand some internal places r[sof
+n. we use rto denote these input places and sto denote these output places. for
+technical reasons, we require that the initial marking of zis the empty marking and
+the set of ﬁnal markings is the singleton set with the empty marking.
+deﬁnition 11 (fragment). letzbe an open net with mz=0 and w=f[]g. open
+netzis a fragment of an open net nif there exists an open net nrestsuch that
+n=znrest.
+if an open net nhas a fragment zand there is another fragment z0that accords
+with z, then we can substitute zbyz0without affecting any controller of n. such
+transformations can be applied incrementally and thus reﬁne a service speciﬁcation
+to an implementation by applying transformation steps. the resulting implementa-
+tion is correct by construction; that is, it preserves all controllers of the speciﬁcation.
+theorem 12 (justiﬁcation [9]). let n 1n2be a weakly terminating open net com-
+position. let z be a fragment of n 1, and let n restbe an open net such that n 1=
+znrest. for any open net z0that accords with z, the composition (z0nrest)n2
+is weakly terminating.
+1.4.2 transformation rules
+the ﬁrst three rules correspond to design patterns for extending a service to incorpo-
+rate new behavior: (1) adding an internal loop, (2) putting a new internal transition in1 behavioral service substitution 17
+p4p3 p3ai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cbaai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+d
+ai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+dai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+d
+(a)z0.
+p4p3 p3ai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cbaai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+d
+ai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+dai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+d (b)z1: adding a
+loop to z0.
+p4p3 p3ai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cbaai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+d
+ai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+dai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+d(c)z2: putting transition
+din parallel to b.
+p4p3 p3ai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cbaai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+d
+ai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+dai
+ao
+bi
+bo
+coci
+sr
+p2p1
+cba
+d(d)z3: inserting transition d
+in-between aandb.
+fig. 1.7 transformation rules to change internal transitions: transition dis added (when applied
+left to right) or removed (when applied right to left).
+parallel with existing transitions, and (3) inserting an internal transition in-between
+existing transitions. these rules have been introduced in [5].
+we exemplify these rules in fig. 1.7. figure 1.7(a) represents a fragment z0of an
+open net n.z0contains transitions a,bandc. by deﬁnition 11, there are no other
+connections of a,b,c,p1andp2than those shown in fig. 1.7(a). each transition
+is connected to an input and an output place. however, as indicated by the capital
+letters, each interface place may correspond to a set of places. further, ai,ao,bi,bo,
+ci,codo not need to be disjoint. places randsdenote the input and output places
+ton. again, randsmay be sets of places. similar remarks hold for the other three
+fragments z1,z2, and z3. for example, z1is obtained by adding transition dtoz0.
+the three transformation rules only add (or remove if applied in reverse direc-
+tion) internal transitions of an open net. however, there are also transformation rules
+that directly impact the interface behavior. we present four example transformation
+rules that affect transitions that are adjacent to an interface place.
+rule 4 is depicted in fig. 1.8(a) and speciﬁes that a sequence of receiving tran-
+sitions can be merged, and the messages can be sent simultaneously. it is also pos-
+sible to reorder a sequence of receiving transitions or to execute them concurrently
+(not shown). the same rule holds for a sequence of sending transitions. rule 5 in
+fig. 1.8(b) combines sending and receiving transitions. a receiving transition fol-
+lowed by a sending transition can be executed simultaneously. due to rule 4, rule 5
+can be generalized to a sequence of receiving transitions followed by a sequence of
+sending transitions. rule 6, depicted in fig. 1.8(c), speciﬁes that ﬁrst sending and
+then receiving a message can also be executed concurrently, and vice versa. rules 4–
+6 preserve accordance in both directions.
+this is in contrast to rule 7 which speciﬁes a way to add an alternative branch to
+a fragment z10depicted on the left hand side of fig. 1.8(d). the fragment z10ﬁrst
+receives aand then enters either the left or the right branch. in the left (right) branch,18 christian stahl and wil m. p. van der aalst
+a
+b
+sr
+p
+t2t1 a
+b
+sr
+t12=
+z4 z5
+a
+b
+sr
+p
+t2t1 a
+b
+sr
+t12=
+m6 m7
+(a) rule 4: con(z4) =con(z5)
+p1
+p3
+t4a
+b
+sr
+p
+t2t1 a
+b
+sr
+t12=
+z6 z7
+a
+b
+sr
+p
+t2t1
+=
+z8a
+b
+sr
+p2
+t3t1
+z9t2
+p4 (b) rule 5: con(z6) =con(z7)
+p1
+p3
+t4a
+b
+sr
+p
+t2t1 a
+b
+sr
+t12=
+z6 z7
+a
+b
+sr
+p
+t2t1
+=
+z8a
+b
+sr
+p2
+t3t1
+z9t2
+p4
+(c) rule 6: con(z8) =con(z9)
+p4
+b
+dp2
+t4t2
+sa t1
+p1
+p3t3r
+c
+t5
+eb
+dp2
+t4t2
+sa t1
+p1
+p3t3r
+c
+t5
+et6
+í
+z10 z11f
+t7f (d) rule 7: con(z10)con(z11)
+fig. 1.8 transformation rules to change interface transitions.
+message b(c) is sent, and then message d(e) is received. the fragment m10can be
+transformed into m11by adding an alternative branch. in this branch, dis received,
+and then a message fis sent. rule 7 preserves accordance in one direction only. the
+intuition behind this rule is that a controller of z10has to wait for the decision of z10
+which branch it will enter. otherwise, it could happen that an environment sends d,
+butz10enters the left branch and waits for message e.
+for an overview of all these rules and additional antipatterns, we refer to [9, 10].
+1.4.3 discussion and related work
+we presented seven accordance-preserving transformation rules. six of these rules
+preserve accordance in both directions and one rule preserves accordance only in
+one direction. although these transformation rules are sound (i.e., correctness pre-
+serving), they are not complete, meaning they do not cover all possible service im-
+plementations. this is actually the weak point when dealing with transformations.1 behavioral service substitution 19
+reﬁnement of petri nets has been addressed by many researchers. however, most
+of the results require restricted petri net classes or petri nets without interfaces.
+the murata rules [38] also maintain accordance, if we consider every input place
+as a place with some additional incoming arcs, and every output place as a place
+with some additional outgoing arcs. reﬁnement of places and transitions in petri
+nets that preserves compatibility of the whole net is studied in [53]. these results
+could be applied in our setting. soundness preserving transformation rules have
+been proposed in [1, 5, 54]. the rules proposed by van hee et al. [22] reﬁne sets
+of places in service compositions, but they require additional reachability checks.
+in [24], the authors show how the presented rules can be translated into bpel.
+that way, bpel processes can directly be reﬁned without transforming them into a
+formal service model.
+1.5 conformance checking of services based on observed
+behavior
+thus far, we only considered modeled service behavior. for example, we described
+requirements linking the public view of one party in the multiparty contract to the
+corresponding private view (implementation view). the analysis techniques did not
+consider actually observed behavior. however, in the context of services it is often
+not realistic to assume that all parties will indeed execute their processes as agreed
+upon at design time. services may have been implemented incorrectly or change
+over time. therefore, we now focus on conformance checking based on events logs
+(i.e., recorded behavior).
+process mining is a relatively young research discipline that sits between com-
+putational intelligence and data mining on the one hand, and process modeling and
+analysis on the other hand. process mining research resulted in mature conformance
+checking techniques and tools that are able to align observed and modeled behav-
+ior [3, 4]. as a result it is possible to detect and quantify deviations.
+in the remainder, we ﬁrst introduce some basic process mining terminology.
+then, we show how event log and model can be aligned . based on this, we show
+how conformance checking techniques can be used to compare observed behavior
+(i.e., event data) with the public view of one or more parties in the multiparty con-
+tract. we also deﬁne conformance checking problems in a less restrictive setting
+where, from a behavioral point of view, parties may deviate from the contract as
+long as it does not harm the overall choreography.
+initially, we focus on conformance checking based on historic data (“ofﬂine”
+conformance checking). however, all techniques can be applied on-the-ﬂy (“online”
+conformance checking); that is, streaming event data can be monitored at runtime
+and deviations can be detected immediately.20 christian stahl and wil m. p. van der aalst
+t8p5
+t9
+p6
+t10
+p8s b
+ec nt11 t12
+t13p7τ
+(a)envs(nt)
+t8p5
+t9
+p6
+t10
+p8e
+t11 t12
+t13p7ττ
+τ
+ττ
+τs
+b
+e
+c
+ns
+b
+c
+nsi
+bi
+eo
+co
+no (b)enva(nt)
+t14p9
+t15
+p10 p11
+p13s b
+e c
+nt16t17
+t18p12
+t19
+t20ττ (c)envs(nb)
+fig. 1.9 synchronous and asynchronous environment for open net ntin fig. 1.3(b) ( w=
+f[p5];[p8]g) and synchronous environment for open net nbin fig. 1.3(c) ( w=f[p9];[p13]g).
+1.5.1 process mining
+process mining aims to discover, monitor and improve real processes by extract-
+ing knowledge from event logs readily available in today’s information systems [3].
+starting point for process mining is an event log . each event in such a log refers to
+anactivity (i.e., a well-deﬁned step in some process) and is related to a particular
+case (i.e., a process instance ). the events belonging to a case are ordered and can
+be seen as one “run” of the process. an event log contains only example behavior;
+that is, we cannot assume that all possible runs have been observed. in fact, an event
+log often contains only a fraction of the possible behavior.
+in this chapter, we deﬁne an event log as a multiset of traces . each trace describes
+the life-cycle of a particular case in terms of the activities executed.
+deﬁnition 13 (event, trace, event log). letabe a set of activities. s2ais a
+trace , i.e., a sequence of events. l2b(a)is an event log , i.e., a multiset of traces.
+in this simple deﬁnition of an event log, an event refers to just an activity . often
+event logs may store additional information about events. for example, many pro-
+cess mining techniques use extra information, such as the resource (i.e., person or
+device) executing or initiating the activity, the timestamp of the event, or data ele-
+ments recorded with the event (e.g., the size of an order). in this paper, we abstract
+from such information. an example log is l= [hb;ci10;hs;e;s;ci5;hs;e;b;ni5].l
+contains information about 20 cases, e.g., 10 cases followed trace hb;ci. there are
+102+54+54=60 events in total.
+to relate event logs to process models, we use labeled nets. the behavior of such
+a model is described by the set tr(n)of traces which is computed from the set
+ru(n)of runs leading from the initial marking to a ﬁnal marking; see sect. 1.2.1
+for a deﬁnition.1 behavioral service substitution 21
+figure 1.9(c) shows the labeled petri net envs(nb). the set of runs of envs(nb)is
+the set ru(envs(nb)) =fht14;t18i;ht15;t20i;ht14;t16;t19;t15;t20i;ht15;t17;t19;t14;t18i;
+:::g. every of these runs starts in [p9]and ends in [p13]. the labeled net in fig. 1.9(c)
+is weakly terminating, because all partial runs can be extended into a run in
+ru(envs(nb)). if the labeled net has deadlocks or livelocks, then the problematic
+traces are simply discarded by ru(envs(nb)).
+each trace in tr(envs(nb))corresponds to one or more runs in ru(envs(nb)). a
+transition tis removed from the sequence if l(t) =t, otherwise it is replaced by l(t).
+therefore, tr(envs(nb)) =fhs;ci;hb;ni;hs;e;b;ni;hb;e;s;ci;:::gfor the labeled net
+in fig. 1.9(c). in tr(envs(nb)), transitions are mapped onto their corresponding la-
+bels and ttransitions are not recorded; that is, t16andt17do not leave a trail in
+tr(envs(nb)).
+event logs can be used to discover, monitor and improve services based on ob-
+servations rather than hand-made models. there are three main types of process
+mining:
+discovery : take an event log and produce a model without using any other a-
+priori information. there are dozens of techniques to extract a process model
+from raw event data. for example, the classical aalgorithm can discover a la-
+beled net by identifying basic process patterns in an event log [12]. this algo-
+rithm takes an event log l2b(a)and produces a labeled net n. for many
+organizations it is surprising to see that existing techniques are indeed able to
+discover real processes based on merely example executions recorded in event
+logs. process discovery is often used as a starting point for other types of analy-
+sis.
+conformance : an existing process model is compared with an event log of the
+same process. for example, an event log l2b(a)is compared with the traces
+of some labeled net n. ideally, any trace in lalso appears in tr(n). confor-
+mance checking reveals where the real process deviates from the modeled pro-
+cess. moreover, it is possible to quantify the level of conformance and differ-
+ences can be diagnosed. conformance checking can be used to check if reality,
+as recorded in the log, conforms to the model, and vice versa.
+enhancement : take an event log and process model and extend or improve the
+model using the observed events. whereas conformance checking measures the
+alignment between model and reality, this third type of process mining aims at
+changing or extending the a-priori model. for instance, by using timestamps
+in the event log one can extend the model to show bottlenecks, service levels,
+throughput times, and frequencies [3].
+in the remainder, we focus on the second type of process mining: conformance
+checking.22 christian stahl and wil m. p. van der aalst
+1.5.2 conformance checking approaches
+conformance checking techniques investigate how well an event log l2b(a)and
+a model—in our case a labeled net—ﬁt together. conformance checking can be done
+for various reasons; for example, it may be used to audit processes to see whether
+reality conforms to some normative or descriptive model [4,6,7,48]. deviations may
+point to fraud, inefﬁciencies, and poorly designed or outdated procedures. in the
+services setting, the different parties should operate in accordance with their public
+views. therefore, we elaborate on conformance checking techniques and show how
+they can be used to check the conformance of running services .
+there are four quality dimensions for comparing model and log: (1) ﬁtness , (2)
+simplicity , (3) precision , and (4) generalization [3, 4]. a model with good ﬁtness
+allows for most of the behavior seen in the event log. a model has a perfect ﬁtness
+if all traces in the log can be replayed by the model from beginning to end. the
+simplest model that can explain the behavior seen in the log is the best model. this
+principle is known as occam’s razor. fitness and simplicity alone are not sufﬁcient
+to judge the quality of a discovered process model. for example, it is very easy to
+construct an extremely simple labeled net (“ﬂower model”) that can replay all traces
+in an event log (but also any other event log referring to the same set of activities).
+similarly, it is undesirable to have a model that only allows for the exact behavior
+seen in the event log. remember that the log contains only example behavior and
+that many traces that are possible may not have been seen yet. a model is precise if it
+does not allow for “too much” behavior. clearly, the “ﬂower model” lacks precision.
+a model that is not precise is “underﬁtting”. underﬁtting is the problem that the
+model over-generalizes the example behavior in the log (i.e., the model allows for
+behaviors very different from what was seen in the log). at the same time, the model
+should generalize and not restrict behavior to just the examples seen in the log.
+a model that does not generalize is “overﬁtting”. overﬁtting is the problem that
+a very speciﬁc model is generated whereas it is obvious that the log only holds
+example behavior (i.e., the model explains the particular sample log, but there is a
+high probability that the model is unable to explain the next batch of cases).
+in the remainder, we will focus on ﬁtness. ideally, all traces in the log correspond
+to a possible run of the model.
+deﬁnition 14 (perfectly ﬁtting log). letl2b(a)be an event log and let nbe a
+labeled net. lisperfectly ﬁtting n iffs2lgtr(n).
+consider the event log l= [hb;ci20;hs;e;s;ci10;hs;e;b;ni10]. clearly, lis per-
+fectly ﬁtting the labeled net envs(nt)in fig. 1.9(a) but it is not perfectly ﬁtting the
+labeled net envs(nb)in fig. 1.9(c).
+there are various ways to quantify ﬁtness [3, 4, 15, 21, 32, 36, 37, 48], typically
+on a scale from 0 to 1, where 1 means perfect ﬁtness. a naive approach would
+be to simply count the fraction of ﬁtting traces . however, such an approach is too
+simplistic for two reasons:1 behavioral service substitution 23
+whether traces in the log “almost” ﬁt the model or not is irrelevant for such a
+metric. traces s1=he;b;ciands2=he;e;e;b;ciboth do not ﬁt the model in
+fig. 1.9(c). however, it is obvious that s1ﬁts “better” than s2.
+it is important to also map the non-ﬁtting behavior onto the model in order to do
+further analysis (performance analysis, predictions, etc.).
+to address these issues, we need to align traces in the event log to traces of the
+process model. some example alignments for land the labeled net envs(nb)are:
+g1=bc
+bn
+t15 t20g2=bc
+btesc
+t15t17t19t14t18g3=sesc
+stesc
+t14t16t19t14t18g4=sebn
+stebn
+t14t16t19t15t20
+the top row of each alignment corresponds to “moves in the log” and the bottom two
+rows correspond to “moves in the model”. there are two bottom rows because there
+may be multiple transitions having the same label. if a move in the log cannot be
+mimicked by a move in the model, then a “ ” (“no move”) appears in the bottom
+row. for example, in g1the model cannot do the cmove. if a move in the model
+cannot be mimicked by a move in the log, then a “ ” (“no move”) appears in the
+top row. for example, all “silent steps” in the model (occurrences of ttransitions)
+cannot be mimicked by the event log. moreover, in g2the log did not do an “ emove”
+whereas the model has to make this move to reach the end. given a trace in the event
+log there may be many possible alignments. the goal is to ﬁnd an alignment with
+the least number of elements, e.g., g1is better than g2.
+to establish an alignment between process model and event log, we need to relate
+“moves” in the log to “moves” in the model. however, as shown, there may be
+some moves in the log that cannot be mimicked by the model, and vice versa. for
+convenience, we introduce the set al=a[fg where x2alnfg refers to
+“move xin log” and2 alrefers to “no move in log”. similarly, we introduce the
+setam=f(a;t)2atjl(t) =ag[fg where (a;t)2amrefers to “move ain
+model” and2 amrefers to “no move in model”.
+one step in an alignment is represented by a pair (x;y)2alamsuch that
+(x;y)is amove in log ifx2aandy=,
+(x;y)is amove in model ifx=andy2amnfg ,
+(x;y)is amove in both ifx2aandy2amnfg , and
+(x;y)is an illegal move x =andy=.
+alm=f(x;y)2alamjx6=_ y6=gis the set of all legal moves .
+letsl2lbe a trace in the event log and let sm2ru(n)be a run from the
+initial to a ﬁnal marking of labeled net n. an alignment ofslandsmis a sequence
+g2almsuch that the projection on the ﬁrst element (ignoring ) yields sland
+the projection on the second element (again ignoring and only considering transi-
+tions and not the corresponding labels) yields sm. consider again the four example
+alignments based on the labeled net envs(nb). we represent the moves vertically,
+e.g., the ﬁrst move of g1is(b;(b;t15))indicating that both the log and the model24 christian stahl and wil m. p. van der aalst
+make a bmove. g1is an alignment of sl=hb;ciandsm=ht15;t20i.g2is an align-
+ment of sl=hb;ciandsm=ht15;t17;t19;t14;t18i.
+to qualify the quality of an alignment, one can deﬁne a distance function on
+legal moves: d2alm!in. the distance function associates costs to moves in an
+alignment:
+d(a;)is the cost of “move ain log” (with a2a),
+d(;(b;t))is the cost of “move bin model” (with t2tandl(t) =b), and
+d(a;(b;t))is the cost of “move ain log and move bin model” (with a2a,t2t
+andl(t) =b).
+distance function dcan be generalized to alignments by taking the sum of the costs
+of all individual moves: d(g) =å(x;y)2gd(x;y).1
+we deﬁne a standard distance function ds. for a2a,t2t, and b=l(t):
+ds(a;) =1,ds(;(b;t)) = 1 ifb6=t,ds(;(b;t)) = 0 ifb=t,ds(a;(b;t)) = 0
+ifa=b, and ds(a;(b;t)) =¥ifa6=b. only moves where log and model agree
+on the activity or internal tmoves of the model have no associated costs. moves
+in just the log or model have cost 1. dsassociates high costs to moves where both
+log and model make a move but disagree on the activity. in “ ds(a;(b;t)) =¥”,¥
+should be read as a number large enough to discard the alignment (see below). us-
+ing the standard distance function ds:ds(g1) =2,ds(g2) =2 (note that the move in
+model involves a ttransition), ds(g3) =0, and ds(g4) =0. so the sum of the costs is
+ds(g) =4 for envs(nb)andds(g) =0 for envs(nt)(because lis a perfectly ﬁtting
+log for envs(nt)). note that dsis just an example; various cost functions can be
+deﬁned.
+thus far we considered a speciﬁc run (from the initial to a ﬁnal marking) in the
+model. however, our goal is to relate traces in the model to the best matching run in
+the model. therefore, we deﬁne the notion of an optimal alignment . letsl2lbe a
+trace in event log land let nbe a labeled net. gsl;n=fg2almj9sm2ru(n)gis an
+aligment of slandsmg. an alignment g2gsl;nisoptimal for log trace sl2land
+model nif for any g02gsl;n:d(g0)d(g).
+ifru(n)is not empty, there is at least one (optimal) alignment for any given log
+tracesl. however, there may be multiple optimal alignments for sl. since our goal
+is to align traces in the event log to traces of the model, we deterministically select
+an arbitrary optimal alignment. therefore, we can construct a function lmthat pro-
+vides an “oracle”: given a log trace sl,lmproduces onebest matching run from
+the initial to a ﬁnal marking and hence to a best matching trace lm(sl)2tr(n).
+in [14, 15], various approaches are given to create an optimal alignment with re-
+spect to some predeﬁned distance function. these approaches are based on the a
+algorithm; that is, an algorithm originally invented to ﬁnd the shortest path between
+two nodes in a directed graph. the aalgorithm can be adapted to ﬁnd an optimal
+alignment between model and log. the process mining framework prom supports
+various techniques to create such an alignment and use this for conformance check-
+ing and other types of log-based analysis [4].
+1summation is generalized to sequences; that is, if the same step occurs ktimes in gits costs are
+counted ktimes.1 behavioral service substitution 25
+the alignments produced by the “oracle” lmcan be used to quantify ﬁtness
+(typically a number between 0 and 1). if a trace appears multiple times in the event
+log, the associated costs are also counted multiple times. moreover, once an optimal
+alignment has been established for every trace in the event log, these alignments can
+be used as a basis to quantify precision and generalization [4, 37]. such alignments
+are also a prerequisite for other types analysis (e.g., performance analysis) [3].
+in the remainder, we assume a function conf that computes the ﬁtness of an event
+log and a model based on an optimal alignment; that is, conf(l;n)yields a number
+between 0 (poor ﬁtness) and 1 (perfect ﬁtness).
+1.5.3 conformance checking of the public view
+earlier we deﬁned a multiparty contract as a set of pairwise interface compatible
+open netsfn1;:::; nkgsuch that n=n1 nkis a closed net. each of the
+open nets nirepresents the public view of one of the parties. party ican substitute
+its public view niby a private view n0
+i.n0
+imay reﬁne nibut may also change the
+ordering of some of the activities (see fig. 1.8). however, ideally, the environment
+ofnimust not distinguish between niandn0
+i.
+for conformance checking, we need to compare observed behavior (i.e., recorded
+events in some log l) with modeled behavior ( niorn0
+i). in order to align observed
+behavior and modeled behavior, we need as input an event log l2b(a)and a
+labeled net n= (p;t;f;mn;w;l). we cannot simply take some public view n ias
+input for conformance checking. the public view is an open net with input places i
+and output places o. transitions consuming from iare dead when checking the pri-
+vate view niin isolation. tokens produced on places in ocannot be removed by ni.
+hence, tr(ni)cannot contain sequences involving interface transitions. moreover,
+events need to be related to transitions rather than places.
+this triggers the question “what kinds of events can be observed?”. obviously,
+relevant events are related to the interface places i[o. however, given the asyn-
+chronous nature of open nets, we can take two viewpoints depending on what/when
+events are actually recorded.
+if events are recorded when party iconsumes a message from ior produces a
+message for o, then we can use the synchronous environment envs(ni)ofni. as
+before, we assume (without loss of generality) that a transition is connected to at
+most one interface place.
+however, the environment of party imay be unable to see when a message is
+consumed from ior produced for o. for example, the environment can put a token
+in input place p2i, but this does not imply that the token is immediately consumed
+by party i. hence, we can only record the event of producing a token for input place
+p, but not the actual consumption. to this end, we we construct the asynchronous
+environment enva(n)of an open net nby adding to each interface place pofna
+p-labeled transition in enva(n)and renaming the place ptopi(po) ifpis an input
+(output) place in n. figure 1.9(b) illustrates this construction for open net nt.26 christian stahl and wil m. p. van der aalst
+to illustrate the difference between both types of environments, consider fig. 1.9
+showing the synchronous environment envs(nt)and the asynchronous environment
+enva(nt)for public view ntin fig. 1.3(b). which of the two labeled nets is most
+suitable, depends on the events that are recorded. consider for example a message
+passed via input place s. if the event of consuming a message from interface place s
+is recorded, then envs(nt)is more suitable. if the event of producing a message for
+interface place sis recorded, then enva(nt)is more suitable.
+the choice of environment matters. consider for example trace hs;b;e;ciwhich
+is impossible according to envs(nt)but allowed by enva(nt). for any labeled net n:
+tr(envs(n))tr(enva(n)); that is, the asynchronous environment allows for more
+behavior and will be more “forgiving” under conformance checking. however, the
+proper choice of environment depends on what is actually logged. in the remainder,
+we will often abstract from these subtle differences and simply write env(n).
+deﬁnition 15 (public view conformance). letn=n1 nkbe a multiparty
+contract and i2f1;:::; kgis one of the parties with public view niand event log li.
+conf(li;env(ni))is the public view conformance for party i.
+this discussion thus far assumed that the environment of party iwants to check
+whether iconforms to its public view ni. however, it is also possible to reverse
+roles in the multiparty contract n=n1 nkand check whether the partners
+oficonform to n 1
+i=l
+j6=inj. depending what is actually logged on the interface
+between iand the other parties, one can use synchronous environment envs(n 1
+i)or
+asynchronous environment enva(n 1
+i).
+once an event log land suitably labeled net n(e.g., envs(ni),enva(ni),
+envs(n 1
+i), orenva(n 1
+i)) have been determined, we can align each trace in the
+log with the best ﬁtting execution path of the service(s) under investigation. as
+discussed earlier, such an alignment can be used to compute a conformance value
+conf(l;n).
+1.5.4 conformance checking of the private view
+in the previous section, we showed that it is possible to check whether the observed
+behavior of party i(or its collaborators) is consistent with the behavior speciﬁed
+in the multiparty contract. however, such a check may be too strict in a services
+setting.
+theorem 7 shows that each party can substitute its public view niby a private
+view n0
+ias long as n0
+iaccords to ni. rules 4, 5 and 6 in fig. 1.8 illustrate that
+the notion of accordance is different from classical equivalence notions (e.g., trace
+equivalence). parties may reorder activities without necessarily jeopardizing accor-
+dance. therefore, it may be inappropriate to directly compare the observed behav-
+ior with the contract composed of public views. one party may have changed its
+behavior without jeopardizing compatibility. therefore, we can also try to check
+conformance using some private view n0
+irather than the public view ni.1 behavioral service substitution 27
+deﬁnition 16 (private view conformance). letn=n1 nkbe a multiparty
+contract and i2f1;:::; kgis one of the parties with public view niand event log li.
+p(ni) =fnjnvaccnigis the set of all private views that accord with ni,
+n2p(ni)is abest matching private view forniandliif for any n02p(ni):
+conf(li;env(n))conf(li;env(n0)),
+conf(li;env(n))is the private view conformance for party iwhere n2p(ni)
+is a best matching private view for niandli.
+deﬁnition 16 cannot easily be transformed into an algorithm. the process mining
+tool prom provides excellent support for computing optimal alignments between log
+and model while allowing a variety of distance functions [4,15]. however, there may
+be many (if not inﬁnitely many) private views that accord with ni. deﬁnition 16 pro-
+vides a well-deﬁned conformance notation that can be parameterized with different
+compatibility notions (e.g., deadlock freedom versus weak termination) and differ-
+ent environments (e.g., envs(n)orenva(n)). first results to select a best matching
+private view have been presented in [35].
+1.5.5 beyond conformance checking
+conformance can computed by establishing an optimal alignment between an event
+log and a service model (public view or best matching private view). moreover, such
+an alignment can also be used for various other purposes. if conformance is good,
+alignments will have a high proportion of “move in both” steps. this means that
+attributes of events can be mapped onto model elements. for example, in most event
+logs each event has a timestamp. these timestamps can be mapped onto transitions
+in the corresponding petri net and can be used to compute how much time tokens
+spend in places. since log and model are aligned, waiting times, response times,
+and service times can be measured easily. this may be used to discover bottlenecks,
+analyze service-level-agreements, etc. some logs also contain information about
+costs, resource usage, errors, etc. attributes at the level of individual events—just
+like timestamps—can be associated to model elements using the “move in both”
+steps.
+in this section, we focused on ofﬂine conformance checking. for example, we as-
+sume a model niand an event log licontaining historic data. however, alignments
+can be computed on-the-ﬂy; that is, even partially executed traces can be aligned
+with a model (partial alignments do not need to end in a ﬁnal marking, but a ﬁnal
+marking should remain reachable). this enables online conformance checking ; that
+is, streaming event data can be monitored at runtime and deviations can be detected
+immediately. similarly, partially aligned traces can be used for predictions andrec-
+ommendations at runtime. for example, for a partially handled case we can predict
+the remaining ﬂow time, predict the probability of a deviation, or recommend a next
+activity that minimizes costs [3].28 christian stahl and wil m. p. van der aalst
+1.6 conclusion
+the shift toward service-oriented systems enables enterprises to decompose their
+systems into several smaller services. that way, service orientation enables for faster
+changes, because an individual service can be substituted by another service rather
+than changing the overall system. service substitution, however, also imposes new
+challenges as it should not effect compatibility of the overall system. as systems
+may be distributed over several enterprises, system correctness has to be derived
+from the correctness of its parts, which is nontrivial.
+in this chapter, we have surveyed service substitution at design time and at run-
+time, thereby restricting ourselves to the service behavior. we have investigated this
+problem on the level of service models. for design-time support, we introduced sev-
+eral variants of service substitution and illustrated that the problem is parameterized
+w.r.t. the compatibility notion used. to decide that a service impl can substitute a
+service spec , we must compare the inﬁnitely many admissible contexts of spec and
+impl. we proposed decision algorithms based on a ﬁnite representation of these sets.
+in addition, we proposed rules to construct substitutable services that are correct by
+design. research challenges are to generalize these techniques to other compatibility
+notions and, in addition, to incorporate data, time, and resources. other directions
+are diagnosing why a service cannot serve as a substitute and ideally propose how
+it can be repaired.
+in this chapter, we did not limit ourselves to comparing models of services but
+also considered the actual behavior recorded in message and transaction logs. the
+actual service implementation may deviate from its model or the behavior of a ser-
+vice may change over time. we showed that conformance checking techniques can
+be used to detect and diagnose deviations between observed service behavior (i.e.,
+event logs) and modeled service behavior. as shown, we can deﬁne conformance
+at the level of the public view (contractual level) and at the level of the private
+view (implementation level). for the public view, we can apply existing confor-
+mance checking techniques. however, checking conformance with respect to some
+unknown implementation is more challenging and requires further research. more-
+over, the lion’s share of attention has gone to ﬁtness analysis whereas the analysis
+of “underﬁtting” and “overﬁtting” of services is equally important.
+references
+1. aalst, w.m.p.v.d.: workﬂow veriﬁcation: finding control-flow errors using petri-net-based
+techniques. in: business process management: models, techniques, and empirical studies,
+lncs , vol. 1806, pp. 161–183. springer (2000)
+2. aalst, w.m.p.v.d.: inheritance of interorganizational workﬂows: how to agree to disagree
+without loosing control? information technology and management journal 4(4), 345–389
+(2003)
+3. aalst, w.m.p.v.d.: process mining: discovery, conformance and enhancement of business
+processes. springer (2011)1 behavioral service substitution 29
+4. aalst, w.m.p.v.d., adriansyah, a., dongen, b.v.: replaying history on process models for
+conformance checking and performance analysis. wires data mining and knowledge
+discovery 2(2), 182–192 (2012)
+5. aalst, w.m.p.v.d., basten, t.: inheritance of workﬂows: an approach to tackling problems
+related to change. theoretical computer science 270(1-2), 125–203 (2002)
+6. aalst, w.m.p.v.d., dumas, m., ouyang, c., rozinat, a., verbeek, h.: conformance checking
+of service behavior. acm transactions on internet technology 8(3), 29–59 (2008)
+7. aalst, w.m.p.v.d., hee, k., werf, j.v.d., verdonk, m.: auditing 2.0: using process mining to
+support tomorrow’s auditor. ieee computer 43(3), 90–93 (2010)
+8. aalst, w.m.p.v.d., hee, k.m.v.: workﬂow management: models, methods, and systems. the
+mit press, cambridge, ma (2004)
+9. aalst, w.m.p.v.d., lohmann, n., massuthe, p., stahl, c., wolf, k.: from public views to pri-
+vate views - correctness-by-design for services. in: ws-fm 2007, lncs , vol. 4937, pp. 139–
+153. springer (2008)
+10. aalst, w.m.p.v.d., mooij, a.j., stahl, c., wolf, k.: service interaction: patterns, formalization,
+and analysis. in: sfm 2009, lncs , vol. 5569, pp. 42–88. springer (2009)
+11. aalst, w.m.p.v.d., stahl, c.: modeling business processes – a petri net-oriented approach.
+the mit press, cambridge, ma (2011)
+12. aalst, w.m.p.v.d., weijters, a., maruster, l.: workﬂow mining: discovering process models
+from event logs. ieee transactions on knowledge and data engineering 16(9), 1128–1142
+(2004)
+13. aalst, w.m.p.v.d., weske, m.: the p2p approach to interorganizational workﬂows. in: caise
+2001, lncs , vol. 2068, pp. 140–156. springer (2001)
+14. adriansyah, a., dongen, b.f.v., aalst, w.m.p.v.d.: towards robust conformance checking.
+in: bpi 2010, lnbip , vol. 66, pp. 122–133. springer (2011)
+15. adriansyah, a., dongen, b.v., aalst, w.m.p.v.d.: conformance checking using cost-based
+fitness analysis. in: edoc 2011, pp. 55–64. ieee computer society (2011)
+16. benatallah, b., casati, f., toumani, f.: representing, analysing and managing web service
+protocols. data knowl. eng. 58(3), 327–357 (2006)
+17. bravetti, m., zavattaro, g.: contract based multi-party service composition. in: fsen 2007,
+lncs , vol. 4767, pp. 207–222. springer (2007)
+18. bravetti, m., zavattaro, g.: contract-based discovery and composition of web services. in:
+sfm 2009, lncs , vol. 5569, pp. 261–295. springer (2009)
+19. dumas, m., yang, y ., zhang, l.: towards a formalization of contracts for service substitution.
+in: services 2010, pp. 423–430. ieee computer society (2010)
+20. fournet, c., hoare, c.a.r., rajamani, s.k., rehof, j.: stuck-free conformance. in: ca v
+2004, lncs , vol. 3114, pp. 242–254. springer (2004)
+21. goedertier, s., martens, d., vanthienen, j., baesens, b.: robust process discovery with arti-
+ﬁcial negative events. journal of machine learning research 10, 1305–1340 (2009)
+22. hee, k.m.v., sidorova, n., werf, j.m.e.m.v.d.: reﬁnement of synchronizable places with
+multi-workﬂow nets - weak termination preserved! in: petri nets 2011, lncs , vol. 6709,
+pp. 149–168. springer (2011)
+23. kaschner, k., wolf, k.: set algebra for service behavior: applications and constructions. in:
+bpm 2009, lncs , vol. 5701, pp. 193–210. springer (2009)
+24. k ¨onig, d., lohmann, n., moser, s., stahl, c., wolf, k.: extending the compatibility notion
+for abstract ws-bpel processes. in: www 2008, pp. 785–794. acm (2008)
+25. laneve, c., padovani, l.: the must preorder revisited. in: concur 2007, lncs , vol. 4703,
+pp. 212–225. springer (2007)
+26. liske, n., lohmann, n., stahl, c., wolf, k.: another approach to service instance migration.
+in: icsoc 2009, lncs , vol. 5900, pp. 607–621. springer (2009)
+27. lohmann, n., massuthe, p., wolf, k.: behavioral constraints for services. in: bpm 2007,
+lncs , vol. 4714, pp. 271–287. springer (2007)
+28. lohmann, n., massuthe, p., wolf, k.: operating guidelines for ﬁnite-state services. in:
+icatpn 2007, lncs , vol. 4546, pp. 321–341. springer (2007)30 christian stahl and wil m. p. van der aalst
+29. lohmann, n., verbeek, h.m.w., dijkman, r.: petri net transformations for business processes
+– a survey. in: topnoc ii, lncs 5460, pp. 46–63. springer (2009)
+30. lohmann, n., weinberg, d.: wendy: a tool to synthesize partners for services. fundam.
+inform. 113, 1–17 (2011)
+31. lohmann, n., wolf, k.: compact representations and efﬁcient algorithms for operating guide-
+lines. fundam. inform. 108(1-2), 43–62 (2011)
+32. medeiros, a.k.a.d., weijters, a., aalst, w.m.p.v.d.: genetic process mining: an experimen-
+tal evaluation. data mining and knowledge discovery 14(2), 245–304 (2007)
+33. milner, r.: communication and concurrency. prentice-hall, inc. (1989)
+34. mooij, a.j., parnjai, j., stahl, c., v oorhoeve, m.: constructing replaceable services using
+operating guidelines and maximal controllers. in: ws-fm 2010, lncs , vol. 6551, pp. 116–
+130. springer (2011)
+35. m ¨uller, r., aalst, w.m.p.v.d., stahl, c.: conformance checking of services using the best
+matching private view. in: wsfm 2012, lncs. springer (2012). accepted for publication
+36. munoz-gama, j., carmona, j.: a fresh look at precision in process conformance. in: bpm
+2010, lncs , vol. 6336, pp. 211–226. springer (2010)
+37. munoz-gama, j., carmona, j.: enhancing precision in process conformance: stability, con-
+ﬁdence and severity. in: cidm 2011. ieee (2011)
+38. murata, t.: petri nets: properties, analysis and applications. proceedings of the ieee 77(4),
+541–580 (1989)
+39. oster, z.j., basu, s.: extending substitutability in composite services by allowing asyn-
+chronous communication with message buffers. in: ictai 2009, pp. 572–575. ieee com-
+puter society (2009)
+40. papazoglou, m.p.: web services: principles and technology. pearson - prentice hall, essex
+(2007)
+41. papazoglou, m.p.: the challenges of service evolution. in: caise 2008, lncs , vol. 5074, pp.
+1–15. springer (2008)
+42. papazoglou, m.p., traverso, p., dustdar, s., leymann, f.: service-oriented computing: a re-
+search roadmap. int. j. cooperative inf. syst. 17(2), 223–255 (2008)
+43. pathak, j., basu, s., honavar, v .: on context-speciﬁc substitutability of web services. in:
+icws 2007, pp. 192–199. ieee computer society (2007)
+44. ponge, j., benatallah, b., casati, f., toumani, f.: analysis and applications of timed service
+protocols. acm trans. softw. eng. methodol. 19(4) (2010)
+45. reichert, m., rinderle-ma, s., dadam, p.: flexibility in process-aware information systems.
+lncs topnoc 5460 (ii), 115–135 (2009)
+46. reisig, w., rozenberg, g. (eds.): lectures on petri nets i: basic models, advances in petri
+nets, lncs , vol. 1491. springer (1998)
+47. rinderle, s., reichert, m., dadam, p.: correctness criteria for dynamic changes in workﬂow
+systems - a survey. data knowl. eng. 50(1), 9–34 (2004)
+48. rozinat, a., aalst, w.m.p.v.d.: conformance checking of processes based on monitoring
+real behavior. information systems 33(1), 64–95 (2008)
+49. ryu, s.h., casati, f., skogsrud, h., benatallah, b., saint-paul, r.: supporting the dynamic
+evolution of web service protocols in service-oriented architectures. tweb 2(2) (2008)
+50. stahl, c., massuthe, p., bretschneider, j.: deciding substitutability of services with operating
+guidelines. in: topnoc ii, lncs 5460, pp. 172–191. springer (2009)
+51. stahl, c., v ogler, w.: a trace-based service semantics guaranteeing deadlock freedom. acta
+inf.49(2), 69–103 (2012)
+52. stahl, c., wolf, k.: deciding service composition and substitutability using extended operat-
+ing guidelines. data knowl. eng. 68(9), 819–833 (2009)
+53. v ogler, w.: modular construction and partial order semantics of petri nets, lncs , vol. 625.
+springer (1992)
+54. wynn, m.t., verbeek, h.m.w., aalst, w.m.p.v.d., hofstede, a.h.m.t., edmond, d.:
+soundness-preserving reduction rules for reset workﬂow nets. information sciences
+179(6), 769–790 (2009)

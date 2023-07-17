@@ -1,0 +1,1608 @@
+foundations of process discovery
+wil m.p. van der aalst[0000−0002−0955−6940]
+process and data science (pads), rwth aachen university, germany
+wvdaalst@pads.rwth-aachen.de www.vdaalst.com
+abstract. process discovery is probably the most interesting, but also most chal-
+lenging, process mining task. the goal is to take an event log containing example
+behaviors and create a process model that adequately describes the underlying
+process. this chapter introduces the baseline approach used in most commercial
+process mining tools. a simplified event log is used to create a so-called directly-
+follows graph (dfg). this baseline is used to explain the challenges one faces
+when trying to discover a process model. after introducing dfg discovery, we
+focus on techniques that are able to discover models allowing for concurrency
+(e.g., petri nets, process trees, and bpmn models). the chapter distinguishes two
+types of approaches able to discover such models: (1) bottom-up process discov-
+eryand (2) top-down process discovery . the alpha algorithm is presented as an
+example of a bottom-up technique. the approach has many limitations, but nicely
+introduces the idea of discovering local constraints. the basic inductive mining
+algorithm is presented as an example of a top-down technique. this approach,
+combined with frequency-based filtering, works well on most event logs. these
+example algorithms are used to illustrate the foundations of process discovery.
+keywords: process discovery · process models · petri nets · bpmn
+1 introduction
+process discovery is typically the first step after extracting event data from source sys-
+tems. based on the selected event data, process discovery algorithms automatically con-
+struct a process model describing the observed behavior. this may be challenging be-
+cause, in most cases, the event data cannot be assumed to be complete, i.e., we only
+witnessed example behaviors. there may also be conflicting requirements (e.g., recall,
+precision, generalization, and simplicity) [3, 1]. this makes process discovery both in-
+teresting and challenging.
+figure 1 positions this chapter. the input for process discovery is a collection of
+events and the output is a process model. such a process model can be used to uncover
+unexpected deviations and bottlenecks. in the later stages of the process mining pipeline
+shown in figure 1, process models are used to check compliance, compare processes,
+detect concept drift, and predict performance and compliance problems.
+events may have many attributes and refer to multiple objects of different types [3].
+however, in this chapter, we start from very basic event data. we assume that each event
+refers to a case, anactivity , and has a timestamp . there may be many other attributes
+(e.g., resource), but we ignore these. initially, we assume that timestamps are only used
+for the ordering of events corresponding to the same case. this implies that each case is2 wil van der aalst
+discover
+align
+replay
+enrich
+apply
+compare
+information 
+systems
+extract
+process 
+models
+explore
+ select
+filter
+clean
+conformance
+performance 
+diagnostics
+predictions
+improvements
+transform
+act
+ show
+model
+adapt
+show
+interpret
+drill down
+ml
++
+ +
+event 
+data
+fig. 1. this chapter focuses on process discovery. this is the first step after extracting event data
+from the source system(s). to set the scene, we consider only control-flow information, i.e., the
+ordering of activities.
+represented by a sequence of activities . we call this a trace . for example, σ=⟨a, b, c, e ⟩
+represents a case for which the activities a,b,c, and eoccurred. note that there may
+be many cases that have the same trace. therefore, we represent an event log as a
+multiset of traces. for example, l1= [⟨a, b, c, e ⟩10,⟨a, c, b, e ⟩5,⟨a, d, e⟩]is an event
+log describing 16 cases and 10×4 + 5 ×4 + 1 ×3 = 63 events. note that trace
+σ=⟨a, b, c, e ⟩appears 10 times. in [3], we use the term simplified event log. here
+we drop the adjective “simplified” since the representation will be used throughout the
+chapter.
+definition 1 (event log). uactis the universe of activity names. a trace σ=⟨a1, a2,
+. . . , a n⟩ ∈ u act∗is a sequence of activities. an event log l∈ b(uact∗)is a multiset of
+traces.
+note that l(σ)is the number of times trace σappears in event log l. for example,
+l1(⟨a, b, c, e ⟩) = 10 ,l1(⟨a, c, b, e ⟩) = 5 ,l1(⟨a, d, e⟩) = 1 ,l1(⟨b, a⟩) = 0 ,l1(⟨c⟩) =
+0,l1(⟨⟩) = 0 , etc.
+given an event log l∈ b(uact∗), we would like to learn a process model ade-
+quately capturing the observed behavior. figure 2 shows four process models discov-
+ered for l1= [⟨a, b, c, e ⟩10,⟨a, c, b, e ⟩5,⟨a, d, e⟩]. the models also show frequencies.
+figure 2(b) shows a directly-follows graph (dfg). the start, end, and five activ-
+ities are the nodes of the graph. activities aandeoccurred 16 times, bandcoccurred
+15 times, and donly once. the arcs in figure 2(b) show how often an activity is directly
+followed by another activity. for example, ais 10 times directly followed by b,ais 5
+times directly followed by c, andais once directly followed by d. to indicate the start
+and end of cases, we use a start node ▶and an end node ■. one can view ▶and■
+as “dummy” activities or states. although they do not present real activities, they arefoundations of process discovery 3
+a
+c
+db
+ea
+dcb
+e
+a
+de
+c b(a) event log l1 
+(c) accepting petri net (apn ):  m2 (b) directly -follows graph (dfg ): m1 
+(d) process tree (pt): m3 16 5 10 1655 1010
+1
+161
+115 16 1615
+151 16 1615
+16
+161 115 15
+15 151 1
+15 151
+151616 1616
+1616
+16
+fig. 2. three process models learned from event log l1= [⟨a, b, c, e ⟩10,⟨a, c, b, e ⟩5,⟨a, d, e⟩].
+needed to describe the process adequately. since all 16 cases start with a, the arc con-
+necting ▶toahas a frequency of 16. note that due to the cycles in the dfg, also traces
+such as ⟨a, b, c, b, c, b, c, b, e ⟩are possible according to the dfg (but did not appear in
+the event log).
+figure 2(c) shows a petri net discovered using the same event log l1. the transitions
+(i.e., squares) correspond to the five activities in the event log. the places (i.e., circles)
+constrain the behavior. the petri net allows for the three traces in the event log and
+nothing more. initially, only transition ais enabled. when afires (i.e., occurs), a token
+is consumed from the input place and a token is produced for each of the two output
+places. as a result, transitions b,c, and dbecome enabled. if dfires, both tokens are
+removed and two tokens are produced for the input places of e. ifbfires, only one token
+is consumed and one token is produced. after bfires,cis still enabled, and cwill fire to
+enable e. transition ccan also occur before b, i.e.,bandcare concurrent and can happen
+at the same time or in any order. there is a choice between dand the combination of b
+andc. the start of the process is modeled by the token in the source place. the end of
+the process is modeled by the double-bordered sink place.
+also, the process tree discovered for event log l1shown in figure 2(d) allows for
+the three traces in the event log and nothing more. the root node is a sequence ( →) with
+three “child nodes”: activity a, a choice, and activity e. these nodes are visited 16 times
+(once for each case). the choice node ( ×) has two “child nodes”: a parallel node ∧and
+an activity node e. the parallel node ( ∧) has two “child nodes”: activity band activity
+c. the whole process tree can be represented by the expression →(a,×(∧(b, c), d), e).
+note that the dnode is visited only once. the ∧,b, andcnodes are visited 15 times. in
+this example, each node has a unique label allowing us to refer easily. often a tree has4 wil van der aalst
+multiple nodes with the same label, e.g., →(a,×(→(a, a), a), a)where aappears five
+times and →two times.
+in figure 2, we just show example results. in the remainder, we will see how such
+process models can be learned from event data. the goal of this chapter is not to give
+a complete survey (see also [10] for a recent survey). instead, we would like to bring
+forward the essence of process discovery from event data, and introduce the main prin-
+ciples in an intuitive manner.
+the remainder of this chapter is organized as follows. section 2 presents a baseline
+approach that computes a directly-follows graph (dfg). this approach is simple and
+highly scalable, but has many limitations (e.g., producing complex underfitting process
+models) [2]. in section 3, we elaborate on the challenges of process discovery. section 4
+discusses higher-level representations such as petri nets (subsection 4.1), process trees
+(subsection 4.2), and bpmn (subsection 4.3). section 5 introduces “bottom-up” pro-
+cess discovery using the alpha algorithm [1, 9] as an example. section 6 introduces
+“top-down” process discovery using the basic inductive mining algorithm [22–24] as
+an example. finally, section 7 concludes the chapter with pointers to other discovery
+approaches (e.g., using state-based or language-based regions).
+2 directly-follows graphs: a baseline approach
+in this chapter, we present a very simple discovery approach that is supported by most
+(if not all) process mining tools: constructing a so-called directly-follows graph (dfg)
+by simply counting how often one activity is followed by another activity (see fig-
+ure 2(b)). we use this to also introduce filtering techniques to remove infrequent activ-
+ities, infrequent variants, and infrequent arcs. the more advanced techniques presented
+later in this chapter build upon the simple notions introduced in this section.
+let us first try to describe the process discovery problem in abstract terms, inde-
+pendent of the selected process modeling notation. therefore, we describe a model’s
+behavior as a set of traces.
+definition 2 (process model). umis the universe of process models. a process model
+m∈ umdefines a set of traces lang(m)⊆ uact∗.
+examples of process models defined later are dfgs ug⊆ u m(section 2.1), ac-
+cepting petri nets uan⊆ u m(section 4.1), process trees uq⊆ u m(section 4.2),
+and bpmn models ubpmn ⊆ u m(section 4.3). consider, for example, the process
+models m1(dfg), m2(petri net), and m3(process tree) in figure 2. lang(m2) =
+lang(m3) ={⟨a, b, c, e ⟩,⟨a, c, b, e ⟩,⟨a, d, e⟩}.lang(m1) ={⟨a, b, e⟩,⟨a, c, e⟩,⟨a, d,
+e⟩, . . . ,⟨a, b, c, b, c, b, c, e ⟩, . . .}contains infinitely many traces due to the cycle involv-
+ingbandc.
+the goal of a process discovery algorithm is to produce a model that explains the
+observed behavior.
+definition 3 (process discovery algorithm). a process discovery algorithm is a func-
+tiondisc∈ b(uact∗)→ u m, i.e., based on a multiset of traces, a model is produced.foundations of process discovery 5
+given an event log l, a process discovery algorithm disc returns a model allowing
+for the traces lang(disc(l)). a discovery algorithm disc guarantees perfect replay fit-
+ness if for any l∈ b(uact∗):{σ∈l} ⊆lang(disc(l)). we write {σ∈l}to turn a
+multiset of traces into a set of traces and make the model and the log comparable. all
+three models in figure 2 have perfect replay fitness (also called perfect recall).
+2.1 directly-follows graphs: basic concepts
+we already informally introduced dfgs, but now we formalize the concepts needed to
+precisely describe the corresponding discovery algorithm.
+definition 4 (directly-follows graph). a directly-follows graph (dfg) is a pair
+g= (a, f)where a⊆ uactis a set of activities and f∈ b((a×a)∪({▶} ×a)∪
+(a× {■})∪({▶} × {■}))is a multiset of arcs. ▶is the start node and ■is the end
+node ({▶,■} ∩ u act=∅).ug⊆ umis the set of all dfgs.
+▶and■can be viewed as artificially added activities to clearly indicate the start
+and end of the process. the nodes of a dfg are ▶to denote the beginning, ■to denote
+the end, and the activities in set a. note that ▶̸∈aand■̸∈a(this is also important
+in later sections). there are four types of arcs: (▶, a),(a1, a2),(a,■), and(▶,■)(with
+a, a1, a2∈a).f((▶, a))indicates how many cases start with a,f((a1, a2))indicates
+how often activity a1is directly followed by activity a2,f((a,■))indicates how many
+cases end with a, and f((▶,■))counts the number of empty cases. in the directly-
+follows graph, we only consider directly-follows within the same case. for example,
+f((a, b)) = (10 ×0) + (10 ×0) + (10 ×1) + (10 ×2) + (10 ×3) = 60 given some
+event log [⟨a⟩10,⟨b⟩10,⟨a, b⟩10,⟨a, b, a, b ⟩10,⟨a, b, a, b, a, b ⟩10].
+the dfg in figure 2(b) can be described as follows: m1= (a, f)witha=
+{a, b, c, d, e }andf= [(▶, a)16,(a, b)10,(a, c)5,(a, d)1,(b, c)10,(b, e)5,(c, b)5,(c, e)10,
+(d, e)1,(e,■)16].
+figure 3 shows process models discovered for another event log l2= [⟨a, b, c, e ⟩50,
+⟨a, c, b, e ⟩40,⟨a, b, c, d, b, c, e ⟩30,⟨a, c, b, d, b, c, e ⟩20,⟨a, b, c, d, c, b, e ⟩10,⟨a, c, b, d, c, b,
+d, b, c, e ⟩10]. the fact that b,c, anddoccur a variable number of times per case suggests
+that there is a loop. figure 3(b) shows the corresponding dfg. this dfg can be de-
+scribed as follows: m4= (a, f)witha={a, b, c, d, e }andf= [(▶, a)160,(a, b)90,
+(a, c)70,(b, c)150,(b, d)40,(b, e)50,(c, b)90,(c, d)40,(c, e)110,(d, b)60,(d, c)20,(e,
+■)160].
+definition 5 (traces of a dfg). letg= (a, f)∈ ugbe a dfg. the set of possible
+traces described by gislang(g) ={⟨a2, a3, . . . , a n−1⟩ |a1=▶∧an=■∧
+∀1≤i<n(ai, ai+1)∈f}.
+note that ▶and■have been added to the dfg to have a clear start and end. how-
+ever, these “dummy activities” are not part of the language of the dfg.
+consider the dfg m1shown in figure 2(b): lang(m1) ={⟨a, b, e⟩,⟨a, c, e⟩,⟨a, d,
+e⟩,⟨a, b, c, e ⟩,⟨a, c, b, e ⟩,⟨a, b, c, b, e ⟩,⟨a, c, b, c, e ⟩,⟨a, b, c, b, c, e ⟩, . . .}. also the dfg
+m4in figure 3(b) has an infinite number of possible traces: lang(m4) ={⟨a, b, e⟩,
+⟨a, c, e⟩,⟨a, b, c, e ⟩,⟨a, c, b, e ⟩,⟨a, b, c, b, e ⟩,⟨a, c, b, c, e ⟩,⟨a, b, d, b, e ⟩, . . .}. whenever
+the dfg has a cycle, then the number of possible traces is unbounded.6 wil van der aalst
+a
+cdb
+ea
+dcb
+e
+a
+de
+c b(a) event log l2 
+(c) accepting petri net (apn ):  m5 (b) directly -follows graph (dfg ): m4 
+(d) process tree (pt): m6 160 70 110 1605090 15090
+16080240 160 160240
+24080 160 160240
+80 80240 240
+240 24080 80
+240 24080
+240160160 160160
+20 4040
+60
+160160
+160160160
+fig. 3. three process models learned from event log l2= [⟨a, b, c, e ⟩50,⟨a, c, b, e ⟩40,
+⟨a, b, c, d, b, c, e ⟩30,⟨a, c, b, d, b, c, e ⟩20,⟨a, b, c, d, c, b, e ⟩10,⟨a, c, b, d, c, b, d, b, c, e ⟩10].
+2.2 baseline discovery algorithm
+since the event log only contains example traces, it is natural that the discovery algo-
+rithm aims to generalize the observed behavior to avoid over-fitting. therefore, we start
+with a baseline discovery algorithm that ensures that all observed behavior is possible
+according to the discovered process model. the algorithm used to discover the dfgs
+in figure 2(b) and figure 3(b) is defined as follows.
+definition 6 (baseline discovery algorithm). letl∈ b(uact∗)be an event log.
+discdfg(l) = (a, f)is the dfg based on lwith:
+–a={a∈σ|σ∈l}and
+–f= [(σi, σi+1)|σ∈l′∧1≤i <|σ|]withl′= [⟨▶⟩ ·σ· ⟨■⟩ |σ∈l].
+note that l,l′, andfin definition 6 are multisets. each trace in the event log lis
+extended with the artificially added activities. l′adds▶at the start and ■at the end of
+each trace in l.m1=discdfg(l1)is depicted in figure 2(b) and m4=discdfg(l2)
+is depicted in figure 3(b).
+a dfg can be viewed as a first-order markov model (i.e., the state is determined
+by the last activity executed). the baseline discovery algorithm (definition 6) tends to
+lead to underfitting process models. whenever two activities are not executed in a fixed
+order, a loop is introduced.
+2.3 footprints
+a dfg can also be represented as a matrix, as shown in table 1. this is simply a tabular
+representation of the graph and the arc frequencies, e.g., f((▶,▶)) = 0 ,f((▶, a)) =foundations of process discovery 7
+16, and f((c, e)) = 10 . to capture the relations between activities, we can also create
+a so-called footprint matrix [1]. table 2 shows the footprint matrix for the dfg in
+figure 2(b). between two activities a1anda2, precisely one of four possible relations
+holds:
+–a1→a2(i.e.,a1is sometimes directly followed by a2, buta2is never directly
+followed by a1),
+–a1←a2(i.e.,a2is sometimes directly followed by a1, buta1is never directly
+followed by a2),
+–a1∥a2(i.e.,a1is sometimes directly followed by a2anda2is sometimes directly
+followed by a1), and
+–a1#a2(i.e.,a1is never directly followed by a2anda2is never directly followed
+bya1).
+table 1. matrix representation of the dfg in figure 2(b).
+▶ a b c d e ■
+▶ 0 16 0 0 0 0 0
+a 0 0 10 5 1 0 0
+b 0 0 0 10 0 5 0
+c 0 0 5 0 0 10 0
+d 0 0 0 0 0 1 0
+e 0 0 0 0 0 0 16
+■ 0 0 0 0 0 0 0
+table 2. the footprint of the dfg in figure 2(b).
+▶ a b c d e ■
+▶ # → # # # # #
+a ← # → → → # #
+b # ← # ∥ # → #
+c # ← ∥ # # → #
+d # ← # # # → #
+e # # ← ← ← # →
+■ # # # # # ← #
+table 2 (based on figure 2(b)) shows, for example, that a→b,b←a,b∥c, and
+c#d. the creation of the footprint can be formalized as follows.
+definition 7 (footprint). letg= (a, f)∈ u gbe a dfg. gdefines a footprint
+fp(g)∈(a′×a′)→ {→ ,←,∥,#}such that a′=a∪{▶,■}and for any (a1, a2)∈
+a′×a′:
+–fp(g)((a1, a2)) =→ if(a1, a2)∈fand(a2, a1)̸∈f,8 wil van der aalst
+–fp(g)((a1, a2)) =← if(a1, a2)̸∈fand(a2, a1)∈f,
+–fp(g)((a1, a2)) =∥if(a1, a2)∈fand(a2, a1)∈f, and
+–fp(g)((a1, a2)) = # if(a1, a2)̸∈fand(a2, a1)̸∈f.
+we write a1→ga2iffp(g)((a1, a2)) =→,a1#ga2iffp(g)((a1, a2)) = # , etc.
+we can also create the footprint of an event log by first applying the baseline dis-
+covery algorithm: fp(l) = fp(discdfg(l)). hence, table 2 also shows fp(l1) =
+fp(discdfg(l1)) = fp(m1). this allows us to write b→l1e,b∥l1e,b#l1d, etc.
+2.4 filtering
+using the baseline discovery algorithm, an activity aappears in the discovered dfg
+when it occurs at least once and two activities a1anda2are connected by a directed
+arc if a1is directly followed by a2at least once in the log. often, we do not want
+to see the process model that captures all behavior. instead, we would like to see the
+dominant behavior. for example, we are interested in the most frequent activities and
+paths. therefore, we would like to filter the event log and model. here, we consider the
+three basic types of filtering:
+–activity-based filtering : project the event log on a subset of activities (e.g., remove
+the least frequent activities).
+–variant-based filtering : remove selected traces (e.g., only keep the most frequent
+variants).
+–arc-based filtering : remove selected arcs in the dfg (e.g., delete arcs with a fre-
+quency lower than a given threshold).
+to describe the different types of filtering, we introduce some notations for traces
+and event logs.
+definition 8 (frequency and projection functions). letl∈ b(uact∗)be an event
+log.
+–act(l) ={a∈σ|σ∈l}are the activities in event log l,
+–var(l) ={σ∈l}are the trace variants in event log l,
+–#act
+l(a) =p
+σ∈l|{i∈ {1, . . .|σ|} |σi=a}|is the frequency of activity a∈
+act(l)in event log l,
+–#var
+l(σ) =l(σ)is the frequency of variant σ∈var(l)in event log l,
+–for a subset of activities a⊆act(l)and trace σ∈l, we define σ↑asuch that
+⟨⟩↑a=⟨⟩and(σ·⟨a⟩)↑a=σ↑a·⟨a⟩ifa∈a, and (σ·⟨a⟩)↑a=σ↑aifa̸∈a,
+–l↑a= [σ↑a|σ∈l]is the projection of lon a subset of activities a⊆act(l),
+–l⇑v= [σ∈l|σ∈v]is the projection of lon a subset of trace variants
+v⊆var(l),
+first, we define activity-based filtering using a threshold τact∈n={1,2,3, . . .}.
+all activities with a frequency lower than τactare removed from the event log, but all
+cases are retained.foundations of process discovery 9
+definition 9 (activity-based filtering). letl∈ b(uact∗)be an event log and τact∈
+n.filteract(l, τact) =l↑awitha={a∈act(l)|#act
+l(a)≥τact}.
+again we use l1= [⟨a, b, c, e ⟩10,⟨a, c, b, e ⟩5,⟨a, d, e⟩]andl2= [⟨a, b, c, e ⟩50,
+⟨a, c, b, e ⟩40,⟨a, b, c, d, b, c, e ⟩30,⟨a, c, b, d, b, c, e ⟩20,⟨a, b, c, d, c, b, e ⟩10,⟨a, c, b, d, c, b,
+d, b, c, e ⟩10]to illustrate the definition. if τact= 10 , then filteract(l1, τact) = [⟨a, b, c,
+e⟩10,⟨a, c, b, e ⟩5,⟨a, e⟩](only activity dis removed). if τact= 16 , then filteract(l1,
+τact) = [⟨a, e⟩16](only activities aanderemain). if τact>16, then filteract(l1, τact)
+= [⟨⟩16]. note that the number of traces is not affected by activity-based filtering (even
+when all activities are removed). if τact= 200 , then filteract(l2, τact) = [⟨b, c⟩50,
+⟨c, b⟩40,⟨b, c, b, c ⟩30,⟨c, b, b, c ⟩20,⟨b, c, c, b ⟩10,⟨c, b, c, b, b, c ⟩10](only activities bandc
+remain).
+next, we define variant-based filtering using a threshold τvar∈n. all trace variants
+with a frequency lower than τvarare removed from the event log.
+definition 10 (variant-based filtering). letl∈ b(uact∗)be an event log and τvar∈
+n.filtervar(l, τvar) =l⇑vwithv={σ∈var(l)|#var
+l(σ)≥τvar}.
+ifτvar= 5, then filtervar(l1, τvar) = [⟨a, b, c, e ⟩10,⟨a, c, b, e ⟩5]. ifτvar= 10 ,
+thenfiltervar(l1, τvar) = [⟨a, b, c, e ⟩10]. ifτvar>10, then filtervar(l1, τvar) = [ ] .
+note that (unlike activity-based filtering) the number of traces may decrease.
+finally, we define arc-based filtering using a threshold τarc∈n. whereas activity-
+based filtering and variant-based filtering operate on event logs, arc-based filtering mod-
+ifies the dfg and not the event log used to generate it. all arcs with a frequency lower
+thanτarcare removed from the graph.
+definition 11 (arc-based filtering). letg= (a, f)∈ ugbe a dfg and τarc∈n.
+filterarc(g, τarc) = (a, f′)withf′= [(x, y)∈f|f((x, y))≥τarc].
+in its basic form τarcretains all nodes even when they become fully disconnected
+from the rest. consider the dfg m1= (a, f)in figure 2(b) with a={a, b, c, d, e }
+andf= [(▶, a)16,(a, b)10,(a, c)5,(a, d)1,(b, c)10,(b, e)5,(c, b)5,(c, e)10,(d, e)1,(e,
+■)16]. ifτvar= 10 , then filterarc(m1, τarc) = ( a, f′)withf′= [(▶, a)16,(a, b)10,
+(b, c)10,(c, e)10,(e,■)16]. ifτvar= 15 , then filterarc(m1, τarc) = (a, f′′)withf′′=
+[(▶, a)16,(e,■)16]. note that the dfg is no longer connected.
+the three types of filtering can be combined. because arc-based filtering operates on
+the dfg, it should be done last. it is also better to conduct activity-based filtering before
+variant-based filtering. there are several reasons for this. the number of traces is af-
+fected by variant-based filtering. moreover, activity-based filtering may lead to variants
+with a higher frequency. consider l1withτact= 16 andτvar= 10 . if we first apply
+variant-based filtering, one variant remains after the first step and none of the activities
+is frequent enough to be retained in the second step: filteract(filtervar(l1, τvar), τact) =
+[⟨⟩10]. if we first apply activity-based filtering, then the two most frequent activities are
+retained and all 16 traces are considered in the second step: filtervar(filteract(l1, τact),
+τvar) = [⟨a, e⟩16]. for l2withτact= 200 andτvar= 40 , we find that filteract(
+filtervar(l2, τvar), τact) = [⟨⟩90]andfiltervar(filteract(l2, τact), τvar) = [⟨b, c⟩50,
+⟨c, b⟩40].10 wil van der aalst
+these examples show that the order of filtering matters. we propose a refined base-
+line discovery algorithm using filtering . the algorithm first applies activity-based filter-
+ing followed by variant-based filtering. then the original baseline algorithm is applied
+to the resulting event log to get a dfg (see definition 6). finally, arc-based filtering is
+used to prune the dfg.
+definition 12 (baseline discovery algorithm using filtering). letl∈ b(uact∗)be
+an event log. given the thresholds τact∈n,τvar∈n, and τarc∈n:
+discτact,τvar,τarc
+dfg(l) =filterarc(discdfg(filtervar(filteract(l, τact), τvar)), τarc).
+discτact,τvar,τarc
+dfg(l)returns a dfg using the three filtering steps. only the last filter-
+ing step is specific for dfgs. activity-based filtering and variant-based filtering can be
+used in conjunction with any discovery technique, because they produce filtered event
+logs. the footprint notion can also be extended to include these two types of filtering:
+fpτact,τvar(l) =fp(discdfg(filtervar(filteract(l, τact), τvar)))is the footprint matrix
+considering only frequent activities and variants.
+a
+dcb
+e
+(a) event log l2 
+(b) directly -follows graph (dfg ) considering all activities 160 70 110 1605090 15090
+80240 160 160240
+20 4040
+60
+a
+cb
+e
+(c) directly -follows graph (dfg ) after simply removing activity d 160
+70 11016050
+90 15090
+240160 160240
+(d) directly -follows graph (dfg ) based on the filtered event log  a
+cb
+e160
+70 11016050
+120 16090
+240160 160240
+1030
+fig. 4. three dfgs learned from event log l2= [⟨a, b, c, e ⟩50,⟨a, c, b, e ⟩40,⟨a, b, c, d, b, c, e ⟩30,
+⟨a, c, b, d, b, c, e ⟩20,⟨a, b, c, d, c, b, e ⟩10,⟨a, c, b, d, c, b, d, b, c, e ⟩10]: (b) the original dfg con-
+sidering all activities, (c) the problematic dfg obtained by simply removing activity dfrom the
+graph, and (d) the desired dfg obtained by removing activity dfrom the event log first.
+most process mining tools provide sliders to interactively set one or more thresh-
+olds. this makes it easy to seamlessly simplify the discovered dfg. however, it is vital
+that the user understands the different filtering approaches. therefore, we highlight the
+following risks.foundations of process discovery 11
+–the ordering of filters may greatly impact the result. as shown before: filtervar(
+filteract(l, τact), τvar)̸=filteract(filtervar(l, τvar), τact). if a tool provides mul-
+tiple sliders, it is important to understand how these interact and what was left out.
+–applying projections to event logs is computationally expensive. therefore, pro-
+cess mining tools may provide shortcuts that operate directly on the dfg without
+filtering the event log. consider, for example, figure 4 showing (a) the event log
+and (b) the original dfg without filtering. activity dhas the lowest frequency. sim-
+ply removing node dfrom the graph leads to interpretation problems. figure 4(c)
+shows the problem, e.g., boccurs 240 times but the frequencies of the input arcs add
+up to 90 + 90 = 180 and the frequencies of output arcs add up to 50 + 150 = 200 .
+if we apply activity-based filtering using definition 9, we obtain the dfg in fig-
+ure 4(d). now we see the loops involving bandc. moreover, the frequencies of the
+input arcs of badd up to 90 + 120 + 30 = 240 and the frequencies of output arcs
+also add up to 50 + 160 + 30 = 240 . clearly, this is the dfg one would like to see
+after abstracting from d.
+–using activity-based filtering and variant-based filtering as defined in this section
+yields models where the frequency of a node matches the sum of the frequencies
+of the input arcs and the sum of the frequencies of the output arcs. as long as the
+resulting event log is not empty, the graph is connected and all activities are on a
+path from start to end. this leads to models that are easy to interpret. arc-based
+filtering may lead to models that have disconnected parts and frequencies do not
+add up as expected (similar to the problems in figure 4(c)). therefore, arc-based
+filtering should be applied with care.
+–the above risks are not limited to control-flow (e.g., connectedness of the graph
+and incorrect frequencies). when adding timing information (e.g., the average time
+between two activities), the results are highly affected by filtering. process mining
+tools using shortcuts that operate directly on the dfg without filtering the event
+log, quickly lead to misleading performance diagnostics [2].
+2.5 a larger example
+to further illustrate the concepts, we now consider a slightly larger event log l3=
+[⟨ie,cu,lt,xr,fe⟩285,⟨ie,cu,lt,ct,fe⟩260,⟨ie,cu,ct,lt,fe⟩139,⟨ie,lt,cu,xr,fe⟩137,
+⟨ie,lt,cu,ct,fe⟩124,⟨ie,cu,xr,lt,fe⟩113,⟨ie,xr,cu,lt,fe⟩72,⟨ie,ct,cu,xr,fe⟩72,
+⟨ie,cu,om,am,cu,lt,xr,fe⟩29,⟨ie,cu,om,am,cu,lt,ct,fe⟩28, . . .]. we use the fol-
+lowing abbreviations: ie= initial examination, xr= x-ray, ct= ct scan, cu= checkup,
+om= order medicine, am= administer medicine, lt= lab tests, and fe= final exam-
+ination. the event log contains 11761 events corresponding to 1856 cases. each case
+represents the treatment of a patient. there are 187 trace variants and 8 unique activi-
+ties. for example, ⟨ie,cu,lt,xr,fe⟩is the most frequent variant, i.e., 285 patients first
+get an initial examination ( ie), followed by a checkup ( cu), lab tests ( lt), x-ray ( xr),
+and a final examination ( fe).
+figure 5 shows the dfg for l3using the baseline discovery algorithm described
+in definition 6. the dfg was produced by prom’s “mine with directly follows visual
+miner”. using a slider, it is possible to remove infrequent activities. figure 6 shows
+the dfg discdfg(filteract(l3, τact))with the activity threshold τactset to 1000, i.e.,12 wil van der aalst
+fig. 5. the discovered dfg discdfg(l3)generated by prom.
+fig. 6. the dfg discdfg(filteract(l3, τact))generated by prom using τact= 1000 .
+all activities with a frequency of less than 1000 are removed from the event log using
+projection. in the resulting dfg, four of the eight activities remain.
+the discovery of dfgs (as defined in this section) is supported by almost all process
+mining tools. figure 7 shows the dfgs discovered using the celonis ems using the
+same settings as used in prom. although the layout is different, the celonis-based dfg
+in figure 7 (left) is identical to the prom-based dfg in figure 5. the dfg in figure 7
+(right) is identical to the dfg in figure 6.
+figure 8 shows variant-based filtering using the celonis “variant explorer”. the six
+most frequent variants are selected. these are the variants that have a frequency above
+100, i.e., the depicted dfg is discdfg(filtervar(l3, τvar))withτvar= 100 . there are
+1856 cases distributed over 197 variants. the top six variants (i.e., 3% of all variants)
+cover 1058 cases (i.e., 57%). we also computed the dfg discdfg(filtervar(l3, τvar))
+withτvar= 10 . there are 22 variants meeting this lower threshold (i.e., 11% of all
+variants) covering 1483 cases (i.e., 80%). most event logs follow such a pareto distri-
+bution , i.e., a small fraction of variants explains most of the cases observed. this is also
+referred to as the “80/20 rule”, although the numbers 80 and 20 are arbitrary. for ourfoundations of process discovery 13
+activity -
+based 
+filtering
+fig. 7. the discovered dfg in celonis before and after activity-based filtering, i.e., discdfg(l3)
+(left) and discdfg(filteract(l3, τact))withτact= 1000 (right).
+fig. 8. a discovered dfg in celonis using variant-based filtering: discdfg(filtervar(l3, τvar))
+withτvar= 100 . there are six variants having a frequency above 100. these cover 57% of all
+cases, but only 3% of all variants.
+example event log l3, we could state that it satisfies the “80/11 rule” (but also the “57/3
+rule”, “84/16 rule”, etc.).
+if the distribution of cases over variants does not follow a pareto distribution, then it
+is best to first apply activity-based filtering. if we project l3onto the top four most fre-
+quent activities, only 20 variants remain. the most frequent variant explains already14 wil van der aalst
+51% of all cases. the dfg discdfg(filtervar(filteract(l, τact), τvar))withτact=
+1000 andτvar= 100 combines the activity-based filter used in figure 7 and the variant-
+based filter used in figure 8. the resulting dfg (not shown) explains 1672 of the 1856
+cases (90%) and 7065 of 11761 events (60%) using only five variants.
+the above examples show that, using filtering, it is possible to separate the normal
+(i.e., frequent) from the exceptional (i.e., infrequent) behavior. this is vital in the con-
+text of process discovery and can be combined with the later bottom-up and top-down
+discovery approaches.
+3 challenges
+after introducing a baseline discovery algorithm and various filtering approaches, it is
+possible to better explain why process discovery is so challenging. in definition 3, we
+stated that a process discovery algorithm is a function disc∈ b(uact∗)→ u m, i.e.,
+based on a multiset of traces l, a process model m=disc(l)allowing for lang(m)⊆
+uact∗is produced.
+the first challenge is that the discovered process model may serve different goals .
+should the model summarize past behavior, or is the model used for predictions and rec-
+ommendations? also, should the process model be easy to read and understand by end-
+users? answers to these questions are needed to address the trade-offs in process dis-
+covery. we already mentioned that most event logs follow a pareto distribution. hence,
+the process model can focus on the dominant behavior or also include exceptional be-
+havior.
+the second challenge is that different process model representations can be used.
+these may or may not be able to capture certain behaviors. this is the so-called rep-
+resentational bias of process discovery. consider, for example, event log l= [⟨a, b, c,
+d⟩1000,⟨a, c, b, d ⟩1000]. there is no dfg that is able to adequately describe this behav-
+ior. the dfg will always need to introduce a loop involving bandc. another example
+isl= [⟨a, b, c⟩1000,⟨a, c⟩1000]. it is easy to create a dfg describing this behavior.
+however, when representing this as a petri net or process tree, it is vital that one can
+use so-called silent activities (to skip b) or duplicate activities (to have a cactivity fol-
+lowing aand another cactivity following b).
+another challenge is that the event log contains just example behavior . most event
+logs have a pareto distribution. typically, a few trace variants are frequent and many
+trace variants are infrequent. actually, there are often trace variants that are unique
+(i.e., occur only once). if one observes the process longer, new variants will appear.
+conversely, if one observes the process in a different period, some variants may no
+longer appear. an event log is a sample and should be treated as such. just like in statis-
+tics, the goal is to use the sample to say something about the whole population (here,
+the process). for example, when throwing a dice ten times, one may have the follow-
+ing sequence observations σ=⟨4,5,2,3,6,5,4,1,2,3⟩. if we do not know that two
+subsequent throws are independent, the expected value is 3.5, the minimum is 1, the
+maximum is 6, and the probabilities of all six values are equal, then what can be con-
+cluded from the sample σ? we could conclude that even numbers are always followedfoundations of process discovery 15
+by odd numbers. real-life processes have many more behaviors, and the observed sam-
+ple rarely covers all possibilities.
+although processes are stochastic , most process discovery techniques aim to dis-
+cover process models that are “binary”, i.e., a trace is possible or not. this complicates
+analysis. another challenge is that event logs do not contain negative examples . process
+discovery can be seen as a classification problem: a trace σis possible ( σ∈lang(m))
+or not ( σ̸∈lang(m)). in real applications, we never witness traces that are impossible.
+the event log only contains positive examples. if we also want to incorporate infrequent
+behavior in the discovered model, we may require var(l)⊆lang(m). however, we
+cannot assume the reverse lang(m)⊆var(l). for example, loops in models would be
+impossible, and for concurrent processes we would need a factorial number of cases.
+related to the above are the challenges imposed by concept drift . the behavior
+of the process that we are trying to discover may change over time in unforeseen
+ways. certain traces may increase or decrease in likelihood. new trace variants may
+emerge while other variants no longer occur. since process models already describe
+dynamic behavior, concept drift introduces second-order dynamics. various techniques
+for concept-drift detection have been developed. however, this for sure complicates
+process discovery. if we cannot assume that the process itself is in steady-state, then
+what is the process we are trying to discover? do we want to have a process model
+describing the past week or the past year?
+next to concept drift, there are the usual data quality problems [1]. events may
+have been logged incorrectly and attributes may be missing or are imprecise. in some
+applications it may be difficult to correlate events and group them into cases. there
+may be different identifiers used for the same case and events may be shared by differ-
+ent cases. since process discovery depends on the ordering of events in the event log,
+high-quality timestamps are important. however, the timestamp resolution may be too
+low (e.g., just a date) and different source systems may use different timestamp granu-
+larities or formats. often the day and the month are swapped, e.g., 8/7/2022 is entered
+as 7/8/2022.
+it is important to distinguish the evaluation of a process discovery algorithm disc∈
+b(uact∗)→ u mfrom the evaluation of a specific process model min the context
+of aspecific event log l. to evaluate a process discovery algorithm disc, one can use
+cross-validation, i.e., split an event log into a training part and an evaluation part. the
+process model is trained using the training log and evaluated using the evaluation log .
+ideally, the evaluation log has both positive and negative examples. this is unrealistic
+in real settings. however, it is possible to create synthetic event data with positive and
+negative cases using, for example, simulation. if we assume that the evaluation log
+is a multiset of positive traces l+
+eval∈ b(uact∗)and a multiset of negative traces
+l−
+eval∈ b(uact∗), then evaluation is simple. let m=disc(l+
+train)be the discovered
+process model using only positive training examples. now, we can use standard notions
+such as recall =|[σ∈l+
+eval|σ∈lang(m)]|
+|l+
+eval|andprecision =|[σ∈l−
+eval|σ̸∈lang(m)]|
+|l−
+eval|using the
+evaluation log. recall is high when most of the positive traces in the evaluation log
+are indeed possible according to the process model. precision is high when most of the
+negative traces in the evaluation log are indeed not possible according to the process
+model.16 wil van der aalst
+unfortunately, the above view is very na ¨ıve considering process discovery in practi-
+cal settings. we cannot assume negative examples when evaluating a specific model m
+in the context of a specific event log lobserved in reality . splitting linto a training log
+and an evaluation log does not make any sense since the model is given and we want to
+use the whole event log.
+in spite of these problems, there is consensus in the process mining community that
+there are the following four quality dimensions to evaluate a process model min the
+context of an event log lwith observed behavior [1].
+–recall , also called (replay) fitness, aims to quantify the fraction of observed behav-
+ior that is allowed by the model.
+–precision aims to quantify the fraction of behavior allowed by the model that was
+actually observed (i.e., avoids “underfitting” the event data).
+–generalization aims to quantify the probability that new unseen cases will fit the
+model (i.e., avoids “overfitting” the event data).
+–simplicity refers to occam’s razor and can be made operational by quantifying the
+complexity of the model (number of nodes, number of arcs, understandability, etc.).
+there exist various measures for recall. the simplest one computes the fraction of
+traces in event log lpossible according to the process model m. it is also possible to
+define such a notion at the level of events. there are many simplicity notions. these
+do not depend on the behavior of the model, but measure its understandability and
+complexity. most challenging are the notions of precision and generalization. also,
+these notions can be quantified, but there is less consensus on what they should measure.
+the goal is to strike a balance between precision (avoiding “underfitting” the sample
+event data) and generalization (avoiding “overfitting” the sample event data). a detailed
+discussion is outside the scope of this chapter. therefore, we refer to [1, 4, 15, 31] for
+further information.
+4 process modeling notations
+we have formalized the notion of an event log and the behavior represented by a dfg.
+now we focus on higher-level process models able to model sequences, choices, loops,
+and concurrency. we formalize petri nets and process trees and provide an informal
+introduction to a relevant subset of bpmn.
+4.1 labeled accepting petri nets
+figures 2(c) and 3(c) already showed example petri nets. since their inception in 1962
+[28], petri nets have been used in a wide variety of application domains. petri nets
+were the first formalism to capture concurrency in a systematic manner. see [17, 18]
+for a more extensive introduction. other notations such as business process model and
+notation (bpmn), event-driven process chains (epcs), and uml activity diagrams all
+build on petri nets and have semantics involving “playing the token game”. for process
+mining, we need to use the so-called labeled accepting petri nets . these are standard
+petri nets where transitions are labeled to refer to activities in the event log and, next tofoundations of process discovery 17
+an initial marking, these nets also have a final marking. the behavior described by such
+nets are all the “paths” leading from the initial state to the final state. we explain these
+concepts step-by-step.
+a
+cdb
+e
+p1
+p3 p5p6p2 p4
+t3t4t2
+t5 t1a
+cdb
+e
+p1
+p3 p5p6p2 p4
+t3t4t2
+t5 t1
+(a) an 1 = (n1,[p1],[p6]) (b) an 2 = (n2,[p1],[p6])
+bca
+d
+p2 p3p5p1 p4
+t2t3t1t4
+a
+ab
+p1
+p3 p5p6p2 p4
+t3t4t2
+t5
+t1
+(c) an 3 = (n3,[p1,p2],[p4,p5]) (d) an 4 = (n4,[p1],[p6])
+fig. 9. four accepting petri nets: (a) an 1= (n1,[p1],[p6]), (b)an 2= (n2,[p1],[p6]), (c)
+an 3= (n3,[p1,p2],[p4,p5]), and (d) an 4= (n4,[p1],[p6]).an 1was discovered for l1
+(see figure 2(c)) and an 2was discovered for l2(see figure 3(c)).
+states in petri nets are called markings that mark certain places (represented by cir-
+cles) with tokens (represented by black dots). transitions (represented by squares) are
+the active components able to move the petri net from one marking to another marking.
+transitions may have a label referring to the corresponding activity. there may be mul-
+tiple transitions that refer to the same activity and there may be transitions without an
+activity label. the former is needed if the same activity can occur at multiple stages in
+the process. the latter is needed if activities can be skipped. later we will give examples
+illustrating the importance of the labeling function in the context of process mining.
+definition 13 (labeled petri net). a labeled petri net is a tuple n= (p, t, f, l )with
+pthe set of places, tthe set of transitions, p∩t=∅,f⊆(p×t)∪(t×p)the flow
+relation, and l∈t̸→ u acta labeling function. we write l(t) =τift∈t\dom(l)
+(i.e.,tis a silent transition that cannot be observed).
+figure 9 shows four accepting petri nets. the first two were discovered for the
+event logs l1andl2used to introduce dfgs. figure 9(a) shows the labeled petri
+netn1= (p1, t1, f1, l1)withp1={p1,p2,p3,p4,p5,p6}(six places), t1=18 wil van der aalst
+{t1,t2,t3,t4,t5}(five transitions), f1={(p1,t1),(t1,p2),(t1,p3), . . . , (t5,p6)}
+(fourteen arcs), and l1={(t1,a),(t2,b),(t3,c),(t4,d),(t5,e)}(labeling function).
+as mentioned, there may be multiple transitions with the same label and there
+may be transitions that have no label (called “silent transitions”). this is illustrated
+byn4= (p4, t4, f4, l4)in figure 9(d) with l4={(t1,a),(t2,b),(t3,a)}. note that
+dom(l4) ={t1,t2,t3}does not include t4andt5which are silent. this is denoted
+by the two black rectangles in figure 9(d). also note that l4(t1) =l4(t3) =a, i.e., t1
+andt3refer to the same activity.
+since a place may have multiple tokens, markings are represented by multisets.
+transitions may have input and output places. for example, t1in figure 9(a) has one
+input place and two output places. a transition is called enabled if each of the input
+places has a token. an enabled transition may fire(i.e., occur), thereby consuming a
+token from each input place and producing a token for each output place.
+anaccepting petri net has an initial marking minit∈ b(p)and a final marking
+mfinal∈ b(p). the accepting petri nets an1= (n1,[p1],[p6]),an2= (n2,[p1],
+[p6]), and an4= (n4,[p1],[p6])in figure 9 have the same initial and final marking.
+an3= (n3,[p1,p2],[p4,p5])in figure 9(c) has an initial marking minit= [p1,p2]
+(denoted by the black tokens) and a final marking mfinal= [p4,p5](denoted by the
+double-bordered places).
+definition 14 (accepting petri net). an accepting petri net is a triplet an= (n,
+minit, mfinal)where n= (p, t, f, l )is a labeled petri net, minit∈ b(p)is the
+initial marking, and mfinal∈ b(p)is the final marking. uan⊆ u mis the set of
+accepting petri nets.
+an accepting petri net starts in the initial marking and may move from one marking
+to the next by firing enabled transitions. consider, for example, an3= (n3,[p1,p2],
+[p4,p5])in figure 9(c). initially, three transitions are enabled in [p1,p2]:t1,t2, and
+t3. firing t1results in marking [p2,p4], firing t2results in marking [p1,p3], and fir-
+ingt3results in marking [p3,p4]. ift1fires (i.e., activity aoccurs), then t1andt3
+are no longer enabled and only t2remains enabled. if t2fires in [p2,p4], we reach the
+marking [p3,p4]. in this marking, only t4is enabled. firing t4results in the marking
+[p4,p5]. this is also the final marking of an3. afiring sequence is a sequence of tran-
+sition occurrences obtained by firing enabled transitions and moving from one marking
+to the next. a complete firing sequence starts in the initial marking and ends in the final
+marking. an3has four possible complete firing sequences: ⟨t1,t2,t4⟩,⟨t2,t1,t4⟩,
+⟨t2,t4,t1⟩, and⟨t3,t4⟩.
+definition 15 (complete firing sequences). letan= (n, m init, mfinal)∈ uan
+be an accepting petri net with n= (p, t, f, l ).cfs(an)⊆t∗is the set of complete
+firing sequences of an, i.e., all firing sequences starting in the initial marking minit
+and ending in the final marking mfinal.
+cfs(an1) ={⟨t1,t2,t3,t5⟩,⟨t1,t3,t2,t5⟩,⟨t1,t4,t5⟩}andcfs(an3) ={⟨t1,
+t2,t4⟩,⟨t2,t1,t4⟩,⟨t2,t4,t1⟩,⟨t3,t4⟩}. note that cfs(an2)andcfs(an4)contain
+an infinite number of complete firing sequences due to the loop involving t4.foundations of process discovery 19
+as stated in definition 2, a process model defines a set of traces. earlier, we defined
+lang(g)⊆ uact∗for a dfg g= (a, f). now we need to define lang(an)⊆ uact∗
+for an accepting petri net an= (n, m init, mfinal). for this purpose, we need to
+be able to apply the labeling function lto firing sequences. let σ∈t∗be a firing
+sequence and l∈t̸→ u acta labeling function. function lis generalized to se-
+quences, i.e., transitions are replaced by their labels and are dropped if they do not
+have a label. formally, l(⟨⟩) =⟨⟩,l(σ· ⟨t⟩) = l(σ)· ⟨l(t)⟩ift∈dom(l), and
+l(σ· ⟨t⟩) =l(σ)ift̸∈dom(l). consider, for example, the complete firing sequence
+σ=⟨t1,t2,t3,t4,t3,t2,t5⟩ ∈cfs(an4)of the accepting petri net in figure 9(d).
+l(σ) =⟨a, b, a, a, b ⟩, i.e., t1,t2, and t3are mapped to the corresponding labels, and t4
+andt5are dropped.
+definition 16 (traces of an accepting petri net). letan= (n, m init, mfinal)∈
+uanbe an accepting petri net. lang(an) ={l(σ)|σ∈cfs(an)}are the traces
+possible according to an.
+now we can reason about the traces of the four accepting in figure 9. lang(an1) =
+{⟨a, b, c, e ⟩,⟨a, c, b, e ⟩,⟨a, d, e⟩}.lang(an2) ={⟨a, b, c, e ⟩,⟨a, c, b, e ⟩,⟨a, b, c, d, b, c,
+e⟩,⟨a, c, b, d, b, c, e ⟩, . . . ,⟨a, c, b, d, b, c, d, c, b, d, c, b, e ⟩, . . .}.lang(an3) ={⟨a, b, d⟩,
+⟨b, a, d⟩,⟨b, d, a⟩,⟨c, d⟩}.lang(an4) ={⟨a, b, a⟩,⟨a, a, b⟩,⟨a, b, a, b, a ⟩,⟨a, a, b, b, a ⟩,
+. . . ,⟨a, a, b, b, a, a, b, a, b ⟩, . . .}.
+it is important to note the consequences of restricting lang(an)to the behavior of
+complete firing sequences. if an haslivelocks ofdeadlocks , then these are notcon-
+sidered to be part of the language. if we remove the arc from p4tot4inan2, then
+lang(an2) ={⟨a, b, c, e ⟩,⟨a, c, b, e ⟩}, because there are no complete firing sequences
+involving t4.
+in literature, petri nets are normally not equipped with a labeling function and a
+final marking . however, both the labeling function land a defined final marking mfinal
+are vital in the context of process mining. the final marking allows us to reason about
+complete firing sequences, just like traces in an event log have a clear ending. if we
+would consider ordinary petri nets rather than accepting petri nets, the language would
+also include all prefixes. this would make it impossible to describe the behavior found
+in an event log such as l= [⟨a, b, c⟩1000], because the corresponding petri net would
+also allow for traces ⟨a, b⟩,⟨a⟩, and⟨⟩.
+the labeling function l∈t̸→ u actalso greatly improves expressiveness. the
+alternative would be that transitions are uniquely identified by activities, i.e., t⊆ uact.
+however, this would make it impossible to describe many behaviors seen in event
+logs. consider, for example, an event log such as l= [⟨a, b, c⟩1000,⟨a, c⟩1000]where
+bcan be skipped. it is easy to model this behavior using a silent transition to skip
+bor by using two transitions with a clabel. although it is trivial to create a dfg
+gsuch that lang(g) ={⟨a, b, c⟩,⟨a, c⟩}(simply apply the baseline algorithm de-
+scribed in definition 6), it is impossible to create an accepting petri net an with
+lang(an) ={⟨a, b, c⟩,⟨a, c⟩}without using a labeling function allowing for silent
+or duplicate transitions.20 wil van der aalst
+4.2 process trees
+the two process trees discovered for event logs l1andl2(see figure 2(c) and fig-
+ure 3(c)) are depicted as q1=→(a,×(∧(b, c), d), e)andq2=→(a,⟲(∧(b, c), d), e)
+in figure 10. their language is the same as an1andan2in figure 9.
+process trees are not commonly used as a modeling language. however, state-of-
+the-art process discovery techniques use process trees as an internal representation.
+the behavior of process trees can be visualized using petri nets, bpmn, uml activity
+diagrams, epcs, etc. however, they also have their own graphical representation, as
+shown in figure 10.
+the main reason for using process trees is that they have a hierarchical structure and
+aresound by construction . this does not hold for other notations such as petri nets and
+bpmn. for example, if we remove the arc (t4,p2)inan2shown in figure 9(b), then
+the process may deadlock . the process gets stuck in marking [p5]making it impossible
+to reach the final marking. if we remove the arc (p4,t4)inan2, then the process may
+livelock . it is possible to put an arbitrary number of tokens in p2andp4, but after the
+occurrence of dit is impossible to reach the final marking. if both arcs are removed,
+the accepting petri net is again sound (i.e., free of anomalies such as deadlocks and
+livelocks). when discovering process model constructs locally, these potential sound-
+ness problems are difficult to handle (see [6] for more details on analyzing soundness of
+process models). therefore, a range of inductive mining techniques has been developed
+using process trees that are sound by construction [22–24].
+a
+de
+c ba
+de
+c ba
+τ 
+a b
+(a)  q1 (b)  q2  (c)  q3  
+fig. 10. three process trees: (a) q1=→(a,×(∧(b, c), d), e), (b)q2=→(a,⟲(∧(b, c), d), e),
+and (c) q3=→(a,⟲(∧(b, a), τ)).
+a process tree is a tree-like structure with one root node. the leaf nodes correspond
+to activities (including the silent activity τ, which is similar to a silent transition in petri
+nets). four types of operators can be used in a process tree: →(sequential composi-
+tion),×(exclusive choice), ∧(parallel composition), and ⟲(redo loop). this way it is
+possible to construct process trees such as the ones shown in figure 10.foundations of process discovery 21
+definition 17 (process tree). letpto ={→,×,∧,⟲}be the set of process tree
+operators and let τ̸∈ uactbe the so-called silent activity. process trees are defined as
+follows.
+–ifa∈ uact∪ {τ}, then q=ais a process tree,
+–ifn≥1,q1, q2, . . . , q nare process trees, and ⊕ ∈ {→ ,×,∧},
+thenq=⊕(q1, q2, . . . q n)is a process tree, and
+–ifn≥2andq1, q2, . . . , q nare process trees,
+thenq=⟲(q1, q2, . . . q n)is a process tree.
+uq⊆ umis the set of all process trees.
+consider the process tree q1=→(a,×(∧(b, c), d), e)shown in figure 10(a). the
+leaf nodes correspond to the activities a,b,c,d, and e. the root node is a sequence
+operator ( →) having three children: a,×(∧(b, c), d), ande. the root node of the subtree
+×(∧(b, c), d)is a choice operator ( ×) having two children: ∧(b, c)andd. the root node
+of the subtree ∧(b, c)is a parallel operator ( ∧) having two children: bandc.
+sequential 
+composition
+exclusive 
+choiceaτ 
+parallel 
+composition
+redo 
+loopnormal 
+activitysilent 
+activity
+a b z ...a b z ...
+a b z ...start end
+a b z ...
+start end
+a b z ...a
+start endstart end
+a
+start
+z...b
+end
+a b z ...a
+start
+z...b
+end
+fig. 11. the semantics of the four process tree operators, i.e., →(sequential composition), ×
+(exclusive choice), ∧(parallel composition), and ⟲(redo loop), expressed in terms of petri nets.
+although it is fairly straightforward to define the semantics of process trees di-
+rectly in terms of traces, we can also use the mapping onto accepting labeled petri nets
+shown in figure 11. a silent activity, i.e., a leaf node labeled τ, is mapped onto a silent
+transition. a normal activity ais mapped onto a transition twith label l(t) =a. se-
+quential composition →(a, b, c, . . . , z )corresponds to the petri net structure shown in22 wil van der aalst
+figure 11, i.e., first aoccurs and only if ahas finished, bmay start, after bcompletes, c
+can start, etc. the sequential composition ends when the last element completes. note
+thata, b, c, . . . , z do not need to be atomic activities. these elements may correspond
+to large subprocesses, each represented by a subtree of arbitrary complexity. exclusive
+choice ×(a, b, c, . . . , z )and parallel composition ∧(a, b, c, . . . , z )can be mapped onto
+petri nets as shown in figure 11. also here the elements do not need to be atomic and
+may correspond to subtrees of arbitrary complexity. figure 11 also shows the seman-
+tics of the redo loop operator ⟲. in⟲(a, b, c, . . . , z ), first ais executed. this is called
+the “do” part (again amay be a subprocess). then there is the option to stop (fire the
+silent transition to go to the end place) or one of the “redo elements” is executed. for
+example, bis executed. after the completion of b, we again execute the “do” part aafter
+which there is again the choice to stop or pick one of the “redo elements”, etc. note that
+semantically ⟲(a, b, c, . . . , z )and⟲(a,×(b, c, . . . , z ))are the same.
+definition 18 (traces of a process tree). letq∈ uqbe a process tree and anq∈
+uanthe corresponding accepting petri net constructed by recursively applying the pat-
+terns depicted in figure 11. lang(q) =lang(anq)are the traces possible according
+toq.
+using the above definition, we can compute the set of traces for the three process
+trees in figure 10: q1=→(a,×(∧(b, c), d), e),q2=→(a,⟲(∧(b, c), d), e), and
+q3=→(a,⟲(∧(b, a), τ)).lang(q1) ={⟨a, b, c, e ⟩,⟨a, c, b, e ⟩,⟨a, d, e⟩},lang(q2) =
+{⟨a, b, c, e ⟩,⟨a, c, b, e ⟩,⟨a, b, c, d, b, c, e ⟩,⟨a, c, b, d, b, c, e ⟩, . . . ,⟨a, c, b, d, b, c, d, c, b, d, c,
+b, e⟩, . . .}, andlang(q3) ={⟨a, b, a⟩,⟨a, a, b⟩,⟨a, b, a, b, a ⟩,⟨a, a, b, b, a ⟩, . . . ,⟨a, a, b, b,
+a, a, b, a, b ⟩, . . .}.
+some additional examples to illustrate the expressiveness of process trees:
+–lang(→(a,×(b, τ), c)) ={⟨a, b, c⟩,⟨a, c⟩}(ability to skip b).
+–lang(→(a, a)) ={⟨a, a⟩}(ability to specify that ashould occur twice).
+–lang(⟲(a, τ)) ={⟨a⟩,⟨a, a⟩,⟨a, a, a⟩, . . .}(at least one a).
+–lang(⟲(τ, b)) ={⟨⟩,⟨b⟩,⟨b, b⟩, . . .}(any number of b’s)
+–lang(⟲(a, b)) ={⟨a⟩,⟨a, b, a⟩,⟨a, b, a, b, a ⟩, . . .}(alternate aandb).
+–lang(⟲(τ, a, b, c, . . . , z )) ={a, b, c, . . . , z }∗(all traces over given set of activities).
+there are also behaviors that are difficult to express in terms of a process tree.
+for example, it is difficult to synchronize between subtrees. consider, for example,
+the process tree q=∧(→(a, b, c ),→(d, e, f ))with the additional requirement that b
+should be executed before e. this can only be handled by duplicating activities, e.g.,
+q=×(→(∧(→(a, b), d),∧(c,→(e, f))),→(a, b, c, d, e, f )). trying to capture arbi-
+trary synchronizations between subprocesses leads to incomprehensible process trees
+whose behavior is still easy to express in terms of a bpmn model or a labeled accepting
+petri net. figure 12(a) shows how this can be expressed in terms of a labeled accepting
+petri net. similarly, process trees cannot capture long-term dependencies (e.g., a choice
+at the beginning of the process influences a choice later in the process). figure 12(b)
+shows an example where the first choice depends on the second choice. this simple
+example can be modeled using the process tree q=×(→(a, c, d, e ),→(b, c, d, f )),
+which enumerates the two traces and duplicates activities candd. in general, process-
+tree based discovery techniques are unable to create such models. nevertheless, processfoundations of process discovery 23
+(a) a labeled accepting petri net synchronizing two parallel flows using place p 6. a
+p1p3 p5p6p2 p4b c
+d e fp7
+p8p9
+p10p11
+(b) a labeled accepting petri net with long -term dependencies (p4 and p 5). p1 p3 p7a
+bp6e
+fc d
+p2p4
+p5
+fig. 12. two labeled accepting petri nets with behaviors that are difficult to discover in terms of
+a process tree. the top model (a) corresponds to the process tree q=∧(→(a, b, c ),→(d, e, f ))
+with the additional requirement that bshould be executed before e. the bottom model (b) corre-
+sponds to the process tree q=→(×(a, b), c, d,×(e, f))with the additional requirement that a
+should be followed by eandbshould be followed by f.
+trees provide a powerful representational bias that can be exploited by process discovery
+techniques.
+4.3 business process model and notation (bpmn)
+business process model and notation (bpmn) is the de facto representation for busi-
+ness process modeling in industry [19, 36]. the bpmn standard is maintained by the
+object management group (omg) [27], is supported by a wide range of vendors, and
+is used by numerous organizations. the omg specification is 532 pages [27]. given our
+focus on process discovery, the constructs for control-flow are most relevant. moreover,
+most tools only support a small subset of the bpmn standard and an even smaller subset
+is actually used on a larger scale. when using the more advanced constructs like inclu-
+sive/complex gateways and multiple instance activities, the execution semantics are also
+not so clear (see chapter 13 of [27]). therefore, we only cover start and end events, ac-
+tivities, exclusive gateways, parallel gateways, and sequence flows. constructs such as
+pools, lanes, data objects, messages, subprocesses, and inclusive gateways are relevant
+for more advanced forms of process mining, but outside the scope of this chapter.
+figure 13 shows three bpmn models ( b1,b2, andb3) and a limited set of bpmn
+notations. we (informally) refer to the class of bpmn models constructed using these
+building blocks as ubpmn . the behavior represented by the bpmn model b1∈
+ubpmn is the same as the accepting petri net an1= (n1,[p1],[p6])in figure 9(a)24 wil van der aalst
+a
+start endb
+c
+de
+(a)  bpmn model b 1
+a
+start endb
+c
+de
+(b)  bpmn model b 2
+a
+start endb
+a
+(c)  bpmn model b 3a activity
+sequence 
+flow
+start 
+event
+end 
+event
+exclusive 
+gateway
+parallel 
+gateway
+(d)  core bpmn notations
+fig. 13. three bpmn models corresponding to the accepting petri nets an 1,an 2, and an 4,
+and the process trees q1,q2, andq3used before.
+and the process tree q1=→(a,×(∧(b, c), d), e)in figure 10(a). hence, lang(b1) =
+{⟨a, b, c, e ⟩,⟨a, c, b, e ⟩,⟨a, d, e⟩}. bpmn model b2∈ ubpmn corresponds to an2in
+figure 9(b) and the process tree q2in figure 10(b). bpmn model b3∈ ubpmn cor-
+responds to an4in figure 9(d) and the process tree q3in figure 10(c). we do not
+provide formal semantics for these bpmn constructs. however, the examples should
+be self-explaining and demonstrate that a bpmn model b∈ ubpmn defines indeed a
+set of traces lang(b).
+in this chapter, we have introduced four types of models: dfgs ug⊆ um, accept-
+ing petri nets uan⊆ um, process trees uq⊆ um, and bpmn models ubpmn ⊆ um.
+there exist discovery approaches for all of them. since they all specify sets of possible
+complete traces, automated translations are often possible. for example, a discovery
+technique may use process trees internally, but use petri nets or bpmn models to visu-
+alize the result.
+5 bottom-up process discovery
+in section 2, we presented a baseline discovery approach to learn a dfg from an event
+log. as stated in definition 3, a process discovery algorithm is a function disc∈
+b(uact∗)→ u mthat, given an event log l, produces a model m=disc(l)that
+allows for the traces in lang(m). the dfg-based baseline approach has many limita-
+tions. one of the main limitations is the inability to represent concurrency. the dfg
+produced tends to have an excessive number of cycles leading to spaghetti-like under-
+fitting models. therefore, we introduced higher-level process model notations such asfoundations of process discovery 25
+accepting petri nets (section 4.1), process trees (section 4.2), and a subset of the bpmn
+notation (section 4.3).
+in this chapter, we group the more advanced approaches into two groups: “bottom-
+up” process discovery and “top-down” process discovery. the first group aims to un-
+cover local patterns involving a few activities. the second group aims to find a global
+structure that can be used to decompose the discovery problem into smaller problems.
+in this section, we introduce “bottom-up” process discovery using the alpha algorithm
+[1, 9] as an example. in section 6, we introduce “top-down” process discovery using
+the basic inductive mining algorithm [22–24] as an example.
+both “bottom-up” and “top-down” process discovery can be combined with the
+filtering approaches presented in section 2.4, in particular activity-based and variant-
+based filtering. without filtering, the basic alpha algorithm and basic inductive mining
+algorithm will not be very usable in real-life settings. therefore, we assume that the
+event logs have been preprocessed before applying “bottom-up” or “top-down” discov-
+ery algorithms.
+definition 19 (basic log preprocessing). letl∈ b(uact∗)be an event log. given
+the thresholds τact∈nandτvar∈n:lτact,τvar=filtervar(filteract(l, τact), τvar).
+in the remainder, we assume that the event log was preprocessed and that we want
+to discover a process model describing the filtered event log.
+5.1 the essence of bottom-up process discovery: admissible places
+to explain “bottom-up” process discovery, we first introduce the notion of a “flower
+model” for an event log. this is the accepting petri net without places. we use this as a
+basis and then add places one-by-one.
+definition 20 (flower model). letl∈ b(uact∗)be an event log with activities a=
+act(l). the flower model of lis the accepting petri net discflower(l) = (n,[ ],[ ])with
+n= (∅, a,∅,{(a, a)|a∈a}).
+note that discflower(l)contains no places and one transition per activity. the flower
+model of l1is shown in figure 14(a). in a petri net, a transition is enabled if all
+of its input places contain a token. hence, a transition without an input place is al-
+ways enabled. moreover, the petri net is always in the final marking [ ]. therefore,
+lang(discflower(l)) = a∗, i.e., all traces over activities seen in the event log. such a
+flower model can also be represented as a process tree. if a={a1, a2, . . . , a n}=
+act(l), then q=⟲(τ, a1, a2, . . . , a n)is the process tree that allows for any behav-
+ior over a, i.e., lang(q) =a∗. although it is easy to create such a process tree, it is
+not so clear how to add constraints to it. as mentioned earlier, it is impossible to syn-
+chronize activities in different subtrees. however, when looking at the flower petri net
+discflower(l), it is obvious that places can be added to constrain the behavior. therefore,
+we use petri nets to illustrate “bottom-up” process discovery.
+next, we consider a petri net having a single place constraining the behavior of the
+flower model. the place p= (a1, a2)is characterized by a set of input activities a1
+and a set of output activities a2. we would like to add places that allow for the behavior
+seen in the event log. such a place is called an admissible place .26 wil van der aalst
+a
+cdb
+e a
+cdb
+ep2  
+(a) flower model (no places , just transitions )
+(b) single -place net with place ({a},{b,d})
+a
+cdb
+e
+p1
+p3 p5p6p2 p4
+(c) model with three redundant placesa
+cdb
+e
+p1
+p3 p5p6p2 p4
+(d) an 1 = (n1,[p1],[p6]) seen beforep7p8
+p9
+fig. 14. four accepting petri nets: (a) a flower model, (b) anp2with just one place p2=
+({a},{b, d}), (c) an accepting petri net with three additional redundant places p7= (∅,{e}),
+p8= ({a},{e}), and p9= ({a},∅), and (d) the accepting petri net an 1already shown in
+figure 9(a) (discovered by applying the original alpha algorithm [1, 9] to event log l1).
+definition 21 (admissible place). letl∈ b(uact∗)be an event log with activities
+a=act(l).p= (a1, a2)is a candidate place if a1⊆aanda2⊆a. the
+corresponding single place accepting petri net is anp= (n, m init, mfinal)with
+n= (p, t, f, l ),p={p},t=a,f={(a, p)|a∈a1} ∪ { (p, a)|a∈a2},
+l={(a, a)|a∈a}),minit= [p|a1=∅], and mfinal= [p|a2=∅]. candidate
+place p= (a1, a2)is admissible if var(l)⊆lang(anp).padm(l)is the set of all
+admissible places, given an event log l.
+given a candidate place p= (a1, a2),anpis the accepting petri net consisting of
+one transition per activity and a single place p. the transitions in a1produce tokens for
+pand the transitions in a2consume tokens from p. ifpis a source place (i.e., a1=∅),
+then it has to be initially marked to be meaningful (otherwise, it would remain empty
+by definition). if pis a sink place (i.e., a2=∅), then it has to be marked in the final
+marking to be meaningful (otherwise, it could never be marked on a path to the final
+marking). we also assume that all other places are empty both at the beginning and at
+the end. hence, only source places are initially marked and only sink places are marked
+in the final marking. this explains the reason that minit= [p|a1=∅](pis initially
+marked if it is a source place) and mfinal= [p|a2=∅](pis marked in the final
+marking if it is a sink place).
+a candidate place p= (a1, a2)is admissible if the corresponding anpallows
+for all the traces seen in the event log, i.e., event log land single-place net anpare
+perfectly fitting. consider, for example, l1= [⟨a, b, c, e ⟩10,⟨a, c, b, e ⟩5,⟨a, d, e⟩]. ex-foundations of process discovery 27
+amples of admissible candidate places are p1= (∅,{a}),p2= ({a},{b, d}),p3=
+({a},{c, d}),p4= ({b, d},{e}),p5= ({c, d},{e}),p6= ({e},∅). these are the
+places shown earlier in figure 9(a) (for convenience the accepting petri net an1is
+again shown in figure 14(d)). however, we now consider an accepting petri net per
+place, i.e., anp1,anp2,anp3, . . . , anp6. figure 14(b) shows anp2withp2= ({a},
+{b, d}). other admissible places (not shown in figure 9(a)) are p7= (∅,{e}),p8=
+({a},{e}),p9= ({a},∅). examples of candidate places that are not admissible are
+p10= (∅,{b})(the initial token in p10is not consumed when replaying ⟨a, d, e⟩),
+p11= ({a},{b})(the token produced for p11byais not consumed when replaying
+⟨a, d, e⟩),p12= ({b},{e})(it is impossible to replay ⟨a, d, e⟩because of a missing to-
+ken in p12), and p13= ({b},∅)(the sink place is not marked when replaying ⟨a, d, e⟩).
+note that places correspond to constraints . place p4= ({b, d},{e})allows for all
+the traces in l1but does not allow for traces such as ⟨a, e⟩,⟨a, b, d, e ⟩,⟨a, b, e, e ⟩, etc.
+assuming that we want to ensure perfect replay fitness (i.e,, 100% recall), we only
+add admissible places . this is a reasonable premise if filtered the event log (cf. defini-
+tion 19) before conducting discovery. this means that process discovery is reduced to
+finding a subset of padm(l)(i.e., a selection of admissible places given event log l).
+why not simply add all places in padm(l)to the discovered process model? there
+are two reasons not to do this: redundancy andoverfitting . a place is redundant if
+its removal does not change the behavior. consider, for example, figure 14(c) with
+two source places, two sink places, and an additional place connecting aande. the
+places p7= (∅,{e}),p8= ({a},{e}), and p9= ({a},∅)are redundant, i.e., we
+can remove them without allowing for more behavior. moreover, adding all possible
+places in padm(l)may lead to overfitting. as explained in section 3, the event log
+contains example behavior and it would be odd to assume that behaviors that have not
+been observed are not possible. note that there are 2n×2n= 22ncandidate places
+withn=|act(l)|. hence, for a log with just ten activities there are over one million
+candidate places (22×10= 1048576) ). many of these will be admissible by accident.
+this problem is comparable to “multiple hypothesis testing” in statistics. if one tests
+enough hypotheses, then one will find seemingly significant results by accident (cf.
+bonferroni correction).
+there are many approaches to select a suitable subset of padm(l). for example, it
+is easy to remove redundant places and only consider places with a limited number of
+input and output arcs [7, 26]. however, there is the additional problem that the above
+procedure requires evaluating each candidate place with respect to the whole event log.
+this means that a na ¨ıve approach quickly becomes intractable for larger event logs and
+processes.
+5.2 the alpha algorithm
+in the remainder of this section, we present the first process discovery technique able
+to discover concurrent models (e.g., petri nets) from event logs: the alpha algorithm
+[9]. the alpha algorithm is completely based on the footprint of the (filtered) event log
+l. this implies that one pass through the event log is sufficient. hence, the algorithm
+is linear in the size of the log (a na ¨ıve implementation is exponential in the number28 wil van der aalst
+of unique activities, but this number is typically low). one can implement the alpha
+algorithm efficiently by combining →relations that meet certain constraints. these
+constrains are monotonic, allowing for an apriori-style algorithm [1].
+we have adapted the original presentation used in [9] to leverage the notations and
+insights already provided in this chapter. we use as input a dfg and as a result also
+add a dummy start ( ▶) and end ( ■) activity. however, in essence, the algorithm did not
+change. we elaborate on the differences with [9] later. the alpha algorithm discovers
+an accepting petri net for any event log l.
+definition 22 (alpha algorithm). the alpha algorithm disc alpha∈ b(uact∗)→
+uanreturns an accepting petri net disc alpha(l)for any event log l∈ b(uact∗).
+leta=act(l)andfp(l) =fp(discdfg(l))the footprint of event log l. this allows
+us to write a1→la2iffp(l)((a1, a2)) =→anda1#la2iffp(l)((a1, a2)) = # for
+anya1, a2∈a′=a∪ {▶,■}.
+1.cnd ={(a1, a2)|a1⊆a′∧a1̸=∅ ∧ a2⊆a′∧a2̸=∅ ∧
+∀a1∈a1∀a2∈a2a1→la2∧ ∀a1,a2∈a1a1#la2∧ ∀a1,a2∈a2a1#la2}are the
+candidate places,
+2.sel={(a1, a2)∈cnd| ∀(a′
+1,a′
+2)∈cnda1⊆a′
+1∧a2⊆a′
+2=⇒(a1, a2) =
+(a′
+1, a′
+2)}are the selected maximal places,
+3.p={p(a1,a2)|(a1, a2)∈sel} ∪ {p▶, p■}is the set of all places,
+4.t={ta|a∈a′}is the set of transitions,
+5.f={(ta, p(a1,a2))|(a1, a2)∈sel∧a∈a1} ∪ { (p(a1,a2), ta)|(a1, a2)∈
+sel∧a∈a2} ∪ { (p▶, t▶),(t■, p■)}is the set of arcs,
+6.l={(ta, a)|a∈a}is the labeling function,
+7.minit= [p▶]is the initial marking, mfinal= [p■]is the final marking, and
+8.disc alpha(l) = (( p, t, f, l ), minit, mfinal)is the discovered accepting petri net.
+the complexity of the algorithm is in the first two steps building the sets cnd and
+selthat are used to create the places in step 3. the rest builds on the ideas and notions
+introduced before. the alpha algorithm creates a transition tafor each activity ain the
+event log and also adds a start transition t▶and an end transition t■(step 4). transitions
+are labeled with the corresponding activity (step 6). transitions t▶andt■are silent, t▶
+has a source place p▶as input and t■has a sink place p■as output. the initial marking
+only marks the source place p▶and the final marking only marks the sink place p■(step 7). steps 3–8 can be seen as “bookkeeping”. the essence of the algorithm is in
+the first two steps.
+step 1 of the algorithm creates candidate places similar to the construction of can-
+didate places used in definition 21. (a1, a2)corresponds to a candidate place psuch
+that activities in a1produce tokens for pand activities in a2consume tokens from p.
+note that technically (a1, a2)is a pair of non-empty sets of activities (including start
+and end). the requirement ∀a1∈a1∀a2∈a2a1→la2states that any activity in a1can
+be directly followed by any activity in a2, but no activity in a2can be directly followed
+by an activity in a1. the requirements ∀a1,a2∈a1a1#la2and∀a1,a2∈a2a1#la2state
+that activities in the sets a1anda2cannot directly follow any other member of the same
+activity set. as a consequence, an activity that can follow itself directly (i.e., a∥la) can-
+not be in a1ora2. this also implies that a1anda2are disjoint. cnd is the set of allfoundations of process discovery 29
+pairs of activity sets meeting these requirements. sel⊆cnd retains the “maximal ele-
+ments”. candidate (a1, a2)∈cnd is maximal if there is no other (a′
+1, a′
+2)∈cnd that
+is strictly larger, i.e., it cannot be that a1⊆a′
+1,a2⊆a′
+2, and (a′
+1, a′
+2)̸= (a1, a2).
+each selected maximal element, i.e., (a1, a2)∈sel, corresponds to a place p(a1,a2)
+connecting the transitions corresponding to a1(i.e.,{ta|a∈a1}) to the transitions
+corresponding to a2(i.e.,{ta|a∈a2}).
+a
+cdb
+ep({a},{b,d})
+(a) process model discovered for l 1p({a},{c,d})ta t t p p p({  },{a}) p({e},{  })
+p({c,d},{e})p({b,d},{e})
+tb
+td
+tcte
+a
+cdb
+ep({a,d},{b})
+(b) process model discovered for l 2p({a,d},{c})ta t t p p p({  },{a}) p({e},{  })
+p({c},{d,e})p({b},{d,e})
+tb
+td
+tcteba p({  },{a})
+(c) process model discovered for l 4t t
+p pp({a},{  })
+ta
+tb
+p({  },{b}) p({b},{  })
+ba p({  },{a})
+(d) process model discovered for l 5t t p pp({a},{  })
+ta
+tbp({b},{  }) c
+tcp({a},{b})
+fig. 15. four accepting petri nets created using the alpha algorithm from definition 22.
+the place and transition names are as specified in definition 22. the four event logs
+used are: l1= [⟨a, b, c, e ⟩10,⟨a, c, b, e ⟩5,⟨a, d, e⟩],l2= [⟨a, b, c, e ⟩50,⟨a, c, b, e ⟩40,
+⟨a, b, c, d, b, c, e ⟩30,⟨a, c, b, d, b, c, e ⟩20,⟨a, b, c, d, c, b, e ⟩10,⟨a, c, b, d, c, b, d, b, c, e ⟩10],l4=
+[⟨a, b⟩35,⟨b, a⟩15], andl5= [⟨a⟩10,⟨a, b⟩8,⟨a, c, b⟩6,⟨a, c, c, b ⟩3,⟨a, c, c, c, b ⟩]. note that un-
+like in [9] invisible start and end transitions are added to be more general.
+figure 15 shows some examples where the alpha algorithm is applied to a smaller
+event log. the place names reflect the elements of the set selcreated in step 2 of
+the algorithm. for l1= [⟨a, b, c, e ⟩10,⟨a, c, b, e ⟩5,⟨a, d, e⟩],sel={({▶},{a}),({a},
+{b, d}),({a},{c, d}),({b, d},{e}),({c, d},{e}),({e},{■})}. note that cnd\sel=
+{({a},{b}),({a},{c}),({a},{d}),({b},{e}),({c},{e}),({d},{e})}. these candida-
+tes were removed because they are not maximal. figure 15(a) shows the resulting ac-
+cepting petri net disc alpha(l1). figure 15(b) shows disc alpha(l2). note that the alpha
+algorithm is able to discover concurrency, choices, and loops. comparing the process
+models for l1andl2with the accepting petri nets in figure 2 (for l1) and figure 3
+(forl2), we can see that p▶,t▶,t■, and p■have been added. these can be removed
+if start and end activities happen only at the beginning or end. in l1andl2, the only
+start activity is aandacan only happen in the first position. also, the only end activity
+iseandecan only happen in the last position. if this is the case, we do not need to add
+an artificial start ▶or end ■.
+figure 15(c) shows why it is sometimes necessary to add an artificial start or end.
+inl4= [⟨a, b⟩35,⟨b, a⟩15],ais a start activity in trace ⟨a, b⟩, but can also happen at30 wil van der aalst
+the second position (cf. ⟨b, a⟩). the same holds for activity b. therefore, we need to
+add an artificial start ▶.aandbare also end activities, but do not appear just at the
+end, e.g., bmay also happen in the first position. therefore, we need to add an artificial
+end■. note that definition 22 is slightly different from the original algorithm in [9]
+due to the addition of the dummy start and end activities. for logs where the traditional
+algorithm already produces the correct result, one can simply remove p▶,t▶,t■, and
+p■. however, the algorithm in definition 22 is able to handle start and end activities
+that can also appear in the middle of a trace. hence, it is more general.
+figure 16 shows the model discovered for the larger event log l3= [⟨ie,cu,lt,xr,
+fe⟩285,⟨ie,cu,lt,ct,fe⟩260,⟨ie,cu,ct,lt,fe⟩139,⟨ie,lt,cu,xr,fe⟩137,⟨ie,lt,cu,ct,
+fe⟩124,⟨ie,cu,xr,lt,fe⟩113,⟨ie,xr,cu,lt,fe⟩72,⟨ie,ct,cu,xr,fe⟩72,⟨ie,cu,om,am,
+cu,lt,xr,fe⟩29,⟨ie,cu,om,am,cu,lt,ct,fe⟩28, . . .]using the full activity names, i.e.,
+ie= initial examination, xr= x-ray, ct= ct scan, cu= checkup, om= order medicine,
+am= administer medicine, lt= lab tests, and fe= final examination. the model was
+generated using the alpha algorithm implemented in prom. note that there was no need
+to add artificial start or end activities because iehappens only at the beginning and fe
+happens only at the end.
+fig. 16. the accepting petri net that was discovered by the alpha algorithm implemented in
+prom, based on the larger event log l3introduced in section 2.5. note that the artificial start and
+end activities have not been added, and the full activity names are used.
+the alpha algorithm should be seen as a baseline algorithm to discover concur-
+rency. it has many limitations, as pointed out in the original paper presenting the al-
+gorithm [9]. event log l5= [⟨a⟩10,⟨a, b⟩8,⟨a, c, b⟩6,⟨a, c, c, b ⟩3,⟨a, c, c, c, b ⟩]is used
+to illustrate two of these problems: skipping andself-loops . figure 15(d) shows the
+discovered process model disc alpha(l5). the selected maximal elements are sel=
+{({▶},{a}),({a},{b}),({a},{■}),({b},{■})}. note that ({a},{b,■})̸∈sel, be-
+cause b→l5■and not b#l5■. because c∥l5c(ccan be directly followed by c) and
+notc#l5c, activity cdoes not appear in sel, implying that tcremains disconnected
+from the rest of the model. activity bcan be seen as a “skippable” activity and the
+alpha algorithm cannot handle such activities, because these require silent transitions.
+the basic alpha algorithm can also not discover the self-loop involving c. the alpha
+algorithm has been extended to address these problems, and there exist variants to deal
+with self-loops, skipping, long-term dependencies, etc. see [1] for more informationfoundations of process discovery 31
+on the limitations of the basic algorithm and pointers to extensions addressing these
+problems.
+6 top-down process discovery
+the alpha algorithm is an example of a bottom-up discovery approach that tries to add
+places to the petri net to locally constrain behavior. top-down discovery approaches try
+to recursively decompose the event log into smaller event logs until the problem gets
+trivial. the whole event log lis decomposed into smaller event logs l1, l2, . . . , l n
+that have a clear relationship, e.g., limay contain events that occur before ljifi < j ,
+orliandljare fully disjoint for all i̸=j. each event in lends up in precisely
+oneof the sublogs. however, cases may be distributed over multiple sublogs. each
+of the smaller event logs is analyzed and (if needed) decomposed into smaller event
+logs, e.g., liis in turn decomposed into li,1, li,2, . . . , l i,m, etc. again the events in
+liare partitioned over li,1, li,2, . . . , l i,m. this is repeated until we encounter a so-
+called base case , i.e., a sublog containing just one activity, e.g., [⟨a⟩160],[⟨a⟩80,⟨⟩80],
+or[⟨a⟩80,⟨a, a⟩60,⟨a, a, a⟩20].
+due to the recursive decomposition of logs into smaller event logs, we automatically
+get a tree-like structure where the root corresponds to the original event log and the
+leaves correspond to trivial event logs (the so-called base cases). this fits well with the
+process tree formalism introduced in section 4.2.
+before introducing a particular approach, let’s use a few simple event logs to illus-
+trate the idea of splitting an event log.
+–event log l= [⟨a, b, c⟩100]is decomposed into base cases l1= [⟨a⟩100],l2=
+[⟨b⟩100], andl3= [⟨c⟩100]leading to the discovery of q=→(a, b, c ).
+–event log l= [⟨a⟩50,⟨b⟩25,⟨c⟩25]is decomposed into base cases l1= [⟨a⟩50],
+l2= [⟨b⟩25], andl3= [⟨c⟩25]leading to the discovery of q=×(a, b, c ).
+–event log l= [⟨a, b, c⟩30,⟨a, c, b⟩20,⟨b, a, c⟩20,⟨b, c, a⟩10,⟨c, a, b⟩10,⟨c, b, a⟩10]
+is decomposed into base cases l1= [⟨a⟩100],l2= [⟨b⟩100], and l3= [⟨c⟩100]
+leading to the discovery of q=∧(a, b, c ).
+–event log l= [⟨a⟩50,⟨a, b, a⟩25,⟨a, b, a, b, a ⟩25]is decomposed into base cases
+l1= [⟨a⟩175]andl2= [⟨b⟩75]leading to the discovery of q=⟲(a, b).
+–event log l= [⟨a, c⟩50,⟨a, b, c⟩50]is decomposed into base cases l1= [⟨a⟩100],
+l2= [⟨⟩50,⟨b⟩50], andl3= [⟨c⟩100]leading to the discovery of q=→(a,×(b, τ),
+c).
+–event log l= [⟨a, c⟩50,⟨a, b, c⟩20,⟨a, b, b, c ⟩20,⟨a, b, b, b, c ⟩10]is decomposed into
+base cases l1= [⟨a⟩100],l2= [⟨⟩50,⟨b⟩20,⟨b, b⟩20,⟨b, b, b⟩10], andl3= [⟨c⟩100]
+leading to the discovery of q=→(a,⟲(τ, b), c).
+in this section, we use the basic inductive mining algorithm to illustrate top-down
+discovery [22–24]. this algorithm uses dfgs to find so-called cutspartitioning the set
+of observed activities into subsets of activities. set a=act(l)is partitioned into pair-
+wise disjoint sets of activities a1, a2, . . . , a n. these activity sets are used to distribute
+the events in loverl1, l2, . . . , l nsuch that a1=act(l1),a2=act(l2), etc.
+there are cuts for all four process tree operators, i.e., →(sequential composition), ×
+(exclusive choice), ∧(parallel composition), and ⟲(redo loop).32 wil van der aalst
+definition 23 (sequence, exclusive-choice, parallel, and redo-loop cuts). letl∈
+b(uact∗)be an event log having a dfg discdfg(l) = ( a, f)based on l(note that
+a=act(l)) with start activities astart={a∈a|(▶, a)∈f}and end activities
+aend={a∈a|(a,■)∈f}. ann-ary⊕-cut of lis a partition of ainton≥2
+pairwise disjoint subsets a1, a2, . . . , a n(i.e.,a=s
+i∈{1,...,n}aiandai∩aj=∅
+fori̸=j) with ⊕ ∈ {→ ,×,∧,⟲}. such a ⊕-cut is denoted (⊕, a1, a2, . . . a n). for
+each type of operator ⊕ ∈ {→ ,×,∧,⟲}specific conditions apply:
+–anexclusive-choice cut oflis a cut (×, a1, a2, . . . a n)such that
+• ∀i,j∈{1,...n}∀a∈ai∀b∈aji̸=j⇒(a, b)̸∈f.
+–asequence cut oflis a cut (→, a1, a2, . . . a n)such that
+• ∀i,j∈{1,...n}∀a∈ai∀b∈aji < j ⇒((a, b)∈f+∧(b, a)̸∈f+).
+(note that f+is the non-reflexive transitive closure of f, i.e., (a, b)∈f+
+means that there is a path from atobin the dfg.)
+–aparallel cut oflis a cut (∧, a1, a2, . . . a n)such that
+• ∀i∈{1,...n}ai∩astart̸=∅ ∧ai∩aend̸=∅and
+• ∀i,j∈{1,...n}∀a∈ai∀b∈aji̸=j⇒(a, b)∈f.
+–aredo-loop cut oflis a cut (⟲, a1, a2, . . . a n)such that
+•astart∪aend⊆a1,
+• ∀i,j∈{2,...n}∀a∈ai∀b∈aji̸=j⇒(a, b)̸∈f,
+• {a∈a1|(a, b)∈f∧b̸∈a1}=aend,
+• {a∈a1|(b, a)∈f∧b̸∈a1}=astart,
+• ∀(a,b)∈fa∈a1∧b̸∈a1⇒ ∀ a′∈aend(a′, b)∈f, and
+• ∀(b,a)∈fa∈a1∧b̸∈a1⇒ ∀ a′∈astart(b, a′)∈f.
+...
+(a) exclusive -choice cut (b) sequence cut (c) parallel cut (d) redo-loop cut... ... ...a1
+a2
+an
+fig. 17. four types of cuts: (⊕, a1, a2, . . . a n)with⊕ ∈ {× ,→,∧,⟲}(based on [1]).
+figure 17 illustrates the four types of cuts. there is an exclusive-choice cut when
+the dfg can be split into disconnected parts after leaving out the artificial start ▶andfoundations of process discovery 33
+end■. (recall that ▶̸∈aand■̸∈a.) there is a sequence cut when the dfg can be
+split into sequential parts where only “forward connections” are possible. note that we
+need to use the non-reflexive transitive closure of f. there is a parallel cut when the
+dfg can be split into concurrent parts where any activity in one part can be followed
+by any activity in another part. the redo-loop cut has the most complex definition. all
+start and end activities should be in a1(the “do part”) and none of the “redo parts”
+can have start or end activities. moreover, the “redo parts” ( a2, a3, . . . , a n) are only
+connected through the “do part” ( a1).bstart={b|(a, b)∈f∧a∈a1∧b̸∈a1}
+are the start activities of the “redo parts” connected to end activities in the “do part” and
+bend={b|(b, a)∈f∧a∈a1∧b̸∈a1}are the end activities of the “redo
+parts” connected to start activities in the “do part”. the requirements in definition 23
+imply that aend×bstart⊆fandbend×astart⊆f. this implies that all end
+activities of the “do part” are connected to all start activities of the “redo parts” and all
+end activities of the “redo parts” are connected to all start activities of the “do part”. for
+more explanations, see [1].
+how the event log lis decomposed into l1, l2, . . . , l nbased on ⊕-cut(⊕, a1, a2,
+. . . a n)depends on the type of cut ⊕ ∈ {→ ,×,∧,⟲}. in all log decompositions, each
+event ends up in precisely one event log, i.e., the number of events remains invariant
+through decomposition. we use the previously introduced event logs to illustrate this.
+first, we consider l1= [⟨a, b, c, e ⟩10,⟨a, c, b, e ⟩5,⟨a, d, e⟩]and construct the cor-
+responding dfg to find one of the four cuts. we check the presence of a cut using the
+order in definition 23, i.e., (1) ×, (2)→, (3)∧, (4)⟲. there is no exclusive-choice
+cut for l1, but there is a sequence cut (→,{a},{b, c, d},{e}). using this cut, l1is
+split into la= [⟨a⟩16],lb,c,d= [⟨b, c⟩10,⟨c, b⟩5,⟨d⟩], and le= [⟨e⟩16].laandle
+correspond to base cases since there is just one activity left: lais modeled by a single
+occurrence of activity a, andleis modeled by a single occurrence of activity e. hence,
+the process tree starts with →(a,?, e), where ?corresponds to the subtree describing
+lb,c,d. next, we create a dfg for lb,c,d and see that we can apply an exclusive-choice
+cut(×,{b, c},{d}). using this cut, lb,c,d is split into lb,c= [⟨b, c⟩10,⟨c, b⟩5]and
+ld= [⟨d⟩].ldcorresponds to a base case since there is just one activity left. hence,
+the subtree for lb,c,d has the following structure ×(?, d), where ?corresponds to the
+subtree describing lb,c. the overall tree created thus far is →(a,×(?, d), e). next, we
+create a dfg for lb,cand see that we can apply a parallel cut (∧,{b},{c}). it is not
+possible to apply an exclusive-choice cut or a sequence cut. using cut (∧,{b},{c})
+sublog lb,cis split into lb= [⟨b⟩15]andlc= [⟨c⟩15]. both correspond to base cases.
+hence, the subtree for lb,cis∧(b, c). the overall tree is →(a,×(∧(b, c), d), e). this is
+process tree q1in figure 10(a) shown before.
+next, we consider l2= [⟨a, b, c, e ⟩50,⟨a, c, b, e ⟩40,⟨a, b, c, d, b, c, e ⟩30,⟨a, c, b, d,
+b, c, e⟩20,⟨a, b, c, d, c, b, e ⟩10,⟨a, c, b, d, c, b, d, b, c, e ⟩10]. again, we construct the cor-
+responding dfg to find one of the four cuts. the first cut we find is a sequence cut
+(→,{a},{b, c, d},{e}). using this cut, l2is split into la= [⟨a⟩160],lb,c,d= [⟨b, c⟩50,
+⟨c, b⟩40,⟨b, c, d, b, c ⟩30,⟨c, b, d, b, c ⟩20,⟨b, c, d, c, b ⟩10,⟨c, b, d, c, b, d, b, c ⟩10], andle=
+[⟨e⟩160].laandlecorrespond to base cases suggesting that the process has the follow-
+ing structure →(a,?, e), with ?corresponding to the subtree describing lb,c,d. again
+we check the presence of a cut. the first cut we find is the redo loop cut (⟲,{b, c},{d}).34 wil van der aalst
+using this cut, lb,c,d is split into lb,c= [⟨b, c⟩150,⟨c, b⟩90]andld= [⟨d⟩80]. note that
+lb,chas 240 cases because the “do part” happened 50+40+(2 ×30)+(2 ×20)+(2 ×
+10)+(3 ×10) = 240 times. the “redo part” happened 30+20+10+(2 ×10) = 80 times.
+the redo part is trivial since dis always executed once. hence, the subtree for lb,c,dhas
+the following structure ⟲(?, d), where ?corresponds to the subtree describing lb,c. for
+lb,c, we find the subtree ∧(b, c). the overall tree is, therefore, →(a,⟲(∧(b, c), d), e).
+this is process tree q2in figure 10(b) shown before.
+to explain the alpha algorithm, we also used l4andl5in figure 15. applying
+the basic inductive mining algorithm to l4= [⟨a, b⟩35,⟨b, a⟩15]yields the process tree
+∧(a, b). for l5= [⟨a⟩10,⟨a, b⟩8,⟨a, c, b⟩6,⟨a, c, c, b ⟩3,⟨a, c, c, c, b ⟩], we find the pro-
+cess tree →(a,⟲(τ, c),×(b, τ)). note that the subtree ⟲(τ, c)is created for the sublog
+involving just c, because chappens 0, 1, 2, or 3 times. the subtree ×(b, τ)is created
+for the sublog involving just b, because bhappens at most once.
+it is possible that none of the cuts in definition 23 can be applied while the sublog
+still has multiple activities. in this case, one can always apply so-called fallthroughs ,
+e.g., use ⟲(τ, a1, a2, . . . , a n)that allows for any behavior. note that such fallthroughs
+are not needed when the original process was expressible in terms of a process tree
+(for the exact conditions, see [1, 22]). moreover, it is also possible to use smarter
+fallthroughs that separate the problematic activities or behavior from the rest. suppose
+that there is a cut (⊕, a1, a2, . . . a k)possible considering only activities agood =
+a1∪a2∪. . .∪akand leaving out abad=a\agood={a1, a2, . . . , a n}. then one
+can first apply the parallel cut (∧, agood, abad)followed by cut (⊕, a1, a2, . . . a k)and
+cut⟲(τ, a1, a2, . . . , a n)applied to the two sublogs. there are many other fallthroughs,
+e.g., separating the empty traces from the rest.
+definition 24 (inductive mining algorithm). the basic inductive mining algorithm
+disc im∈ b(uact∗)→ u qreturns a process tree disc im(l)for any event log l∈
+b(uact∗)using the four types of cuts, log decomposition, and fallthroughs described
+before.
+fig. 18. process tree disc im(l3) =→(ie,∧(×(xr,ct),⟲(cu,→(om,am)),lt),fe)discov-
+ered and visualized using prom’s inductive visual miner.
+earlier, we introduced event log l3, containing 11761 events corresponding to
+1856 cases. using the following abbreviations ie= initial examination, xr= x-ray,
+ct= ct scan, cu= checkup, om= order medicine, am= administer medicine, lt
+= lab tests, and fe= final examination, we find disc im(l3) =→(ie,∧(×(xr,ct),
+⟲(cu,→(om,am)),lt),fe). figure 18 shows a screenshot of prom’s inductive visualfoundations of process discovery 35
+miner while analyzing disc im(l3)using a bpmn-like notation. no fallthroughs were
+needed. note that also the frequencies are shown. it is also possible to show timing
+information, e.g., average waiting times.
+fig. 19. process tree disc im(l3) =→(ie,∧(×(xr,ct),⟲(cu,→(om,am)),lt),fe)discov-
+ered and visualized as a bpmn model using the celonis ems.
+figure 19 shows disc im(l3)discovered using celonis. celonis also uses a bpmn-
+like visualization of the process tree. the translation of process trees to bpmn or petri
+nets is rather straightforward, and the resulting models are easier to interpret by most
+users.
+in this section, we only introduced the basic inductive mining algorithm. we assume
+that the event log was filtered in advance to remove infrequent behavior. however, there
+are also extended versions of the inductive mining algorithm dealing with infrequent
+behavior [23]. the basic inductive mining algorithm may become intractable for huge
+event logs, because repeatedly sublogs need to be created. there are also more scalable
+variants that make a single pass through the event log and use a single overall dfg
+[24]. these provide fewer formal guarantees. the basic inductive mining algorithm
+has strong guarantees. for example, disc im(l)guarantees perfect replay fitness (i.e.,
+100% recall). formally, var(l)⊆lang(disc im(l)). see [22–24] for additional formal
+guarantees provided by these top-down approaches.
+next two the process discovery techniques presented this chapter, there are dozens
+of other techniques. in [12] additional techniques are presented.
+7 conclusion
+the goal of this chapter is to introduce the foundations of process discovery without
+aiming to provide a complete survey or details on specific algorithms (see also [10]).
+after reading this chapter, it should be clear that process discovery is a challenging topic36 wil van der aalst
+with many competing requirements. we started by introducing a baseline approach that
+produces a directly-follows graph (dfg) for an event log converted into a multiset of
+traces. for real-life event logs, the dfg may have an excessive number of arcs making
+the model incomprehensible. therefore, we discussed three filtering approaches that
+can also be combined to create simpler dfgs. we also showed that the interpretation
+of such process models highly depends on the log preprocessing [2].
+after presenting the baseline dfg discovery approach, we focused on process rep-
+resentations able to capture concurrency : petri nets, process trees, and bpmn models.
+this is needed because, if activities do not occur in a fixed order due to concurrency,
+then the discovered dfgs are underfitting and contain many loops. this allowed us
+to introduce more advanced process discovery approaches. we characterized these as
+(1)bottom-up approaches and (2) top-down approaches. bottom-up approaches try to
+find local process patterns constraining the process model to better fit the event log.
+top-down approaches tackle the problem differently and try to partition larger event
+logs into smaller ones that can be analyzed more easily. two representative approaches
+we described in more detail: the alpha algorithm and the inductive mining algorithm .
+these should be seen as representative examples of both categories. however, there are
+dozens of process discovery techniques, and it is impossible to name them all.
+for example, there exist many extensions of the alpha algorithm, e.g., variants
+that can discover silent transitions (e.g., skipping) [34] and non-free choice constructs
+(e.g., long-term dependencies) [33]. the heuristic mining approach [32] can be seen
+as another bottom-up approach that incorporates frequency information. the approach
+can discover complex process structures, but often leads to models that are not sound.
+region-based process-discovery approaches provide formal guarantees, but are often
+not very applicable (e.g., they may produce huge and overfitting process models or take
+too long to compute). there are two types of regions: state-based regions (which require
+the construction of a transition system) and language-based regions (that work on sets
+of traces). state-based regions were introduced by ehrenfeucht and rozenberg [20] in
+1989 and generalized by cortadella et al. [16]. in [8], it is shown how these state-based
+regions can be applied to process mining by first creating a log-based transition system
+using different abstractions. in [14, 30], refinements are proposed to tailor state-based
+regions towards process discovery. in parallel, several authors applied language-based
+regions to process mining [13, 35, 37]. there are also numerous bottom-up approaches
+combining different ideas. an example is the so-called split-miner [11] which aims to
+balance recall and precision. this approach also starts from a filtered dfg, but iden-
+tifies combinations of splits that capture the concurrency, conflict and causal relations
+between neighbors in the dfg. as mentioned, there also exist different variants of the
+inductive mining approach presented in this chapter [22–24].
+in this chapter, we only considered a simple event log l∈ b(uact∗), ignoring
+additional event and case attributes (e.g., resources, data, transactional information).
+however, other logging formats may be considered. there are process discovery ap-
+proaches that exploit timing information, data attributes, object references, partial or-
+der information (e.g., events happening on the same day), explicit uncertainty (e.g.,
+imprecise timestamps or missing case identifiers), etc. we also only focused on main-
+stream representations such as dfgs, petri nets, and bpmn. however, there are alsofoundations of process discovery 37
+discovery techniques that aim to discover stochastic process models [29], declarative
+process models (using declare or dcr graphs) [25], or object/artifact-centric models
+(e.g., object-centric petri nets) [5, 21].
+the above illustrates that the topic of process discovery has many facets, pro-
+viding interesting scientific challenges. moreover, there are several open-source tools
+(e.g., prom, bupar, pm4py, and rapidprom) and over 40 commercial process mining
+tools (e.g., celonis, disco/fluxicon, lana/appian, minit, apromore, myinvenio/ibm,
+pafnow, signavio/sap, timeline/abby and processgold/uipath) that already provide
+solid discovery approaches, and are sometimes applied to processes with billions of
+events. however, as applications of process mining become more demanding, new dis-
+covery approaches are needed that are better scalable and can deal with more complex
+processes and data structures. therefore, process discovery is not just a great research
+topic, but also of great practical relevance.
+acknowledgment
+funded by the alexander von humboldt (avh) stiftung and the deutsche forschungs-
+gemeinschaft (dfg, german research foundation) under germany’s excellence strat-
+egy – exc 2023 internet of production – 390621612.
+references
+1. w.m.p. van der aalst. process mining: data science in action . springer-verlag, berlin,
+2016.
+2. w.m.p. van der aalst. a practitioner’s guide to process mining: limitations of the directly-
+follows graph. in international conference on enterprise information systems (centeris
+2019) , volume 164 of procedia computer science , pages 321–328. elsevier, 2019.
+3. w.m.p. van der aalst. chapter 1 - process mining: a 360 degrees overview. in w.m.p. van
+der aalst and j. carmona, editors, process mining handbook , volume 448 of lecture notes
+in business information processing , pages 1–32. springer-verlag, berlin, 2022.
+4. w.m.p. van der aalst, a. adriansyah, and b. van dongen. replaying history on process
+models for conformance checking and performance analysis. wires data mining and
+knowledge discovery , 2(2):182–192, 2012.
+5. w.m.p. van der aalst and a. berti. discovering object-centric petri nets. fundamenta
+informaticae , 175(1-4):1–40, 2020.
+6. w.m.p. van der aalst, k.m. van hee, a.h.m. ter hofstede, n. sidorova, h.m.w. verbeek,
+m. v oorhoeve, and m.t. wynn. soundness of workflow nets: classification, decidability,
+and analysis. formal aspects of computing , 23(3):333–363, 2011.
+7. w.m.p. van der aalst, r. de masellis, c. di francescomarino, and c. ghidini. learning
+hybrid process models from events: process discovery without faking confidence. in
+j. carmona, g. engels, and a. kumar, editors, international conference on business process
+management (bpm 2017) , volume 10445 of lecture notes in computer science , pages 59–
+76. springer-verlag, berlin, 2017.
+8. w.m.p. van der aalst, v . rubin, h.m.w. verbeek, b.f. van dongen, e. kindler, and c.w.
+g¨unther. process mining: a two-step approach to balance between underfitting and over-
+fitting. software and systems modeling , 9(1):87–111, 2010.
+9. w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. workflow mining: discovering
+process models from event logs. ieee transactions on knowledge and data engineering ,
+16(9):1128–1142, 2004.38 wil van der aalst
+10. a. augusto, r. conforti, m. dumas, m. la rosa, f.m. maggi, a. marrella, m. mecella, and
+a. soo. automated discovery of process models from event logs: review and benchmark.
+ieee transactions on knowledge and data engineering , 31(4):686–705, 2019.
+11. a. augusto, r. conforti, m. marlon, m. la rosa, and a. polyvyanyy. split miner: auto-
+mated discovery of accurate and simple business process models from event logs. knowl-
+edge information systems , 59(2):251–284, 2019.
+12. a. augusto, j.carmona, and e. verbeek. chapter 3 - advanced process discovery tech-
+niques. in w.m.p. van der aalst and j. carmona, editors, process mining handbook , volume
+448 of lecture notes in business information processing . springer-verlag, berlin, 2022.
+13. r. bergenthum, j. desel, r. lorenz, and s. mauser. process mining based on regions of
+languages. in g. alonso, p. dadam, and m. rosemann, editors, international conference
+on business process management (bpm 2007) , volume 4714 of lecture notes in computer
+science , pages 375–383. springer-verlag, berlin, 2007.
+14. j. carmona, j. cortadella, and m. kishinevsky. a region-based algorithm for discovering
+petri nets from event logs. in business process management (bpm 2008) , pages 358–373,
+2008.
+15. j. carmona, b. van dongen, a. solti, and m. weidlich. conformance checking: relating
+processes and models . springer-verlag, berlin, 2018.
+16. j. cortadella, m. kishinevsky, l. lavagno, and a. yakovlev. deriving petri nets from finite
+transition systems. ieee transactions on computers , 47(8):859–882, august 1998.
+17. j. desel and j. esparza. free choice petri nets , volume 40 of cambridge tracts in theoret-
+ical computer science . cambridge university press, cambridge, uk, 1995.
+18. j. desel and w. reisig. place/transition nets. in w. reisig and g. rozenberg, editors,
+lectures on petri nets i: basic models , volume 1491 of lecture notes in computer science ,
+pages 122–173. springer-verlag, berlin, 1998.
+19. m. dumas, m. la rosa, j. mendling, and h. reijers. fundamentals of business process
+management . springer-verlag, berlin, 2018.
+20. a. ehrenfeucht and g. rozenberg. partial (set) 2-structures - part 1 and part 2. acta
+informatica , 27(4):315–368, 1989.
+21. d. fahland. describing behavior of processes with many-to-many interactions. in s. do-
+natelli and s. haar, editors, applications and theory of petri nets 2019 , volume 11522 of
+lecture notes in computer science , pages 3–24. springer-verlag, berlin, 2019.
+22. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-structured process
+models from event logs: a constructive approach. in j.m. colom and j. desel, editors,
+applications and theory of petri nets 2013 , volume 7927 of lecture notes in computer
+science , pages 311–329. springer-verlag, berlin, 2013.
+23. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. discovering block-structured pro-
+cess models from event logs containing infrequent behaviour. in n. lohmann, m. song,
+and p. wohed, editors, business process management workshops, international workshop
+on business process intelligence (bpi 2013) , volume 171 of lecture notes in business in-
+formation processing , pages 66–78. springer-verlag, berlin, 2014.
+24. s.j.j. leemans, d. fahland, and w.m.p. van der aalst. scalable process discovery and
+conformance checking. software and systems modeling , 17(2):599–631, 2018.
+25. f.m. maggi, r.p. jagadeesh chandra bose, and w.m.p. van der aalst. efficient discovery
+of understandable declarative process models from event logs. in j. ralyte, x. franch,
+s. brinkkemper, and s. wrycza, editors, international conference on advanced information
+systems engineering (caise 2012) , volume 7328 of lecture notes in computer science ,
+pages 270–285. springer-verlag, berlin, 2012.
+26. l. mannel and w.m.p. van der aalst. finding complex process-structures by exploiting
+the token-game. in s. donatelli and s. haar, editors, applications and theory of petri netsfoundations of process discovery 39
+2019 , volume 11522 of lecture notes in computer science , pages 258–278. springer-verlag,
+berlin, 2019.
+27. omg. business process model and notation (bpmn), version 2.0.2. object management
+group, www.omg.org/spec/bpmn/, 2014.
+28. c.a. petri. kommunikation mit automaten . phd thesis, institut f ¨ur instrumentelle mathe-
+matik, bonn, 1962.
+29. a. rogge-solti, w.m.p. van der aalst, and m. weske. discovering stochastic petri nets with
+arbitrary delay distributions from event logs. in n. lohmann, m. song, and p. wohed, edi-
+tors, business process management workshops, international workshop on business process
+intelligence (bpi 2013) , volume 171 of lecture notes in business information processing ,
+pages 15–27. springer-verlag, berlin, 2014.
+30. m. sol ´e and j. carmona. process mining from a basis of state regions. in j. lilius and
+w. penczek, editors, applications and theory of petri nets 2010 , volume 6128 of lecture
+notes in computer science , pages 226–245. springer-verlag, berlin, 2010.
+31. a.f. syring, n. tax, and w.m.p. van der aalst. evaluating conformance measures in process
+mining using conformance propositions. in m. koutny, l. pomello, and l.m. kristensen,
+editors, transactions on petri nets and other models of concurrency (topnoc 14) , volume
+11970 of lecture notes in computer science , pages 192–221. springer-verlag, berlin, 2019.
+32. a.j.m.m. weijters and w.m.p. van der aalst. rediscovering workflow models from event-
+based data using little thumb. integrated computer-aided engineering , 10(2):151–162,
+2003.
+33. l. wen, w.m.p. van der aalst, j. wang, and j. sun. mining process models with non-free-
+choice constructs. data mining and knowledge discovery , 15(2):145–180, 2007.
+34. l. wen, j. wang, w.m.p. van der aalst, b. huang, and j. sun. mining process models with
+prime invisible tasks. data and knowledge engineering , 69(10):999–1021, 2010.
+35. j.m.e.m. van der werf, b.f. van dongen, c.a.j. hurkens, and a. serebrenik. process dis-
+covery using integer linear programming. fundamenta informaticae , 94:387–412, 2010.
+36. m. weske. business process management: concepts, languages, architectures (3rd ed.) .
+springer-verlag, berlin, 2019.
+37. s.j. van zelst, b.f. van dongen, w.m.p. van der aalst, and h.m.w verbeek. discovering
+workflow nets using integer linear programming. computing , 100(5):529–556, 2018.

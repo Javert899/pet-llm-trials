@@ -1,0 +1,1725 @@
+conformance testing: measuring the alignment
+between event logs and process models
+a. rozinat and w.m.p. van der aalst
+department of technology management, eindhoven university of technology
+p.o. box 513, nl-5600 mb, eindhoven, the netherlands.
+{a.rozinat,w.m.p.v.d.aalst }@tm.tue.nl
+abstract. many companies have adopted process aware information systems (pais) for
+supporting their business processes in some form. on the one hand these systems typically log
+events (e.g., in transaction logs or audit trails) related to the actual business process executions.
+on the other hand explicit process models describing how the business process should (or is
+expected to) be executed are frequently available. together with the data recorded in the log,
+this raises the interesting question “do the model and the log conform to each other?”. confor-
+mance testing, also referred to as conformance analysis, aims at the detection of inconsistencies
+between a process model and its corresponding execution log, and their quantiﬁcation by the
+formation of metrics. this paper proposes an incremental approach to check the conformance
+of a process model and an event log. at ﬁrst, the ﬁtness between the log and the model is en-
+sured (i.e., “does the observed process comply with the control ﬂow speciﬁed by the process
+model?”). at second, the appropriateness of the model can be analyzed with respect to the log
+(i.e., “does the model describe the observed process in a suitable way?”). furthermore, this
+suitability must be evaluated from both a structural and a behavioral perspective. to verify the
+presented ideas a conformance checker has been implemented within the prom framework.contents
+1 introduction 1
+2 preliminary considerations 3
+2.1 measurement in the context of conformance testing . . . . . . . . . . . . . . 5
+2.2 interpretation perspectives . . . . . . . . . . . . . . . . . . . . . . . . . . . . 7
+2.3 mapping model tasks onto log events . . . . . . . . . . . . . . . . . . . . . 9
+3 conformance metrics 11
+3.1 running example . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 11
+3.2 two dimensions of conformance: fitness and appropriateness . . . . . . . . 12
+3.3 measuring fitness . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 14
+3.4 measuring appropriateness . . . . . . . . . . . . . . . . . . . . . . . . . . . . 18
+3.4.1 structural appropriateness . . . . . . . . . . . . . . . . . . . . . . . . 19
+3.4.2 behavioral appropriateness . . . . . . . . . . . . . . . . . . . . . . . 20
+3.5 balancing fitness and appropriateness—an interim evaluation . . . . . . . . . 21
+3.6 alternative approaches for measuring appropriateness . . . . . . . . . . . . . 23
+3.6.1 structural appropriateness . . . . . . . . . . . . . . . . . . . . . . . . 24
+3.6.2 behavioral appropriateness . . . . . . . . . . . . . . . . . . . . . . . 26
+3.7 final evaluation . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 31
+4 implementation 35
+4.1 the prom framework . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . 37
+4.2 the conformance analysis plug-in . . . . . . . . . . . . . . . . . . . . . . . . 39
+4.3 log replay involving invisible and duplicate tasks . . . . . . . . . . . . . . . 42
+4.3.1 enabling a task via invisible tasks . . . . . . . . . . . . . . . . . . . 42
+4.3.2 choosing a duplicate task . . . . . . . . . . . . . . . . . . . . . . . . 45
+4.4 assessment and future implementation work . . . . . . . . . . . . . . . . . . 47
+5 related work 49
+6 conclusion 51
+i1 introduction
+it has not been a long time that companies have got software tools in their hands to support
+their operational business processes. the maturation of other technologies such as database sys-
+tems and computer networks enabled automated support for both the execution of steps within
+a business process (e.g., invoking a web service) and the handling of a business process as a
+whole. business process technology (bpt) is a term subsuming all the techniques dealing with
+the computer-aided design, enactment and monitoring of business processes. process aware
+information systems (pais) denote the many systems dealing with business processes in some
+form; either explicitly such as in workﬂow management (wfm), but also includes systems
+that have a wider scope such as enterprise resource planning (erp) or customer relationship
+management (crm) systems. many companies have adopted some of these pais and after
+their installation they are now interested in optimizing the underlying processes. business ac-
+tivity monitoring (bam) and business process redesign, or reengineering, (bpr) are current
+buzzwords accounting for that.
+process mining techniques provide a powerful means to analyze existing business processes
+on the basis of the actual execution logs. these execution logs can be extracted from almost
+every pais [6] and contain events referring to certain business activities that have been carried
+out; for this reason they are also called event logs . based on the event log a process model
+can be derived, reﬂecting the observed behavior and therefore providing insight in what actually
+happened. in contrast, it is very often the case that there is already a model available, deﬁning
+how the process should be carried out. together with the data recorded in the log, this raises the
+interesting question “do the model and the log conform to each other?”.
+this question is highly relevant as the lack of alignment may indicate a variety of problems.
+on the one hand it might reveal that the real business process is not carried out in the way it
+should be, and therefore may trigger actions to enforce the speciﬁed behavior. on the other hand
+the process model might be either outdated or just not tailored to the needs of the employees
+actually performing the tasks, such that highlighting this issue facilitates the redesign of the
+model and therefore increases transparency. but even if the model and the log doconform to
+each other, this can be an important insight as it increases the conﬁdence in the existing process
+model and may found further analyses based on this model, accounting for the validity of their
+results with respect to the real business process [12].
+conformance testing, or conformance analysis, aims at the detection of inconsistencies be-
+tween a process model and and its corresponding execution log, and the quantiﬁcation of the
+gap. to make this operational one needs to deﬁne metrics. in doing so it constitutes an effective
+instrument for a business analyst who—based on the insights gained—may motivate suitable
+alignment activities, be it with respect to the model or the actual business process.
+in the scope of this paper conformance testing is approached from a control ﬂow perspective,
+using petri nets [15] for the representation of process models. the ﬁndings are generally applica-
+ble. however, the metrics are tailored towards petri nets and would need to be adapted to other
+1introduction
+process modeling languages. independent of the form of representation there are two dimen-
+sions of conformance. the ﬁrst dimension is ﬁtness , which can be characterized by the question
+“does the observed process comply with the control ﬂow speciﬁed by the process model?”. the
+second is appropriateness , which can be associated with the question “does the model describe
+the observed process in a suitable way?”. furthermore, this suitability must be evaluated from
+both a structural and a behavioral perspective.
+to verify the presented ideas a conformance checker1has been implemented as a plug-in for
+the prom framework.
+in the remainder, at ﬁrst, the pursued approaches are positioned in more detail, and some
+preliminaries in the context of conformance testing are considered in section 2. then, the actual
+conformance metrics are deﬁned in section 3, with the help of a running example. afterwards,
+the implementation work is documented in section 4. finally, related work is described in
+section 5 and the paper is concluded in section 6.
+1the conformance checker and the ﬁles belonging to the example models and logs used in this paper can be
+downloaded together with the process mining (prom) framework from http://www.processmining.org .
+22 preliminary considerations
+to clarify the setting in which conformance testing can be of interest, one needs to reﬂect on how
+these discrepancies between a process model and its execution log may emerge at all. firstly, a
+process model can be used in a descriptive manner, i.e., it rather serves as a template for imple-
+menting the process, or even only constitutes an informal model for a process not being directly
+supported by something like a wfm system. secondly, it can be used in a prescriptive way,
+i.e., the model “becomes” the process, e.g., by being enacted by a process engine. clearly the
+former type is of interest as inconsistencies may easily occur between the model and the process
+actually carried out. but also the latter can be subject to the application of conformance analysis
+techniques as, on the one hand, there is always the issue of process evolution [12], and on the
+other, even more important, there is no effective means of forcing a human to do something
+[13, 12, 1]. bpt is typically used to support a given human-centered system, guiding coopera-
+tive work of human agents while automatically invoking some computerized tools. therefore,
+deviations are natural and the current trend to develop systems allowing for more ﬂexibility (cf.
+case handling systems like flower [9]) accounts for this need.
+so the question is not in the ﬁrst place whether deviations from the process as intended are
+possible (since they are expected as soon as humans are involved), but rather whether all the
+information necessary can be collected to analyze these deﬁnitions (e.g., if people work behind
+the back of a too restrictive system this might be not visible in the execution log).
+in general, the events contained in a process execution log may have various kinds of data
+attached to it, such as the name of the resource performing the task, or a time stamp. in the scope
+of this paper, however, only the control ﬂow perspective is considered and therefore the events
+in the log are expected to (i) refer to an activity from the business process, (ii) refer to a case,
+and (iii) be totally ordered. the ﬁrst condition is a more general requirement and means that
+the events must have something to do with the observed business process. however, not every
+event must directly refer to a task in the given process model, a more in-depth evaluation of the
+various mapping possibilities and how they are handled is provided in section 2.3. the second
+requirement assumes that the recorded steps can be associated with a process instance, i.e., that
+different executions of the process are distinguishable from each other. the third requirement
+stems from the fact that control ﬂow is about the causal dependencies among the steps in a
+business process, i.e., it speciﬁes in which order they can be executed.
+as already stated, the process model will be represented in the form of a petri net, which,
+due to its formal semantics, enables a precise discussion of conformance properties. more work
+is required to directly apply the deﬁned metrics to other modeling languages. however, as a
+ﬁrst step it is also conceivable to make use of, or customize, existing conversion methods. for
+example, event-driven process chains (epcs), as used in the context of sap r/3 [24] and aris
+[32], may be mapped onto petri nets as it has been shown in [17]. what is more, it makes sense
+to assume some notion of correctness with respect to the model. otherwise one could not de-
+3preliminary considerations
+termine whether, e.g., a failure in following a given log trace in the model indeed indicates a
+conformance problem or whether the model itself was not properly designed (and therefore does
+not allow for correct execution anyway). but this is mainly an issue of interpretation, and in
+principle it is possible to also detect a correctness problem by the means of conformance testing.
+since here petri nets are applied in the context of business processes, it is reasonable to consider
+a well-investigated subclass of petri nets for this purpose, which is the class of sound wf-nets
+[2]. a wf-net requires the petri net to have (i) a single start place, (ii) a single end place,
+and (iii) every node must be on some path from start toend, i.e., the process is expected to
+deﬁne a dedicated begin and end point and there should be no “dangling” tasks in between. the
+soundness property further requires that (iv) each task can be potentially executed (i.e., there
+are no dead tasks), and (v) that the process—with only a single token in the start place—can
+always terminate properly (i.e., ﬁnish with only a single token in the endplace). note that the
+soundness property guarantees the absence of deadlocks and live-locks.
+in fact, there is another root cause for inconsistencies between a given process model and its
+corresponding execution log, which has not been mentioned yet. it is the issue of (technically)
+erroneous insertions or non-insertions of events, or mistakes in ordering them, while recording
+the event log, which is called noise . in general, noise cannot be distinguished from inconsisten-
+cies stemming from real process deviations and therefore in the remainder it is abstracted from.
+but if one could somehow separate the noise from other deviations, e.g., knew for some com-
+pletely automated process that there were only logging failures (i.e., noise) possible, then one
+could measure the degree of noise in the log with the help of conformance testing techniques.
+figure 2.1 shows that there are different levels that may represent the behavior of a business
+process. at the top one can see the process model, marked as reference model, which is given as
+a petri net graph. at the bottom the event log is given as a set of event sequences corresponding
+to real executions of the business process.
+different ways are conceivable to measure, e.g., the quantitative correspondence between
+such an event log and the process model. a rather naive approach would be to generate all
+ﬁring sequences allowed by the model and then to compare them to the log traces, e.g., using
+string distance metrics [26]. unfortunately the number of ﬁring sequences increases very fast
+if a model contains parallelism and might even be inﬁnite if one allows for loops. therefore,
+this is of limited applicability. another approach is to replay the log in the model while some-
+how measuring the mismatch, which will be described in section 3.3 in more detail. a notable
+advantage of this log replay analysis compared to the possibility to apply process mining tech-
+niques [7, 6] for deducing a mined process model (e.g., also as a petri net) and to subsequently
+compare it to the given reference model on the graph level, which is called delta analysis [1], is
+that for carrying out the log replay the log does not need to be complete , i.e., contain sufﬁcient
+information to derive conclusions about the underlying behavior.
+in order to bridge the gap between the event stream level of the log and the graph level of
+the process model one can also use intermediate representations. as an example, the multi-
+phase process mining technique [16] makes use of an intermediate representation called instance
+graphs, also known as partially ordered runs, which can be derived from the log. they contain
+only concurrent behavior but no alternatives and, e.g., can be converted to instance epcs (i-
+4figure 2.1: conformance analysis involves different representation levels
+epcs), which in turn can be imported into aris ppm (process performance monitor) [22] for
+further analysis or aggregation into a complete process model in terms of an epc. similarly, the
+approach in section 3.6.2 will make use of an intermediate representation in form of relation
+matrices, which are derived from both the process model and the event log, and subsequently
+can be be compared with each other.
+in the remainder of this section the issue of measurement is considered ﬁrst in section 2.1.
+then, the variety of interpretation possibilities in the context of conformance testing is illustrated
+in section 2.2, and ﬁnally the handling of the mapping between modeled tasks and log events
+for the presented approaches is clariﬁed in section 2.3.
+2.1measurement in the context of conformance testing
+measurement can be deﬁned as a set of rules to assign values to a real-world property, i.e., obser-
+vations are mapped onto a numerical scale. these numerical values can then either be interpreted
+directly (such as measuring temperature) or they can be further processed, e.g., combined with
+other measures , to gain insight into a more complicated matter. among many other applica-
+tion ﬁelds measurement is also used in the software engineering domain to, e.g., determine the
+degree of completed work packages for tracking the progress of a project, or to measure the
+complexity of a software product [18].
+5measurement in the context of conformance testing
+the term metric originates from the ﬁeld of mathematics and denotes a function that deter-
+mines the distance of two points in a topological space. hence strictly speaking, it is not correct
+to call the measurement of a certain property of, e.g., a software system a metric, which would
+rather be imposed by comparing—and determining the difference of—two software systems.
+but as in technical environments the implicit intention of measurement is usually to interpret the
+result with respect to either a past state, or a certain desirable or undesirable state, it is common
+to call a system or standard of measurement a metric [27].
+the example of measuring the complexity of a software product already indicates that it is
+not always easy to approach a property by measurement. at the ﬁrst glance it seems impossible
+to capture such an abstract concept as complexity by measurement, and though there are dozens
+of measures or metrics deﬁned for it [35]. the conformance of a process model and an event
+log is not easy to quantify as well; the intuitive notion of conformance is difﬁcult to capture in
+a metric. this is caused by the fact that the comparison of a process model and an event log
+always allows for different interpretations (see section 2.2) and makes it difﬁcult to carry out a
+scale type discussion with respect to the metrics deﬁned.
+facing so much uncertainty it is wise to impose some requirements to ensure the usefulness of
+a measure. based on [27] the following requirements are considered relevant and will be linked
+to conformance testing. furthermore, an additional requirement called localizability has been
+identiﬁed and included in the list.
+requirement 1 (validity) validity means that the measure and the property to measure must
+be sufﬁciently correlated with each other.
+this is a very obvious requirement, which means that, e.g., an increase in conformance should
+be reﬂected by some increase of the measured conformance value. usually, this requirement is
+already met by the motivation of the formation of a metric.
+requirement 2 (stability) stability means that the measure should be stable against manip-
+ulations of minor signiﬁcance, i.e., be as little as possible affected by properties that are not
+measured.
+in the context of conformance testing a violation of the stability requirement could, e.g., be
+given for a metric that is affected by the position of a conformance problem (i.e., that yields a
+different value for a mismatch located close to the start of a trace compared to one close to the
+end). this is a very important requirement as an unstable metric might result in two measured
+values not being comparable with each other.
+requirement 3 (analyzability) analyzability, in general, relates to the properties of the mea-
+sured values (e.g., whether they can be statistically evaluated). in the remainder, the emphasis
+is on the requirement that the measured values should be distributed between 0and1, with 1
+being the best and 0being the worst value.
+for conformance testing it is in particular important that a metric always yields an optimal
+value (i.e., 1) in the case there is no conformance problem of that particular type. this extends
+the usefulness of the metric beyond a merely comparative means towards being an indicator, i.e.,
+indicating whether there is an issue to deal with or not.
+6requirement 4 (reproducibility) reproducibility means that the measure should be indepen-
+dent of subjective inﬂuence, i.e., it requires a precise deﬁnition of its formation.
+reproducibility is a general requirement calling for a measure being as objective as possible,
+so that, e.g., different people may arrive at comparable results. this holds also for conformance
+metrics.
+requirement 5 (localizability) localizability means that the system of measurement forming
+the metric should be able to locate those parts in the analyzed object that lack certain desirable
+(i.e., the measured) properties.
+it is very important that a conformance problem is not only reﬂected by the measured value
+but can also be located, e.g., in the given process model. this is crucial for the business analyst
+as she needs to identify potential points of improvement.
+this paper follows the common practice in using the term metric and tries to meet the listed
+requirements when deﬁning a metric.
+2.2interpretation perspectives
+when analyzing discrepancies between two objects it is natural to ask for the cause of the mis-
+match, if any. for this it is important to keep in mind that every interpretation is (implicitly)
+based on a certain point of view. as an example imagine two strings being compared with each
+other, one missing element in one of them could always be interpreted as an extra element within
+the other. likewise, this holds for comparing a process model with a set of log traces. figure 2.2
+shows a single log trace acand a process model allowing only for the execution of the sequence
+abc, which cannot be directly matched with each other. depending on the interpretation per-
+spective two different conclusions may be derived, namely:
+1)either the log trace is assumed to be correct and consequently the task bis superﬂuous in
+the model and should be removed,
+2)or the model is assumed to be correct and therefore the log event bis considered missing
+in the log, i.e., bshould have been executed.
+figure 2.2: different conclusions based on a different point of view
+7interpretation perspectives
+in general the two perspectives are equivalent and their validity depends on the different cir-
+cumstances in which conformance testing might take place. however, it is important to be
+conscious of the current view point and its potential implications.
+but even if one perspective is ﬁxed, different interpretations regarding the type of error may
+arise. for example, an approach to experiment with noise (i.e., erroneously logged or non-logged
+events) is to remove andswap elements of a log trace [28]. the swapping corresponds to the
+correct recording but wrong ordering of the logged events. if one considers removal and swap-
+ping each as an equally severe root cause for noise, then the application of some conformance
+metric evaluating the string distance [26] between the noisy log trace and the correct model path
+is not valid for measuring the percentage of noise in the log. the reason for this is that swapping
+results in a greater string distance than the removal of one single event as it affects two events
+(i.e., one needs one insert and one remove operation to compensate the effect).
+since conformance analysis involves a process model representing not one but several po-
+tential execution sequences, even more different conclusions could be derived. as an example
+consider figure 2.3, which is an extension of the example in figure 2.2. although it keeps the
+log-based perspective, i.e., the log is considered to be correct, there are multiple interpretations
+possible, namely:
+1a)either task bis considered superﬂuous and the model is adjusted by removing it,
+1b/c) or one might want to extend the behavior of the model by adding either the possibility to
+skip task bor an alternative path only executing cinstead of bc.
+figure 2.3: different interpretations based on the same log-based perspective
+another example in figure 2.4 shows that although sticking to the model-based perspective,
+i.e., the model is considered to be correct, multiple corrective actions are conceivable as well,
+namely:
+2a)either log event bis missing, i.e., bshould have been executed,
+2b)or log event cis missing, i.e., cshould have been executed.
+these simple, schematic examples illustrate that a root cause analysis for a mismatch between
+process model and event log will always lead to a variety of possible interpretations. when
+applying conformance analysis techniques to a real business process this can be solved with the
+help of domain knowledge.
+8figure 2.4: different interpretations based on the same model-based perspective
+2.3mapping model tasks onto log events
+an essential preparatory step for performing any kind of conformance analysis is associating
+the tasks in the process model with events in the log ﬁle. for this purpose one must abstract
+from the concrete occurrence of a log event (also called audit trail entry), which, assuming a
+totally ordered log, has a unique position and might carry additional data like, e.g., a time stamp,
+an originator etc.; to determine log event types . all log events stemming from the same kind of
+action then share the same log event type, which can be thought of as a common label. therefore,
+stating that “log event ahappened” strictly speaking means that “an instance of log event type
+ahas occurred”.
+naturally, both the availability of domain knowledge (i.e., understanding the business pro-
+cess) and proﬁciency with respect to the enactment technology used (i.e., understanding the log
+format) is required to establish the mapping for a real business scenario. on a logical level,
+however, the following types of mapping between a set of tasks in a model and a set of log event
+types observed in a log can be identiﬁed.
+1-to-1 mapping each task is associated with exactly one type of log event (i.e., a function)
+and no other task in the model is associated with the same type of log event (i.e., an
+injective function). furthermore, all log events are associated with a modeled task (i.e.,
+a bijective function). although activities in real business scenarios take time (i.e., have
+a start and an end), it is useful to assume one single event (typically this corresponds to
+acomplete1event) being present for the execution of a task as the minimal information
+being logged to keep the approach as universal as possible.
+in the remainder of this paper the label of a task corresponds to the label of its associated
+log event type.
+1-to-0 mapping a task in the model is not logged and thus is not visible in the log, which
+is referred to as invisible task . an example for such a task not having a correspondent
+in the log could be a phone call, which is included as a step in the process deﬁnition but
+not recorded by the system. with respect to petri net models, such invisible tasks might
+also be introduced for routing purposes (i.e., to preserve bipartiteness), or emerge from
+1the complete event is one of the event type categories referring to the life cycle of an activity, standardized by the
+common xml format for workﬂow logs used by the prom framework (refer to http://www.processmining.org for
+further information and the schema deﬁnition).
+9mapping model tasks onto log events
+the conversion from other process model representations, such as causal matrices [28] or
+epcs [17].
+in the remainder of this paper invisible tasks are characterized as bearing no label (since
+there is no log event associated) and denoted as a black rectangle.
+0-to-1 mapping there is no task associated with the log event, the logged event does not
+correspond to a task in the model.
+in the remainder of this paper it is abstracted from this case, assuming that the log has been
+pre-processed by deleting all events not having a correspondent in the process model.
+1-to-n mapping one task is associated with multiple log events. this happens if the execution
+of a task is logged at a more ﬁne-grained level, such as recording a task being scheduled,
+started, and ﬁnally completed.
+most information systems provide such detailed information through their logging facil-
+ities and as a next step one could make use of it to, e.g., explicitly detect parallelism.
+however, for the time being it is abstracted from this case, assuming that all but one log
+event have been discarded.
+n-to-1 mapping multiple tasks in the model are associated with the same type of log event,
+which are called duplicate tasks . it is important to understand that duplicate tasks only
+emerge from the mapping, since the tasks of a process model themselves aredistinguish-
+able, be it not by means of their label but their identity (which is reﬂected by their unique
+position in the graph). the presence of duplicate tasks is very likely for systems logging
+the invocation of an external application for the speciﬁc process instance2but without
+recording the associated model element (e.g., often models are only used as a reference
+for implementing the actual control ﬂow logic). in such a situation, mapping a model
+containing two alternative paths that invoke the same “archive” application onto a corre-
+sponding log leads to two duplicate “archive” tasks.
+in the remainder of this paper duplicate tasks are characterized as bearing the same label,
+which corresponds to the label of their—jointly—associated log event type.
+as far as terminology is concerned the deﬁnitions provided in [2] are respected. in the con-
+text of petri net models the term task, being a well-deﬁned step in the process model, is inter-
+changeably used with the corresponding petri net term transition . an activity corresponds to
+the execution of a task for a speciﬁc case by a speciﬁc resource, which could be related to the
+occurrence of a log event (i.e., an audit trail entry).
+2in fact, in erp systems such as sap r/3 or peoplesoft it is often very difﬁcult to even associate the logged events
+with a speciﬁc case [19].
+103 conformance metrics
+in the course of this section a set of conformance metrics will be deﬁned, using the running
+example introduced in section 3.1 to motivate the decisions made. then the existence of two
+dimensions of conformance, ﬁtness and appropriateness, is emphasized in section 3.2, and three
+approaches to measure them are presented in section 3.3 and section 3.4. afterwards, an interim
+evaluation takes place in section 3.5 and it will turn out that the metrics deﬁned lack certain
+desirable properties. due to this fact two improved appropriateness metrics will be deﬁned in
+section 3.6, and a ﬁnal evaluation of the ﬁndings concludes the section in section 3.7.
+3.1running example
+the example model used throughout the paper concerns the processing of a liability claim within
+an insurance company (see figure 3.1). it sketches a ﬁctive (but possible real-world) procedure
+and exhibits typical control ﬂow constructs being relevant in the context of conformance testing.
+figure 3.1: simpliﬁed model of processing a liability insurance claim
+at ﬁrst there are two tasks bearing the same label “set checkpoint”. this can be thought of as
+an automatic backup action within the context of a transactional system, i.e., activity a is carried
+out at the beginning to deﬁne a rollback point enabling atomicity of the whole process, and at
+the end to ensure durability of the results. then the actual business process is started with the
+distinction of low-value claims and high-value claims, which get registered differently ( borc).
+the policy of the client is checked anyway ( d) but in the case of a high-value claim, additionally,
+the consultation of an expert takes place ( g), and then the ﬁled liability claim is being checked
+in more detail ( h). the two completion tasks e and f can be thought of as two different sub-
+processes involving decision making and potential payment, taking place in another department.
+note that the choice between eandfis inﬂuenced by the former choice between bandc, and
+the model therefore does not belong to the class of free-choice nets [14].
+figure 3.2 shows three example logs for the process described in figure 3.1 at an aggregate
+11two dimensions of conformance: fitness and appropriateness
+level. this means that process instances exhibiting the same event sequence are combined as
+a logical log trace, memorizing the number of instances to weigh the importance of that trace.
+that is possible since only the control ﬂow perspective is considered here. in a different setting
+like, e.g., mining social networks [5], the resources performing an activity would distinguish
+those instances from each other.
+figure 3.2: three example logs
+note that none of the logs contains the sequence acghdfa , although the petri net model
+would allow this. in fact it is highly probable that a log does not exhibit all possible sequences,
+since, e.g., the duration of activities or the availability of suitable resources may render some
+sequences very unlikely to occur. with respect to the example model one could think of task d
+as a standard task requiring a very low specialization level and task gandhas highly specialized
+and time-consuming checks, so that ﬁnishing gandhbefore dwould be possible but practically
+may not happen. note that, furthermore, the number of possible sequences generated by a
+process model may grow exponentially, in particular for a model containing concurrent behavior.
+for example, there are 5! = 120 possible combinations for executing ﬁve tasks, and 8! = 40320
+for executing eight tasks that are parallel to each other.
+therefore, an event log cannot be expected to exhibit allpossible sequences of the underlying
+behavioral model. process mining techniques strive for weakening the notion of completeness ,
+i.e., the amount of information a log needs to contain for being able to rediscover the underlying
+process model [8].
+3.2two dimensions of conformance: fitness and
+appropriateness
+measurement can be deﬁned as a set of rules to assign values to a real-world property, i.e., obser-
+vations are mapped onto a numerical scale (see also section 2.1). in the context of conformance
+testing this means to weigh the “distance” between the behavior actually observed in the work-
+ﬂow log and the behavior described by the process model. if the distance is zero, i.e., the real
+business process exactly complies with the speciﬁed behavior, one can say that the log ﬁtsthe
+model. with respect to the example model m1this seems to apply for event log l1, since every
+log trace can be associated with a valid path from start toend. in contrast, event log l2does not
+match completely as the traces achdfa andacdhfa lack the execution of activity g, while
+event log l3does not even contain one trace corresponding to the speciﬁed behavior. somehow
+l3seems to ﬁt “worse” than l2, and the degree of ﬁtness should be determined according to this
+12intuitive notion of conformance, which might vary for different settings.
+but there is another interesting—rather qualitative—dimension of conformance, which can
+be illustrated by relating the process models m2andm3, shown in figure 3.3 and figure 3.4, to
+event log l2. although the log ﬁts both models quantitatively, i.e., the event streams of the log
+and the model can be matched perfectly, they do not seem to be appropriate in describing the
+insurance claim administration.
+figure 3.3: workﬂow model on a too high level of abstraction (i.e., too generic)
+figure 3.4: workﬂow model on a too low level of abstraction (i.e., too speciﬁc)
+the ﬁrst one is much too generic as it covers a lot of extra behavior, allowing for arbitrary
+sequences containing the activities a,b,c,d,e,f,g, orh, while the latter does not allow for
+more sequences than those having been observed but only lists the possible behavior instead of
+expressing it in a meaningful way. therefore, it does not offer a better understanding than can
+be obtained by just looking at the aggregated log. one can claim that a “good” process model
+should somehow be minimal in structure to clearly reﬂect the described behavior, in the follow-
+ing referred to as structural appropriateness , and minimal in behavior to represent as closely as
+possible what actually takes place, which will be called behavioral appropriateness .
+apparently, conformance testing demands for two different types of metrics, which are:
+•fitness , i.e., the extent to which the log traces can be associated with execution paths
+speciﬁed by the process model, and
+•appropriateness , i.e., the degree of accuracy in which the process model describes the
+observed behavior, combined with the degree of clarity in which it is represented.
+13measuring fitness
+3.3measuring fitness
+as mentioned in section 2, one way to measure the ﬁt between event logs and process models
+is to replay the log in the model and somehow measure the mismatch, which subsequently is
+described in more detail. the replay of every logical log trace starts with marking the initial
+place in the model and then the transitions that belong to the logged events in the trace are
+ﬁred one after another. while doing so one counts the number of tokens that had to be created
+artiﬁcially (i.e., the transition belonging to the logged event was not enabled and therefore could
+not be successfully executed ) and the number of tokens that had been left in the model, which
+indicates the process not having properly completed .
+metric 1 (fitness) letkbe the number of different traces from the aggregated log. for each
+log trace i(1≤i≤k)niis the number of process instances combined into the current trace,
+miis the number of missing tokens, riis the number of remaining tokens, ciis the number of
+consumed tokens, and piis the number of produced tokens during log replay of the current trace.
+the token-based ﬁtness metric fis formalized as follows:
+f=1
+2(1−/summationtextk
+i=1nimi/summationtextk
+i=1nici) +1
+2(1−/summationtextk
+i=1niri/summationtextk
+i=1nipi)
+note that, for all i,mi≤ciandri≤pi, and therefore 0≤f≤1. to have a closer look at the
+log replay procedure consider figure 3.5, which depicts the replay of the ﬁrst trace from event
+logl2in process model m1. at the beginning (a) one initial token is produced for the start place
+of the model ( p= 1). the ﬁrst log event in the trace, a, is associated with two transitions in
+the model (each bearing the label a—according to section 2.3 they are called duplicate tasks ).
+however, only one of them is enabled and thus will be ﬁred (b), consuming the token from start
+and producing one token for place c1(c= 1, p= 2). now the next log event can be examined.
+the corresponding transition bis enabled and can be ﬁred (c), consuming the token from c1
+and producing one token each for c2andc5(c= 2, p= 4). then, the following log event
+corresponds to transition d, which is enabled and therefore can be ﬁred (d), consuming the token
+from c2and producing a token for c3(c= 3, p= 5). similarly, the transition associated to the
+next log event eis also enabled and ﬁred (e), consuming the token from c3andc5, and producing
+one token for c4(c= 5, p= 6). finally, the last log event is of type aagain, i.e., is associated
+with the two transitions ain the model. but once more only one of them is enabled and therefore
+chosen to be ﬁred (f), consuming the token from c4and producing one token for the endplace
+(c= 6, p= 7). as a last step this token at the endplace is consumed ( c= 7) and the replay
+for that trace is completed. there were neither tokens missing nor remaining ( m= 0, r= 0),
+i.e., this trace is perfectly ﬁtting the model m1. similarly, the second and third trace can also be
+perfectly replayed, i.e., neither tokens are missing nor remaining ( m2=m3=r2=r3= 0).
+now consider figure 3.6, which depicts the replay of the fourth trace from event log l2in
+m1. at the beginning (a)(b) the procedure is very similar, only that—instead of transition b—
+transition cis ﬁred (c), consuming the token from c1and producing one token each for c2and
+c6 (c= 2, p= 4). but examining the next log event it turns out that its corresponding transition
+his not enabled. consequently, the missing token in c7is artiﬁcially created and recorded
+14figure 3.5: log replay for trace i= 1of event log l2in process model m1
+15measuring fitness
+figure 3.6: log replay for trace i= 4of event log l2in process model m1
+16(m= 1), and the transition is ﬁred (d), consuming it and producing one token for place c8
+(c= 3, p= 5). in contrast, the following log events can be successfully replayed again, i.e.,
+their associated transitions are enabled and can be ﬁred: (e) transition dconsumes the token
+from c2and produces one token for c3(c= 4, p= 6), (f) transition fconsumes the token from
+c8andc3and produces one token for c4(c= 6, p= 7), (g) one of the two associated transitions
+ais enabled and can be ﬁred, consuming the token from c4and producing one token for the
+endplace ( c= 7, p= 8). at last the token at the endplace is consumed again ( c= 8). but
+then there is still a token remaining in place c6, which will be punished as it indicates that the
+process did not complete properly ( r= 1). a similar problem will be encountered replaying the
+last trace of event log l2. again, the model m1requires the execution of task gbut this did not
+happen, and therefore a token is remaining in place c6(r5= 1) and a token is missing in place
+c7(m5= 1).
+using the metric fone can now calculate the ﬁtness between the whole event log l2and
+the process description m1. as stated before, besides trace i= 4 only the last log trace
+i= 5 had tokens missing and remaining. counting also the number of tokens being pro-
+duced and consumed while replaying the other three traces (i.e., c2=c3=p2=p3= 9,
+andc5=p5= 8), and with the given number of process instances per trace, the ﬁtness can
+be measured as f(m1, l2) = 1 −23+28
+(1207 ·7)+((145+56) ·9)+((23+28) ·8)≈0.995. similarly, one
+can calculate the ﬁtness between the event logs l1,l3, and the process description m1, respec-
+tively. the ﬁrst event log l1shows three different log traces that all correspond to possible
+ﬁring sequences of the petri net with one initial token in the start place. thus, there are nei-
+ther tokens left nor missing in the model during log replay and the ﬁtness measurement yields
+f(m1, l1) = 1 . in contrast, for the last event log l3none of the traces can be associated with
+a valid ﬁring sequence of the petri net and the ﬁtness measurement yields f(m1, l3)≈0.540.
+figure 3.7: diagnostic token counters provide insight into the location of errors
+besides measuring the degree of ﬁtness pinpointing the site of mismatch is crucial for giving
+useful feedback to the analyst. in fact, the place of missing and remaining tokens during log
+replay can provide insight into problems, such as figure 3.7 visualizes some diagnostic infor-
+mation obtained for event log l2. because of the remaining tokens (whose amount is indicated
+by a +sign) in place c6transition ghas stayed enabled, and as there were tokens missing (indi-
+cated by a −sign) in place c7transition hhas failed seamless execution. regarding evaluation
+of potential alignment procedures, the model rather lacks the possibility to skip activity gthan
+that the expert consultation would be considered missing in almost half of the high-value claims
+that took place; however, a ﬁnal interpretation could only be given by a domain expert from the
+17measuring appropriateness
+insurance company.
+note that this replay is carried out in a non-blocking way and from a log-based perspective,
+i.e., for each log event in the trace the corresponding transition is ﬁred, regardless whether the
+path of the model is followed or not. this leads to the fact that—in contrast to directly comparing
+the event streams of models and logs—a concatenation of missing log events is punished by the
+ﬁtness metric fjust as much as a single one, since it could always be interpreted as a missing
+link in the model.
+as described in section 2.3, a prerequisite for conformance analysis is that modeled tasks
+must be associated with the logged events, which may result in duplicate tasks , i.e., multiple
+tasks that are mapped onto the same type of log event, and invisible tasks , i.e., tasks that have no
+corresponding log event. duplicate tasks cause no problems during log replay as long as they are
+not enabled at the same time and can be executed (like shown in figure 3.5 and figure 3.6 for the
+two tasks labeled as a), but otherwise one must enable and/or ﬁre the right task for progressing
+properly. invisible tasks are considered to be lazy [28], i.e., they are only ﬁred if they can enable
+the transition in question. in both cases it is necessary to partially explore the state space, which
+is described in more detail in section 4.3.
+3.4measuring appropriateness
+generally spoken, determining the degree of appropriateness of a workﬂow process model
+strongly depends on subjective perception, and is highly correlated to the speciﬁc purpose.
+there are aspects like the proper semantic level of abstraction, i.e., the granularity of the de-
+scribed workﬂow actions, which can only be found by an experienced human designer. the
+notion of appropriateness addressed by this paper rather relates to the control ﬂow perspective
+and therefore can be measured, although the measurement has a subjective element.
+figure 3.8: model appropriate in structure and behavior
+the overall aim is to have the model clearly reﬂect the behavior observed in the log, whereas
+the degree of appropriateness is determined by both structural properties of the model and the
+behavior described by it. figure 3.8 shows m4, which appears to be a good model for the event
+logl2as it exactly generates the observed sequences in a structurally suitable way.
+in the remainder of this section, both the structural and the behavioral part of appropriateness
+are considered in more detail.
+183.4.1 structural appropriateness
+the desire to model a business process in a compact and meaningful way is difﬁcult to capture
+by measurement. as a ﬁrst indicator a simple metric solely based on the graph size of the model
+will be deﬁned, and subsequently some constructs that may inﬂate the structure of a process
+model are considered.
+metric 2 (structural appropriateness) letlbe the set of labels, and nthe set of nodes (i.e.,
+places and transitions) in the petri net model, then the structural appropriateness metric asis
+formalized as follows:
+as=|l|+ 2
+|n|
+as described in section 2.3 the mapping between modeled tasks and logged events is repre-
+sented by a label denoting the associated log event type (if any) for each task. given the fact that
+a business process model is expected to have a dedicated start andendplace (see the wf-net
+requirements in section 2), the graph must contain at least one transition for every task label,
+plus two places (the start and end place). in this case |n|=|l|+ 2and the metric asyields the
+value 1. the more the size of the graph is growing, e.g., due to additional places, the measured
+value moves towards 0.
+calculating the structural appropriateness for the model m3yields as(m3)≈0.170, which is
+a very bad value caused by the many duplicate tasks (as they increase the number of transitions
+while having identical labels). for the good model m4the metric yields as(m4) = 0 .5. with
+as(m5)≈0.435a slightly worse value is calculated for the behaviorally (trace) equivalent
+model in figure 3.9, which is now used to consider some constructs that may decrease the
+structural appropriateness as.
+figure 3.9: structural properties may reduce the appropriateness of a model
+(a)duplicate tasks . duplicate tasks that are used to list alternative execution sequences tend
+to produce models like the extreme m3. figure 3.9 (process model m5) shows an example
+situation in which a duplicate task is used to express that after performing activity ceither the
+sequence ghorhalone can be executed (see (a) in figure 3.9). figure 3.8 (process model m4)
+describes the same process with the help of an invisible task (see (b) in figure 3.8), which is
+only used for routing purposes and therefore not visible in the log. one could argue that this
+model supports a more suitable perception namely activity gis not obliged to execute but can
+19measuring appropriateness
+be skipped, but it somehow remains a matter of taste. however, excessive usage of duplicate
+tasks for listing alternative paths reduces the appropriateness of a model in preventing desired
+abstraction.
+in addition, there are also duplicate tasks that are necessary to, e.g., specify a certain activity
+taking place exactly at the beginning and at the end of the process like task ain process model
+m4(see (a) in figure 3.8).
+(b)invisible tasks . besides the invisible tasks used for routing purposes like, e.g., shown by
+(b) in figure 3.8, there are also invisible tasks that only delay visible tasks, such as the one in-
+dicated by (b) in figure 3.9. if they do not serve any model-related purpose they can simply be
+removed, thus making the model more concise.
+(c)implicit places . implicit places are places that can be removed without changing the
+behavior of the model [8]. an example for an implicit place is given by place c10(see (c)
+in figure 3.9). again, one could argue that they should be removed as they do not contribute
+anything, but sometimes it can be useful to insert such an implicit place to, e.g., show document
+ﬂows.
+note that the place c5in figure 3.9 is not implicit as it inﬂuences the choice made later on
+between eandf. both c5andc10aresilent places , with a silent place being a place whose
+directly preceding transitions are never directly followed by one of their directly succeeding
+transitions (e.g., for m4it is not possible to produce an event sequence containing beoraa).
+mining techniques by deﬁnition are unable to detect implicit places, and have problems detecting
+silent places.
+3.4.2 behavioral appropriateness
+besides the structural properties that can be evaluated on the model itself appropriateness can
+also be examined with respect to the behavior recorded in the log. assuming that the log ﬁts
+the model, i.e., the model allows for all the execution sequences present in the log, there remain
+those that would ﬁt the model but have not been observed. assuming further that the log satisﬁes
+some notion of completeness, i.e., the behavior observed corresponds to the behavior that should
+be described by the model, it is desirable to represent it as precisely as possible. when the model
+gets too general and allows for more behavior than necessary/likely (like in the “ﬂower” model
+m2) it becomes less informative in actually describing the process.
+one approach to measure the amount of possible behavior is to determine the mean number
+of enabled transitions during log replay. this corresponds to the idea that for models clearly
+reﬂecting their behavior, i.e., complying with the structural properties mentioned above, an in-
+crease of alternatives or parallelism and therefore an increase of potential behavior will result in
+a higher number of enabled transitions during log replay.
+metric 3 (behavioral appropriateness) letkbe the number of different traces from the ag-
+gregated log. for each log trace i(1≤i≤k)niis the number of process instances combined
+into the current trace, and xiis the mean number of enabled transitions during log replay of
+the current trace (note that invisible tasks may enable succeeding labeled tasks but they are not
+20counted themselves). furthermore, mis the number of labeled tasks (i.e., does not include invis-
+ible tasks, and assuming m > 1) in the petri net model. the behavioral appropriateness metric
+abis formalized as follows:
+ab= 1−/summationtextk
+i=1ni(xi−1)
+(m−1)·/summationtextk
+i=1ni
+calculating the behavioral appropriateness with respect to event log l2for the model m2
+yields ab(m2, l2) = 0 , which indicates the arbitrary behavior described by it. for m4, which
+exactly allows for the behavior observed in the log, the metric yields ab(m4, l2)≈0.967. as
+an example it can be compared with the model m6in figure 3.10, which additionally allows for
+arbitrary loops of activity gand therefore exhibits more potential behavior. this is also reﬂected
+in the behavioral appropriateness measure as it yields a slightly smaller value than for the model
+m4, namely ab(m6, l2)≈0.964.
+figure 3.10: unnecessary potential behavior may reduce the appropriateness of a model
+3.5balancing fitness and appropriateness—an interim
+evaluation
+having deﬁned the three metrics f,as, and ab, the question is now how to put them together.
+this is not an easy task since they are partly correlated with each other. so the structure of a
+process model may inﬂuence the ﬁtness metric fas, e.g., due to inserting redundant invisible
+tasks the value of fincreases because of the more tokens being produced and consumed while
+having the same amount of missing and remaining ones. but unlike asandabthe metric f
+deﬁnes an optimal value 1.0, for a log that can be parsed by the model without any error.
+therefore, it is recommended to carry out the conformance analysis in two phases. during
+the ﬁrst phase the ﬁtness of the log and the model is ensured, which means that discrepancies
+are analyzed and potential corrective actions are undertaken. if there still remain some tolerable
+deviations, the log or the model should be manually adapted to comply with the ideal or intended
+behavior, in order to go on with the so-called appropriateness analysis. within this second phase
+the degree of suitability of the respective model in representing the process recorded in the log
+is determined.
+21balancing fitness and appropriateness—an interim evaluation
+table 3.1: diagnostic results
+m1 m2 m3 m4 m5 m6
+f= 1.0 f= 1.0 f= 1.0 f= 1.0 f= 1.0 f= 1.0
+l1 as= 0.5263 as= 0.7692 as= 0.1695 as= 0.5 as= 0.4348 as= 0.5556
+ab= 0.9740 ab= 0.0 ab= 0.9739 ab= 0.9718 ab= 0.9749 ab= 0.9703
+a= 0.5126 a= 0.0 a= 0.1651 a= 0.4859 a= 0.4239 a= 0.5391
+f= 0.9952 f= 1.0 f= 1.0 f= 1.0 f= 1.0 f= 1.0
+l2 as= 0.5263 as= 0.7692 as= 0.1695 as= 0.5 as= 0.4348 as= 0.5556
+ab= 0.9705 ab= 0.0 ab= 0.9745 ab= 0.9669 ab= 0.9706 ab= 0.9637
+a= 0.0 a= 0.1652 a= 0.4835 a= 0.4220 a= 0.5354
+f= 0.5397 f= 1.0 f= 0.4947 f= 0.6003 f= 0.6119 f= 0.5830
+l3 as= 0.5263 as= 0.7692 as= 0.1695 as= 0.5 as= 0.4348 as= 0.5556
+ab= 0.8909 ab= 0.0 ab= 0.8798 ab= 0.8904 ab= 0.9026 ab= 0.8894
+regarding the example logs given in figure 3.2 this means that an evaluation of the appro-
+priateness measurements takes place only for those models having a ﬁtness value f= 1.0(cf.
+table 3.1) and therefore event log l3, which only ﬁts the trivial process model m2, is com-
+pletely discarded, just like process model m1for event log l2. for event logs l1andl2now
+the most adequate process model should be found among the remaining ones, respectively. for
+this purpose a simple appropriateness metric, combining the structural and the behavioral part
+as a product (i.e., denoting the area within the unit square), is deﬁned.
+metric 4 (appropriateness) based on the structural appropriateness metric asand the behav-
+ioral appropriateness metric abthe uniﬁed appropriateness metric ais deﬁned as follows:
+a=as·ab
+examining the values of the uniﬁed appropriateness metric ain table 3.1 it turns out that the
+model m6is selected as the most appropriate representation for the behavior observed in both
+the event log l1andl2, which is notin line with intuitive expectations. while looking for an
+answer, one can observe that for the extremely generic model m2theasvalue is always very
+high while the abvalue is very low and vice versa for the extremely speciﬁc model m3. so
+for ﬁnding the most appropriate process model it seems like both the structural appropriateness
+metric asand the behavioral appropriateness metric abmust be understood as an indicator to
+be maximized without decreasing the other. however, balancing them will always be difﬁcult
+as they are correlated with each other, which becomes clear reconsidering the assumptions the
+metrics are based on.
+the motivation for measuring the amount of potential behavior via the mean number of en-
+abled transitions during log replay was explicitly based on the assumption that the structure of
+the process model clearly reﬂects the behavior which is expressed by it. this means that the
+metric abis limited in its applicability, since the fundamental idea that adding alternative or
+22parallel behavior to a petri net will increase the mean number of enabled transitions during log
+replay only holds for a certain class of process models. as soon as a process model is strongly
+sequentialized using alternative duplicate tasks, such as it is the case for the extremely speciﬁc
+model m3, the assumption does not hold anymore and the result becomes meaningless. one
+can further observe that the model m4yields a worse abvalue than the model m5although
+they are behaviorally (trace) equivalent. this shows that the metric abis affected by structural
+properties, which violates the stability requirement (see requirement 2 in section 2.1).
+but also the metric as, which should only measure the structural appropriateness, is not in-
+dependent of the behavioral expressiveness of a model. the very good asvalue for process
+model m2shows that it is easy to make a model more compact while rendering it more generic
+in behavior. imagine a natural language where (for any reason such as faster speaking, or a lack
+of space in writing) the suitability of using a word is based on the number of letters it is formed
+of. the shorter word among two words can then, however, only be considered the better if they
+both mean the same. following this analogy, there is the implicit assumption that it makes only
+sense to compare models based on their graph size if they somehow allow for the same amount
+of behavior (which violates the stability requirement, too).
+revising the other requirements imposed in section 2.1 one will detect that also the analyz-
+ability requirement (see requirement 3) is not fulﬁlled with respect to asandab. the measured
+values do not seem to be very well distributed (note that the behavioral appropriateness value
+ab, except for the extreme m2, is always around 0.96or0.97with respect to l1andl2), and
+although it is possible to reach the optimal value 1this is not guaranteed for an optimal solution.
+for example, one would expect the process model m1having an optimal structure, as a more
+compact representation of the behavior speciﬁed does not seem feasible. however, the structural
+appropriateness as(m1)only yields 0.5263 . similarly, model m4precisely speciﬁes the behav-
+ior observed in event log l2, but still ab(m4, l2)only yields 0.9669 , which suggests that there
+would be a better solution.
+as a comparative means and within the class of process models where their respective as-
+sumptions are fulﬁlled, the presented metrics can be very well applied. so can the asmetric be
+used to ﬁnd out that the process model m4corresponds to a structurally more suitable represen-
+tation than m3andm5. the abmetric determines m1, the initial petri net given in figure 3.1,
+as the behaviorally most suitable model over m2,m4, and m6for the event log l1. similarly,
+m4is considered behaviorally more suitable than m2orm6for event log l2.
+however, to extend the applicability it would be useful to have an independent measure for
+both structural and behavioral appropriateness, i.e., meeting requirement 2, and to also reach an
+optimal point, indicating that there is no better solution available, i.e., meeting requirement 3.
+3.6alternative approaches for measuring appropriateness
+based on the insight gained into the weak points of the appropriateness metrics deﬁned so far
+the aim is now to ﬁnd alternative metrics, which are independent (i.e., not affected by properties
+that should not be measured) and better distribute possible values between 0 and 1 (in particular
+deﬁne an optimal value). in the following an alternative approach for both measuring structural
+23alternative approaches for measuring appropriateness
+and behavioral appropriateness is presented.
+3.6.1 structural appropriateness
+when deﬁning a metric for measuring structural appropriateness one might be tempted to favor
+a speciﬁc behavioral pattern [3], e.g., the sequence, over others, for reasons such as approxi-
+mating the most common behavior or just to ”make the examples work”. but actually, structure
+must be seen as the syntactic means by which behavior (i.e., the semantics) may be speciﬁed
+at all. when using petri nets to model business processes like every language this is formed
+by the vocabulary (i.e., places, transitions, and edges) combined with a set of rules (such as the
+bipartiteness requirement).
+often there are several syntactic ways to express the same behavior and the challenge of a
+structural appropriateness metric is to verify certain design guidelines, which deﬁne the pre-
+ferred way to express a certain behavioral pattern, and to somehow punish their violations. it
+is obvious that these design guidelines will vary for different process modeling notations and
+may depend on personal or corporate preferences. however, to demonstrate the character of an
+independent structural appropriateness metric the ﬁndings of section 3.4.1 will be used to deﬁne
+an alternative metric a/prime
+s. as a design guideline, constructs such as alternative duplicate tasks
+andredundant invisible tasks should be avoided as they were identiﬁed to inﬂate the structure of
+a process model and to detract from clarity in which the expressed behavior is reﬂected.
+as the deﬁnition of these constructs requires an analysis of the state space of the process
+model, some preparative deﬁnitions are provided in the following.
+deﬁnition 1 (labeled transition system) a labeled transition system is deﬁned as ts =
+(s, e, t, l, l )where sis the set of states, e⊆(s×t×s)is the set of state transitions,
+tthe set of transition names, la set of transition labels, and l∈t/negationslash→lis a partial labeling
+function (only the transitions in dom(l)are visible). it is assumed to have a unique start state
+start and end state end.
+deﬁnition 2 (paths and projection) given a labeled transition system ts= (s, e, t, l, l ):
+•paths (ts)⊆t∗is the set of paths in ts(a path pbeing deﬁned as a sequence of length
+len(p), i.e., p= (p0, . . . , p len(p)−1)) starting in state start and ending in state end,
+•for all p∈paths (ts),proj (p)is the projection of pontol, i.e., visible transitions are
+relabeled using lwhile invisible transitions are removed, and
+•projection (ts) ={proj (p)|p∈paths (ts)}.
+a labeled transition system tswill be used to represent the state space of the process model.
+then paths (ts)denotes the set of possible execution sequences with respect to that model
+while projection (ts)represents the set of traces that could be possibly observed in a log (as,
+like stated in section 2.3, the label serves as a mapping between modeled tasks and log events).
+now the alternative duplicate tasks and redundant invisible tasks are deﬁned and the alterna-
+tive metric a/prime
+sis presented.
+24deﬁnition 3 (alternative duplicate tasks) letts= (s, e, t, l, l )be the labeled transition
+system denoting the state space of a petri net model, and dlabthe set of duplicate tasks bearing
+the same label lab, then the set of alternative duplicate tasks dais deﬁned as follows:
+alab
+d ={(x, y)∈dlab×dlab| ¬∃ p∈paths (ts)(∃0≤i<j<len (p)((x/negationslash=y)∧ (3.1)
+((pi=x∧pj=y)∨(pi=y∧pj=x))))}, lab∈l
+dlab
+a =/braceleftbigg∅ ifalab
+d=∅
+dlabifalab
+d/negationslash=∅, lab∈l (3.2)
+da=/uniondisplay
+lab∈ldlab
+a (3.3)
+equation 3.1 deﬁnes a relation alab
+dover the cross product of a set of equally labeled tasks
+dlab, selecting those pairs that are never contained together in one possible execution path,
+i.e. are alternative to each other. only different transitions are considered, and therefore sets
+dlabwith only one transition contained (i.e., non-duplicates) will result in alab
+d=∅. a set of
+duplicate tasks containing more than two transitions is considered alternative as soon as there
+are two tasks contained that are alternative to each other. this is reﬂected by equation 3.2 as
+either dlab
+a=dlab, if the corresponding alternative duplicates relation alab
+dis not empty, or is
+set to the empty set. finally, in equation 3.3 all the sets of alternative duplicate tasks from the
+process model are merged, which is denoted by da.
+note that according to the deﬁnition the duplicate tasks indicated by (a) in figure 3.8 are not
+alternative, and therefore are not contained in da.
+deﬁnition 4 (redundant invisible tasks) letts= (s, e, t, l, l )be the labeled transition
+system denoting the state space of a petri net model, and ithe set of invisible tasks (i.e., i=
+{t∈t|t/negationslash∈dom(l)}). given tsand a t∈t:merge (ts, t )is the labeled transition
+system resulting from merging the source and target nodes of all edges referring to t, i.e., for
+any(s1, t, s 2)∈e, states s1ands2are merged. the set of redundant invisible tasks iris
+deﬁned as follows:
+ir={t∈i|projection (ts) =projection (merge (ts, t ))} (3.4)
+the idea behind a redundant invisible task is that it can somehow be removed from the model
+without affecting the set of possibly generated traces, i.e., the projection . since deﬁning this
+property on the graph level (i.e., the petri net level) is a bit more involved, the deﬁnition makes
+use of merging states in the corresponding transition system, such that the speciﬁc transition is
+not contained anymore. then in equation 3.4 for each invisible task of the model is checked
+whether the set of possible traces of the modiﬁed transition system is the same as for the initial
+transition system. if so, the task is considered redundant and thus included into ir.
+according to this deﬁnition the invisible task contained in model m4(see (b) in figure 3.8)
+is not redundant as via merging its source and target states the corresponding labeled transition
+system would additionally allow for traces containing arbitrary sequences of g.
+25alternative approaches for measuring appropriateness
+another requirement is covered by the implicit assumption that the transition system resulting
+from the merge operation must still have a unique start start and a unique endstate. the reason
+for this is that, e.g., the invisible tasks contained in model m2are not redundant as removing
+them would lead to a process model without having a dedicated start andend place, i.e., it
+would not be a wf-net anymore.
+metric 5 (improved structural appropriateness) lettbe the set of transitions in the petri
+net model, then the improved structural appropriateness metric a/prime
+sis formalized as follows:
+a/prime
+s=|t| −(|da|+|ir|)
+|t|
+note that |da|+|ir| ≤ |t|and therefore 0≤a/prime
+s≤1as duplicate tasks are always visible.
+revising the example models it turns out that, according to the deﬁned design guideline, only
+model m5andm3are reduced in structural appropriateness. for m5the number of alternative
+duplicate tasks |da|= 2 (see (a) in figure 3.9) and the number of redundant invisible tasks
+|ir|= 1(see (b) in figure 3.9), which results in a/prime
+s(m5)≈0.727. inm3all tasks but bbelong
+to the set of alternative duplicate tasks and therefore a/prime
+s(m3)≈0.032.
+figure 3.11: design guideline violations can be visualized
+finally, a very important point is that building a notion of structural appropriateness with the
+help of some kind of design guideline usually enables the visualization of its violations (see fig-
+ure 3.11). this demonstrates that metric a/prime
+s—in contrast to metric as—meets the localizability
+requirement (see requirement 5 in section 2.1).
+3.6.2 behavioral appropriateness
+to approach behavioral appropriateness independently from structural properties the potential
+behavior speciﬁed by the model will be analyzed and compared with the behavior actually
+needed to describe what has been observed in the log. in order to somehow measure their
+“distance” a set of relations can be derived from both the process model (analyzing the possible
+execution sequences) and the event log (analyzing the observed execution sequences). when re-
+ferring to the traces generated by the process model deﬁnition 2 and deﬁnition 1 from section
+3.6.1 will be reused.
+26deﬁnition 5 (always and never relation forwards and backwards) letlbe the set of all
+labels (including an artiﬁcially inserted start andendtask or log event, respectively). plis ei-
+therprojection (ts)fortsrepresenting the labeled transition system for the process model or
+the set of all traces contained in the event log, respectively. the always relation forwards af,
+the never relation forwards nf, the always relation backwards ab, and the never relation
+backwards nbare formalized as follows:
+pl(x) = {p∈pl| ∃0≤i<len (p)pi=x}, x∈l (3.5)
+af={(x, y)∈l×l| (3.6)
+(pl(x)/negationslash=∅)∧(∀p∈pl(x)(∃0≤i<j<len (p)(pi=x∧pj=y)))}
+nf={(x, y)∈l×l| ¬∃ p∈pl(∃0≤i<j<len (p)(pi=x∧pj=y))} (3.7)
+ab={(x, y)∈l×l| (3.8)
+(pl(x)/negationslash=∅)∧(∀p∈pl(x)(∃0≤j<i<len (p)(pi=x∧pj=y)))}
+nb={(x, y)∈l×l| ¬∃ p∈pl(∃0≤j<i<len (p)(pi=x∧pj=y))} (3.9)
+as discussed in section 2.3 in the scope of this paper the set of labels lserves as a link
+between the model task identiﬁers and the elements contained in the log, denoting the mapping
+that has been established. furthermore, it was assumed that log events not referring to any task
+in the model were removed from the log. in doing so it is possible to derive comparable relations
+from both the model and the log perspective.
+while building the relations for the model recall that invisible tasks are deﬁned unlabeled and
+thus are not covered by l. what is more, duplicate tasks bear the same label and consequently
+are represented only once within l. this leads to the fact that if there are three duplicate tasks
+x1,x2, and x3jointly labeled with xthe expressions involving xdecompose to x1∨x2∨x3,
+i.e., the successor or predecessor relationship between two label elements is acknowledged as
+soon as it holds for anyof the duplicates. clearly during this projection some information is
+lost, namely which precise task was considered successor or predecessor, but this is logically
+consistent as the relations will be veriﬁed with respect to the log, which does not allow for this
+distinction either.
+note that the successor relationship (cf. forwards relations) and the predecessor relationship
+(cf. backwards relations) are deﬁned globally , i.e., are acknowledged as soon as they hold for
+anypair of labels. to give an example imagine a path p= (. . . , x, . . . , x, . . . , y, . . . , x, . . . ).
+here the global successor-ship would be conﬁrmed for the tuple (x, y)although it does not hold
+for all xthat it is followed by y, and although they do not directly follow each other. this
+is motivated by the desire to also capture global behavioral dependencies, which, e.g., may be
+introduced by non-free-choice constructs [14], and to recognize a behavioral constraint that only
+involves one transition out of a set of duplicate tasks.
+note further that the insertion of an artiﬁcial start andendtask (or log event, respectively) is
+only needed to capture the special case of alternative paths leading directly from the start place
+to the endplace of the model, and therefore can be left out if this does not apply.
+27alternative approaches for measuring appropriateness
+deﬁnition 6 (sometimes relation forwards and backwards) letlbe the set of all labels
+(including an artiﬁcially inserted start andendtask or log event, respectively), then the some-
+times relation forwards sfand the sometimes relation backwards sbare formalized as fol-
+lows:
+sf= (l×l)\(af∪nf) (3.10)
+sb= (l×l)\(ab∪nb) (3.11)
+based on the previously deﬁned relations afandnfthe relation sfcan be deﬁned (see
+equation 3.10). together they state for each pair of labels (x, y)whether yeither always , or
+never , orsometimes follows x; with respect to the set possible execution paths (model perspec-
+tive) or the set of log traces (log perspective), correspondingly. analogously sbis deﬁned via
+abandnb(see equation 3.11), intuitively stating for each pair of labels (x, y)whether yei-
+ther always , ornever , orsometimes precedes x. note that due to the additional requirement
+pl(x)/negationslash=∅in equation 3.6 af,nf, and sfindeed partition l×l. similarly, ab,nb, and
+sbpartition l×ldue to equation 3.8. pl(x)is empty if log event xhas not been observed
+as, e.g., an alternative branch has always been decided in the same way (and therefore the task
+labeled xhas never been executed). if the requirement was dropped, in such a case all the tuples
+(x, ...)were contained in both relation afand relation nf(the same holds for abandnb).
+however, as the formation of the new behavioral appropriateness metric later in this section will
+only be based on the relations sfandsbthe requirement is not really necessary and rather was
+added in order to correspond to intuition.
+figure 3.12: deriving the “footprint” from a process model
+28together the deﬁned relations can be considered being a (left and a right) “footprint” (see also
+figure 2.1) of the behavior represented. as an example, consider figure 3.12 where the for-
+wards relations and the backwards relations are derived for the process model m4and depicted
+in the f matrix and b matrix, respectively.
+both the sfandsbrelation are highlighted as they indicate concurrent or alternative behav-
+ior. parallel tasks may follow each other in any order, such that (d, g ),(d, h ),(g, d ), and
+(h, d )are contained in both relation sfand relation sb. alternative paths are also reﬂected by
+tuples contained in the sometimes relations: tasks preceding an alternative branch can be fol-
+lowed by any of the alternative paths, and therefore—together with the tasks contained in those
+paths—form part of the sometimes relation forwards, i.e., (start, b ),(start, e ),(start, c ),
+(start, g ),(start, h ),(start, f ),(a, b ),(a, e ),(a, c ),(a, g ),(a, h ),(a, f ),(c, g ),
+(d, e ), and (d, f )∈sf. similarly, the tasks succeeding the alternative join can be pre-
+ceded by any of the alternative paths, and therefore—together with the tasks contained in those
+paths—form part of the sometimes relation backwards, i.e., (end, e ),(end, b ),(end, f ),
+(end, h ),(end, g ),(end, c ),(a, e ),(a, b ),(a, f ),(a, h ),(a, g ),(a, c ),(h, g ),
+(d, b ), and (d, c )∈sb.
+note that this asymmetry with respect to alternative behavior is also the motivation for in-
+cluding both directions in the improved behavioral appropriateness metric that will be deﬁned
+later on in this section. if one would only evaluate one of them, the position of, e.g., an unused
+alternative path in the model (such as close to the start place or close to the end place) would
+affect the measured value, which would violate requirement 2 from section 2.1.
+figure 3.13: matching the model “footprint” with the one from the log
+29alternative approaches for measuring appropriateness
+now consider figure 3.13, where the srelations of the model in figure 3.12 have been
+matched with the “footprint” of the log l1. note that it is sufﬁcient to compare the elements
+derived from the srelations of the model with the corresponding tuples of the relations derived
+from the log. for evaluating behavioral appropriateness it is solely relevant to ﬁnd out in which
+place the log becomes more speciﬁc, i.e., the model allows for more behavior than necessary. in
+figure 3.13 this is the case for two tuples each in the sfand in the sbrelation.
+first, the tuple (h, d )becomes an element of the nfrelation (instead of sf), and (h, d )
+becomes an element of ab(instead of sb), which is caused by the fact that, although according
+to the model task dandhare concurrent and could be executed in any order, ﬁnishing dafter h
+has never happened. second, the tuple (c, g )becomes an element of the afrelation (instead
+ofsf) and (h, g )becomes an element of ab(instead of sb). this is caused by the fact that
+the process model allows to skip activity g, which has never been used by the process observed
+in event log l1.
+apparently, this behavioral appropriateness analysis approach is able to highlight unused al-
+ternative and concurrent behavior, which can also be visualized in some way (see figure 3.14).
+this demonstrates that it—in contrast to the approach presented in section 3.4.2—meets the
+localizability requirement (see requirement 5 in section 2.1).
+figure 3.14: restricted relationships can be visualized
+however, interpretation of these results may vary and can only be accomplished by a domain
+expert as for analysis the log is assumed to be complete1, i.e., to somehow exhibit all the behavior
+that can happen according to the underlying process model. like already discussed in section 3.1
+this is not necessarily the case.
+according to the example process observed in event log l1task dand task hare not exe-
+cuted in parallel. however, the control ﬂow of a process model represents causal dependencies,
+i.e., a partial ordering, among a set of tasks. therefore, a possible interpretation could be that
+they are not causally related to each other, i.e., they areconcurrent from a modeling point of
+view. consequently, the indicated problem results from the log not being complete. similarly,
+1note that the notion of completeness applied here corresponds to a slightly weaker assumption than the deﬁnition
+provided in [8] in the context of process mining. they both do not require all possible sequences being present in
+the log (which, as already discussed, would be a very strong assumption) but call for every two tasks that poten-
+tially follow each other to actually do so in some trace. the notion assumed for this behavioral appropriateness
+approach is slightly weaker in the sense that the successor-ship property is evaluated globally instead of assuming
+the events directly following each other.
+30the possibility to skip activity cwas not used while handling more than 4300 instances but still
+could be interpreted as a rare exceptional behavior, which has not been observed. this indicates
+that completeness is a problem inherent to any behavioral appropriateness approach, and that a
+ﬁnal interpretation of the results obtained can only be given by an experienced business analyst.
+the improved approach to quantify behavioral appropriateness is based on the cardinal num-
+bers of the sometimes relations, which corresponds to the idea that increasing the potential
+behavior of a model, i.e., adding alternatives or concurrency, will lead to an increased number
+of elements being contained in sfand/or sb.
+metric 6 (improved behavioral appropriateness) letlbe the set of all labels (including an
+artiﬁcially inserted start andendtask or log event, respectively), max =|l|2−3|l|+ 2,sm
+f
+thesfrelation and sm
+bthesbrelation for the process model, and sl
+fthesfrelation and sl
+b
+thesbrelation for the event log (assuming |sl
+f|< max and|sl
+b|< max ), then the improved
+behavioral appropriateness metric a/prime
+bis deﬁned as follows:
+a/prime
+b=1
+2(max− |sm
+f|
+max− |sl
+f∩sm
+f|) +1
+2(max− |sm
+b|
+max− |sl
+b∩sm
+b|)
+the value max =|l|2−3|l|+ 2has been assigned as the artiﬁcially inserted start and
+end task or log event, respectively, do not allow for certain relations, and therefore a value
+max =|l×l|could never be reached. note further that, building the intersection of sl
+fand
+sm
+f, and sl
+bandsm
+b, respectively, tuples contained in the sometimes relations of the log but not
+in those of the model (which can only happen if the log does not ﬁtthe model) are discarded and
+therefore the values assigned by a/prime
+brange from 0to1.
+applying metric a/prime
+bto the example yields a/prime
+b(m4, l1) =72−18
+72−16≈0.964. this value can be
+compared to a/prime
+b(m1, m1) =72−18
+72−17≈0.982, which is better as the process model m1is—due
+to the lack of possibility for omitting activity g—considered behaviorally more speciﬁc, and
+thus more appropriate, with respect to event log l1than process model m4. in fact, m1is even
+the best model for event log l1and the reason for a/prime
+b(m1, l1)<1.0could be for instance that
+the log is incomplete (i.e., hhas never been followed by dalthough this would be possible).
+however, the strength of the presented approach lies in its weak notion of completeness,
+which, e.g., allows to recognize concurrent behavior even if not all possible interleavings of
+parallel tasks are represented in the log. as an example, l2is complete (and thus a/prime
+b(m4, l2)
+yields 1.0) although the possible trace acghdfa is not present either.
+3.7final evaluation
+having deﬁned two alternative appropriateness metrics a/prime
+sanda/prime
+bthey can now be used to ﬁnd
+out which of the models is most suitable in representing the process recorded in each event log.
+based on a/prime
+sanda/prime
+ba new uniﬁed appropriateness metric is deﬁned and the results in table 3.2
+are enhanced by the values of these three new metrics. again, only those combinations having a
+31final evaluation
+ﬁtness value f= 1.0are compared with respect to their appropriateness measures, and therefore
+event log l3is discarded together with the model m1for event log l2(i.e., there is no uniﬁed
+appropriateness value given for them).
+metric 7 (improved appropriateness) based on the improved structural appropriateness met-
+rica/prime
+sand the improved behavioral appropriateness metric a/prime
+bthe improved uniﬁed appropri-
+ateness metric a/primeis deﬁned as follows:
+a/prime=a/prime
+s·a/prime
+b
+table 3.2 shows that the uniﬁed metric a/primesuccessfully picks the expected process models for
+both event log l1and event log l2. however, this is not necessarily the case as the behavioral
+and the structural dimension of appropriateness are not comparable by deﬁnition. this means
+that an improvement by 0.2in structural appropriateness does not need to be perceived the
+same as an improvement of the same amount in behavioral appropriateness, since they measure
+something completely different. but no matter how they are combined (e.g., in unequal shares
+to emphasize one dimension more than the other), the important point is that they perform well
+as an indicator for structural or behavioral appropriateness on its own. this is true for a/prime
+band
+a/prime
+sand the improvements with respect to their counterparts abandasare evaluated in the
+following, revising the requirements imposed in section 2.1 for all the ﬁve metrics deﬁned in
+this paper.
+1.validity all the metric deﬁnitions were justiﬁed by a motivation, and therefore are consid-
+ered being valid.
+2.stability the ﬁtness measure fis considered to be stable. regarding the appropriateness
+metrics the requirement was to measure one dimension (i.e., behavioral or structural ap-
+propriateness) independently of the other. this has not been accomplished for abnor for
+asbut for the improved metrics a/prime
+banda/prime
+s:
+one can observe that—in contrast to ab—the a/prime
+bvalues for the process models m3,m4,
+andm5are equal for each of the three logs. they produce the same “footprint” (i.e., sf
+andsbrelations) as they, although having a very different graph structure, allow for the
+same2behavior. this demonstrates that the improved behavioral appropriateness metric
+a/prime
+bis indeed independent from structural properties of the process model.
+in contrast to asthe metric a/prime
+sevaluates structural properties independently from the
+behavior described by the model, which is proved true comparing two models not violating
+any design guideline but allowing for different behavior (such as a/prime
+s(m4) = a/prime
+s(m6) =
+1.0).
+3.analyzability in contrast to abandas, possible values for both a/prime
+banda/prime
+sreally range
+from 0.0to1.0. therefore, on the one hand an optimal value is deﬁned (i.e., 1). this is
+2in fact this corresponds to a weaker form of (trace) equivalence, which does not require every interleaving of
+parallel tasks being present but for two parallel tasks xandyincludes the elements (x, y )and (y, x )in the
+relations sfandsbas soon as x(eventually) follows yandy(eventually) follows xeach in at least one trace.
+32table 3.2: updated diagnostic results
+m1 m2 m3 m4 m5 m6
+f= 1.0 f= 1.0 f= 1.0 f= 1.0 f= 1.0 f= 1.0
+as= 0.5263 as= 0.7692 as= 0.1695 as= 0.5 as= 0.4348 as= 0.5556
+ab= 0.9740 ab= 0.0 ab= 0.9739 ab= 0.9718 ab= 0.9749 ab= 0.9703
+l1 a= 0.5126 a= 0.0 a= 0.1651 a= 0.4859 a= 0.4239 a= 0.5391
+a/prime
+s= 1.0 a/prime
+s= 1.0 a/prime
+s= 0.0323 a/prime
+s= 1.0 a/prime
+s= 0.7273 a/prime
+s= 1.0
+a/prime
+b= 0.9818 a/prime
+b= 0.0 a/prime
+b= 0.9636 a/prime
+b= 0.9636 a/prime
+b= 0.9636 a/prime
+b= 0.9455
+a/prime= 0.9818 a/prime= 0.0 a/prime= 0.0311 a/prime= 0.9636 a/prime= 0.7008 a/prime= 0.9455
+f= 0.9952 f= 1.0 f= 1.0 f= 1.0 f= 1.0 f= 1.0
+as= 0.5263 as= 0.7692 as= 0.1695 as= 0.5 as= 0.4348 as= 0.5556
+ab= 0.9705 ab= 0.0 ab= 0.9745 ab= 0.9669 ab= 0.9706 ab= 0.9637
+l2 a= 0.0 a= 0.1652 a= 0.4835 a= 0.4220 a= 0.5354
+a/prime
+s= 1.0 a/prime
+s= 1.0 a/prime
+s= 0.0323 a/prime
+s= 1.0 a/prime
+s= 0.7273 a/prime
+s= 1.0
+a/prime
+b= 1.0 a/prime
+b= 0.0 a/prime
+b= 1.0 a/prime
+b= 1.0 a/prime
+b= 1.0 a/prime
+b= 0.9811
+a/prime= 0.0 a/prime= 0.0323 a/prime= 1.0 a/prime= 0.7273 a/prime= 0.9811
+f= 0.5397 f= 1.0 f= 0.4947 f= 0.6003 f= 0.6119 f= 0.5830
+as= 0.5263 as= 0.7692 as= 0.1695 as= 0.5 as= 0.4348 as= 0.5556
+l3 ab= 0.8909 ab= 0.0 ab= 0.8798 ab= 0.8904 ab= 0.9026 ab= 0.8894
+a/prime
+s= 1.0 a/prime
+s= 1.0 a/prime
+s= 0.0323 a/prime
+s= 1.0 a/prime
+s= 0.7273 a/prime
+s= 1.0
+a/prime
+b= 0.9231 a/prime
+b= 0.0 a/prime
+b= 0.9138 a/prime
+b= 0.9138 a/prime
+b= 0.9138 a/prime
+b= 0.8966
+especially important as a stop condition in the context of an iterative approach looking for
+appropriate process models, such as genetic mining [28], but also for a human analyst as
+it indicates that there is no better solution available. on the other hand the existence of
+a rational zero (i.e., 0) enables propositions like, e.g., “model a is twice as structurally
+appropriate as model b” [27]. however, an in-depth scale type discussion of the presented
+metrics is out of the scope of this paper.
+the metric falso deﬁnes an optimal value, i.e., if a log can be perfectly replayed, the
+measured value is 1.
+4.reproducibility for the metrics fandabthere is an issue with respect to the reproducibil-
+ity requirement, which is related to a potentially non-deterministic log replay on a logical
+level (see also section 4.4). the other metrics are completely reproducible.
+5.localizability like for fit has been shown that, in contrast to abandas, potential points
+of improvement can also be localized for both a/prime
+banda/prime
+s. this is crucial as otherwise it is
+not possible to gain more insight into a problem and to, e.g., decide on potential alignment
+actions.
+33final evaluation
+344 implementation
+the main concepts discussed in the previous section have been implemented in a plug-in for the
+prom framework. the conformance checker replays an event log within a petri net model in
+a non-blocking way while gathering diagnostic information that can be accessed afterwards. it
+calculates the token-based ﬁtness metric f, taking into account the number of process instances
+represented by each logical log trace, the structural appropriateness as, and the behavioral ap-
+propriateness ab. furthermore, the diagnostic results can be visualized both from a log-based
+and model-based perspective.
+figure 4.1: screenshot while associating model tasks with log events
+during log replay the plug-in takes care of invisible tasks that might enable the transition to
+be replayed next, and it is able to deal with duplicate tasks (see also section 4.3). figure 4.1
+shows a screenshot of the prom framework establishing the mapping between process model
+m4and event log l2. while the left column lists all the different transitions contained in the
+petri net model each one of them can either be related to a log event contained in the associated
+35implementation
+log, or made invisible (i.e., the task is not related to any log event). a third possibility is to
+keep it visible (i.e., the task has a log event associated but it is not present in this log). the
+model tasks b complete toh complete are all one-to-one mapped onto a log event with the same
+name, respectively, while a1 complete anda2 complete are both related to the same log event a
+complete , i.e., they are duplicate tasks. what is more, the task silent complete is made invisible.
+note that the simplifying assumption of denoting the mapping by means of a common label
+(section 2.3) is removed for practical use. since the mapping is made explicit any task label can
+be set in the right column (i.e., either the name of the task, or the name of the log event, or even
+something else).
+figure 4.2: screenshot of the conformance analysis plug-in
+the lower part of figure 4.2 shows the result screen of analyzing the conformance of event
+logl2and process model m1. as discussed before, for replaying l2 m1 lacks the possibility
+to skip activity g, which also becomes clear in the visualization of the model augmented with
+diagnostic information. in contrast to figure 3.7, which depicts the amount of missing and
+remaining tokens from a replay perspective, here the number of process instances per trace is
+taken into account. thus, instead of indicating one token missing and remaining for both log
+trace 3 and 4 in total there are 23 + 28 = 51 , each missing and remaining. hovering over
+such a marked place or transition provides more detailed information, e.g., about the number of
+instances leaving or lacking a certain amount of tokens at that place.
+36in the other conformance analysis window event log l1is measured to ﬁt with process model
+m4and the calculated values for structural and behavioral appropriateness ( asandab) are in
+line with the results determined in section 3.4.
+the remainder of this section documents the implementation work by ﬁrst giving an overview
+of the framework concepts in section 4.1, then describing the architecture of the plugin imple-
+mented in section 4.2, and modeling two important algorithms needed for log replay in sec-
+tion 4.3. finally, the implemented techniques are evaluated and requirements towards future
+implementation work will be discussed in section 4.4.
+4.1the prom framework
+the prom framework is meant to ease the implementation of new algorithms or techniques
+in the ﬁeld of process mining, e.g., for testing purposes or to share them with others. this
+is accomplished by allowing new functionality to be implemented outside of the framework,
+i.e., treating it like a black box with a well deﬁned interface, and to be plugged in independently.
+interoperability is ensured in conjunction with the promimport framework1, which converts logs
+from existing (commercial) pais to the xml format that prom uses as log input. furthermore,
+the prom framework provides high-level access to, e.g., log ﬁles or graph structures like petri
+nets to the programmer.
+figure 4.3: loading plug-ins into the prom framework
+the general concept of loading plug-ins during tool start-up has been illustrated in figure 4.3
+with the help of a fmc2block diagram . in a block diagram there are active system compo-
+nents called agents (rectangular shape) and passive system components called locations (rounded
+1the software can be downloaded from http://www.processmining.org .
+2fundamental modeling concepts (fmc) is a modeling notation consisting of block diagrams to describe compo-
+37the prom framework
+shape), whereas a location is either a storage or a channel (depicted by a smaller circle). agents
+communicate with each other via channels or shared storages.
+in order to add a new plug-in (cf. figure 4.3) the corresponding .jar archive must be added
+to the /lib/plugins folder and it needs to be registered with the respective .ini ﬁle. note that this
+does not require any intervention in the prom application, thus ensuring compatibility with other
+plug-ins. during tool start-up all the registered plug-ins are loaded, which means that they are
+made available as an active component within the prom application. this creation process is
+depicted as a structure variance, i.e., the compositional structure has been modiﬁed by creating
+active plug-in components from a passive location. from that point in time on the framework
+component is able to communicate with the plug-ins and can activate them in the right context.
+every plug-in needs to implement the plugin interface3, which among others speciﬁes the
+required input items (if any) that are needed for using the plugin. moreover, a plug-in may export
+provided objects , which are used by the framework to dynamically show all those plugins to the
+user that are able to do something with at least one of them. this way the framework makes sure
+that a plug-in is only invoked if all the necessary input items, i.e., provided objects, are available.
+figure 4.4: invoking the conformance analysis plug-in
+consider figure 4.4 as an example situation in which the petri net import plugin was used to
+open a petri net ﬁle and associate it with a given log ﬁle (i.e., a mapping of model tasks and log
+sitional structures, petri nets to depict dynamic structures, and entity relationship diagrams to visualize value
+range structures of software(-intense) systems [23]. more information and msvisio stencils can be downloaded
+from http://www.f-m-c.org/ .
+3therstands for request/response channel , which is an abbreviated notation for drawing two directed—request
+and response—channels indicating the initiating direction of communication (refer to http://www.f-m-c.org/ for
+further information).
+38events has been established). it offers this petri net and log representation as a provided object
+which can be used by the conformance analysis plugin . therefore, the conformance checker
+appears in the “analysis” menu of the prom tool and the user may invoke it. based on the given
+petri net and its associated log the analysis can be performed and the results in turn are provided
+to the framework, e.g., as a diagnostic visualization of the petri net model for graphical export.
+what is more, every plug-in provides its own graphical user interface (gui), which is auto-
+matically integrated in the gui of the prom application.
+4.2the conformance analysis plug-in
+figure 4.5 shows the conformance analysis plug-in in a reﬁned manner. semantically, there are
+three main components responsible for replaying the log, calculating the metrics, and visualiz-
+ing the results, respectively. therefore, the plug-in maintains some diagnostic data structures
+within its internal memory which are ﬁlled by the conformance checker while replaying the log
+(note the directed edge indicating write access to the results storage) and accessed afterwards
+to calculate a metric or to create a visualization (note the directed edge indicating read access by
+thevisualizer and the metrics calculator ).
+the user interacts with the plugin via its graphical user interface, e.g., invoking the analysis
+or changing the type of visualization.
+figure 4.5: architecture of the conformance analysis plug-in
+figure 4.6 shows the implementation structure of the conformance analysis plug-in using a
+uml 2.04class diagram . it depicts the java classes with their most important attributes and
+methods, and the relationships between them. the classes located in the upper part of the ﬁgure
+belong to the prom framework while the lower classes are newly implemented by the confor-
+mance analysis plug-in.
+4uniﬁed modeling language (uml) 2.0 is a modeling notation deﬁning twelve types of diagrams to describe struc-
+tural,behavioral , and model managing aspects of software systems [31]. further information can be obtained
+from http://www.uml.org/ .
+39the conformance analysis plug-in
+as indicated before the plugin interface must be implemented for enabling communication
+with the framework component. for analysis plug-ins there is an analysisplugin inter-
+face which requires four methods specifying the name of the plug-in, the user documentation
+as a html5fragment, the required input items, and the analyse() method to be called as
+soon as the plug-in is invoked. the result is returned to the framework as a gui component
+(note that conformanceanalysisgui is derived from jpanel ), which is then displayed in
+a separate window component. furthermore, it implements the provider interface to export
+a diagnostic visualization of the analysis results. the log replay is carried out by calling the
+replayloginpetrinet() method of the conformancechecker and the results are obtained
+as aconformancecheckresult object, which provides access to to the diagnostic data that
+has been collected.
+figure 4.6: class diagram of the plug-in implementation
+figure 4.7 shows another class diagram also containing the class conformancecheckresult
+that can be seen as a link between the two pictures. note that with respect to figure 4.5 the view
+has changed from a semantic perspective to an implementation-speciﬁc one. due to the object
+oriented paradigm data and functionality are closely integrated, i.e., instead of active components
+(conformancechecker ,visualizer ,metricscalculator ) working on data (the results storage) the
+diagnostic data structure is built as a network of interacting objects, each serving a well-deﬁned
+purpose.
+aconformancecheckresult maintains an object each of the class diagnosticpetrinet
+and the class diagnosticlogreader , which both respectively extend the classes petrinet
+andlogreader provided by the prom framework. most of the classes within the plug-in reuse
+5hypertext markup language (html) is a document format speciﬁcation standardized by the world wide web
+consortium (w3c). the speciﬁcation can be obtained from http://www.w3.org/ .
+40figure 4.7: class diagram of the diagnostic data structure
+41log replay involving invisible and duplicate tasks
+functionality inherited from the framework while enhancing it with the diagnostic data collected.
+as an example the class diagnostictransition overrides isenabled() inherited from the
+class transition to ﬁre the shortest sequence of invisible tasks enabling the transition in ques-
+tion, if possible. to this end a partial exploration of the state space (i.e., the coverability graph
+provided by the class diagnosticstatespace ) based on the current marking of the net is
+necessary. while ﬁring a diagnostictransition the number of consumed and produced
+tokens is recorded, and if there are tokens missing or remaining after log replay this is recorded
+in the respective diagnosticplace .
+for the visualization of diagnostic data the plug-in re-uses the dot6mechanism applied by the
+framework. predeﬁned methods like writetodot() can be overridden to enhance the default
+implementation of the petrinet class by diagnostic information or to even change the view to,
+e.g., the log perspective.
+4.3log replay involving invisible and duplicate tasks
+when performing such a non-blocking log replay involving invisible and duplicate tasks, situa-
+tions in the run of replay may be encountered where the state space of the process model needs
+to be partly explored. this is the case for the solution of two non-trivial problems described in
+the following, namely whether a speciﬁc task can be enabled via ﬁring a sequence of invisible
+tasks (see section 4.3.1) and the decision for one task among duplicates (see section 4.3.2).
+to provide a link between the general problem solution and its implementation, figures 4.8
+and 4.9 visualize the algorithms in a rather abstract way as a petri net in fmc notation (which
+was chosen as it deﬁnes a standard way to model recursion7) while following the implementation
+structure and indicating the names of the methods implemented.
+4.3.1 enabling a task via invisible tasks
+the ﬁrst algorithm deals with the fact that invisible tasks are considered lazy, i.e., they might
+ﬁre in order to enable one of their succeeding visible tasks (recall that invisible tasks will never
+be ﬁred directly in the ﬂow of log replay since they do not have a log event associated). this
+implies that in the case that the task currently replayed is not directly enabled, it must be checked
+whether it can be enabled by a sequence of invisible tasks before considering it having failed.
+the conﬂict between multiple enabling sequences is solved by choosing an arbitrary element
+out of the set of shortest sequences. this aims at having minimal possible side effects on the
+current marking of the net, e.g., not to unnecessarily ﬁre an invisible task that is in conﬂict
+with another task later to be replayed. figure 4.8 shows the ﬂow of the method isenabled()
+implemented in diagnostictransition , which has been overridden to replace the default
+behavior of transition in the following way.
+since a diagnostic transition can also be enabled “through” one or multiple invisible tasks,
+alist is created to capture this (potential) enabling sequence. if the transition is enabled
+6open source graph layout software used by the prom framework for visualizing graph structures like, e.g., petri
+nets or state spaces. further information can be obtained from http://www.graphviz.org/ .
+7for the general recursion scheme and further examples refer to http://www.f-m-c.org/ .
+42figure 4.8: recursive algorithm for transparently enabling a replayed task through a sequence
+of invisible tasks (if possible)
+43log replay involving invisible and duplicate tasks
+anyway, this sequence remains empty and the method returns true . note that an empty list has
+length 0 but is not nil(which could be seen as undeﬁned ). in the case of not being directly
+enabled the state space is built from the current marking of the petri net. to prevent nets that
+accumulate tokens from producing an inﬁnite state space (which could happen, e.g., building
+the reachability graph of a petri net) the coverability graph builder of the prom framework has
+been used for implementation. in a coverability graph a so-called ω-state denotes an extended
+marking, which subsumes all the different ﬁnite markings that result from token accumulation
+in an inﬁnite marking [30, 33].
+then traceshortestpathofinvisibletasks() —the recursive program part—is called.
+its input place is the entry point of the recursion, which means that initially called by the en-
+closing program part it can then be called several times from the recursive part itself. at the
+same time a token is put in the stack place (s) for guiding the recursion handling. stack places
+are always input places for transitions that additionally have a return place (r) as input. all the
+stack places together constitute the return stack, which is used to store information about return
+positions. when the return place gets marked and more than one associated stack places have a
+stack token the conﬂict is always solved in the same manner: the newest token on the stack must
+be consumed ﬁrst. the newest token belongs to exactly one stack place and so the transition
+where this stack place is an input place will ﬁre.
+entering the recursive program part the idea is to trace each possible path of invisible tasks in
+the state space until one of the following end-conditions is reached:
+(a)if the current state was already visited during traversal, it means that the state space is
+cyclic and recursion stops to prevent an inﬁnite loop.
+(b)if a shorter sequence of invisible tasks enabling the transition in question than the one
+currently traced has already been found, it is not necessary to pursue this route any further.
+assuming that neither (a) nor (b) are fulﬁlled all possible paths from the current state in the
+state space are considered and further traced as long as the next step is still an invisible task. if
+this is the case the current state is marked as being visited already, the invisible task encountered
+is appended to the currently pursued sequence, and passing the corresponding successor state
+traceshortestpathofinvisibletasks() is called recursively. at the same time a token
+is put in the stack place8to continue handling this path after the procedure returns. since the time
+stamp9of this token is more recent than the one of the token in the stack place of the enclosing
+program part, the conﬂict is always solved in favor of the transition in the recursive part. only
+if there is no token left in this multi-token stack place, i.e., the recursion is completely handled,
+the procedure will return to getshortestsequenceofinvisibletasks() .
+on a logical level, there are two more end-conditions that can be reached evaluating all pos-
+sible future steps based on the current traversal state:
+(c)if the transition to be replayed is encountered, a possible enabling sequence has been
+found and will be returned.
+8enlarged places such as this stack place can hold multiple tokens at the same time. the amount can be limited and
+annotated at the place while a double circle denotes an inﬁnite capacity.
+9here a notion similar to colored petri nets (cpn) [25] has been used, i.e., the possibility to assign a token different
+values such as a time stamp.
+44(d)if no invisible task can be found, recursion aborts as the path cannot be followed any
+further.
+following the ﬂow of the algorithm to its end it must be kept in mind that the place holder
+for the best sequence, referred to as the so far shortest , remains niluntil the requested
+transition was encountered at least once while tracing those paths of invisible tasks in the state
+space. if no possible sequence could be found, i.e., the checked diagnostic transition cannot be
+enabled via ﬁring any invisible tasks either, the list will be set to niland the method returns
+false . however, in the case a possible path hasbeen found, the gained sequence of invisible
+tasks is executed to transparently enable the diagnostic transition and the method returns true .
+4.3.2 choosing a duplicate task
+the second algorithm deals with the fact that the mapping between model tasks and log events
+(see also section 2.3) may result in duplicate tasks. during log replay this is a problem since
+encountering a log event being associated with multiple tasks in the model it is not always
+clear which of the duplicates should be executed. the overall goal will be to replay a log
+correctly, if possible. figure 4.9 shows the ﬂow of the solution implemented by the method
+chooseenabledduplicatetask() , which is called by replaytrace() in the case of ﬁnd-
+ing more than one transition associated with the log event currently replayed.
+at ﬁrst, only those tasks being enabled10by the current marking of the petri net are selected.
+if there is none enabled the method returns immediately and the conformancechecker will
+ﬁre an arbitrary task from the list of duplicates (since correct replay is not possible anyway).
+if there is exactly one task enabled it is returned and will be executed subsequently. this will
+often be the case in scenarios where the same task is carried out in multiple contexts (such as
+setting a checkpoint at the begin and at the end of a the example process in figure 3.1), i.e., the
+marking of the net clearly indicates which choice is best. however, if there are more candidates
+enabled the remaining log events must be considered to determine the best choice. for these
+purposes, choosebestcandidate() is called, making a copy of the current replay scenario
+for each enabled duplicate and ﬁring the transition belonging to that candidate (i.e., starting to
+play over every case). then the entry point for the recursive method tracking these scenarios,
+i.e.,tracebestcandidate() , is reached and will not return until there is only one scenario
+left, which can then be reported to the initial caller in order to proceed with the actual log replay.
+entering the recursive program part at ﬁrst the following end-condition is checked:
+(a)if there are no log events left in the trace currently being replayed, one of the remaining
+candidates is chosen arbitrarily and recursion is ﬁnished.
+assuming that (a) is not fulﬁlled the next log event is fetched from the trace and the number
+of associated transitions is determined. if there is only one task associated to it, those scenarios
+are kept and updated where this task is enabled, i.e., where the next replay step can be executed
+successfully as well. if there are multiple tasks associated, the best duplicate must also be chosen
+10note that in the context of this algorithm the possibility of invisible tasks indirectly enabling other transitions needs
+to be respected again (but without actually changing the marking of the replayed net). however, from now on it
+is abstracted from this issue.
+45log replay involving invisible and duplicate tasks
+figure 4.9: recursive algorithm for choosing a duplicate task during log replay
+46for this case and for each scenario, realized by a recursive call to the very entry point of the
+whole procedure. note that the enclosing program part belonging to thisrecursive call, which is
+replaytrace() , is not contained in the picture. then, similarly, those scenarios are kept and
+updated that were able to determine an enabled duplicate task for this anticipated next replay
+step. the possibility for having a 0:1 mapping has been discarded since the log is—according
+to section 2.3—assumed to be pre-processed, i.e., log events not associated to any task in the
+model were removed during import.
+now, the number of remaining scenarios is checked and if there are more than one left re-
+cursion proceeds to check at least one step further. otherwise one of the two following end-
+conditions is reached, stopping the recursion:
+(b)if only one candidate remains, this one is returned as the best choice.
+(c)if, after replaying this next log event, none of the scenarios is left, any of the previously
+kept candidates is returned.
+4.4assessment and future implementation work
+regarding the algorithms presented in the last section, it is important to be aware of the fact
+that, e.g., choosing any duplicate task in the case of none of them being enabled in the ﬁrst
+place, might render a log replay non-deterministic on a logical level. this does not mean that
+analyzing the same two ﬁles (containing the model and the log, respectively) might become
+non-deterministic, it will always yield identical results. however, this is not necessarily the case
+as soon as the petri net ﬁle is exchanged by another one, still deﬁning the same petri net (i.e.,
+on a logical level) but syntactically specifying the transitions in a different order. this leads to
+a differently ordered list held internally after import, which in the case of choosing any non-
+enabled duplicate task might then lead to ﬁring another transition, possibly leaving more tokens
+in the net and thus affecting the metrics fandab.
+on this semantic level a fully deterministic log replay involving invisible and duplicate tasks
+cannot be ensured by deﬁnition. but also guaranteeing equal values for the metrics calculated
+would dramatically increase complexity as the state space would need to be explored in a much
+more extensive way, comparing the amount of produced, consumed, missing, and remaining to-
+kens, and enabled transitions for every possible scenario. so clearly there is a trade-off between
+full reproducibility according to requirement 4 from section 2.1 and performance, which can be
+expected to decrease considerably and therefore hinder useful application while adding very lit-
+tle practical value (as this semantic non-determinism will only cause fandabvalue deviations
+while analyzing poorly ﬁtting logs in conjunction with models involving duplicate tasks).
+however, if the log ﬁts the model the conformance analysis plug-in is able to replay the log
+correctly, also while dealing with invisible and duplicate tasks. this is very important as any
+mismatch thus really indicates a conformance problem, which can then be quantiﬁed to assess
+its dimension and located to further analyze possible causes and corrective actions.
+47assessment and future implementation work
+the performance of the log replay procedure as it is implemented in the conformance checker
+is hard to appraise. it might vary a lot, depending on how many duplicate and invisible tasks are
+involved as in this case the state space needs to be partially explored. but even the fact that, e.g.,
+the state space of the model is built after each replay step for the current marking of the net to
+determine the number of enabled transitions (for a transition potentially being enabled through
+an invisible task), which is needed to calculate the metric ab, might cause problems in the case
+that the state space is very large.
+so it is intended to make the implementation more ﬂexible by offering the choice for which
+metrics should actually be calculated. but in general the log replay approach is very promising
+as for models not containing any invisible or duplicate tasks the complexity is proportional to the
+size of the log (and does not have to deal with the issue of completeness). it would be important
+to verify the presented techniques with respect to real business scenarios, e.g., in the form of a
+case study. therefore, the improved appropriateness metrics should also be implemented in the
+conformance checker.
+regarding implementation of the improved behavioral appropriateness metric a/prime
+bone would
+ﬁrst derive the sfandsbrelations from the state space of the process model. this could be a
+bottleneck as for it the state space of the model needs to be fully explored. then, they would be
+veriﬁed with respect to the log. in fact, one could aim at the falsiﬁcation of both counterparts
+for each pair of labels contained in sm
+fandsm
+b, making use of the fact that (x, y)∈sfiff
+(x, y)/∈af∧(x, y)/∈nf, or(x, y)∈sbiff(x, y)/∈ab∧(x, y)/∈nb, respectively. the
+cost for this part of the analysis will increase proportionally with the size of the (aggregated)
+log.
+it would be interesting to validate the presented metric with respect to some real business
+processes as the global character of the approach on the one hand promises to incorporate free-
+choice constructs (i.e., control ﬂow constraints that cannot be recognized from local dependen-
+cies), but on the other hand it also seems as if non-short loops dilute the footprints of their
+enclosed tasks in such a way that the never relations disappear.
+in general, the idea to verify certain properties for a set of log traces is related to the ltl
+checker [10], which has been implemented as a plug-in for the prom framework. linear tem-
+poral logic (ltl) is a ﬁeld of mathematical logic that is able to talk about the future of paths.
+the ltl checker is able to verify a given ltl expression with respect to a given workﬂow log.
+as far as the implementation of the improved structural appropriateness metric a/prime
+sis con-
+cerned, alternative ways to determine the set of redundant invisible tasks irshould be examined
+as the current deﬁnition requires a complete exploration of the (modiﬁed) state space for every
+invisible task in the model. for determining the set of alternative duplicate tasks daone would
+also need to fully explore the transition system corresponding to the process model once (which,
+as discussed, could cause problems for a very big state space). however, if it is possible then it
+can be realized together with the derivation of the relations sm
+fandsm
+bfor the metric a/prime
+b.
+485 related work
+regarding its purpose conformance testing as presented in this paper is closely related to the
+work of cook et al. [12, 11] who have introduced the concept of process validation. they pro-
+pose a technique comparing the event stream coming from the process model with the event
+stream from the execution log (cf. section 2) based on two different string distance metrics. to
+face the problem of time-complexity while exploring the state space of the model they investi-
+gate (and reject) several techniques from domains like compiler research and regular-expression
+matching. in the end an incremental, data-driven state-space search is suggested, using heuris-
+tics to reduce the cost. an interesting point is that they include the possibility to assign weights
+in order to differentiate the relative importance of speciﬁc types of events. in [11] the results
+are extended to include time aspects. the notion of conformance has also been discussed in the
+context of business alignment [1], security [4], and genetic mining [28] (all proposing some kind
+of replay).
+however, in each of the papers mentioned only ﬁtness is considered and appropriateness is
+mostly ignored.
+conformance testing assumes the presence of a given descriptive or prescriptive process
+model, and therefore has a different starting point, but nevertheless it is closely related to process
+mining [7, 6], which aims at the discovery of a process model based on some event log. in the
+desire to derive a “good” model for the behavior observed in the execution log, shared notions
+of ﬁtness, behavioral appropriateness and structural appropriateness can be recognized.
+in [20] the process mining problem is faced with the aim of deriving a model which is as
+compliant as possible with the log data, accounting for ﬁtness (called completeness) and also
+behavioral appropriateness (called soundness). starting with a disjunctive workﬂow schema
+containing all the traces from the log (cf. figure 3.4) they try to incrementally cluster these
+traces until a given lower bound for the number of schemata contained is reached, which, in fact,
+corresponds to some notion of structural appropriateness as well.
+another example is the process mining approach presented in [34], which is aiming at the
+discovery of a wf-net that (i) potentially generates all event sequences appearing in the execu-
+tion log (i.e., ﬁtness), (ii) generates as few event sequences not contained in the execution log as
+possible (i.e., behavioral appropriateness), and (iii) captures concurrent behavior and (iv) is as
+simple and compact as possible (i.e., structural appropriateness).
+moreover, techniques such as considering some form of causal relation can be borrowed from
+the process mining research, just as insights gained into concepts like correctness, completeness,
+and noise are also relevant in the context of conformance testing.
+both process mining and conformance testing can be seen in the broader context of busi-
+ness (process) intelligence (bpi) and business activity monitoring (bam). tools, as described
+in [21, 29, 22], however, often focus on performance measurements rather than monitoring
+49related work
+(un)desirable behavior.
+506 conclusion
+from the coexistence of explicit process models and event logs originates the interesting ques-
+tion “do the model and the log conform to each other?”. this question is highly relevant as their
+diversion is expected, yet indicates a clearly undesirable inconsistent state.
+this paper proposes an incremental approach to check the conformance of a process model
+and an event log. at ﬁrst, the ﬁtness between the log and the model needs to be ensured (i.e.,
+“does the observed process comply with the control ﬂow speciﬁed by the process model?”). at
+second, the appropriateness of the model can be analyzed with respect to the log (i.e., “does the
+model describe the observed process in a suitable way?”). during this second phase two aspects
+of appropriateness are considered, evaluating structural properties of the process model on the
+one hand (“is the behavior speciﬁed by the model represented in a structurally suitable way?”)
+andbehavioral properties on the other (“does the model specify the behavior of the observed
+process in a sufﬁciently speciﬁc way?”).
+one metric ( f) has been deﬁned to address ﬁtness and two metrics each approach structural
+appropriateness ( asanda/prime
+s) and behavioral appropriateness ( abanda/prime
+b). together they allow
+for the quantiﬁcation of conformance, whereas ﬁtness should be ensured before appropriateness
+is analyzed. however, since in real life business scenarios a ﬁtness of 100% is unlikely, it would
+be interesting to investigate until which degree of ﬁtness the behavioral appropriateness anal-
+ysis can still produce useful results, or to even explicitly develop a behavioral appropriateness
+technique that is able to deal with noise. furthermore, as shown in this paper behavioral ap-
+propriateness requires some notion of completeness by deﬁnition. structural appropriateness, in
+contrast, can even be evaluated independently of the logged data at all as only the suitability of
+the model in representing the speciﬁed behavior is appraised. to ensure the usefulness of the
+metrics deﬁned three requirements were formulated, calling for their (1) validity, (2) stability,
+and (3) reproducibility. a violation of the second requirement has led to the development of the
+two alternative appropriateness metrics a/prime
+sanda/prime
+b, which—in contrast to their counterparts as
+andab—are able to measure only one dimension of appropriateness, independently of the other.
+besides the quantiﬁcation of ﬁtness and appropriateness, it is crucial to assist the analyst in
+ﬁnding the location of a conformance problem. it has been shown that the approaches presented
+for the formation of f,a/prime
+s, and a/prime
+bareable to locate the respective problem areas in the model
+or the log.
+so the presented techniques constitute a powerful means to indicate a conformance problem
+and to estimate its dimension, while providing the user with some visual feedback pinpointing
+those parts that should be revised.
+future work will aim at the implementation of the alternative appropriateness approaches a/prime
+b
+anda/prime
+sin the ﬁrst place, to enable the application of all the presented techniques in real business
+scenarios, and for the appraisal of the metrics themselves (with respect to performance and
+effectiveness). to really support the incremental character of the presented approach it would
+51conclusion
+be nice if one could—following the suggestions of the conformance analysis tool—simulate
+adjustments in both the model and the log in order to, e.g., proceed with the analysis of another
+conformance aspect.
+naturally, additional information about both the application context and the technology used
+can be exploited to extend and/or customize the conformance analysis techniques presented in
+this paper. as an example, for monitoring a business process that follows a carefully designed,
+prescriptive process model, it could be desirable to carry out the log replay from a model-based
+perspective (i.e., following the track of the model instead of inserting tokens where they are
+needed). in doing so one could punish a sequence of missing activities to a greater extent than
+a single missing activity (which is not the case for the log replay analysis as presented), but this
+is expected to be a very complex approach as it results in a far more extensive exploration of the
+model’s state space. moreover, knowing the logging facilities of a workﬂow product in detail
+enables a more in-depth evaluation of low level log events such as those related to the life cycle
+of a task (i.e., schedule ,assign ,start,suspend , ...), and the availability of time stamps makes the
+veriﬁcation of time constraints, such as meeting a deadline, possible.
+finally, the incorporation of other perspectives is expected to enrich the conclusions derived
+from conformance analysis. for example, the evaluation of the organizational perspective (i.e.,
+groups and roles) might provide insight into diverging processes in different departments of a
+company.
+52references
+[1]w.m.p. van der aalst. business alignment: using process mining as a tool for delta
+analysis. in j. grundspenkis and m. kirikova, editors, proceedings of the 5th workshop on
+business process modeling, development and support (bpmds’04) , volume 2 of caise’04
+workshops , pages 138–145. riga technical university, latvia, 2004.
+[2]w.m.p. van der aalst and k.m. van hee. workﬂow management: models, methods, and
+systems . mit press, cambridge, ma, 2002.
+[3]w.m.p. van der aalst, a.h.m. ter hofstede, b. kiepuszewski, and a.p. barros. workﬂow
+patterns. distributed and parallel databases , 14(1):5–51, 2003.
+[4]w.m.p. van der aalst and a.k.a. de medeiros. process mining and security: detecting
+anomalous process executions and checking process conformance. in n. busi, r. gor-
+rieri, and f. martinelli, editors, second international workshop on security issues with
+petri nets and other computational models (wisp 2004) , pages 69–84. star, servizio
+tipograﬁco area della ricerca, cnr pisa, italy, 2004.
+[5]w.m.p. van der aalst and m. song. mining social networks: uncovering interaction
+patterns in business processes. in j. desel, b. pernici, and m. weske, editors, international
+conference on business process management (bpm 2004) , volume 3080 of lecture notes
+in computer science , pages 244–260. springer-verlag, berlin, 2004.
+[6]w.m.p. van der aalst, b.f. van dongen, j. herbst, l. maruster, g. schimm, and a.j.m.m.
+weijters. workﬂow mining: a survey of issues and approaches. data and knowledge
+engineering , 47(2):237–267, 2003.
+[7]w.m.p. van der aalst and a.j.m.m. weijters, editors. process mining , special issue of
+computers in industry, volume 53, number 3. elsevier science publishers, amsterdam,
+2004.
+[8]w.m.p. van der aalst, a.j.m.m. weijters, and l. maruster. workﬂow mining: discovering
+process models from event logs. ieee transactions on knowledge and data engineer-
+ing, 16(9):1128–1142, 2004.
+[9]pallas athena. flower user manual . pallas athena bv, apeldoorn, the netherlands,
+2002.
+[10] h. de beer. the ltl checker plugins: a reference manual . eindhoven university of
+technology, eindhoven, 2004.
+53references
+[11] j.e. cook, c. he, and c. ma. measuring behavioral correspondence to a timed concur-
+rent model. in proceedings of the 2001 international conference on software mainenance ,
+pages 332–341, 2001.
+[12] j.e. cook and a.l. wolf. software process validation: quantitatively measuring the
+correspondence of a process to a model. acm transactions on software engineering and
+methodology , 8(2):147–176, 1999.
+[13] g. cugola, e. di nitto, a. fuggetta, and c. ghezzi. a framwork for formalizing in-
+consistencies and deviations in human-centered systems. acm transactions on software
+engineering and methodology , 5(3):191–230, 1996.
+[14] j. desel and j. esparza. free choice petri nets , volume 40 of cambridge tracts in theo-
+retical computer science . cambridge university press, cambridge, uk, 1995.
+[15] j. desel, w. reisig, and g. rozenberg, editors. lectures on concurrency and petri nets ,
+volume 3098 of lecture notes in computer science . springer-verlag, berlin, 2004.
+[16] b.f. van dongen and w.m.p. van der aalst. multi-phase process mining: building in-
+stance graphs. in p. atzeni, w. chu, h. lu, s. zhou, and t.w. ling, editors, international
+conference on conceptual modeling (er 2004) , volume 3288 of lecture notes in com-
+puter science , pages 362–376. springer-verlag, berlin, 2004.
+[17] b.f. van dongen, w.m.p. van der aalst, and h.m.w. verbeek. veriﬁcation of epcs: us-
+ing reduction rules and petri nets for systems engineering: a guide to modeling, ver-
+iﬁcation, and applications. in 17th international conference, caise 2005, porto , pages
+372–386. springer-verlag, berlin, 2005.
+[18] n.e. fenton and s.l. pﬂeeger. software metrics - a rigorous & practical approach (2nd
+edition) . pws publishing company, boston, 1998.
+[19] m. van giessel. process mining in sap r/3. master’s thesis, eindhoven university of
+technology, eindhoven, 2004.
+[20] g. greco, a. guzzo, l. pontieri, and d. sacc ´a. mining expressive process models by
+clustering workﬂow traces. proc of advances in kowledge discovery and data mining,
+8th paciﬁc-asia conference (pakdd 2004) , pages 52–62, 2004.
+[21] d. grigori, f. casati, m. castellanos, u. dayal, m. sayal, and m.c. shan. business process
+intelligence. computers in industry , 53(3):321–343, 2004.
+[22] ids scheer. aris process performance manager (aris ppm): measure, analyze and
+optimize your business process performance (whitepaper). ids scheer, saarbruecken,
+gemany, http://www.ids-scheer.com, 2002.
+[23] f. keller, p. tabeling, r. apfelbacher, b. gr ¨one, a. kn ¨opfel, r. kugel, and o. schmidt.
+improving knowledge transfer at the architectural level: concepts and notations. in
+proceedings of the 2002 international conference on software engineering research and
+practice, las vegas) , 2002.
+54references
+[24] g. keller and t. teufel. sap r/3 process oriented implementation . addison-wesley,
+reading ma, 1998.
+[25] l.m. kristensen, s. christensen, and k. jensen. the practitioner’s guide to coloured petri
+nets. international journal on software tools for technology transfer , 2(2):98–132, 1998.
+[26] j.b. kruskal. an overview of sequence comparison. time warps, string edits,
+and macromolecules: the theory and practice of sequence comparison , pages 1–44,
+addison-wesley, reading ma, 1983.
+[27] p. liggesmeyer. software-qualit ¨at – testen, analysieren und veriﬁzieren von software .
+spektrum akademischer verlag, heidelberg, berlin, 2002.
+[28] a.k.a. de medeiros, a.j.m.m. weijters, and w.m.p. van der aalst. using genetic algo-
+rithms to mine process models: representation, operators and results. technical report,
+beta working paper series, wp 124, eindhoven university of technology, eindhoven,
+2004.
+[29] m. zur m ¨uhlen and m. rosemann. workﬂow-based process monitoring and controlling -
+technical and organizational issues. in r. sprague, editor, proceedings of the 33rd hawaii
+international conference on system science (hicss-33) , pages 1–10. ieee computer so-
+ciety press, los alamitos, california, 2000.
+[30] t. murata. petri nets: properties, analysis and applications. proceedings of the ieee ,
+77(4):541–580, april 1989.
+[31] mike o’docherty. object-oriented analysis and design: understanding system develop-
+ment with uml 2.0 . john wiley and sons, 2005.
+[32] a.w. scheer. aris: business process modelling . springer-verlag, berlin, 2000.
+[33] h.m.w. verbeek. veriﬁcation of wf-nets . phd thesis, eindhoven university of technol-
+ogy, eindhoven, the netherlands, 2004.
+[34] a.j.m.m. weijters and w.m.p. van der aalst. rediscovering workﬂow models from
+event-based data. in proceedings of the third international naiso symposium on
+engineering of intelligent systems (eis 2002) , pages 65–65. naiso academic press,
+sliedrecht, the netherlands, 2002. full paper on cd-rom proceedings.
+[35] h. zuse. software complexity – measures and methods , volume 44 of programming com-
+plex systems . walter de gruyter & co., berlin, new york, 1991.
+55

@@ -1,0 +1,619 @@
+from low-level events to activities - a pattern-based
+approach
+felix mannhardt1, massimiliano de leoni1, hajo a. reijers2;1,
+wil m.p. van der aalst1, pieter j. toussaint3
+1eindhoven university of technology, eindhoven, the netherlands
+2vrije universiteit amsterdam, amsterdam, the netherlands
+3norwegian university of science and technology, trondheim, norway
+/x28/x66/x2e/x6d/x61/x6e/x6e/x68/x61/x72/x64/x74/x2c /x6d/x2e/x64/x2e/x6c/x65/x6f/x6e/x69/x2c /x68/x2e/x61/x2e/x72/x65/x69/x6a/x65/x72/x73/x2c /x77/x2e/x6d/x2e/x70/x2e/x76/x2e/x64/x2e/x61/x61/x6c/x73/x74/x29/x40/x74/x75/x65/x2e/x6e/x6c/x2c
+/x70/x69/x65/x74/x65/x72/x40/x69/x64/x69/x2e/x6e/x74/x6e/x75/x2e/x6e/x6f
+abstract. process mining techniques analyze processes based on event data. a
+crucial assumption for process analysis is that events correspond to occurrences
+of meaningful activities. often, low-level events recorded by information systems
+do not directly correspond to these. abstraction methods, which provide a map-
+ping from the recorded events to activities recognizable by process workers, are
+needed. existing supervised abstraction methods require a full model of the entire
+process as input and cannot handle noise. this paper proposes a supervised ab-
+straction method based on behavioral activity patterns that capture domain knowl-
+edge on the relation between activities and events. through an alignment between
+the activity patterns and the low-level event logs an abstracted event log is ob-
+tained. events in the abstracted event log correspond to instantiations of recog-
+nizable activities. the method is evaluated with domain experts of a norwegian
+hospital using an event log from their digital whiteboard system. the evaluation
+shows that state-of-the art process mining methods provide valuable insights on
+the usage of the system when using the abstracted event log, but fail when using
+the original lower level event log.
+keywords: process mining, supervised abstraction, event log, alignment
+1 introduction
+organizations use information systems to support their work. often, information about
+the usage of those systems by workers is recorded in event logs [1]. process mining
+techniques use such event data to analyze processes of organizations. it is assumed that
+recorded events correspond to meaningful activities in instances of a process (i.e., cases).
+this information about recorded executions of activities can then be used, e.g., to dis-
+cover models describing the observed behavior or to check conformance with existing
+process documentation. the ability to identify executions of activities based on events
+is crucial for any process mining technique. events that do not directly correspond to ac-
+tivities recognizable for process workers are unsuitable for process analytics since their
+semantics are not clear to domain experts. however, events recorded by information
+systems often do not directly correspond to recognizable executions of activities [2].generally, there can be an n:m-relation between recorded events and activities [2,3],
+i.e., one higher level activity may create multiple low level events and one such event
+possibly relates to multiple activities. there are proposals for unsupervised abstraction
+methods that try to determine this relation based on identifying sub-sequences and ma-
+chine learning methods [2,4,5,6,7], as well as proposals for supervised methods based
+on existing process documentation and constraint satisfaction [3,8,9,10,11]. unsuper-
+vised abstraction methods, clearly, do not take existing knowledge into account and may
+fail to provide meaningful labels for discovered event clusters. existing supervised ab-
+straction methods [3,8,9,10,11] assume knowledge about a single model for the overall
+process. they resolve to clustering methods and heuristics when challenged with event
+logs from processes that feature n:m event-activity relations ,concurrent activities, and
+noise (i.e., erroneous or missing events).
+this paper proposes a supervised event abstraction method. we use behavioral ac-
+tivity patterns to capture domain knowledge about the conjectured relation between
+high-level activities and recorded low-level events. we align the behavior deﬁned by
+these activity patterns with the observed behavior in the event log. our technique uses
+alignment techniques, and, hence, is able to ﬁnd an optimal mapping between low-level
+events and activity patterns even for event logs that contain noise. in this way, we obtain
+a reliable abstraction mapping from low-level events to activity patterns. this mapping
+is used to create an abstracted event log. this log contains only high-level events at the
+desired level of abstraction, which relate directly to executions of high-level activities.
+we applied the proposed method together with domain experts from a norwegian hos-
+pital to an event log retrieved from a digital whiteboard system at the observation ward
+of the hospital. through observation and interviews with people working at the hospital
+we were able to identify activity patterns for 18 recognizable activities, which, together,
+explained 91% of the recorded behavior. using the abstracted event log, we were able to
+analyze how nurses use the digital whiteboard system in their daily work. we obtained
+process models that relate to their actual work in a meaningful way.
+the remainder of this paper is structured as follows. first, we describe the event
+abstraction problem in more detail (sect. 2). then, we present the ﬁve main steps of
+our abstraction method (sect. 3). we evaluate the proposed method using the results
+obtained for the digital whiteboard event log (sect. 4), and conclude with a summary
+and a sketch of future work (sect. 5).
+2 problem description
+we start with a deﬁnition of event logs. an event log stores information about activities
+that were recorded by one or more information systems while supporting the execution
+of a process. each execution of a process instance results in a sequence of events.
+deﬁnition 1 (event log). given universes of attributes aand values u, we deﬁne an
+event log as (e;s;#;e)with:
+–eis a set of unique event identiﬁers;
+–suis a set of activities;
+–# :e!(a̸!u)is a function that obtains attribute values recorded for an event;table 1. excerpt of a trace sl2elfrom a low-level event log with identiﬁers idand attributes
+activity ,time ,instance , and nurse . symbol ?denotes that the attribute was not recorded. the
+last columns show those high-level activities, which caused the event.
+id activity time instance nurse high-level activity high-level instance
+e12 /x4e/x75/x72/x73/x65/x43/x68/x61/x6e/x67/x65/x64 122 12 nursea shift 1
+e13 /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x31 122 13 ? shift 1
+e14 /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x30 124 14 ? shift 1
+. . . . . . . . . . . . . . . . . . . . .
+e20 /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x34 185 20 ? alarm 2
+e21 /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x31 197 21 ? alarm 2
+. . . . . . . . . . . . . . . . . . . . .
+e29 /x4e/x75/x72/x73/x65/x43/x68/x61/x6e/x67/x65/x64 250 29 nurseb handover 3
+e30 /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x34 310 30 ? alarm 4
+e31 /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x31 311 31 ? alarm 4
+e32 /x4e/x75/x72/x73/x65/x43/x68/x61/x6e/x67/x65/x64 312 32 nursec handover 5
+e33 /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x30 315 33 ? alarm 4
+–eeis the set of traces over e. a trace s2erecords the sequence of events
+for one process instance. each event identiﬁer occurs only in a single trace.
+given an event e2ein the event log e, we write # a(e)2a̸!uto obtain the value
+u2urecorded for attribute a2a. three mandatory attributes are recorded by each
+event: # act(e)2s, thename of the activity that caused the event; # time(e)2u, thetime
+when the event occurred; # ai(e)2u, the activity instance , i.e., an identiﬁer linking
+multiple events, which are related to the same execution of a single activity.
+example 1. table 1 shows an excerpt of a trace sl2elobtained from a low-level event
+log (el;sl;#l;el)that is recorded by a digital whiteboard, which supports the work
+of nurses in a hospital. each row represents an unique event e2eltogether with the
+produced data (i.e., attributes) created by a change in the system. for conﬁdentiality
+reasons, we show only some events of an artiﬁcial trace that resembles the real data.
+the initial events are omitted. after 122 minutes low-level activity /x4e/x75/x72/x73/x65/x43/x68/x61/x6e/x67/x65/x64 (nc)
+occurs resulting in event e12. attribute /x4e/x75/x72/x73/x65 is recorded as #l
+/x4e/x75/x72/x73/x65 (e12) =nursea . next,
+two low-level activities /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x31 (cs1) and /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x30 (cs0) are registered as
+events e13ande14by a call signal system, which is integrated with the whiteboard. an
+hour later the call signal system records the activity /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x34 (cs4) as event e20
+and, again, activity cs1as event e21. some further low-level events follow.
+often, not all events e2elrepresent work at the same level of abstraction [1,4]. the
+execution of some high-level activities might result in multiple low-level events being
+recorded during their execution. those events only store the names of low-level activi-
+tiessl, i.e., #l
+act(e)2slinstead of names of recognizable high-level activities. event
+abstraction can be seen as the problem of transforming such an event log (el;sl;#l;el)
+at a lower or mixed level of abstraction, into a new event log (eh;sh;#h;eh)with
+events ehthat record executions of activities shat the desired, higher level of abstrac-
+tion. we need to determine how low-level events elare related to high-level events eh,
+i.e., we need to ﬁnd an abstraction mapping peleh.
+please note that determining a good abstraction mapping p(i.e., one that reﬂects
+what really happened) is difﬁcult for several reasons. low-level events mapped to morefig. 1. overview of the proposed event abstraction method
+than one high-level activity, i.e., shared functionality [3] need to be disambiguated. it
+is difﬁcult to differentiate between reoccurring andconcurrent activities [3]. also, the
+low-level event log might contain noise : erroneous events that should not have been
+recorded or missing events that should have been recorded.
+example 2. event log elshown in table 1 contains low-level events. the various
+/x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c events do not directly correspond to high-level activities. moreover, de-
+pending on the context, those events correspond to different high-level activities. the
+last two columns in table 1 list the corresponding names of high-level activities that
+caused the low-level events as well as an identiﬁer uniquely identifying the execution
+of the activity, i.e., the activity instance. for example, we know that in the context of
+a shift change events cs1 andcs0 are recorded when the patient is visited in the nor-
+mal routine, i.e., events e12;e13;e14correspond to one execution (i.e., instance 1) of the
+high-level activity /x53/x68/x69/x66/x74 . this mapping between low-level events and high-level activ-
+ity instances cannot be solely done on the activity names. for example, when cs1and
+cs0 are preceded by event cs4 they correspond to an alarm triggered by the patient,
+i.e., events e30;e31;e33were caused by instance 4 of high-level activity /x41/x6c/x61/x72/x6d .
+3 pattern-based abstraction of event logs
+we present a method that takes an event log (el;sl;#l;el)at a lower level of abstrac-
+tion and transforms it to an event log (eh;sh;#h;eh)at the desired level of abstraction.
+we establish an abstraction mapping pfrom events elto the events eh. our method
+can deal with noise, reoccurring and concurrent behavior, and shared functionality. the
+proposed method consists of four steps (fig. 1):
+1.we encode the low-level behavior of activities in activity patterns (sect. 3.1).
+2.we compose activity patterns in an abstraction model (sect. 3.2).
+3.we align the behavior of the abstraction model and the low-level event log (sect. 3.3).
+4.we create an abstracted event log using the alignment information (sect. 3.4).
+we describe these steps in the following sections. note that activity patterns represent
+domain knowledge on the behavior of high level activities in terms of low-level events.
+3.1 deﬁne activity patterns
+in the reminder of this paper, we use process models to capture behavior. generally, our
+abstraction method is independent of the particular formalism (e.g., petri nets, uml,fig. 2. three activity patterns pa;pb;pc2pfor the example in dpn notation
+declare, bpmn) used to model processes. we represent knowledge about the relation
+between low-level events and given high-level activities shinactivity patterns . each
+activity pattern is a process model describing those events that are expected to be seen
+in the event log for one instance of the corresponding high-level activity.
+deﬁnition 2 (activity pattern). given a set of low-level activity names sl, process
+moves sm, process attributes aand values u. let s= (sm(a̸!u))be the set of all
+possible process steps. let #name:sm!slbe a labeling function that returns the low-
+level activity name of a process move. an activity pattern pscaptures sequences
+corresponding to an execution of one instance of a high-level activity. steps s2sin
+process traces s2pcorrespond to low-level activities executed as part of the high-level
+activity. we denote with p=fpsgthe set of all activity patterns.
+in the remainder, we require that process moves are not shared between activity patterns,
+i.e, given two different patterns p1;p22pand sequences s12p1;s22p2we require
+for any steps (m1;w1)2s1;(m2;w2)2s2thatm1̸=m2. given a step, we can uniquely
+identify to which pattern it belongs. however, process moves from different patterns
+may be associated with the same activity name, i.e., # name (m1) =#name (m2).
+example 3. figure 2 shows three activity patterns pa,pbandpcdeﬁned for the event
+log in table 1, implemented as data petri nets (dpns) [12]. we implement activity
+patterns by using dpn as notation with well-deﬁned semantics, which can express the
+control-ﬂow as well as the data-, resource- and time-perspective of a pattern. we refer
+to [12] for an introduction to dpns. we use transitions of the dpn to model process
+moves. we name transitions uniquely by using the abbreviated low-level activity name
+concatenated with the pattern name, e.g., transition cs1a models activity /x43/x61/x6c/x6c/x53/x69/x67/x6e/x61/x6c/x31
+in pattern pa. therefore, we can easily obtain the the activity name (i.e., # name (x)) for
+each transition x. the ﬁrst pattern padescribes a shift change. first, the nurse respon-
+sible for the patient changes ( nca ) and the name of the nurse is recorded ( na). within
+30 minutes ( t′
+a ta30), the responsible nurse visits the patient and the call signal
+system records a button press ( cs1a ). finally, the nurse leaves the room and another
+button press is registered ( cs0a ) resetting the status. the second pattern pbdescribes a
+similar sequence (i.e., transitions cs1b andcs0b ), but represents a different high-level
+activity: the patient is attended outside of the normal routine. transition cs4b has to
+be executed at most 10 minutes beforehand (i.e., t′
+b tb10). the low-level activity
+corresponding to cs4b is an alarm triggered by the patient. the third pattern describes
+a simple handover between nurses: only the responsible nurse changes ( ncc ) without
+any consultation of the patient. the corresponding low-level activity /x4e/x75/x72/x73/x65/x43/x68/x61/x6e/x67/x65/x64 is
+shared with a transition nca of pattern pa. this is an example of shared functionality.using domain knowledge about the high-level activities of the process at hand we deﬁne
+such an activity pattern for every activity of interest. activity patterns represent the
+knowledge about how high-level activities are reﬂected by low-level events in the event
+log. please note that we do not expect an activity pattern to be an exact representations
+of every possible way a high-level activity manifests itself in the event log. later, in
+sect. 3.3 we show that our method is able to deal with approximate matches.
+3.2 build an composed abstraction model
+with a set of activity patterns for the process under analysis at hand, we can compose
+their behavior into an integrated abstraction model .
+deﬁnition 3 (composition function). a composition function f: 2p!pcombines
+the behavior activity patterns p1; : : : ; pninto an (composite) activity pattern cp2p, i.e.,
+f(p1; : : : ; pn) =cp. we denote with f2p!pthe set of all composition functions.
+we provide the semantics for ﬁve basic composition functions: sequence ,choice ,par-
+allel,interleaving andcardinality . our abstraction method is not restricted to these
+functions. further composition functions can be added. we introduce some necessary
+notations for sequences. given a sequence s2sand a subset xs,sjxis the pro-
+jection ofsonx. for example, ⟨w;o;r;d⟩jfo;rg=⟨o;r⟩.s1s22sconcatenates two
+sequences, e.g., ⟨w;o⟩⟨r;d⟩=⟨w;o;r;d⟩. given activity patterns pi2pwith pis
+i
+andi2n, we deﬁne the following functions:
+–sequence composition ⊙ 2f:
+p1⊙p2=fs2sjs12p1^s22p2^s=s1s2g:
+binary operation ⊙is associative. we write⊙
+1inpi=p1⊙p2⊙: : :⊙pnto com-
+pose ordered collections of patterns in sequence. we deﬁne⊙
+1i0pi=f⟨⟩g.
+–choice composition 
+ 2f:
+p1
+p2=p1[p2:
+binary operation 
+is commutative and associative. we write⊗
+1inpi=p1
+p2
+: : :
+pnto compose sets of patterns in choice.
+–parallel composition ⋄ 2f:
+p1⋄p2=fs2(s1[s2):sjs12p1^sjs22p2g:
+binary operation ⋄is commutative and associative. we write ⋄1inpi=p1⋄p2⋄
+: : :⋄pnto compose sets of patterns in parallel.
+–interleaving composition $ 2 fwith p(n)denoting the set of all permutations of
+numbers {1, . . . ,n}:
+$(p1; : : : ; pn) =⊗
+(i1;:::;in)2p(n)⊙
+1knpik:fig. 3. overview of the graphical notation of the supported composition functions and an example
+of their usage in an composed pattern. patterns are depicted as plain boxes for better legibility.
+–repetition composition [n;m]2fwith n2n0;m2n[f¥g, and nm:
+p[n;m]
+1=⊗
+nim⊙
+1kip1:
+we build an overall abstraction model with a formula that contains all patterns of inter-
+est. the resulting composed pattern cp2sshould include the overall behavior that we
+expect to observe for the execution of allhigh-level activities.
+example 4. given the activity patterns pa,pbandpcshown in fig. 2, we can compose
+their behavior to cp= ($(p[0;¥]
+a ;p[0;¥]
+b))[0;¥]⋄p[0;¥]
+c. we allow indeﬁnite repetition of
+all activity patterns using the repetition composition. we allow the absence of patterns
+using the repetition composition as the corresponding high-level activities might not
+have been executed in every process instance. we restrict cpto only contain the inter-
+leaving of patterns paandpbas there is only one responsible nurse per patient. there-
+fore, the activities expressed by paandpbcan occur in any order but should not happen
+in parallel. we add pcusing the parallel composition as handovers can take place in par-
+allel to paandpb. in the remainder of this example, we omit the attribute assignments
+wfrom steps (t;w)2sfor improved legibility. the result of this composition is the ab-
+straction model cp. model cpcorresponds to all behavior that could be observed for ex-
+ecutions of the three high-level activities. for example, ⟨nca ;cs1a ;ncc ;cs0a⟩ 2cp
+is expected, whereas ⟨nca ;cs1a ;cs4b ;cs0a⟩=2cpis not expected.
+we designed a graphical representation for each composition function, which can be
+used to design abstraction models in the implementation of our approach. figure 3
+shows the graphical notation for each of the composition functions. moreover, the
+graphical representation of the composition of activity patterns pa;pb;pcas deﬁned in
+example 4 is shown. because the repetition composition is unary, we attach its graphi-
+cal representation directly to patterns. parallel composition is the least restrictive com-
+position. unless otherwise speciﬁed, we assume that patterns are composed in parallel.
+we draw a box around composed patterns if necessary to clarify the precedence of op-
+erations. for example, patterns paandpbare ﬁrst interleaved and then composed in
+parallel with pc. we implemented the composition of activity patterns using the dpn
+notation. to simplify the composition, we assume that the dpns of activity patterns
+have a single source place and a single sink place. figure 3 shows the dpn encoding
+ofcp= ($(p[0;¥]
+a ;p[0;¥]
+b))[0;¥]⋄p[0;¥]
+c. the implementation of all compositions using
+dpn is available in a technical report [13].
+example 5. figure 4 depicts the dpn implementation of abstraction model cp. the
+abstraction model starts with a single sink place /x73/x69/x6e/x6b and ends with a single sourcefig. 4. dpn created by our implementation for the abstraction model cp. activity patterns
+pa;pb;pcare depicted as clouds with source places sa;sb;scand sink places ea;eb;ec. black
+transitions are invisible routing transitions, which are not recorded in any event log.
+table 2. the top three rows show an alignment of the running example log trace and abstraction
+model. low-level events (l. event) eare aligned to process moves (p. move) mthat relate to
+the same low-level activity (l. activity). write operations are omitted for better legibility. one
+process move could not be aligned to an event, symbol ≫is used in this case. the bottom ﬁve
+rows show the high-level event returned by the abstraction method described in this paper.
+l. event (e) e12 e13 e14 . . .e20 e21≫ . . .e29 e30 e31 e32 e33
+l. activity nc cs1 cs0 . . .cs4 cs1 . . .nc cs4 cs1 nc cs0
+p. move (m) nca cs1a cs0a . . .cs4b cs1b cs0b . . .ncc cs4b cs1b ncc cs0b
+h. activity shift shift . . . alarm alarm . . . handover alarm handover alarm
+life-cycle start complete . . . start complete . . . complete start complete complete
+instance 3 3 . . . 6 6 . . . 10 11 12 11
+time 122 124 . . . 185 197 . . . 250 310 312 315
+h. event ˆe5 ˆe6 . . .ˆe11 ˆe12 . . .ˆe20 ˆe21 ˆe22 ˆe23
+place /x73/x6f/x75/x72/x63/x65 . we model the parallel composition of p[0;¥]
+cwith$(p[0;¥]
+a ;p[0;¥]
+b)[0;¥]
+by adding invisible transitions /x73/x70/x6c/x69/x74 and /x6d/x65/x72/x67/x65 , which realize a parallel split and join.
+invisible transitions cannot be observed; they are only added for routing purposes. we
+use place /x6d/x75/x74/x65/x78 to model the mutual exclusion constraint of the interleaving composi-
+tion of patterns p[0;¥]
+aandp[0;¥]
+b. place /x6d/x75/x74/x65/x78 guarantees that only either paorpbcan
+be executed at the same time, yielding the interleaving of paandpb. each repetition
+composition is implemented by adding two invisible transitions /x6c/x6f/x6f/x70 and /x73/x6b/x69/x70 , which
+allow to repeat the pattern indeﬁnitely or to skip its execution, respectively.
+3.3 alignment of patterns behavior and the event log
+with an abstraction model at hand, we need to relate the behavior in the low-level event
+log to process traces deﬁned by the abstraction model. more speciﬁcally, we need to
+determine the mapping between low-level events in the event log and process steps
+of the abstraction model. we use existing alignment techniques [12] that establish a
+mapping between log traces and process traces. the top three rows of table 2 show
+such an alignment between the example log trace (table 1) and a process trace of the
+example abstraction model cp(fig. 3). the alignment in table 2 consists of moves
+(e;s)2(el[ f≫g )(s[ f≫g )that relate low-level events eto process steps sin
+the abstraction model. events ecan only be mapped to process steps s= (m;w)thatrefer to the same low-level activity, i.e., # act(e) =#name (m). it may not be possible to
+align all events and process steps. these deviating events and process steps are mapped
+to≫(e.g., (≫;(cs0b ;w))in table 2). alignments ﬁnd an optimal mapping, which
+minimizes the number of such deviations. they return the most likely mapping between
+events and process steps. moreover, an alignment guarantees that its sequence of model
+steps without ≫-steps is a process trace deﬁned by the model. for example, the third
+row in table 2 is a process trace of abstraction model cp. pattern pais executed once,
+i.e.,⟨nca ;cs1a ;cs0a⟩is a sub-sequence. patterns pbandpcare both repeated twice,
+i.e., there are two sub-sequences ⟨cs4b ;cs1b ;cs0b⟩and two sub-sequences ⟨ncc⟩.
+we can uniquely identify sub-sequences of initial activity pattern since we required that
+process moves are unique among activity patterns.
+3.4 build the abstracted event log using the alignment
+we describe how to build the high-level event log (eh;sh;#h;eh)and the abstraction
+mapping pusing an alignment of the low-level event log with the abstraction model.
+the bottom four rows of table 2 show how we obtain the high-level event log from
+the information provided by the alignment. we align each trace of the low-level event
+log with the abstraction model. doing so, we obtain an alignment as shown in the ﬁrst
+three rows for each trace in the low-level log. given the alignment, we use two mappings
+to build the high-level log:
+–m:sm!sh, a mapping between process moves and high-level activities.
+–l:sm̸!l, a mapping between process moves and life-cycle transitions.
+mapping function mcan be obtained from the initially deﬁned activity patterns. each
+activity patterns models exactly one high-level activity and each process move be-
+longs to exactly one activity patterns, thus, the corresponding high-level activity can be
+uniquely determined for each process move. for example, we use m(nca ) =shi ft and
+m(ncc ) =handover . mapping function ldeﬁnes which process moves correspond
+to transitions in the life-cycle of activities. mapping lis motivated by the observation
+that activities rarely happen instantaneously. activities have life-cycles [1]. the set of
+life-cycle transitions land mapping function lis speciﬁed by the user. in the case-
+study we use l=fstart ;complete gand deﬁne lsuch that the ﬁrst process move of an
+activity pattern is mapped to the start transition and the last process move is mapped to
+thecomplete transition. the other process moves are not mapped, i.e., they are not in
+the domain of l. for example, we use l(nca ) =start andl(cs0a ) =complete .
+we add new high-level events ehtoeh(i.e., eh=eh[fehg) for those alignment
+moves (e;s)for which process steps s= (m;w)are not mapped to ≫(i.e., s̸=≫) and
+process move mis mapped to a life-cycle transition l(m)(i.e., m2dom (l))1. in this
+manner, we create a high-level trace in ehfor each low-level trace in el. we obtain the
+high-level log (eh;sh;#h;eh)and a mapping between low-level events eand the new
+high-level events eh. we include (e;eh)in the abstraction mapping pwhen event eis
+not mapped to ≫(i.e., e̸=≫). for example, events ˆ e5and ˆe6in table 2 are created
+based on the alignment of low-level events e12ande14to process moves nca and
+1dom (f)denotes the domain of a function f.cs0a , i.e., (e12;ˆe5)2pand (e14;ˆe6)2p. we assign event ˆ e5the activity name shift
+(i.e., #h
+act(ˆe5) =shift) and the life-cycle transition start (i.e., #h
+cycle(ˆe5) =start). event ˆ e6
+is assigned the same activity name shift, but a different life-cycle transition: complete .
+then, the high-level events ehare enriched with additional information: activity
+instance andtimestamp . a unique instance identiﬁer is added for each execution of
+an activity pattern. for example, event ˆ e21and event ˆ e23are both assigned instance
+identiﬁer 11 (i.e., #h
+ai(ˆe21) =#h
+ai(ˆe23) =11). both are aligned to process steps in the
+same execution of activity pattern pb(alarm ). instance 11 of the activity alarm was
+started by event ˆ e21and completed by event ˆ e23. regarding the timestamp, there are
+two cases depending on the alignment move (e;s): (1) the process step was aligned to
+a low-level event eand (2) the process step was mapped to e=≫. in the ﬁrst case, we
+use the timestamp of the aligned low-level event (e.g., #h
+time(ˆe11) =#h
+time(e20) =185).
+in the second case, we cannot directly obtain a timestamp. for example, event ˆ e12in
+table 2 is missing a low-level event: e=≫. there are multiple methods to determine
+the most likely timestamp for ˆ e12. for the case study (section 4), we use timestamps of
+neighboring low-level events that are mapped to the same activity instance, e.g, we use
+the timestamp from event e21for the high-level event ˆ e12(i.e., #h
+time(e21) =197).
+in general, there might be scenarios where one event could be mapped to several ac-
+tivity instances. we simpliﬁed the discussion by assuming that events are only mapped
+to single activity instances. this is not a limitation, as described by baier et al. [3]:
+those events can be duplicated in a pre-processing step beforehand.
+finally, we deﬁne two quality measures for the abstraction mapping. first, we use
+ﬁtness as a measure for how well the entire event log matches the behavior imposed
+by the abstraction model. in this context, a ﬁtness measure such the one deﬁned in [12]
+for alignments of dpns can be seen as measure for the quality of the used abstrac-
+tion model. a low ﬁtness indicates that there are many events that cannot be correctly
+matched, thus, the abstraction model does not capture the whole process correctly. sec-
+ond, we deﬁne a matching error e:sh![0;1]on the level of each recognized high-
+level activity. some process steps in the alignment are not matched to an event in the
+log, i.e., the event is missing. for example, in table 2 one execution of process activity
+cs0b is mapped to ≫. given a high-level activity h2sh(e.g., alarm ) and the subset
+of process activities msmthat are mapped to the activity pattern deﬁned for the
+high-level activity (e.g., cs4b ,cs1b andcs0b ). we determine the number of those
+alignment moves (e;(m;w))with process activities m2m, for which the event is miss-
+ing, i.e., e=≫. the matching error e(h)is the fraction of such erroneous alignment
+moves over the total number of alignment moves with process move m. for example,
+e(alarm ) =5
+6for the alignment in table 2. the matching error can be used to exclude
+unreliable matches, which exceed a certain e-threshold.
+4 evaluation
+we evaluate the proposed abstraction method by conducting a case study using event
+data that was obtained from a digital whiteboard system2. the whiteboard supports the
+2the used whiteboard system is imatis visi : /x68/x74/x74/x70/x3a/x2f/x2f/x77/x77/x77/x2e/x69/x6d/x61/x74/x69/x73/x2e/x63/x6f/x6dfig. 5. abstraction model used in the case study. most activities can only interleave as there is
+only one nurse assigned to a patient.
+daily work of nurses in the observation unit of a norwegian hospital. our method is
+implemented as plug-in of the open-source process mining framework prom3.
+4.1 case and dataset
+digital whiteboard systems are used to improve health care processes by raising situa-
+tion awareness among nurses and to support coordination of care [14]. in our case, the
+whiteboard is used to manage information about admitted patients. the information is
+displayed in a tabular manner, where each row shows information about a single patient.
+the cells are used for various purposes, such as displaying logistical and medical infor-
+mation about the patient. a call signal system, which allows patients to trigger an alarm,
+is integrated with the whiteboard. alarms are shown on the whiteboard. generally, there
+are few constraints on how the whiteboard is actually used.
+we obtained an event log with 8,487 cases and286,000 events recorded by the
+whiteboard of the observation unit between 04/2014 and 12/2015. each case records
+events for the visit of a single patient. on average, traces contain 34 events. events are
+recorded for changes of single cells of the whiteboard. this very ﬁne grained logging
+leads to a low-level event log. events in the log do not directly represent recognizable
+activities. in total, there are 42 distinct low-level activity names in the log. moreover,
+varying work practices among nurses lead to different events being recorded for the
+same high-level activity. the event log is unsuitable for any kind of process analytics
+as the semantics of results are not clear to process workers.
+we created an abstraction model with 18 activity patterns as shown in fig. 5. the
+activity patterns are based on information on the whiteboard system and interviews with
+a domain expert from the hospital, who observed the actual work of nurses. in this case
+study, we do not use all composition functions that our framework provides, as some do
+not apply to the whiteboard system. however, we believe that the unused functions are
+useful in many different settings. all 18 activity patterns are listed in table 3 together
+with the number of process activities and the name of the modeled high-level activity.
+the examples introduced in fig. 2 correspond to the activities shift (pa),alarm normal
+(pb) and handover (pc) in the case study.
+4.2 results and discussion
+we applied the proposed abstraction method to the event log and successfully obtained
+a smaller abstracted event log with 206,054 high-level events for 103,027 activity in-
+stances (i.e., each instances has a start and a complete event). the computation of the
+3plug-in log abstraction of the prom package logenhancement : /x68/x74/x74/x70/x3a/x2f/x2f/x70/x72/x6f/x6d/x74/x6f/x6f/x6c/x73/x2e/x6f/x72/x67table 3. activity patterns used in the digital whiteboard case study. for each pattern we list the
+number of process activities, the number of low-level activity names shared with other patterns,
+and the results of our method: the number of recognized activity instances and the matching error.
+activity name transitions (shared) matches matching error (e)
+announcement (ann) 8 (6) 29 0.02
+change room (cr) 5 (4) 662 0.09
+discharge (dis) 7 (4) 8,054 0.0
+registration (reg) 6 (6) 9,855 0.01
+transfer (tra) 6 (6) 575 0.09
+update report (ur) 4 (0) 6,912 0.0
+update arrival (ua) 5 (1) 4,626 0.0
+handover (h) 1 (1) 24,228 0.0
+shift (s) 3 (3) 405 0.04
+call nurse (cn) 2 (2) 12,416 0.08
+alarm normal (an) 3 (3) 8,842 0.02
+alarm quick (aq) 2 (2) 12,730 0.0
+alarm assist (aa) 5 (3) 32 0.17
+ct 4 (2) 1,443 0.0
+mri 4 (2) 124 0.0
+surgery (sur) 3 (3) 297 0.17
+ultrasound (ult) 5 (3) 1,164 0.0
+x-ray 4 (2) 1,117 0.0
+abstracted event log took one hour and used 6 gb of memory. we decomposed the dpn
+of the abstraction model into two smaller dpns that did not share labels. the overall
+ﬁtness with regard to the log was 0.91, which indicates that most of the observations
+could be explained. even though 9% of the events did not match, this is a good result for
+further analysis as we can expect the event log to contain noise, i.e., events unrelated to
+any modeled high-level activity. the abstracted event log contains 25 high-level activi-
+ties: 18 activities were obtained through abstraction and 7 further activities were already
+at the appropriate level of abstraction. table 3 shows the resulting number of activity
+instances that were matched, as well as the corresponding matching error. it should be
+noted that the relatively high error for the activity surgery stems from the fact that this
+activity is sometimes recorded in a different manner, i.e., one event is missing. regard-
+ing the error for activity alarm assist we found that the assist button can be pressed
+without a prior alarm by the patient, which is different from our initial assumption.
+the activities under consideration can be grouped into three categories: (1) actions
+related to patient logistics, (2) actions related to the call signal system and handover
+between the nurses, and (3) actions related to ordered examinations and surgeries. given
+the absence of a perfectly abstracted event log as ground truth, we evaluate our method
+by comparing the results obtained using three process analytics techniques with and
+without the abstraction. using the abstracted event log, we obtained several insights
+into work practices of nurses in clinical processes. a domain expert from the hospital
+stated that the analysis: “[..] gives insight beyond the usual reports and analysis that
+we have access to. it gives a fresh and “new” perspective on how we understand the
+processes involved in running a ward or department. ” by contrast, we show that using
+the low-level event log directly does not lead to any insights for stakeholders, because
+the semantics of low-level events are unclear. we used the prom plug-ins log projection
+(lp), inductive visual miner (ivm), and multi-perspective explorer (mpe).time of daytrace(a) events nc(blue), cs1 (green)
+and cs0 (yellow) in the original
+event log.
+time of daytraceshift 2 shift 3
+admissionsshift 1(b) abstracted event log only show-
+ing the high-level shift events cap-
+tured by pattern pa.
+fig. 6. dotted charts of events related to the activity shift. traces are shown on the y-axis and
+sorted by the time of day of the ﬁrst event in a trace.
+log projection (lp) figure 6 shows two dotted charts created with lp. figure 6(a) is
+created using the original event log. it shows the distribution of events nc,cs1andcs0
+over the course of a day. as expected, the ncevent (i.e., the responsible nurse changed)
+mostly occurs when a patient is admitted (i.e., on the blue diagonal) and during one of
+the three shift changes (i.e., the three blue vertical lines). still, the responsible nurse
+also changes between those well-deﬁned times. yet, from fig. 6(a) it is not evident
+whether nurses use the call signal system when visiting a patient after their shift started.
+looking at fig. 6(b), which shows only the event shift (pa) from the abstracted event
+log, it is clearly visible that our assumption was correct. activity pattern pacaptured
+a meaningful high-level activity. figure 6(b) shows that nurses do use the call signal
+system to indicate their presence in the room of the patient after taking responsibility
+for a patient. in contrast to the dotted chart in fig. 6(a), event shift only occurs after
+admissions (dots on the main diagonal) and after shift changes (three vertical lines).
+still, by comparing the number of activity instances in table 3 it is clear that activity
+shift (405 times) happens rarely in comparison to activity handover (24,228 times).
+two likely reasons for this are that nurses do either not attend the patient after a shift
+change, or that they do not use the system to indicate their presence. this is a valuable
+insight on how the whiteboard system is used in practice. notably, this could not be
+concluded without the use of our abstraction method.
+inductive visual miner (ivm) we analyzed two parts of the whiteboard system by
+discovering process models with ivm [15]. we used only those events from the origi-
+nal event log that are used in the respective activity patterns. this indicates what results
+could be obtained by only ﬁltering the original log based on some knowledge about the
+low-level events. figure 7 shows petri nets discovered using ivm for events related to
+nurse handovers and the call signal system based on the original event log (fig. 7(a)),
+and the abstracted event log (fig. 7(b)). the model in fig. 7(a) gives little insights into(a) low-level log
+ (b) abstracted log
+fig. 7. petri nets of the nurse handover and call signal system discovered by ivm
+the usage of the call signal system. most events can be repeated in any order, expect for
+callsignal3 ,diagnose , and reportchanged which may only occur once. the model in
+fig. 7(b), instead, contains recognizable activities that can be used to investigate the us-
+age of the call signal system further. the model indicates that activities shift andalarm
+assist occur together, recording a diagnose and updating the report cell ( update report )
+that is used to store medical information about patients. this ﬁnding deserves further
+investigation. regarding the other variants of using the call signal system ( alarm quick ,
+alarm normal , and call nurse ), no speciﬁc ordering among the high-level activities is
+discovered. this could be expected given the ﬂexible nature of the whiteboard system.
+moreover, we compared models discovered for low-level and high-level events related
+toexaminations and patient logistics (fig. 8). again, the model that is discovered from
+the low-level event log, shown in fig. 8(a), does not offer insights into the work at the
+observation unit. the only visible structure is that event treatmentchanged , which is
+related to some examination, is executed in parallel with the event abdom. pain . fig-
+ure 8(b) shows the process model discovered by ivm with the abstracted event log.
+the control-ﬂow structure of this model is more speciﬁc than the model shown in fig-
+ure 8(a). it shows several interesting structures that could be used to investigate further
+with people working in the hospital. for example, for multiple patients the planning and
+execution of surgeries and updating the diagnose occur together in parallel. one path
+reveals that 300 patients with chest pain receive an x-ray . another path shows that for
+1,300 patients with abdominal pain no examinations are ordered. by using activities
+on the same abstraction level, the process model in figure 8(b) offers a better insight
+into the process. moreover, it allows to discuss the observations with process workers.
+please note that the high-level model in fig. 8(b) contains more activities since the same
+event is shared among multiple, high-level activities.
+multi-perspective explorer (mpe) finally, we used the mpe to analyze differences
+between the different ways nurses respond to patient-initiated call signals. it was found
+that the assumed activities alarm normal (an) and alarm quick (aq), indeed, corre-
+spond to different work practices by nurses. for activity an the nurse ﬁrst indicates her(a) low-level log
+(b) abstracted log
+fig. 8. petri nets of the examinations and patient logistics discovered by ivm
+presence in the room by using a button on the call signal system, after which she at-
+tends the patient. however, within activity aq nurses do not use this functionality. the
+average service time for activity an (7.3 min) is longer than for activity aq (1.5 min).
+a hypothesis is that nurses do not use the full functionality of the call signal system for
+minor tasks, which may be important for the hospital to investigate further.
+5 conclusion
+we presented a new method for supervised event abstraction using behavioral activ-
+ity patterns. activity patterns encode assumptions on how high-level activities mani-
+fest themselves in terms of recorded low-level events. we obtain an abstracted event
+log based on an alignment between activity patterns and the low-level event log. two
+quality measures (ﬁtness, matching error) are deﬁned that can be used to evaluate the
+quality of the abstraction result. we used this method to analyze the work of nurses in a
+norwegian hospital. the case study shows that our abstraction method can be success-
+fully applied in complex real-life environments. we obtained an abstracted event log
+from a system, in which (1) multiple high-level activities share low-level events with
+the same label, (2) high-level activities occur concurrently, and (3) erroneous events
+(i.e., noise) are recorded. we applied state-of-the-art process mining tools on both the
+original and the abstracted event log the results obtained from the abstracted even log
+reveal insights that cannot be obtained when using the original event log. moreover,
+the results are more useful in the communication with stakeholders, since they refer torecognizable activities. future work may still be needed to address some limitations of
+our method. at this point, if a sequence of events ﬁts two activity patterns perfectly,
+one of them will be chosen arbitrarily. a prioritization of activity patterns used dur-
+ing the alignment computation could be introduced. moreover, alignment techniques
+require a lot of resources for event logs with very long traces. work on decomposing
+the alignment computation could help to alleviate this limitation.
+acknowledgments we would like to thank ivar myrstad for his valuable insights on
+the digital whiteboard and his help with the case study.
+references
+1.van der aalst, w.m.p.: process mining - discovery, conformance and enhancement of
+business processes. springer (2011)
+2.günther, c.w., rozinat, a., van der aalst, w.m.p.: activity mining by global trace segmen-
+tation. in: bpm workshops. volume 43 of lnbip. springer (2010) 128–139
+3.baier, t., mendling, j., weske, m.: bridging abstraction layers in process mining. inf. syst.
+46(2014) 123–139
+4.jagadeesh chandra bose, r.p., van der aalst, w.m.p.: abstractions in process mining: a
+taxonomy of patterns. in: bpm. volume 5701 of lncs., springer (2009) 159–175
+5.cook, d.j., krishnan, n.c., rashidi, p.: activity discovery and activity recognition: a new
+partnership. ieee t. cybernetics 43(3) (2013) 820–828
+6.ferreira, d.r., szimanski, f., ralha, c.g.: improving process models by mining mappings
+of low-level events to high-level activities. j. intell. inf. syst. 43(2) (2014) 379–407
+7.folino, f., guarascio, m., pontieri, l.: mining multi-variant process models from low-level
+logs. in: business information systems. volume 208 of lnbip. springer (2015) 165–177
+8.baier, t., rogge-solti, a., mendling, j., weske, m.: matching of events and activities: an
+approach based on behavioral constraint satisfaction. in: sac, acm (2015) 1225–1230
+9.ferreira, d.r., szimanski, f., ralha, c.g.: mining the low-level behaviour of agents in
+high-level business processes. ijbpim 6(2) (2013) 146–166
+10.fazzinga, b., flesca, s., furfaro, f., masciari, e., pontieri, l.: a probabilistic uniﬁed frame-
+work for event abstraction and process detection from log data. in: otm conferences. vol-
+ume 9415 of lncs., springer (2015) 320–328
+11.baier, t.: matching events and activities. phd thesis, universität potsdam (2015)
+12.mannhardt, f., de leoni, m., reijers, h.a., van der aalst, w.m.p.: balanced multi-
+perspective checking of process conformance. computing 98(4) (2016) 407–437
+13.mannhardt, f., de leoni, m., reijers, h.a., van der aalst, w.m.p., toussaint, p.j.: from
+low-level events to activities - a pattern-based approach. technical report, bpmcenter.org
+(2016) bpm center report bpm-02-06.
+14.wong, h.j., caesar, m., bandali, s., agnew, j., abrams, h.: electronic inpatient white-
+boards: improving multidisciplinary communication and coordination of care. international
+journal of medical informatics 78(4) (2009) 239 – 247
+15.sander j. j. leemans, d.f., van der aalst, w.m.p.: using life cycle information in process
+discovery. in: bpm workshops 2015. (to appear).

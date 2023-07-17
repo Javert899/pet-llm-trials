@@ -1,0 +1,878 @@
+assessing process discovery scalability in data intensive environments
+sergio hern ´andez, joaqu ´ın ezpeleta
+department of computer science and systems engineering
+university of zaragoza
+zaragoza, spain
+email: fshernandez, ezpeleta g@unizar.ess.j. van zelst, wil m.p. van der aalst
+department of mathematics and computer science
+eindhoven university of technology
+eindhoven, the netherlands
+email: fs.j.v.zelst, w.m.p.v.d.aalst g@tue.nl
+abstract —tremendous developments in information tech-
+nology (it) have enabled us to store and process huge amounts
+of data at unprecedented rates. this impacts business processes
+in various ways. throughput times of processes decrease while
+the data stored associated to the execution of these processes
+increases. the ﬁeld of process discovery, originating from
+the area of process mining, is concerned with automatically
+discovering process models from event data related to the
+execution of business processes. in this paper, we assess the
+scalability of applying process discovery techniques in data
+intensive environments. we propose ways to compute parts
+of the internal data abstractions used by the discovery tech-
+niques within the mapreduce framework. the combination of
+mapreduce and process discovery enables us to tackle much
+bigger event logs in less time. our generic approach scales
+linearly in terms of the size of the data and the number of
+computational resources used, and thus, shows great potential
+for the adoption of process discovery in a big data context.
+keywords -process mining; mapreduce; hadoop; big data;
+automated process discovery; scalability; prom
+i. i ntroduction
+the amount of data being recorded has increased tremen-
+dously over the last few years. nowadays, the total amount
+of data generated within a few minutes equals the total
+amount of data generated between the stone age and 2003.
+moreover, the rate of data generation keeps increasing [1].
+the main challenge related to this data explosion phe-
+nomenon is not the storage, but the extraction of valuable
+information from these huge collections of data [2].
+the latter challenge also applies to the analysis of business
+processes. multiple events related to the execution of busi-
+ness processes are recorded everyday including the activities
+performed, the resource executing the activity, the associated
+cost, etc. a collection of such events is referred to as an
+event log . a thorough analysis of an event log can lead
+to improvements in the operational process under study,
+e.g., causing increases in revenue, system reliability, process
+quality, client satisfaction, etc. enabling the aforementioned
+improvements is the main goal of process mining [3].
+process mining includes three types of analysis. process
+discovery , the most prominent process mining task, is con-
+cerned with automatically extracting a process model from
+an event log. conformance checking measures how wellthe behaviour recorded in an event log ﬁts a given process
+model and vice versa. process enhancement is concerned
+with improving an existing model using information about
+the actual process recorded in an event log.
+the spectacular growth of event data poses new chal-
+lenges for process mining techniques. the majority of pro-
+cess mining techniques are not designed to scale, i.e., they
+assume all data to be in local memory and do not apply dis-
+tributed computation schemes across several computers [4].
+these assumptions are reﬂected in the poor handling of
+large amounts of data by tools used for process mining, e.g.,
+the prom framework1, disco2, etc. hence, current process
+mining techniques fail when being applied to large amounts
+of data.
+some approaches to tackle the scalability issues in process
+mining have been proposed, e.g., the application of divide
+and conquer schemes for the purpose of problem decom-
+position [5]. additionally a ﬁrst implementation of process
+discovery algorithms using the mapreduce [6] framework
+was proposed [7]. however, an exhaustive study of the pos-
+sible beneﬁts of the use of distributed computing techniques
+in the context of process mining is still missing.
+mapreduce is of special interest as it concerns a scalable
+distributed computing paradigm suitable for data-intensive
+applications [8]. apache hadoop3is the most popular open
+source implementation supporting mapreduce. addition-
+ally, hadoop provides a distributed ﬁle system (hdfs)
+suitable for storing data at a large-scale. thus, hadoop
+provides a bridge between large amounts of event data,
+typically stored in a company’s data warehouse, and the
+mapreduce paradigm.
+the main goal of this paper is to assess the scalability
+and viability of distributed process discovery approaches.
+for this purpose, we have designed a distributed approach
+for large-scale process discovery based on mapreduce. the
+approach starts with partitioning the input event log and
+computing different data abstractions suitable to be used
+by different process discovery techniques. then, the process
+1http://www.promtools.org
+2http://ﬂuxicon.com/disco/
+3http://hadoop.apache.org/model calculated from these abstraction is discovered and
+visualized within the prom framework, the most widely used
+process mining tool, taking advantage of the algorithms and
+methods already available in the tool. thus, the integration
+of these technologies enables researchers and practitioners in
+the process mining community to use and develop distributed
+process mining techniques and provides the opportunity
+of improving the performance and scalability of existing
+techniques.
+a comprehensive assessment of the scalability of the
+developed approach is carried out by performing several
+experiments varying different dimensions like event log size,
+computational resources used, and event log characteristics.
+the results obtained from the conducted experiments prove
+the scalability of the solution and the importance of the spe-
+ciﬁc log in the ﬁnal execution time. the results demonstrate
+the viability of using this type of techniques in the process
+mining ﬁeld. thus, the analysis of vast amounts of data is
+possible in a reasonable time.
+the remainder of this paper is organized as follows.
+section ii provides an overview of the process mining ﬁeld,
+mapreduce and hadoop. in section iii the mapreduce-
+based approach for large-scale distributed process discovery
+is explained. section iv presents the evaluation of the
+approach using several datasets and discusses the results.
+in section v related work is discussed. finally, section vi
+summarizes and concludes the paper.
+ii. p reliminaries
+a. event logs and process models
+we present a brief overview of the key concepts within
+the ﬁeld of process mining. for a more detailed overview of
+the ﬁeld and associated concepts we refer to [3].
+the typical input for process mining is an event log . an
+event log corresponds to a collection of traces , referring to
+a speciﬁc execution of the business process, i.e. a process
+instance orcase. each trace is an ordered sequence of events.
+each event represents an execution of an activity that is part
+of the process in the context of a case. in addition, other
+information about events can also be recorded and used for
+further analysis. for instance, the resource that is executing
+the activity or the timestamp of the event are attributes of
+interest that can be recorded with an event. as an example
+of an event log consider table i, adopted from [3].
+the event log describes two cases of a (ﬁctional) process
+related to handling compensation requests. the two cases
+depicted in the table are identiﬁed by the case-id column,
+i.e.355410 and 355411 . various activities are performed
+within the process, i.e. register request ,check ticket , etc.,
+and various resources are active within the business process,
+i.e.alfred ,lucy , etc.
+techniques for process discovery return process models
+learned from event data. a process model describes the
+figure 1: bpmn model adopted from [3], describing the
+two traces presented in table i.
+possible ﬂow of execution of a business process. an ex-
+ample of a business process model, using bpmn [9] as
+process modelling language, able to describe the two traces
+presented in table i is depicted in figure 1.
+the process model allows for different traces of events
+as well. in fact, due to the loop structure (i.e. executing
+reinitiate request ), the process model describes an inﬁnite
+number of traces.
+b. process discovery techniques
+the main goal of process discovery is to construct a
+process model, based on event data stored in an event log.
+an abundance of process discovery techniques exist. we
+refer to [10] for an overview. the solution proposed in this
+paper is tailored towards three speciﬁc process discovery
+techniques which we describe in more detail, i.e., the alpha
+miner [11], the inductive miner [12] and the flexible
+heuristics miner [13]. these three techniques are represen-
+tative for a wider range of process discovery techniques.
+the conceptual computational structures of the algorithms
+indicating the data relations are depicted in figure 2.
+alpha miner: the alpha miner consists of three stages
+as shown in figure 2a. first, direct succession information
+of the activities in the event log is recorded in a directly-
+follows graph (stage 1) . direct succession of activity a
+case-id activity resource time-stamp
+............
+355410 register request alfred 2015-07-08t08:45:37+00:00
+355410 examine thoroughly lucy 2015-07-09t09:13:37+00:00
+355410 check ticket alfred 2015-07-15t09:14:25+00:00
+355410 decide ralph 2015-07-18t10:11:15+00:00
+355410 reject request ralph 2015-07-19t10:28:18+00:00
+355411 register request lucy 2015-07-08t10:33:37+00:00
+355411 examine casually rob 2015-07-10t10:43:56+00:00
+355411 check ticket ralph 2015-07-12t11:00:28+00:00
+355411 decide rob 2015-07-15t11:14:04+00:00
+355411 reinitiate request rob 2015-07-15t11:35:17+00:00
+355411 examine thoroughly lucy 2015-07-18t11:55:38+00:00
+355411 check ticket alfred 2015-07-22t11:57:46+00:00
+355411 decide alfred 2015-07-22t12:20:32+00:00
+355411 pay compensation lucy 2015-07-25t12:26:56+00:00
+............
+table i: a fragment of a ﬁctional event log adopted from [3].
+each line corresponds to an event.by some activity bmeans that in some trace, activity ais
+immediately followed by activity b. for example in table i,
+register request is directly followed by examine thoroughly .
+the directly-follows graph used by the alpha miner is
+unweighted, i.e., it only records whether a direct succession
+occurs within the event log or not. next, a causal footprint
+matrix is calculated using the directly-follows graph as input
+(stage 2) . the matrix indicates for any two activities if
+they are executed in parallel, sequentially or whether they
+never follow each other directly. finally, a process model
+representing is constructed by the -algorithm [11] based on
+the casual footprint matrix (stage 3) . the alpha miner
+uses petri nets as a representation.
+inductive miner: an overview of the stages carried
+out by the inductive miner is presented in figure 2b. the
+inductive miner approach also converts the event log to a
+directly-follows graph (stage 1) . the technique is how-
+ever able to apply a ﬁltering scheme on a weighted-directly
+follows graph. the weighted variant explicitly captures the
+frequency of a direct succession. from the weighted directly-
+follows graph, a process tree is discovered by considering the
+frequencies of each relation (stage 2) [12]. the process
+tree can be converted later to a petri net or a bpmn model.
+flexible heuristics miner: the structure of the flex-
+ible heuristics miner is shown in figure 2c. in the ﬁrst
+stage, three graphs are calculated (stage 1) . the ﬁrst
+graph contains information about direct succession relations
+represented by a directly-follows graph , including length-one
+loops . the second graph represents length-two loop relations
+within the event log. finally, the third graph represents long
+distance relations , i.e, the number of times each activity is
+indirectly followed by another activity. using these three
+graphs, the algorithm builds a dependency graph that for
+each activity indicates the possible preceding and succeed-
+ing activities (stage 2) . then, the dependency graph is
+annotated by detecting the splits and joins of each activity
+(a) alpha miner.
+(b) inductive miner.
+(c) flexible heuristics miner.
+figure 2: structure of the different stages carried out in the
+process discovery techniques under study.(stage 3) . xor/and/or-splits/joins can be discovered
+by considering subsets of predecessor and successor activ-
+ities. to do so, the event log is revisited considering the
+previously calculated dependency graph and detecting all
+the activators and reactors of each activity in every trace.
+this step is computationally expensive and the execution
+time highly depends on the event log characteristics [13].
+finally, a heuristics net model that visualizes the annotated
+dependency graph is built (stage 4) .
+c. mapreduce and apache hadoop
+mapreduce [6] is an easy-to-use programming model in-
+troduced by google inc. to process large datasets on clusters
+of servers in an scalable manner. it is based on the use of
+two functions, inspired from the functional programming
+paradigm: map andreduce . the user needs to deﬁne
+these two functions using key-value pairs to express both
+the input and the output of the computation. the input of
+themap phase is a list of key-value pairs, where the input
+key represents the position of the data in the input ﬁle and
+the input value is the actual data. its output is a list of
+intermediate key-value pairs. the output is grouped by key
+and all the intermediate values associated with the same key
+are provided together to the reduce function. then, a set
+of reducers merges the values, according to a user-deﬁned
+reduce function. the reduce phase outputs a list of key-
+value pairs that represent the ﬁnal output of the mapre-
+duce computation. additionally, the mapreduce paradigm
+is supported by the use of a distributed storage system that
+allows partitioning the input ﬁles in several smaller ﬁles
+across the cluster, increasing the scalability of the approach.
+within this paper the open-source implementation of the
+mapreduce framework, apache hadoop, is used. it has
+two main features. first a mapreduce programming model,
+as explained above, and a resource manager ( yet another
+resource manager , yarn) to schedule computational jobs
+along a cluster providing high-scalability and fault-tolerance
+capabilities. second, a distributed ﬁle system ( hadoop dis-
+tributed file system , hdfs) able to split input data in several
+blocks that are distributed and replicated along the cluster
+to provide high-throughput and reliable access to them.
+iii. c omputing intermediate event log
+abstractions using mapreduce
+a. conceptual approach
+the mapreduce-based process discovery approach pro-
+posed in this paper is based on calculating the intermediate
+log abstractions (directly-follows graph, dependency graph,
+etc.) required by the process discovery techniques. computa-
+tion of these intermediary results is done using one or several
+mapreduce jobs. the ﬁnal process model is calculated in
+the prom framework. the design decision is based on the
+observation that computing the intermediate abstractions is
+the most computational expensive task since the whole eventlog must be analysed and different calculations must be per-
+formed. additionally, by calculating the ﬁnal process model
+in prom, we can beneﬁt from the use of the algorithms and
+abstractions already included in the prom framework.
+first, the input event log is split into several independent
+sublogs that contain a subset of traces. during the map
+phase, the speciﬁc computations needed for the discovery
+algorithm are performed calculating local abstractions corre-
+sponding to each sublog. next, the reduce phase aggregates
+all intermediate data to get a ﬁnal abstraction of the whole
+event log and additionally performs, if necessary, some basic
+transformations. finally, when the last abstraction is calcu-
+lated using one or several mapreduce jobs, the ﬁnal process
+model is discovered inside the prom framework. note that
+this is possible since the size of the intermediate abstractions
+is typically small (only depending on the number of unique
+activities and not on the number of events).
+the distributed computing approach takes advantage of
+the possibility of calculating the intermediate abstractions in
+parallel, at trace level, and aggregating the results later. this
+type of computation is highly suitable to be modelled within
+mapreduce since the computation of the intermediate phase
+can be performed during the map phase and the aggregation
+of the results can be carried out during the reduce phase.
+an important aspect of the approach is the input format
+used to represent the event logs. the extensible event
+stream (xes) format4[14] is used since it is a standard
+language to represent event logs tailored towards process
+mining, data mining, text mining and statistical analysis. to
+use the mapreduce based approach, the event log must be
+stored in the hdfs. thus, the event log is split in blocks
+of some predeﬁned size, i.e, every block can be considered
+as an independent sublog. then, a mapper calculates the
+intermediate data corresponding to each sublog. although
+the blocks do not respect the division of the log in term
+of traces, hadoop automatically manages the traces that are
+split in two blocks providing complete traces to mappers.
+b. intermediate abstractions
+both the alpha miner and the inductive miner use the
+directly-follows graph as an intermediate abstraction of the
+event log ( stage 1 of figures 2a and 2b). hence we design
+the computation of the directly-follows graph as a mapre-
+duce job. figure 3 shows schematically the calculation of the
+directly-follows graph illustrating the mapreduce approach
+proposed in this paper. first, the log must be placed in the
+hdfs. as a consequence, the input log is automatically
+partitioned in several sublogs which serve as input to the
+mappers. next, a directly-follows graph from each sublog
+is calculated during the map phase. for instance, the local
+graph corresponding to the second sublog in the example
+indicates that ais the start activity two times, ais followed
+4http://www.xes-standard.org/
+figure 3: example showing the mapreduce computation of
+a directly-follows graph in hadoop.
+bybtwice,bis followed by don two occasions and d
+is the end activity two times. finally, all the intermediate
+graphs calculated by the mappers are aggregated during the
+reduce phase by using a single reducer. thus, a directly-
+follows graph representing an abstraction of the whole log
+is calculated as output of the mapreduce job and used
+to discover a process model by applying the alpha or the
+inductive discovery algorithm.
+for the flexible heuristics miner , two mapreduce jobs
+are executed sequentially. the ﬁrst one calculates the depen-
+dency graph and the second one annotates it by computing
+the splits and joins. the map phase of the ﬁrst mapreduce
+job calculates the directly-follows, length-two loops and
+long distance relations graphs of each sublog (stage 1
+of figure 2c). next, a reducer aggregates all the graphs
+and computes the dependency graph that is written in the
+hdfs as result of the job (stage 2 of figure 2c). the
+second mapreduce job computes the annotated dependency
+graph (stage 3 of figure 2c). before starting the job, the
+dependency graph generated in the ﬁrst mapreduce job is
+written in the hadoop distributed cache so it can be used by
+all the mappers of the second job. these mappers calculate
+the splits and joins of each sublog using the dependency
+graph. finally, they emit the split and joins that are received
+by the reducer to compose the annotated dependency graph
+that is written as output.
+c. final process model
+once the event log abstractions have been calculated
+using mapreduce, the ﬁnal process model is discovered
+using the prom framework. thereby, these abstractions are
+downloaded from the remote hadoop cluster and the selected
+discovery algorithm is applied to get the ﬁnal process
+model. this way, we beneﬁt from using the algorithms and
+techniques previously developed within the tool.
+the integration of the mapreduce-based approach and
+prom provides plugins with the ability to establish a con-
+nection with a hadoop cluster, to import xes logs stored
+in a remote hdfs and to execute the implemented hadoop-based process discovery techniques. the plug-ins automat-
+ically manage the communication with the hadoop cluster,
+the execution of the mapreduce jobs in the remote cluster,
+the transfer of the intermediate results and the computation
+and visualization of the ﬁnal process model. additionally,
+generic methods to enable the development of new process
+mining techniques are included. thus, the developer only
+needs to implement the new mapreduce jobs and the
+ﬁnal computation of the process model, meanwhile prom
+manages the interaction with the remote cluster. for more
+details on the integration of apache hadoop in the prom
+framework we refer to [15].
+iv. e xperimental evaluation
+we have evaluated the proposed approach to discover
+process models from large events logs using apache mapre-
+duce. in the experiments, we measured the execution time
+of applying different process discovery techniques and eval-
+uated the scalability of the solution. the quality of the
+generated models is not evaluated as the focus of this work
+is on scalability of the existing techniques when they face
+huge event logs.
+a. experimental setup
+for the experiments, we have used a hadoop cluster
+composed of 5 computing nodes. one of them is conﬁgured
+as the master node and the remaining four as worker nodes.
+the master node consists of eight intel xeon cpu e5430
+at 2.66 ghz processors, 32 gb of ram memory and ﬁve
+300 gb hard disks. each worker node consists of eight intel
+xeon cpu e5-2407 v2 at 2.40 ghz processors, 64 gb of
+ram memory and eight 1 tb hard disks.
+regarding apache hadoop, version 2.6.0 was deployed
+in the cluster. the main conﬁguration parameters establish
+that up to 16 hadoop tasks per worker node can be carried
+out in parallel using up to 56 gb of memory. the hdfs
+is conﬁgured to store ﬁles in blocks of 256 mb making
+2 replicas of each block. this conﬁguration is in line
+with the recommended guidelines by different mapreduce
+distributions56and was adopted after different performance
+tests.
+finally, the following parameters for the process discovery
+techniques were used in all the experiments. for the alpha
+miner, there are no conﬁguration parameters and hence, the
+default implementation is used. for the inductive miner, the
+inductive miner - infrequent variant with the noise threshold
+set to 0.2 is used. for the flexible heuristics miner, the all
+tasks connected andlong distance dependency heuristics are
+selected whereas the dependency ,length-one-loop ,length-
+two-loops andlong-distance thresholds are set to 90.0 and
+therelative-to-best threshold is set to 5.0.
+5http://hadoop.apache.org/docs/r2.6.0/hadoop-project-dist/
+hadoop-common/clustersetup.html
+6http://docs.hortonworks.com/hdpdocuments/hdp2/hdp-2.0.6.0/
+bkinstalling manually book/content/rpm-chap1-11.htmlall results presented below are based on an average of
+ﬁve executions.
+b. varying the size of the event log
+the aim of this experiment is to evaluate the scalability
+of the presented approach according to the total size of the
+event log, i.e., the total number of events in the log.
+setup: the dataset used in the experiments consists of
+several event logs of different size that have been created
+randomly from a process tree consisting of 40 activities.
+the size of the events logs varies from 2 gb to 218 gb,
+from almost 1 million to 100 million traces and from around
+32 million to 3.500 million events (table ii). on average,
+the traces are composed of 35 events.
+results: figure 4 summarizes the obtained results.
+speciﬁcally, figure 4a shows the execution time of applying
+the alpha miner and the inductive miner whereas figure 4b
+shows the results concerning the flexible heuristics miner.
+the results of alpha and inductive miner are compa-
+rable. both algorithms perform the same computation in
+the hadoop cluster (calculating the directly-follows graph)
+and, then, use this information as an input for the mining
+algorithms which take only a few seconds.
+for the flexible heuristics miner, figure 4b shows the
+execution time of the ﬁrst mapreduce phase ( computing
+dgraph dotted line), the execution time of the second
+mapreduce phase ( annotating dgraph dotted line) and the
+total execution time resulting of considering both phases
+(flexible heuristics miner line). there is a big difference
+between both mapreduce phases. the execution time of the
+ﬁrst phase is slightly higher than the execution time of alpha
+miner and inductive miner. the second phase is much more
+computationally expensive and accounts for around 90% of
+the total execution time of the discovery algorithm.
+discussion: the experiments show that the proposed
+approach is scalable in terms of event log size. we identify
+a linear increase in execution time w.r.t. the event log
+size for all techniques. an interesting result is the small
+difference between the execution time of the alpha miner,
+the inductive miner and the execution time of the ﬁrst part
+of the flexible heuristics miner. in the two ﬁrst algorithms,
+this time corresponds to the computation of the directly-
+follows graph, whereas in the second case, it corresponds
+log size (gb) number of traces number of events
+2 926.006 32.407.324
+8 3.671.032 128.481.890
+16 7.341.929 256.963.820
+32 14.683.619 513.927.754
+64 29.367.284 1.027.855.444
+128 58.734.750 2.055.710.794
+218 100.000.000 3.499.987.460
+table ii: summary of log size, number of traces and events
+corresponding to the event logs forming the ﬁrstdataset used
+in the experiments.0 500 1;000 1;500 2;000 2;500 3;000 3;5000510152025
+number of events (millions)time (minutes)alpha miner
+inductive miner
+(a) alpha miner and inductive miner.0 500 1;000 1;500 2;000 2;500 3;000 3;5000255075100125150175200
+number of events (millions)time (minutes)flexible heuristics miner
+annotating dgraph
+computing dgraph
+(b) flexible heuristics miner.
+figure 4: scalability results when varying the size of the event log. the plots show the execution time of the studied process
+discovery techniques when the total number of events in the log is increased.
+to calculation of the directly-follows graph including the
+length-two loops graph and the long distance relations graph.
+thus, the additional time used to calculate more information
+in the ﬁrst part of the flexible heuristics miner does not
+have a great impact on the ﬁnal execution time. furthermore,
+it is explained because hadoop is best suited to support large
+and computing-intensive tasks instead of real-time ones.
+c. varying the number of computational resources
+in this experiment we analyse the speed-up achieved when
+increasing the number of computing resources used.
+setup: in this experiment, the previous experiment was
+repeated with different numbers of available computational
+resources. the experiment is repeated using 1, 2 and 3
+worker nodes and is compared with the previous results,
+i.e., where the whole cluster (4 worker nodes) was used.
+results: figure 5 shows the results of this second
+experiment. the ﬁgure shows the speed-up of the 2, 3 and 4
+workers nodes deployments compared with the single worker
+conﬁguration of the hadoop cluster. figure 5a shows the
+speed-up of computing the directly-follows graph in hadoop,
+corresponding to computation performed in both the alpha
+miner and the inductive miner. figure 5b shows the results
+corresponding to the execution of the flexible heuristics
+miner. in both cases, one can see the same trend and the
+algorithms get an almost linear speed-up when the input log
+is large enough.
+discussion: the approach presents a great scalability
+with the number of worker nodes. the results show an
+almost linear speed-up compared to the 1 worker node
+deployment when the log is large enough. the execution
+time for the 2 gb log is independent of the number of
+computing resources because the whole computation can becompleted using only 1 worker node and as a consequence,
+there is no speed-up when several nodes are added. in the
+2 nodes deployments, an almost linear speed-up is achieved
+when the log size is at least 16 gb. when 3 worker nodes
+are used, the linear speed-up is obtained from the 32 gb log.
+finally, for the whole cluster deployment, the size varies in
+the alpha and inductive miner and in the flexible heuristics
+miner. for the ﬁrst two miners, an almost linear speed is
+achieved with the 32 gb logs. however, for the flexible
+heuristics miner we at least need the 64 gb event log. the
+reason for the requirement of increasing the event log size to
+achieve linear speed-ups is twofold. first, more mappers are
+needed to ﬁll all the worker nodes. second, communication
+and network-related delays increase. obviously, these values
+will vary in other clusters since it depends on the number of
+parallel tasks executed in every node and the hdfs block
+size.
+d. varying the number of activities
+the main reason for analysing the impact of the number
+of activities with regard to performance is its great inﬂuence
+on the computational cost of process discovery techniques.
+some techniques analyse complex properties and explore
+several possibilities whereby the number of events per trace
+and the number of activities forming the process can greatly
+inﬂuence the execution time, e.g., in the case of the flexible
+heuristics miner.
+setup: in this experiment, three different datasets rep-
+resenting three different business processes are used. the
+ﬁrst dataset corresponds to the event logs used in the
+previous experiments, i.e. as shown in table ii. the second
+dataset corresponds to event logs generated from the same
+underlying business process with an additional loop present0 500 1;000 1;500 2;000 2;500 3;000 3;50001234
+number of events (millions)speed-up
+1 node 2 nodes
+3 nodes 4 nodes
+(a) directly-follows graph.0 500 1;000 1;500 2;000 2;500 3;000 3;50001234
+number of events (millions)speed-up
+1 node 2 nodes
+3 nodes 4 nodes
+(b) flexible heuristics miner.
+figure 5: scalability results varying the number of worker nodes used in the hadoop cluster. the ﬁgures show the speed-up
+of distributed conﬁgurations compared to a single worker node deployment.
+log size (gb) number of traces number of events
+3,6 926.006 64.814.648
+14,2 3.671.032 256.963.780
+28,5 7.341.929 513.927.640
+56,9 14.683.619 1.027.855.444
+113,9 29.367.284 2.055.710.888
+227,8 58.734.750 4.111.421.588
+387,9 100.000.000 6.999.974.920
+table iii: summary of log size, number of traces and events
+corresponding to the event logs in the second and third
+datasets used in the last scalability experiment.
+at the end of the process model. the loop is conﬁgured to
+execute one additional iteration of the process. the number
+ofevents per trace doubles compared to event logs in the
+ﬁrst dataset whereas the number of activities remains the
+same. the third dataset is based on the process model used
+for the second one. however, the activities in the second
+iteration of the loop have been renamed. hence, the event
+logs in the third dataset has both a double number of events
+and a double number of activities per trace, compared to
+the logs in the ﬁrst dataset. the characteristics of the two
+additional datasets are depicted in table iii. summarizing,
+the logs in the ﬁrst dataset include 40 possible activities and
+35 events per trace, the ones in the second dataset include
+40 possible activities and 70 events per trace whereas the
+logs in the third dataset include 80 possible activities and
+70 events per trace.
+results: figure 6 shows the results of the experiment
+corresponding to the three different datasets. note the ﬁrst
+dataset contains logs with half events than the logs in
+the other two datasets. the results of inductive miner are
+provided in figure 6a. the execution time is similar forthe three datasets. the results of the flexible heuristics
+miner are depicted in figure 6b. in this case, there is a
+big difference between the execution time of the logs in the
+third dataset compared to the executing time of the ones in
+the ﬁrst two datasets. this is due to the computational cost
+of the flexible heuristics miner varies with the number of
+activities in the log. the results related to the alpha miner
+results are not shown since they are again roughly equal to
+the results of the inductive miner.
+discussion: on the one hand, the results of the induc-
+tive miner, and consequently the alpha miner, show that
+the number of events per trace and the number of activities
+have no inﬂuence on the techniques. the execution time is
+linear in the size of the event logs since the computation
+only considers the current and the next event in a trace. on
+the other hand, the characteristics of the event log greatly
+inﬂuence the execution time of the flexible heuristics miner.
+the ﬁrst two datasets show the same trend and have a
+similar execution time when the same number of events
+is considered. however, the computation of the annotated
+dependency graph corresponding to the logs in the third
+dataset is much slower. this difference is mainly due to the
+number of activities heavily impacts the computation of the
+splits and joins used to annotate the dependency graph [13].
+e. a note on storing event logs in the hdfs
+the event logs have to be written to the hdfs, prior to
+using them. we analysed the time required to perform this
+operation for the three datasets considered in the evaluation.
+results: figure 7 shows the execution time required to
+store the event logs in the datasets according to their size.
+the time required to store the input log in the hdfs is0 1;000 2;000 3;000 4;000 5;000 6;000 7;00001020304050
+number of events (millions)time (minutes)dataset 3
+dataset 2
+dataset 1
+(a) inductive miner.0 1;000 2;000 3;000 4;000 5;000 6;000 7;0000100200300400500600700800
+number of events (millions)time (minutes)dataset 3
+dataset 2
+dataset 1
+(b) flexible heuristics miner.
+figure 6: results of the inﬂuence of the number of events and activities experiment. the plots show the execution time
+of the studied process discovery techniques when they are applied to event logs representing similar processes but with
+different characteristics.
+0 1;000 2;000 3;000 4;000 5;000 6;000 7;0000102030405060
+number of events (millions)time (minutes)dataset 3
+dataset 2
+dataset 1
+figure 7: time required to store the event logs of the three
+considered datasets in the hadoop distributed file system.
+linear with the log size. the average i/o recorded is around
+113 mb/s.
+discussion: storing ﬁles in the hdfs has a linear
+performance since the event log must be read and written
+sequentially. note that the contents of the input ﬁle are
+not relevant for this operation since apache hadoop splits
+the ﬁle in blocks of exactly 256 mb, as indicated in the
+conﬁguration, without considering its inner content.
+f . general discussion
+the execution time of the alpha miner and the inductive
+miner are roughly equal since both algorithms share thesame intermediate abstraction. moreover, discovering the
+process model is much faster than computing the interme-
+diate directly-follows graph. the execution time of com-
+puting the dependency graph (ﬁrst mapreduce job of the
+flexible heuristics miner) takes a slightly longer time than
+discovering the directly-follows graph. if we consider the
+fact that this mapreduce job calculates more abstractions
+than just the directly-follows graph, we can conclude that the
+approach is more beneﬁcial to address computing-intensive
+discovery algorithms.
+one of the requirements of the framework used for
+evaluation is the use of the xml-based xes format to
+represent the event log. however, event logs can be repre-
+sented using different formats, e.g. csv (comma separated
+values ). although the xes format is the standard format to
+represent event logs, it could be interesting to explore the use
+of different formats as well. furthermore, the input format
+heavily impacts the size of the log and, consequently, the
+i/o performance. xes allows to perform speciﬁc computa-
+tions trace by trace, as required for the process discovery
+techniques. the read performance is however rather low.
+if we consider other common formats, like csv, the read
+performance should be higher because events are read line
+by line. in the case of csv we however need an additional,
+initial, mapreduce phase to transform the data in order to
+be able to analyze the event log trace by trace. another
+possibility could be using a format speciﬁcally designed to
+work in mapreduce environments like apache avro7, that
+is designed to handle xml ﬁles in hadoop. most likely,
+this will enable an improvement in i/o performance and a
+7http://avro.apache.org/reduction in log size.
+v. r elated work
+an overview of different options for distributed process
+mining is presented in [5]. this work proposes to compute
+several process models by partitioning the log in several sub-
+logs and merging the results to obtain a ﬁnal model. the ﬁrst
+option is to divide the event log in sub-logs that contains
+the whole process but fewer cases ( vertical partitioning ).
+the second option is to split the log in sub-logs that contain
+speciﬁc parts of the process, i.e., by projecting on a subset
+of activities ( horizontal partitioning ).
+closely linked to the previous approach is the use of
+divide-and-conquer approaches [4], [16]–[18]. in general,
+the aim is to partition the event log, ensuring the resulting
+models can be merged getting a valid result. speciﬁcally,
+the use of passages , special pairs of events that allows to
+decompose the event log and aggregate the ﬁnal results with
+correctness guarantees, is explored in [16]; decomposing
+the event log using overlapping sets of events is proposed
+in [17] and partitioning the process model in several single-
+entry single-exit subprocesses for conformance checking
+in the large is presented in [18]. however, the previous
+techniques are limited to petri nets. finally, in [4] the divide
+and conquer approach is generalized beyond petri nets.
+compared to the previous approaches, our technique is based
+on a vertical partition of the event log since this model is
+more suitable for parallel mapreduce computations.
+mapreduce is rarely applied in a process mining con-
+text. in [19], mapreduce has been used to support event
+correlation discovery, i.e., to identify the events that are
+part of the same case. the approach uses two mapreduce
+jobs to compute simple correlations conditions in the ﬁrst
+job and composite ones in the second job. in our case, we
+assume that the input event log has information about the
+process instance corresponding to each event. in the context
+of process discovery, mapreduce was previously used to
+implement the alpha miner and the flexible heuristics
+miner using the amazon elastic map-reduce service [7].
+the implementation uses two mapreduce jobs for the alpha
+miner and ﬁve jobs for the flexible heuristics miner.
+although the work presented in [7] is related to the
+approach presented in this paper, the implementation is
+signiﬁcantly different. our approach overcomes some of the
+problems not addressed in [7]. the architecture proposed
+in [7] does not ﬁt properly with a mapreduce approach
+since it uses the map phase to collect data and several
+reducers to perform different computations in parallel. this
+design decision has two main drawbacks. first, multiple
+“identity” map phases are used, i.e., map phases that do not
+manipulate any of the input key-value pairs. this increases
+the amount of data transferred over the network and results
+in useless computations with the sole goal of grouping sparse
+data by key. second, the number of key-value pairs emittedin some reduce phases is higher than the input key-value
+pairs. in such cases, much more data must be written to
+the distributed storage system which increases the execution
+time. likewise, much more data must be read as input of the
+following map phase. in this situation, using an “identity”
+reducer is preferable.
+we can not directly compare the approach of [7] to the
+approach proposed here as different computing resources
+and event logs are used. moreover, the developed techniques
+are not available so the work is hardly reproducible. in any
+case, the execution times presented in the paper show poor
+scalability of the approach. when moving from a cluster of
+10 general-purpose processors (that uses up to 20 parallel
+threads) to a cluster of 320 high-performance processors
+(that uses up to 480 parallel threads), the speed-up is 10:5
+for the alpha miner and 6:27for the flexible heuristics
+miner. hence, we adopted a new scheme to better allow for
+scalable distributed process discovery.
+finally, there is a big difference in the size of the logs used
+in both works. in [7] the discovery techniques are applied to
+a log consisting of 5 million traces and around 184,5 million
+events. in this work, we apply them to logs consisting of
+up to 100 million traces and almost 7 billion events getting
+scalable results. thus, our approach overcomes the approach
+in [7] since it is applied to bigger logs and results prove
+the scalability of the approach both regarding the log size
+and the number of computational resources used.
+vi. c onclusion and future work
+in this paper, we have evaluated the scalability and
+validity of using a mapreduce-based approach for large-
+scale process discovery. the approach used for evaluation
+is based on computing intermediate abstractions, such as
+the directly-follows graph, used by the process discovery
+algorithms as mapreduce jobs. our evaluation demonstrated
+that the approach is able to handle large event logs in
+an efﬁcient and scalable manner. additionally, the solution
+has been implemented within the prom framework enabling
+researches and practitioners of the process mining commu-
+nity to use the developed algorithms and to implement new
+mapreduce-based techniques. this overcomes one of the
+main limitations of the tool since it was unable to analyse
+huge event logs.
+as future work, we plan to develop new process discovery
+techniques using this approach and to extend the approach
+to conformance checking and process enhancement. specif-
+ically, we consider that computing alignments should be
+beneﬁcial due to its high computational cost [20]. another
+interesting topic is to support the use of different input
+formats, such as comma separated values (csv) or apache
+avro, to represent the input event logs and to explore the
+performance and scalability of the algorithms when different
+input formats are used. also, we would like to explore the
+possibility of partitioning the log horizontally, by subsets ofactivities, since super-linear speed-ups could be obtained for
+process mining techniques whose computational complexity
+is exponential in the number of activities [4]. finally, we
+intend to explore different technologies and approaches to
+support in process mining in the large (big data). in this
+aspect, we will explore other technologies that are built
+on top of hadoop like apache spark8, other distributed
+computing paradigms like grid and cloud computing [21]
+and the integration of several computing infrastructures that
+allow for more parallelism level in discovery algorithms,
+thus further reducing the execution time [22].
+acknowledgment
+this work has been supported by the research projects
+tin2014-56633-c3-2-r, granted by the spanish ministerio
+de econom ´ıa y competitividad, fpu12/04775, granted by
+the spanish ministerio de educaci ´on, cultura y deporte,
+287230/2, granted by gobierno de arag ´on, and the deli-
+bida (desire lines in big data) research program sup-
+ported by nwo.
+references
+[1] r. smolan and j. erwitt, the human face of big data .
+against all odds productions, 2012.
+[2] w. m. p. van der aalst, “data scientist: the engineer of the
+future,” in enterprise interoperability vi . springer, 2014,
+pp. 13–26.
+[3] ——, process mining: discovery, conformance and en-
+hancement of business processes , 1st ed. springer publishing
+company, incorporated, 2011.
+[4] ——, “a general divide and conquer approach for process
+mining,” in computer science and information systems (fed-
+csis), 2013 federated conference on . ieee, 2013, pp. 1–10.
+[5] ——, “distributed process discovery and conformance check-
+ing,” in fundamental approaches to software engineering .
+springer, 2012, pp. 1–25.
+[6] j. dean and s. ghemawat, “mapreduce: simpliﬁed data
+processing on large clusters,” communications of the acm ,
+vol. 51, no. 1, pp. 107–113, 2008.
+[7] j. evermann, “scalable process discovery using map-
+reduce,” services computing, ieee transactions on , vol. pp,
+no. 99, pp. 1–1, 2014.
+[8] a. nandi, c. yu, p. bohannon, and r. ramakrishnan, “data
+cube materialization and mining over mapreduce,” ieee
+trans. knowl. data eng. , vol. 24, no. 10, pp. 1747–1759,
+2012.
+[9] object management group (omg), “business process model
+and notation (bpmn) version 2.0,” tech. rep., 2011.
+8http://spark.apache.org/[10] j. de weerdt, m. de backer, j. vanthienen, and b. baesens,
+“a multi-dimensional quality assessment of state-of-the-art
+process discovery algorithms using real-life event logs,” inf.
+syst., vol. 37, no. 7, pp. 654–676, 2012.
+[11] w. m. p. van der aalst, t. weijters, and l. maruster,
+“workﬂow mining: discovering process models from event
+logs,” knowledge and data engineering, ieee transactions
+on, vol. 16, no. 9, pp. 1128–1142, 2004.
+[12] s. j. j. leemans, d. fahland, and w. m. p. van der aalst,
+“discovering block-structured process models from event logs
+- a constructive approach,” in application and theory of
+petri nets and concurrency - 34th international conference,
+petri nets 2013 , 2013, pp. 311–329.
+[13] a. weijters and j. ribeiro, “flexible heuristics miner
+(fhm),” in computational intelligence and data mining
+(cidm), 2011 ieee symposium on . ieee, 2011, pp. 310–
+317.
+[14] h. verbeek, j. c. buijs, b. f. van dongen, and w. m. p.
+van der aalst, “xes, xesame, and prom 6,” in information
+systems evolution . springer, 2011, pp. 60–75.
+[15] s. hern ´andez, s. j. v. zelst, j. ezpeleta, and w. m. p.
+van der aalst, “handling big(ger) logs: connecting prom 6
+to apache hadoop,” in to appear in proceedings of the bpm
+demo sessions 2015 co-located with the 13th international
+conference on business process management (bpm 2015) ,
+2015.
+[16] w. m. p. van der aalst, “decomposing process mining
+problems using passages,” in application and theory of petri
+nets. springer, 2012, pp. 72–91.
+[17] w. m. van der aalst, “decomposing petri nets for pro-
+cess mining: a generic approach,” distributed and parallel
+databases , vol. 31, no. 4, pp. 471–507, 2013.
+[18] j. munoz-gama, j. carmona, and w. m. p. van der aalst,
+“conformance checking in the large: partitioning and topol-
+ogy,” in business process management . springer, 2013, pp.
+130–145.
+[19] h. reguieg, f. toumani, h. r. motahari-nezhad, and b. be-
+natallah, “using mapreduce to scale events correlation dis-
+covery for business processes mining,” in business process
+management . springer, 2012, pp. 279–284.
+[20] a. adriansyah, b. f. van dongen, and w. m. p. van der
+aalst, “conformance checking using cost-based ﬁtness analy-
+sis,” in enterprise distributed object computing conference
+(edoc), 2011 15th ieee international . ieee, 2011, pp.
+55–64.
+[21] i. foster, y . zhao, i. raicu, and s. lu, “cloud computing and
+grid computing 360-degree compared,” in grid computing
+environments workshop, 2008. gce’08 . ieee, 2008, pp.
+1–10.
+[22] j. fabra, s. hern ´andez, j. ezpeleta, and p. ´alvarez, “solving
+the interoperability problem by means of a bus,” journal of
+grid computing , vol. 12, no. 1, pp. 41–65, 2014.

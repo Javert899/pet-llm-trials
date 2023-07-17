@@ -1,0 +1,957 @@
+improving the performance of process discovery
+algorithms by instance selection?
+mohammadreza fani sani1, sebastiaan j. van zelst1;2, and wil van der aalst1;2
+1process and data science chair, rwth aachen university, aachen, germany
+ffanisani, s.j.v.zelst, wvdaalstg@pads.rwth-aachen.de
+2fraunhofer fit, birlinghoven castle, sankt augustin, germany
+abstract. process discovery algorithms automatically discover process models based
+on event data that is captured during the execution of business processes. these
+algorithms tend to use all of the event data to discover a process model. when
+dealing with large event logs, it is no longer feasible using standard hardware in
+limited time. a straightforward approach to overcome this problem is to down-size
+the event data by means of sampling. however, little research has been conducted
+on selecting the right sample, given the available time and characteristics of event
+data. this paper evaluates various subset selection methods and evaluates their per-
+formance on real event data. the proposed methods have been implemented in both
+the prom and the rapidprom platforms. our experiments show that it is possible to
+considerably speed up discovery using instance selection strategies. furthermore,
+results show that applying biased selection of the process instances compared to
+random sampling will result in simpler process models with higher quality.
+keywords: process mining, process discovery, subset selection, event log pre-
+processing, performance enhancement.
+1. introduction
+process mining bridges the gap between traditional data mining and business process
+management analysis[1]. the main subﬁelds of process mining are 1) process discovery,
+i.e., ﬁnding a descriptive model of the underlying process, 2) conformance checking, i.e,
+monitoring and inspecting whether the execution of the process in reality conforms to the
+corresponding designed (or discovered) reference process model, and 3) enhancement,
+i.e, the improvement of a process model, based on the related event data [1]. with process
+discovery, we aim to discover a process model that accurately describes the underlying
+process captured within the event data, also referred to as event logs, readily available in
+most modern information systems. in conformance checking, we aim to assess to what de-
+gree a given process model (possibly the result of a process discovery algorithm) and event
+data conform to one another. finally, process enhancement aims at improving the view on
+a process by improving or enhancing the corresponding model using related event data,
+e.g., by projecting bottleneck information directly onto a (given) process model. there
+are also other dimensions like prediction[39, 38] and business process automation [24].
+?this article is the extension of a conference paper entitled ”the impact of event log subset selection on the
+performance of process discovery algorithms” that was initially published in 23rd european conference on
+advances in databases and information systems 2019 workshops proceedings (springer ccis 1064) [41].928 mohammadreza fani sani, sebastiaan j. van zelst1;, and wil van der aalst1;2
+currently, the main research focus of process discovery is on quality issues of the
+discovered process models; however, at the same time, the ever-increasing size of the
+data handled in process mining leads to performance issues when applying the existing
+process discovery algorithms [2]. most process discovery algorithms ﬁrst build an internal
+abstraction of data, based on the whole event log and then apply a possible ﬁltering step is
+applied. however, this attitude causes efﬁciency in real process mining projects with large
+event data. some process discovery algorithms are infeasible in big data settings, where
+the event data are too large to process. additionally, some process mining tools enforce
+constraints on the size of event data, e.g., the number of events. also, in many cases, we
+do not require the whole event log, and an approximation of the process model is able to
+be discovered by applying just a small fraction of the event data.
+in real life, process discovery is often of an exploratory nature which means some-
+times we need to apply different process discovery algorithms with several parameters to
+generate different process models and select the most suitable process model. when the
+discovery algorithms are used repeatedly, such an exploratory approach makes sense only
+if performance is reasonable. thus, even a small improvement in performance may ac-
+cumulate to a signiﬁcant performance increase when applied several times. furthermore,
+many process discovery algorithms are designed to also generalize the behavior that is
+observed in the event data. in other words, the result of process discovery algorithms
+contains more behavior compared to the inputted event log. therefore, it may still be pos-
+sible to discover the underlying process using a subset of event data. in addition, many
+of process discovery algorithms aim to depict as much as possible behavior in event logs.
+however, for real event logs, because of the presence of noisy and uncertain behavior,
+applying these algorithms resulted in inaccurate and incomprehensible, complex process
+models that are even accurate behavior undetectable in them [18, 36].
+to deal with the complexity of process models, in some research, such as [42, 31, 51],
+clustering methods have been applied to get several sub-models according to clustered
+sub-logs. for example, [30] and [10] use data attributes and conformance artifacts for this
+purpose. using this approach, the quality of the sub-models is better than a single process
+model discovered on the complete event log. however, getting several process models
+may be a barrier for decision-makers who need a single overview of each process.
+this research studies the effectiveness of applying biased sampling on event data prior
+to invoking process discovery algorithms, instead of using all the available event data.
+in this regard, we present and investigate different biased sampling strategies and an-
+alyze their ability to improve process discovery algorithm scalability. furthermore, the
+techniques presented allow us to select a user-speciﬁed fraction of inclusion of the to-
+tal available event data. using the prom-based [48] extension of rapidminer [3], i.e.,
+rapidprom, we study the usefulness of these sampling approaches, using real event
+logs. the experimental results show that applying biased sampling techniques reduces
+the required discovery time for all discovery algorithms. moreover, for some event logs,
+by sampling, we also improve the quality of discovered process models due to implicit
+ﬁltering.
+this paper extends the work [41]. here, we explain the instance selection strategies in
+more detail. the proposed approaches are also applied on many real event logs with state-
+of-the-art process discovery algorithms, i.e., the alpha miner, the inductive miner, the
+split miner, and the ilp miner. we propose to select some process instances of an eventimproving the performance of process discovery algorithms by instance selection??929
+log based on variants or traces and apply process discovery algorithms on the sampled
+data. moreover, in this paper, we used more metrics to evaluate the quality and complexity
+of discovered process models.
+the remainder of this paper is structured as follows. in section2, we discuss related
+work. section 3 deﬁnes preliminary notation. we present different biased instance selec-
+tion strategies in section 4. the experimental evaluation and corresponding results are
+given in section 5. finally, section 6 concludes the paper and presents some directions
+for future work.
+2. related work
+many discovery algorithms, e.g., the alpha miner [5], the ilp miner [53], and the ba-
+sic inductive miner [28] were designed to ﬁrst build an internal data structure, e.g., the
+directly follows graph, based on the whole available event data. subsequently, these algo-
+rithms discover a process model directly from this data structure. other process discovery
+algorithms, e.g., the split miner [7], the flexible heuristic miner [52], the fuzzy miner
+[25], the extended versions of the inductive miner[29], and the ilp miner [54] were de-
+signed to be able to ﬁlter infrequent or noisy behavior within their internal data structure,
+prior to discovering a process model. the performance of all these algorithms depends on
+the number of process instances and the unique number of activities. for some of them,
+e.g., ilp miner[53], the number of unique process instances also inﬂuences the required
+time to discover a process model.
+recently, preprocessing of event data has gained attention. in [44, 6], techniques are
+proposed to increase the quality of discovered process models by cleansing the event data.
+some other aim to increase/keep the privacy of users by preprocessing an event log before-
+hand [40]. also, in [18], [19], [20] and [21] we have shown that by removing/modifying
+outlier behavior in event logs, process discovery algorithms are able to discover process
+models with higher quality. furthermore, [55] proposes a ﬁltering approach to detect and
+remove infrequent behavior for event streams. moreover, [33] uses data attributes to ﬁlter
+out noisy behavior. in [17] an interactive ﬁltering toolkit is provided that let user chooses
+different ﬁltering methods in combination with several process discovery algorithms. fil-
+tering techniques effectively reduce the size of the event data used by process discovery
+algorithms. but, to do so, these ﬁltering techniques have non-linear time complexity that
+does not scale in the context of big data. meanwhile, sometimes the required time for
+applying these ﬁltering algorithms is longer than the process discovery time. also, these
+techniques have no accurate control over the size of the sampled event log.
+filtering techniques focus on removing infrequent behavior from event data; however,
+sampling methods aim to reduce the number of process instances and increase the perfor-
+mance of other procedures. some sampling approaches have been proposed in the process
+mining ﬁeld. [26] studies some behavior qualities for sampled event logs. in [22], the au-
+thors show that by selecting a few unique process instances of event data, it is possible to
+approximate the conformance value in a shorter time. in [12], the authors proposed a sam-
+pling approach based on the parikh vector of traces to detect the behavior in the event log.
+however, we are not able to use this sampling technique for the process discovery pur-
+pose, because, the parikh vector does not store the sequences of activities that are critical
+for discovering process models. in [8], the authors recommend a random trace-based sam-930 mohammadreza fani sani, sebastiaan j. van zelst1;, and wil van der aalst1;2
+p1p2
+p3p6
+p5p4
+fig. 1. an example process model with petri net notation.
+pling method to decrease the discovery time and memory footprint. this method assumes
+that process instances have different behavior if they have different sets of directly follows
+relations. however, using a unique set of directly follows relations may lead to different
+types of process behavior. furthermore, [9] recommends a trace-based sampling method
+speciﬁcally for the heuristic miner[52]. both these sampling methods are unable to con-
+trol the size of the ﬁnal sampled event data. also, they depend on the deﬁned behavioral
+abstraction that may lead to the selection of almost all the process instances. moreover,
+all these mentioned sampling methods use random trace-based sampling with a replace-
+ment that may lead to pick and analyze a unique process instance several times. finally,
+as these methods are unbiased, we have non-deterministic results after each sampling. in
+this paper, we will offer and analyze random and biased instance selection methods which
+the size of the sampled event data is adjustable.
+3. preliminaries
+in this section, we brieﬂy introduce basic process mining terminology and notations that
+ease the readability of the paper. there are different notations to depict a process model.
+in this paper, we used the petri net [35] notation. petri net is a directed bipartite graph that
+can be deﬁned as follows.
+deﬁnition 1 (petri net). a petri net is a graph that could be presented as triple (t,p,a)
+that t is a ﬁnite set of transitions, p is a ﬁnite set of places and a is a set of arcs that
+connect places to transitions and transitions to places. a(tp)[(pt).
+an example process model with petri net notation is presented in figure 1. in this ﬁgure,
+t=fa;b;c;d;eg, p=fp1;:::;p 6g, anda=f(p1;a);(a;p 2);:::; (e;p 6)g.
+given a setx, a multisetmoverxis a function m:x!n0, i.e. it allows certain
+elements of xto appear multiple times. we write a multiset as m= [ek1
+1;ek2
+2;:::;eknn],
+where for 1inwe havem(ei) =kiwithki2n>0. ifki= 1, we omit its
+superscript, and if for some e2xwe havem(e) = 0, we omit it from the multiset
+notation. furthermore, m= [ ] denotes an empty multiset. m=fe2xjm(e)>0gis
+the set of elements present in the multiset. the set of all possible multisets over a set xis
+written asm(x ).
+letxdenote the set of all possible sequences over a set x. a ﬁnite sequence 
+of lengthnoverxis a function :f1;2;:::;ng ! x, alternatively written as =
+hx1;x2;:::;xniwherexi=(i)for1in. the empty sequence is written as . theimproving the performance of process discovery algorithms by instance selection??931
+table 1. fragment of a ﬁctional event log (each line corresponds to an event).
+case-id activity resource time-stamp
+... ... ... ...
+1 register request (a) karl 2017-04-08:08.10
+1 examine thoroughly (b) ali 2017-04-08:09.17
+2 register request (a) karl 2017-04-08:10.14
+1 check resources (c) william 2017-04-08:10.23
+1 check ticket (d) william 2017-04-08:10.53
+2 check resources (b) ali 2017-04-08:11.13
+1 send to manager(e) majid 2017-04-08:13.09
+1 accept request (f ) fatima 2017-04-08:16.05
+1 mail decision(h) anna 2017-04-08:16.18
+... ... ... ...
+concatenation of sequences and0is written as 0. functionhd:xn09x,
+returns the “head” of a sequence, i.e., given a sequence 2xandkjj,hd(;k ) =
+hx1;x2;::;xki, i.e., the sequence of the ﬁrst kelements of . in casek= 0 we have
+hd(; 0) =. symmetrically, tl:xn09xreturns the “tail” of a sequence
+and is deﬁned as tl(;k) =hxn k+1;xn k+2;:::;xni, i.e., the sequence of the last k
+elements of , with, again, tl(;0) =. sequence 0is a subsequence of sequence ,
+which we denote as 02, if and only if 1;22xsuch that=102. let
+;02x. we deﬁne the frequency of occurrence of 0inbyfreq :xx!n0
+wherefreq(0;) =jf1i jj j0
+1=i;:::;0
+j0j=i+j0jgj. for example,
+freq(hbi;ha;b;b;c;d;e;f;hi) = 2 andfreq(hb;di;ha;b;d;c;e;gi) = 1 , etc.
+event logs describe sequences of executed business process activities, typically in the
+context of some cases (or process instances), e.g., a customer or an order-id. the execution
+of an activity in the context of a case is referred to as an event. a sequence of events for a
+speciﬁc case is also referred to as a trace. thus, it is possible that multiple traces describe
+the same sequence of activities, yet, since events are unique, each trace itself contains
+different events. an example event log is presented in table 1.
+consider the events related to case-id value 1. karl registers a request, after which
+aliexamines it thoroughly. william checks the ticket andchecks resources. ava sends the
+request to the manager and fatima accepts the request. finally, anna emails the decision
+to the client. the example trace is written as ha;b;c;d;e;f;hi (using short-hand activ-
+ity names). in the context of this paper, we formally deﬁne event logs as a multiset of
+sequences of activities.
+deﬁnition 2 (event log). letabe a set of activities. an event log is a multiset of se-
+quences overa, i.e.l2m(a).
+for example, l1= [ha;b;c;e;gi6;ha;c;b;e;gi4;ha;b;c;e;fi3;ha;c;b;e;fi2;ha;d;e;fi;
+ha;d;e;gi;ha;bi;hb;d;c;fiha;b;c;e;e;fi]is an event log with 20 traces. observe that
+each2ldescribes a trace-variant whereasl()describes how many traces of the
+formare presented within the event log. therefore, in the above event log, there are 9
+trace-variants and l1(ha;c;b;e;gi) = 4 .932 mohammadreza fani sani, sebastiaan j. van zelst1;, and wil van der aalst1;2
+sampling could be done with/without replacement. in sampling with replacement, it is
+possible to select the sampled objects more than one time. however, in this work, we use
+sampling without replacement. in other words, it is not possible to put a process instance
+more than once in the sampled event log. in the following, we deﬁne formally sampled
+event logs.
+deﬁnition 3 (sampled event log). we deﬁneslas a trace-based sampled event log of
+an event log l, if for each 2sl,sl()l(). in the same way, slis a variant-based
+sampled event log of lif for all2sl,sl() = 1 .
+in a variant-based sampled event log, the frequency of each selected process instances
+is equal to 1, however, in a trace-based event log, it is possible to have more than one
+traces of a unique process instance. in other words, a variant-based sampled event log is a
+subset of trace-variants in l. for example, l2= [ha;b;c;e;gi;ha;c;b;e;gi;hb;c;e;fi]
+is a variant-based sampled event log of l1.
+we could deﬁne different types of behavior in an event log. one possible behavior
+in an event log is the directly follows relation between activities that can be deﬁned as
+follows.
+deﬁnition 4 (directly follows relation). letaandb2a be two activities and =
+h1;::;niis a trace in the event log. a directly follows relation from a to b exists in trace
+, if there isi2f1;::;n 1gsuch thati=aandi+1=band we denote it by a>b.
+for example, in =ha;b;c;e;gi, we havec>e, butd6>a.
+an alternative behavior which has negative affects the results of process discovery
+algorithms is the occurrence of a low probable sub-pattern, i.e., a sequence of activities,
+between pairs of frequent surrounding behavior, which we refer to it as behavioral con-
+texts [20].
+deﬁnition 5 (behavioral context). a behavioral context cis a pair of sequences of ac-
+tivities, i.e., c2aa. furthermore, we deﬁne the set of behavioral contexts present
+inl, i.e.,l2p(aa), as:
+l=f(l;r)2aaj92l;02a(l0r2)g (1)
+for example, in trace =ha;b;c;e;gi,ha;bi andheiare two subsequences that surround
+hci, hence, the pair (ha;bi;hei) is a behavioral context.
+we inspect the probability of contextual sub-patterns, i.e., the behavior that is sur-
+rounded by frequent behavioral contexts. for this purpose, we simply compute the em-
+pirical conditional probability of a behavioral sequence, being surrounded by a certain
+context.
+deﬁnition 6 (conditional contextual probability). lets;l;r2abe three sequences
+of activities and let l2 m(a)be an event log. we deﬁne the conditional contex-
+tual probability ofs, w.r.t.,landrinl, i.e., representing the sample based esti-
+mate of the conditional probability of sbeing surrounded by landrinl. function
+l:aaa![0; 1], is based on:
+l(s;l;r) =p
+2l 
+jlsrj
+p
+2l p
+02aj0
+l0rj (2)improving the performance of process discovery algorithms by instance selection??933
+...〈 …, a, b, b, ...〉   m2〈 …, a, b, c, ...〉   m1
+〈 …, c, b, c, ...〉   mn〈 …, a, c, b, ...〉   m3event log...〈 …, a, b, c, ...〉
+〈 …, a, c, b, ...〉   sampled event log...〈 …, a, b, c, ...〉
+〈 …, c, b, c, ...〉   sampled event log1
+n11
+nivariant -based sampling
+fig. 2. schematic overview of instance selection (sampling) methods. we select variants or traces
+based on different criteria. in variant-based sampling, each variant in a sampled event log represents
+all the traces with this behavior in the original event log.
+we alternatively write pl(sjl;r)to represent l(s;l;r).
+for example, to compute pl1(hcijha;bi;hei), we need to compute in how many traces,
+subsequenceha;b;c;eiis occurred and divide it to the number of traces that contain the
+pair(ha;bi;hei) as a behavioral context that is10
+10= 1. based on these probabilities, we
+are able to detect unstructured behavior in a trace.
+4. sampling event data using instance selection
+in this section, we present different biased instance selection strategies to sampling event
+logs and consequently increase the discovery procedure’s performance. we are able to
+sample different behavioral elements of an event log, e.g., events, directly follow relations,
+traces, and variants. by sampling events, it is possible to choose events from different
+parts of a process instance that is harmful to the process discovery purpose. sampling
+directly follows relations is useful for some process discovery algorithms like the alpha
+miner. for example, choosing the most frequent directly follows relations. but, we need to
+modify these algorithms to accept a set of directly follows relations instead of an event log
+as an input. however, it may result in process models with some unconnected components.
+also, such data structures are not applicable to all process discovery algorithms. thus,
+here we just consider trace and variant-based sampling. therefore, here we just focus
+on sampling methods that take an event log as an input and return a subset of traces or
+variants. in other words, the sampling methods select some variants/traces in the input
+event logs.
+the schematic of the instance selection methods is illustrated in figure 2. in variant-
+based sampling, the frequency of each sample is 1. in other words, we select only one pro-
+cess instance for each selected variant. however, in trace-based sampling, the frequency
+of each unique sample is 1nimi.934 mohammadreza fani sani, sebastiaan j. van zelst1;, and wil van der aalst1;2
+for many process discovery algorithms such as the ilp miner, the family of alpha
+miners and the inductive miner, it is enough to have unique variants to discover a corre-
+sponding process model. the frequency of variants is mostly just used for post-processing
+algorithms like ﬁltering. therefore, here we mainly focus on variant-based sampling, but,
+all these methods can easily be extended to trace-based sampling methods. we also just
+used control-ﬂow related information that is available in all event logs, and this is consis-
+tent with the way.
+we are able to consider three dimensions for a sampled event log. the ﬁrst one is the
+number of process instances that are placed in the sampled event log, i.e., jslj. in the
+worst case, it is the same as the original event log, i.e., no reduction in size. we can set
+the size of sampled event logs (i.e., the sample ratio) as follows.
+c=(jslj
+jljvariant-based sampling
+jslj
+jljtrace-based sampling(3)
+note that, in the above equation, 0< c1and denotes that how many percentages
+of traces (or variants in variant-based sampling) are selected in the sampled event log.
+another dimension is the completeness of the sampled event log. if a sample event log
+contains few relations of the original event log, process discovery algorithms are not able
+to discover an appropriate process model from the sampled event log. however, it is not
+required that sampled event logs include all the behavior in the original event log, because
+many process discovery algorithms are able to generalize the seen behavior. finally, the
+last dimension is the sampling time as a preprocessing phase. it is better to sample an
+event log in a shorter time.
+it is possible to sample process instances or variants of an event log randomly or
+selecting them based on a bias. in the following, we will explain both of these methods.
+4.1. random sampling
+the ﬁrst method is to randomly sample cjljtraces in the event log without replacement
+and return these traces (i.e., trace sampling) or just unique trace-variants among them (i.e.,
+variant sampling). the time complexity of this method is o(k)wherekis the number of
+sampled traces. therefore, this method is fast because there is no need to traverse the
+original event log. in this way, we have no control over the number of selected variants.
+in other words, it is possible that many of the sampled traces have similar behavior and
+we return just a few unique variants.
+another approach is to ﬁrst ﬁnd all the unique variants in an event log, after that,
+randomly select cjljvariants from them. the time complexity of traversing an event
+log iso(nl)wheren=jljis the number of traces, and lis the average length of traces
+in the event log. this approach is a bit slower, but it is able to return more behaviors
+compared to the previous approach.
+4.2. instance selection strategies
+in general, traversing an event log is not a very time-consuming phase, and this gives
+us a motivation that instead of randomly sampling the variants, we are able to use moreimproving the performance of process discovery algorithms by instance selection??935
+advanced strategies (biases) to select variants in the event log. note that although in xes
+standard [48], we need to traverse an event log to ﬁnd the variants, in many other structures
+variants with some of their properties are stored as meta-data [16].
+in biased sampling methods, we ﬁrst traverse the event log to ﬁnd unique trace-
+variants in it, then rank them based on different strategies. afterward, we return the top
+cjljvariants with the highest rank in the sampled event log. for the trace-based sam-
+pling methods, we return all process instances that correspond to each trace-variant (with
+considering the cvalue). we are able to use different ranking strategies for selecting the
+trace-variants that will be discussed in follows.
+frequency-based sampling
+the ﬁrst ranking strategy is sampling variants based on their frequencies. this sampling
+method gives more priority to a trace-variant that has a higher occurrence frequency in the
+event log. thus, we sort the variants based on their frequencies or l()and return the top
+cjljof variants as a sampled event log. for example, for l1if we want to select only
+one variant based on their frequencies, ha;b;c;e;giwill be selected. the time complexity
+of this strategy is o(nl +r)wherenl corresponds to traversing the event log and r
+represents the required time that for ranking variants 2l.
+the advantage of this strategy is that we are able to have a minimum replay ﬁtness
+of the future process model that will be discovered based on the sampled event log. note
+that, in the random sampling strategy, the probability of choosing a more frequent variant
+is also higher. however, in some event logs, there are lots of variants with very low fre-
+quencies. sometimes, the majority of process instances have a unique trace-variant. thus,
+differentiating between them will be challenging. therefore, a drawback of this strategy
+is that the sampled event log may not contain many behaviors in the original event log.
+the trace-based version of this instance selection bias is existed in many process mining
+tools. they used this selection bias to reduce the complexity of the resulted process model
+and show the main stream behavior of the process model.
+length-based sampling
+we are able to select process instances or trace-variants based on their length, i.e., the
+number of activities in the trace or jj. if we want to keep more behaviors in our sampled
+event log, we need to select longer traces ﬁrst. however, if we are interested in retaining
+the main-stream behaviors of the event log, it is usually better to choose shorter variants.
+for the running example, we will chose ha;b;c;e;e;fiandha;bi ﬁrst if we use longer
+and shorter strategies respectively.
+selection based on the longer strategy, we are able to leave out incomplete traces,
+that improves the quality of resulted process models. however, if there are self-loops
+and other loops in the event log, there is a high probability to consider many infrequent
+variants with the same behavior for process discovery algorithms. for example, if we use
+directly follows information, it does not matter if trace hasa >aone time or more.
+on the other hand, with selection based on shorter strategy, if there are incomplete traces
+in an event log, we probably will have them in the sampled event log. similar to the
+frequency-based strategy, the time complexity of this approach is o(nl +r).936 mohammadreza fani sani, sebastiaan j. van zelst1;, and wil van der aalst1;2
+similarity-based selection
+if we aim to sample variants that contain general behavior of the whole event log, we need
+to use the similarity-based sampling methods. in this approach, we ﬁrst ﬁnd the general
+behaviors of the event log. we are able to use different behavior, however, the simplest and
+the most critical behavior for process discovery is the directly follows relation. therefore,
+we compute the occurrence probability of each directly follows relation bi= (a;b) (that
+a;b2a) according to the following formula.
+prob(bi) =jf2l:a>bgj
+jlj(4)
+therefore, we compute the probability of observing each directly follows relation bi
+in a variant. if prob(bi)is high (i.e., be higher than a deﬁned threshold 0tp1),
+we expect that sampled variants also should contain it. thus, any variant contains such
+a high probable behavior (that here is a directly follows relations), will give a +1to its
+rank. otherwise, if a variant does not contain a probable behavior, we decrease its rank
+by 1. for example, (e;f)is a high probable relation with prob(e;f ) =5
+9. note that by
+using a higher tpvalue, we will have fewer high probable and low probable relations;
+therefore, many variants will have similar ranks.
+contrariwise, if a variant contains a low probable behavior (i.e., probbi1 tp),
+we decrease its rank by  1. in other words, we are searching for variants that have much
+high probable behaviors and have less low probable behaviors. for example, prob(e;e) =
+1
+9is a low probable relation. note that, it is possible that some behaviors be neither high
+probable nor low probable that we do nothing for such behaviors. afterward, we sort
+the variants based on their ranks and return the cjljones with the highest rank. for
+example,ha;d;e;fiis the ﬁrst variant that will be chosen using this strategy for log l1.
+the main advantage of this method is that it helps process discovery algorithms to
+depict the main-stream behavior of the original event log in the process model. however,
+it needs more time to compute a similarity score of all variants. especially, if we use more
+advanced behavioral structures such as eventually follow relations, this computation will
+be a limitation for this ranking strategy. another disadvantage of this strategy is that the
+length of variants affects the ﬁnal rank. it is possible that two variants have a similar set
+of directly follows relations, but based on the frequency of these directly follows, they
+will have different ranks. the time complexity of this strategy is o(nl +d+r)where
+dcorresponds to ﬁnding probabilities of directly follows relations and in the worst case,
+its complexity is o(jaj2l).
+structured-based sampling
+in this sampling method, we consider the presence of unstructured behavior (i.e., based on
+deﬁnition 6) in each variant. in this regard, we ﬁrst compute the occurrence probability
+of each sub-pattern among its speciﬁc contextual context (i.e., pl(s;l;r)). if this
+probability is below a given threshold, i.e., 0ts1, we call it an odd structure.
+we expect that unstructured subsequences are the most problematic behavior in event
+logs that make discovered process models inaccurate and complex [20]. thus, for each
+unstructured behavior in a trace-variant, we give a penalty to it and decrease its rank by
+ 1. for example, pl1(hdijhbi;hci) is very low andhb;d;c;fiwill give a penalty for it.improving the performance of process discovery algorithms by instance selection??937
+consequently, a variant with higher odd structures receives more penalties, and it is not
+appealing to be placed in the sampled event log.
+by choosing a high tsvalue, most of behaviors will be considered as odd structures.
+in contrast, a very low tswill result in few unstructured behaviors that leads to have many
+variants with the same rank. note that, by increasing the length of behavioral context, we
+will detect more important nonstructural behaviors. similarly, by decreasing the tsvalue,
+the detected behavioral patterns will be more problematic.
+similar to similarity-based selection strategy, in this strategy, the length of variants
+will affects their rank. using this strategy, we select the most well-structured trace-variants
+in the event log, that is expected to have process models with high precision value. how-
+ever, it is possible to select trace-variants that not frequent in the input event log. the
+time complexity of this strategy is o(nl +c+r)whereccorresponds to conditional
+contextual probabilities and in the worst case, its complexity is o(jajml)wheremis
+the maximum length of considered contextual behavior and the substring. therefore, this
+strategy is potentially the slowest strategy for instance selection.
+hybrid methods
+in a hybrid strategy, we are able to combine two or three of other sampling strategies.
+in this way, we expect to have beneﬁts of different methods. here, we combine the
+frequency-based and similarity-based methods. in this regard, when we compute the prob-
+ability of each directly follows relation, the frequency of it in the whole event log will be
+used according to the following formula.
+prob(a;b) =2la>b(l())
+jlj(5)
+in the above equation, la>b=f2l:a >bg. note that, other combinations are
+also possible.
+different ranking strategies require different sampling time and result in different sam-
+pled event logs according to their completeness. in the next section, we will analyze how
+these selection strategies affect the performance and quality of process discovery algo-
+rithms on real event logs.
+5. evaluation
+in this section, by doing experiments, we aim to answer the following research questions:
+– q1) are the proposed instance selection strategies able to improve the performance
+of process discovery?
+– q2) what are the effects of instance selection on the quality of discovered process
+models?
+in this regard, we ﬁrst explain the implementation details of the proposed method.
+afterward, the experimental settings for the experiments will be discussed, and ﬁnally,
+the results will be explained.938 mohammadreza fani sani, sebastiaan j. van zelst1;, and wil van der aalst1;2
+table 2. some information of real event logs that are used in the experiment.
+event log activities# traces# variants# directly follows relations#
+bpic 2012 [45] 23 13087 4336 138
+bpic 2013 [49] 4 7554 1511 11
+bpic 2017 all[46] 26 31509 1593 178
+bpic 2017 offer [46] 8 42995 169 14
+bpic 2018 control [15] 7 43808 59 12
+bpic 2018 inspection [15] 15 5485 3190 67
+bpic 2018 reference [15] 6 43802 515 15
+bpic 2019 [47] 44 251734 11973 538
+hospital [32] 18 100000 1020 143
+road [14] 11 150370 231 70
+sepsis [33] 16 1050 846 115
+5.1. implementation
+to apply the proposed instance selection strategies, we implemented the sample variant
+plug-in in prom framework3. prom is an academic platform with several plug-ins that
+cover wide domains of process mining areas [4]. in this implementation, we used static
+thresholds for both similarity and structure-based ranking strategies. for similarity-based
+selection, we just considered the directly follows relation as explained in the previous sec-
+tion. using this plug-in, the end-user is able to specify her desired percentage of sampling
+variants/traces and the instance selection strategy. it takes an event log as an input and
+returns the top fraction of its variants/traces. a screen-shot of the settings of the instance
+selection plug-in in prom is presented in figure 3. by adjusting these settings, users will
+be able to have different sampled event logs.
+in this implementation, we used tp=0:8 andts=0:2. moreover, for behavioral con-
+texts’ subsequences, we consider the maximum length equals to 2.
+furthermore, to apply our proposed method on various event logs and use different
+process discovery algorithms with their different parameters, we ported the sample vari-
+antplug-in to rapidprom [3] which extends rapidminer with process analysis capa-
+bilities. in our experiments, we also used the statistical sampling method that is presented
+in [8]; however, as we consider only work-ﬂow information, its relaxation parameter is
+ignored.
+5.2. experimental setup
+for analyzing the effect of sampling, we applied the proposed method on several real event
+logs. some information about these event logs is given in table 2. we added artiﬁcial start
+andendactivities to the whole process instances of all event logs. for process discovery,
+we used the alpha miner [5], the inductive miner (im) [28], the inductive miner with
+its infrequent behavior ﬁltering mechanism (imi) [29], the ilp miner [43], and the split
+miner [7]. for computing the quality of discovered process models, the original event
+logs were used.
+3sample variant plug-in in: svn.win.tue.nl/repos/prom/packages/logfiltering.improving the performance of process discovery algorithms by instance selection??939
+fig. 3. a screen-shot of the implemented instance selection plug-in in prom platform. it receives an
+event log and return a sample event log based on the adjusted settings.
+we sampled event logs with different variant and trace-based instance selection strate-
+gies, andcwith different values that are [1;2;3;5;10;15;20;25;30;40;50;75;100] which
+cpresents how many percentages of traces or variants of the event log is selected to be
+placed in the sampled event log. therefore, if we use the trace-based sampling policy with
+c= 100, the sampled event log equates to the original event log. as sampling time and
+discovery time are nondeterministic, each experiment was repeated four times.
+5.3. experimental result
+here, we show how experimental results address the mentioned research questions.
+performance analysis
+to measure the improvement in the performance, we consider both the discovery time
+and sampling time of event logs using the following formulas:
+discoverytimeimprovement =discoverytime wholelog
+discoverytime sampledlog(6)
+totaltimeimprovement =discoverytime wholelog
+discoverytime sampledlog +samplingtime(7)
+in discovery time improvement, we measure how discovering a process model is faster
+on a sampled event log compared to the original event log. however, in total time im-
+provement, the sampling time is also considered. therefore, it measures how sampling
+an event log and discovering a process model of it, is faster compared to discover a pro-
+cess model from the original event log. an improvement value shows how many times a
+process model will be discovered faster by using the sampled event log.940 mohammadreza fani sani, sebastiaan j. van zelst1;, and wil van der aalst1;2
+table 3. process discovery performance improvement for different process discovery algorithms
+using variant and trace-based instance selection methods when c= 10 .
+discovery
+algorithmnormal
+discoverydiscovery improvementdiscovery
+algorithmnormal
+discoverydiscovery improvementevent log
+time (ms) statistical traces variants time (ms) statistical traces variants
+bpic-2012 154 4 7 50 3,571 4 7 18
+bpic-2013 94 6 8 17 890 9 11 48
+bpic-2017-all 1,349 7 9 38 70,652 11 27 50
+bpic-2017-offer 303 38 14 758 2,108 44 14 727
+bpic-2018-control 234 585 9 41 1,707 43 9 557
+bpic-2018-inspection 252 2 10 45 4,522 2 16 39
+bpic-2018-reference 186 24 9 61 1,511 28 7 184
+bpic-2019 1,817 14 6 25 62,021 16 10 42
+hospital 687 14 8 224 17,366 35 29 1,192
+road 660 42 6 1,650 6,988 68 11 12,332
+alpha miner
+sepsis 20 1 7 51inductiv
+e miner (imi)
+317 1 51 48
+bpic-2012 2,4875 4 6 9 903 3 5 8
+bpic-2013 1,108 4 4 7 537 6 8 25
+bpic-2017-all 1,088,584 30 14 41 11,479 9 13 31
+bpic-2017-offer 2,279 7 6 12 1,599 25 9 147
+bpic-2018-control 2,511 11 6 19 1,964 36 8 353
+bpic-2018-inspection 7,746 1 6 5 1,755 2 7 17
+bpic-2018-reference 2,390 9 5 14 1735 27 7 294
+bpic-2019 95,697 5 3 7 19,520 15 10 41
+hospital 10,995 5 7 8 3,388 13 8 64
+road 6,144 10 5 10 3601 46 8 171
+ilp miner
+sepsis 7,464 1 5 4split miner
+180 1 4 3
+table 3 and figure 4 show the improvement when we sample event logs. the y-axis
+in these ﬁgures represents the average performance improvements using a logarithmic
+scale. values below 1show that there is no improvement in performance. here, we con-
+siderc= 10 and all instance selection strategies. statistical corresponds to the sam-
+pling method that is proposed in [8] (with its default setting). it is clear that by reduc-
+ing the size of an event log, the required process discovery time is reduced. therefore,
+thediscoverytimeimprovement for variant-based selection strategies is signiﬁcantly
+higher than the trace-based policy. note that all process discovery algorithms traverse the
+event log at least once that requires o(nl ). therefore, n=jsljfor variant-based sam-
+pled event log is usually extremely lower than the trace-based one. for some event logs, a
+process discovery algorithm is more than 1000 times faster on the sampled event log using
+variant-based sampling compared to using the whole event logs. however, for event logs
+such as sepsis, where most of the traces have unique control-follow related behavior in
+the original event log, trace-based sampling methods are faster. we see that the statistical
+method is not able to improve the total discovery time of sepsis event log for any process
+discovery algorithm. as it is shown in table 2, almost all of trace-variants in this event
+log are unique that cause this sampling method selects almost all the traces in the event
+log. for the alpha miner, we usually do not have improvement. this process discovery
+algorithm is simple, and its main time-consuming task is to ﬁnd out the directly follows
+relations in the event log. however, for advanced process discovery algorithms, e.g., the
+inductive miner, the total improvement is very high. comparing these two ﬁgures, we ﬁnd
+that the sampling time for the statistical sampling method is much faster than our tech-
+niques, but the discovery time of sampled event logs is less using the proposed instance
+selection strategies.improving the performance of process discovery algorithms by instance selection⋆⋆941
+fig. 4. total time improvement for discovering process using sampling methods.
+figure 5 shows improvements in the performance of process discovery algorithms
+when we select some instances of event logs. here, for instance selection strategies, we
+used the sampling threshold (i.e., c) equals to 0.1and the variant-based policy. it shows
+that the improvement is usually lower when the statistical sampling method even it doesnot need to traverse the input event log. as it is mentioned before, for sepsis event log, this
+method has no improvement. among instance selection methods, longer strategy usu-
+ally results in lower improvement. the computation time of process discovery algorithmsdepends on different parameters e.g., the number of activities (i.e., |a|), the number of
+variants (i.e., |¯l|) and sometimes the preﬁx-closure of the given event log. using instance
+selection strategies, we are able to reduce all the above parameters and consequently de-crease the required time for process discovery.
+the sampling time of different methods is depicted in figure 6
+4. as we expected,
+except for the sepsis event log, the statistical sampling method is much faster than instance
+4we do not show the results for all event logs.942 mohammadreza fani sani, sebastiaan j. van zelst1,, and wil van der aalst1,2
+fig. 5. discovery time improvement for discovering process using instance selection.improving the performance of process discovery algorithms by instance selection⋆⋆943
+fig. 6. sampling time of different instance selection strategies.
+selection strategies as it does not need to traverse the event log. among the instance
+selection strategies, the structure-based is the slowest one as it needs to consider morecomplex behavioral structures. frequency and length based strategies are required almostthe same time to sampled event logs. as it is mentioned, in case that we use mxml or anyother structure that contains meta-data of variants, the sampling time for these strategieswill be much less.
+as event ﬁltering algorithms are able to reduce the variability of event logs, we are
+able to compare them with the instance selection methods. in this regard, we ﬁlter eventlogs using anomaly free automaton (afa) [13] and matrix filter (mf) [18] using theirdefault settings. for sampling, we used the variant-based sampling using c= 10 and the
+similarity based strategy. here, for process discovery, we used the imi algorithm with itsdefault setting. the results of this experiment is shown in table 4. we could not have theﬁltered event log for bpic-2018-inspection using the afa method. results show that the
+preprocessing time for the instance selection method is less than other ﬁltering methods.for most of the event logs, process discovery on the preprocessed event log using theproposed approach is faster mostly because it returns the variant-based sampled eventlogs. the discovery time for some ﬁltered event logs is signiﬁcantly low that is becauseof removing lots of behavior during ﬁltering.
+we aim to analyze what is the origin of the performance improvement. the improve-
+ment in performance of process discovery algorithms may be driven by reducing (1) thenumber of activities, (2) the number of traces, or (3) the amount of unique behavior (e.g.,df relations or variants). by event log instance selection, it is possible that some of theinfrequent activities are not placed in the sampled event log. moreover, by sampling wereduce the size of event logs (i.e., |s
+l|≤| l|), speciﬁcally when we apply the variant-
+based strategies. finally, it is also possible that we reduce the number of unique behaviorin the event log.
+figure 7 shows the process discovery time of sampled event logs with different in-
+stance selection thresholds when we apply the ilp miner. here, to focus on the reason forimprovements, we used variant-based strategies. when we used the sampling size equalsto 100, we will have all the behaviors of the original event log in the sampled event log;944 mohammadreza fani sani, sebastiaan j. van zelst1,, and wil van der aalst1,2
+fig. 7. the average of discovery time of the ilp miner for different instance selection methods with
+different sampling size (i.e., c).improving the performance of process discovery algorithms by instance selection??945
+table 4. comparing the instance selection and ﬁltering methods based on the required time of them
+for preprocessing and process discovery.
+preprocessing time discovery time total discovery time
+event log afa mf sampling afa mf sampling afa mf sampling
+bpic-2012 26,705 593 749 379 19978 140 27084 20571 889
+bpic-2013 3246 312 187 435 749 16 3681 1061 203
+bpic-2017-all 57927 3188 5212 2 1034 859 57929 4222 6071
+bpic-2018-inspection  1192 649 4 170 1196 819
+bpic-2019 804913 6663 4403 7115 312 219 812028 6975 4622
+hospital 27442 2122 828 2014 19767 15 29456 21889 843
+road 13229 2763 937 3418 4478 1 16647 7241 938
+sepsis 12028 62 47 2 4384 1 12030 4446 48
+however, the number of traces in the sampled event log is signiﬁcantly lower than the orig-
+inal event log. the greatest improvement is usually gained when we use the similarity or
+shorter strategies for this process discovery algorithm. results show that for many event
+logs, by increasing the percentage of selected variants, how will reduce the improvement.
+therefore, for many event logs, the main reason for the improvement in performance of
+the process discovery is gained by reducing the number of variants. however, in road and
+hospital event logs that there are high-frequent variants, reducing the number of traces
+has a higher impact on the performance of the process discovery algorithms.
+as it is explained, the amount of behavior in the event log also has an important role
+in the performance of process discovery algorithms. the remaining percentage of dfre-
+lations in the sampled event logs for different instance selection strategies are given in
+figure 8 when we increased the size of the selected percentage of variants (i.e., c). to
+compute the remained df relations, we divide the number of existing relations in the
+sampled event log to all df relations in the original event log. we see that for most of the
+event logs, the similar and structure-based selection strategies keep fewer df relations.
+however, according to their ranking methods, they keep the most common df relations
+among the original event log. moreover, it is shown that for many event logs, with select-
+ing only 50% of the variants, we are able to keep more than 80% of the df relations in the
+sampled event log when the frequency or shorter strategies are used. unlike our expecta-
+tions, by using the shorter strategy for selecting variants, we will have high percentages
+of df relations in the sampled event log. it happens because using this strategy, lots of
+infrequent trace-variants that may be incomplete, are also selected to be kept in sample
+event logs.
+note that there is no such control like the cvalue for the statistical sampling method
+and it aims to keep as much as df relations in sampled event logs. however, for most
+of process discovery algorithms variants are more important compared to only df re-
+lations. even the basic inductive miner that uses df relations may result in different
+process models for event logs that have identical sets of df relations. for example,
+l2= [ha;b;ci;ha;c;bi] andl3= [ha;c;b;ci;ha;bi] have the same sets of df relations;
+however, their process models are different. figure 9 indicates that the average percentage
+of the remaining variants in sampled event logs using the statistical sampling method [8].946 mohammadreza fani sani, sebastiaan j. van zelst1,, and wil van der aalst1,2
+fig. 8. remained percentage of df relations in the sampled event logs using instance selection
+strategies with different sampling size.improving the performance of process discovery algorithms by instance selection⋆⋆947
+fig. 9. average of remained variants and directly follows relations in sampled event logs using the
+statistical sampling method [8].
+it shows this method is able to keep a few percentages of variants of an event log (using
+the default setting).
+according to these experiments, we ﬁnd that using instance selection improves the
+performance of process discovery algorithms, speciﬁcally if we apply the variant-basedpolicy. moreover, we show that instance selection strategies that only uses the variantmeta-data, e.g., frequency or length-based methods are faster than other ones. the in-stance selection strategies improve the performance of process discovery algorithms byreducing the number of process instances, variants and behaviors in sampled event logs.note that, many times we consider sampling as a preprocessing phase, and we applydifferent process mining algorithms, e.g., process discovery several times on the prepro-cessed event log. as explained in section 2, there are some preprocessing algorithmsthat by removing traces with outlier behaviors will reduce the size of the event log. tocompare the performance of instance selection strategies with other related preprocessingalgorithms, in figure 10, we examined the average of preprocessing time of three traceﬁltering methods and instance selection methods. for some event log, we are not able tohave the preprocessed event logs. for this experiment, we ﬁlter event logs with four dif-ferent ﬁltering settings and iterate the experiments for four times. the result shows thatthe instance selection method preprocessed the event logs much faster. note that, in theseﬁltering methods, we do not have accurate control over the size of the preprocessed eventlogs.
+quality analysis
+there are some research has been done on measuring the quality of business process
+models [34, 23, 37]. here, to analyze the quality of process models that are discovered
+on sampled event logs, we use ﬁtness andprecision metrics. fitness measures how much
+behavior in the event log is also described by the process model. thus, a ﬁtness valueequal to 1, indicates that all behavior of the event log is described by the process model.
+precision measures how much of behavior, that is described by the process model, is also948 mohammadreza fani sani, sebastiaan j. van zelst1,, and wil van der aalst1,2
+fig. 10. the average of preprocessing time when we used instance selection strategies and three
+state-of-the-arts trace ﬁltering methods [13, 18, 19].
+presented in the event log. a low precision value means that the process model allows for
+much behavior compared to the given event log. there is a trade-off between these mea-sures [50], sometimes, putting aside a small amount of behavior causes a slight decreasein the ﬁtness value, whereas the precision value increases signiﬁcantly. therefore, we usethe f-measure metric that combines both of them with the same weight according to thefollowing formula[11]:
+f-measure =2×precision ×fitness
+precision +fitness. (8)
+we did not consider the results of the alpha miner algorithm as it may discover un-
+sound process models, and consequently, it is not possible to compute the ﬁtness valueof them. figure 11 compares the quality of best process models that are discoveredwith/without the instance selection method. we used sampled event logs just for discov-ery purpose, and the original event logs were used for computing f-measure values. forthe cases that the instance selection methods were used, we applied the sampled size in[1,2,3,5,10], and the average of f-measure values is shown. for the statistical sam-
+pling method, we iterate the experiment four times, and again the average of f-measurevalues are considered. for the imimethod, we used nine different ﬁltering thresholds,
+but for other discovery methods, just the default setting was used. according to resultsthat are presented in figure 11, for the ilp, we always have an improvement when weuse the instance selection method as a preprocessing step. however, the split miner canusually discover process models with higher quality via the original event logs or usingthe statistical sampling method. moreover, the statistical sampling method that randomlyselects process instances results in process models with similar quality according to thef-measure compared to original event logs. note that instance selection strategies usuallyimprove the quality when the size of the event log is considerable, e.g., bpic-2017-all
+andbpic-2019. in cases that the instance selection method could not improve the quality
+of process models, its quality is not much worse than using original event logs.
+in figure 12, the maximum f-measure value of each instance selection strategy is
+shown using the previous setting. it is shown that for some event logs that there areimproving the performance of process discovery algorithms by instance selection⋆⋆949
+fig. 11. comparing the average f-measure values of discovered process models with different sub-
+set selection methods.
+high-frequent trace-variants, e.g., road the frequency strategy outperforms other meth-
+ods. among ranking strategies, the longer strategy results in worse process models for
+most of the event logs.
+for some event logs like bpic-2017-all, the similarity-based selection strategy is the
+best choice for all of the process discovery algorithms. for the hospital event log, the
+structure strategy usually results in process models with the highest f-measure. note thathere, we show the maximum value of f-measure, when we used different size of sampledevent logs. finding the best size and selection strategy is a challenging task, but as shownin this ﬁgure, we usually expect to have higher quality compared the original event log(i.e., ”no preprocessing”).
+to understand a process model, the simplicity of it plays an important role. to measure
+the simplicity of a process model, we consider three metrics that measure the complexityof it. sizeof process models is a combination of the number of transitions, places and arcs
+that connected them. note that we used the petri net notation for process models [35].another metric is the cardoso metric [27] that measures the complexity of a processmodel by its complex structures, i.e., and, or, and xor components. containing more
+complex structures requires much times to understanding behaviors, and consequently, itincreases the complexity of the process model. there is also another metric called struc-
+turedness that measures how different structural components in a petri net is wrapped to
+each other [27]. it is expected that a petri net with having more wrapped components ismore difﬁcult and requires much time to be understand. for all of these three measures, alower value means less complexity and consequently a simpler process model.
+in table 5, we compared the complexity of process models when different prepro-
+cessing methods are applied. here we used the same setting as explained in the previousexperiment. for both the statistical and instance selection methods, we present the aver-950 mohammadreza fani sani, sebastiaan j. van zelst1,, and wil van der aalst1,2
+fig. 12. the maximum f-measure of discovered process models using different instance selection
+strategies.improving the performance of process discovery algorithms by instance selection??951
+table 5. the average complexity metrics values of discovered process models using different pro-
+cess discovery algorithms. the size is representing the number of arcs, places, and transitions. the
+null values correspond to unsound process models.
+age values. in this table, sizerepresents the number of elements in the discovered petri
+net asjajjpjjtj. results show that using instance selection methods we will de-
+crease the size of elements in discovered process models. moreover, according to cardoso
+values, the number of the complex component will be reduced when we use both prepro-
+cessing methods. however, using the instance selection method, the decrement is higher.
+in this table, there are some null values in the structuredness ﬁeld that indicate the cor-
+responding process models are unsound. therefore, as it is expected, the alpha miner
+is not able to guarantee the soundness of discovered process models. results illustrate
+that using instance selection strategies, for most of the cases, we are able to decrease the
+structuredness value or have simpler structures. in general, the reduction in complexity
+of discovered process models is higher for the split miner that discovers more complex
+process models.
+the average cardoso values of different instance selection strategies are presented
+in figure 13. it is shown that for most of the cases, all the instance selection strategies
+are having lower cardoso values compared to the statistical sampling method. among
+the instance selection methods, there is no method that dominantly outperforms others,
+however, the shorter strategy performs better than others. except for the alpha miner, the
+longer strategy usually results in process models with higher cardoso value.
+6. conclusion
+in this paper, we proposed some instance selection strategies to increase the performance
+of process discovery algorithms. we recommend applying process discovery algorithms
+on sampled event logs instead of whole event logs when dealing with large data sets. we952 mohammadreza fani sani, sebastiaan j. van zelst1,, and wil van der aalst1,2
+fig. 13. the average cardoso values of discovered process models using different preprocessing
+methods.improving the performance of process discovery algorithms by instance selection??953
+implemented different instance selection strategies in the prom platform and also ported
+them into rapidprom.
+to evaluate the proposed method, we applied it to several real publicly available event
+logs with different state-of-the-art process discovery algorithms. experimental results
+show that by instance selection strategies, we are able to decrease the required time used
+by the process discovery algorithms. we found that instance selection strategies mostly
+increase the performance of process discovery by reducing the amount of behavior and the
+number of traces. therefore, by using the sampled event logs, we are able to discover an
+acceptable approximation of the ﬁnal process model in a shorter time. using the sampled
+event log also results in having simpler process models according to complexity metrics.
+moreover, the experiments indicate that for some event logs, instances selection strategies
+improve the quality of discovered process models according to the f-measure metric for
+most of process discovery algorithms. the performance and f-measure improvements
+for split miner are less than other process discovery algorithms. however, the instance
+selection strategies improve the complexity of this algorithm more than other methods.
+we found that the frequency, similarity and structured-based selection strategies result in
+process models with higher quality.
+as future work, we aim to ﬁnd out for different event logs and process discovery algo-
+rithms, which sampling strategy returns the best process model in less time. it is valuable
+to analyze the monotonicity of instance selection strategies and if possible guarantee spe-
+ciﬁc requirements such as ﬁtness or f-measure with the minimums size of the sampled
+event data.
+acknowledgments. we thank the alexander von humboldt (avh) stiftung for supporting our re-
+search.
+references
+1. van der aalst, w.m.p.: process mining - data science in action, second edition. springer
+berlin heidelberg (2016)
+2. van der aalst, w.m.p., et all: process mining manifesto. in: business process management
+bpm workshops, clermont-ferrand, france. pp. 169–194 (2011)
+3. van der aalst, w.m.p., bolt, a., van zelst, s.: rapidprom: mine your processes and not just
+your data. corr abs/1703.03740 (2017)
+4. van der aalst, w.m.p., van dongen, b., g ¨unther, c.w., rozinat, a., verbeek, e., weijters, t.:
+prom: the process mining toolkit. bpm (demos) 489(31) (2009)
+5. van der aalst, w.m., weijters, t., maruster, l.: workﬂow mining: discovering pro-
+cess models from event logs. ieee trans. knowl. data eng. 16(9), 1128–1142 (2004),
+https://doi.org/10.1109/tkde.2004.47
+6. andrews, r., suriadi, s., ouyang, c., poppe, e.: towards event log querying for
+data quality - let’s start with detecting log imperfections 11229, 116–134 (2018),
+https://doi.org/10.1007/978-3-030-02610-3 7
+7. augusto, a., conforti, r., dumas, m., rosa, m.l., polyvyanyy, a.: split miner: automated
+discovery of accurate and simple business process models from event logs. knowl. inf. syst.
+59(2), 251–284 (2019), https://doi.org/10.1007/s10115-018-1214-x
+8. bauer, m., senderovich, a., gal, a., grunske, l., weidlich, m.: how much event data is
+enough? a statistical framework for process discovery. in: krogstie, j., reijers, h.a. (eds.)
+advanced information systems engineering - 30th international conference, caise 2018,954 mohammadreza fani sani, sebastiaan j. van zelst1;, and wil van der aalst1;2
+tallinn, estonia, june 11-15, 2018, proceedings. lecture notes in computer science, vol.
+10816, pp. 239–256. springer (2018), https://doi.org/10.1007/978-3-319-91563-0 15
+9. berti, a.: statistical sampling in process mining discovery. in: the 9th international conference
+on information, process, and knowledge management. pp. 41–43 (2017)
+10. boltenhagen, m., chatain, t., carmona, j.: generalized alignment-based trace clustering of
+process behavior. in: donatelli, s., haar, s. (eds.) application and theory of petri nets and
+concurrency - 40th international conference, petri nets 2019, aachen, germany, june 23-
+28, 2019, proceedings. lecture notes in computer science, vol. 11522, pp. 237–257. springer
+(2019), https://doi.org/10.1007/978-3-030-21571-2 14
+11. buijs, j.c.a.m., van dongen, b.f., van der aalst, w.m.p.: on the role of ﬁtness, precision,
+generalization and simplicity in process discovery. in: meersman, r., panetto, h., dillon, t.s.,
+rinderle-ma, s., dadam, p., zhou, x., pearson, s., ferscha, a., bergamaschi, s., cruz, i.f.
+(eds.) on the move to meaningful internet systems: otm 2012, confederated international
+conferences: coopis, doa-svi, and odbase 2012, rome, italy, september 10-14, 2012.
+proceedings, part i. lecture notes in computer science, vol. 7565, pp. 305–322. springer
+(2012), https://doi.org/10.1007/978-3-642-33606-5 19
+12. carmona, j., cortadella, j.: process mining meets abstract interpretation. in: balc ´azar, j.l.,
+bonchi, f., gionis, a., sebag, m. (eds.) machine learning and knowledge discovery in
+databases, european conference, ecml pkdd 2010, barcelona, spain, september 20-24,
+2010, proceedings, part i. lecture notes in computer science, vol. 6321, pp. 184–199.
+springer (2010), https://doi.org/10.1007/978-3-642-15880-3 18
+13. conforti, r., rosa, m.l., ter hofstede, a.h.m.: filtering out infrequent behavior from
+business process event logs. ieee trans. knowl. data eng. 29(2), 300–314 (2017),
+https://doi.org/10.1109/tkde.2016.2614680
+14. de leoni, m., mannhardt, f.: road trafﬁc ﬁne management process (2015),
+https://doi.org/10.4121/uuid:270fd440-1057-4fb9-89a9-b699b47990f5
+15. van dongen, b., borchert, f.: bpic 2018. eindhoven university of technology (2018),
+https://doi.org/10.4121/uuid:3301445f-95e8-4ff0-98a4-901f1f204972
+16. van dongen, b.f., van der aalst, w.m.p.: a meta model for process mining data 160 (2005),
+http://ceur-ws.org/v ol-160/paper11.pdf
+17. fani sani, m., berti, a., van zelst, s.j., van der aalst, w.m.p.: filtering toolkit: interactively
+ﬁlter event logs to improve the quality of discovered models 2420, 134–138 (2019), http://ceur-
+ws.org/v ol-2420/paperdt4.pdf
+18. fani sani, m., van zelst, s.j., van der aalst, w.m.p.: improving process discovery results by ﬁl-
+tering outliers using conditional behavioural probabilities. in: teniente, e., weidlich, m. (eds.)
+business process management workshops - bpm 2017 international workshops, barcelona,
+spain, september 10-11, 2017, revised papers. lecture notes in business information process-
+ing, vol. 308, pp. 216–229. springer (2017), https://doi.org/10.1007/978-3-319-74030-0 16
+19. fani sani, m., van zelst, s.j., van der aalst, w.m.p.: applying sequence mining for outlier de-
+tection in process mining. in: panetto, h., debruyne, c., proper, h.a., ardagna, c.a., roman,
+d., meersman, r. (eds.) on the move to meaningful internet systems. otm 2018 confer-
+ences - confederated international conferences: coopis, c&tc, and odbase 2018, val-
+letta, malta, october 22-26, 2018, proceedings, part ii. lecture notes in computer science,
+vol. 11230, pp. 98–116. springer (2018), https://doi.org/10.1007/978-3-030-02671-4 6
+20. fani sani, m., van zelst, s.j., van der aalst, w.m.p.: repairing outlier behaviour in event logs.
+in: abramowicz, w., paschke, a. (eds.) business information systems - 21st international con-
+ference, bis 2018, berlin, germany, july 18-20, 2018, proceedings. lecture notes in business
+information processing, vol. 320, pp. 115–131. springer (2018), https://doi.org/10.1007/978-
+3-319-93931-5 9
+21. fani sani, m., van zelst, s.j., van der aalst, w.m.p.: repairing outlier behaviour in event logs
+using contextual behaviour. vol. 14, pp. 5:1–5:24 (2018), https://doi.org/10.18417/emisa.14.5improving the performance of process discovery algorithms by instance selection??955
+22. fani sani, m., van zelst, s.j., van der aalst, w.m.p.: conformance checking approximation
+using subset selection and edit distance. in: dustdar, s., yu, e., salinesi, c., rieu, d., pant,
+v . (eds.) advanced information systems engineering - 32nd international conference, caise
+2020, grenoble, france, june 8-12, 2020, proceedings. lecture notes in computer science,
+vol. 12127, pp. 234–251. springer (2020), https://doi.org/10.1007/978-3-030-49435-3 15
+23. fern ´andez-cerero, d., varela-vaca, ´a.j., fern ´andez-montes, a., l ´opez, m.t.g., alv ´arez-
+bermejo, j.a.: measuring data-centre workﬂows complexity through process mining: the
+google cluster case. j. supercomput. 76(4), 2449–2478 (2020), https://doi.org/10.1007/s11227-
+019-02996-2
+24. gao, j., van zelst, s.j., lu, x., van der aalst, w.m.p.: automated robotic process automation:
+a self-learning approach. in: panetto, h., debruyne, c., hepp, m., lewis, d., ardagna, c.a.,
+meersman, r. (eds.) on the move to meaningful internet systems: otm 2019 conferences
+- confederated international conferences: coopis, odbase, c&tc 2019, rhodes, greece,
+october 21-25, 2019, proceedings. lecture notes in computer science, vol. 11877, pp. 95–
+112. springer (2019), https://doi.org/10.1007/978-3-030-33246-4 6
+25. g ¨unther, c.w., van der aalst, w.m.p.: fuzzy mining - adaptive process simpliﬁcation based on
+multi-perspective metrics. in: alonso, g., dadam, p., rosemann, m. (eds.) business process
+management, 5th international conference, bpm 2007, brisbane, australia, september 24-
+28, 2007, proceedings, lecture notes in computer science, vol. 4714, pp. 328–343. springer
+(2007), https://doi.org/10.1007/978-3-540-75183-0 24
+26. knols, b., van der werf, j.m.e.m.: measuring the behavioral quality of log sampling. in: in-
+ternational conference on process mining, icpm 2019, aachen, germany, june 24-26, 2019.
+pp. 97–104. ieee (2019), https://doi.org/10.1109/icpm.2019.00024
+27. lassen, k.b., van der aalst, w.m.p.: complexity metrics for workﬂow nets. inf. softw. tech-
+nol. 51(3), 610–626 (2009), https://doi.org/10.1016/j.infsof.2008.08.005
+28. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured process
+models from event logs - a constructive approach. in: colom, j.m., desel, j. (eds.) applica-
+tion and theory of petri nets and concurrency - 34th international conference, petri nets
+2013, milan, italy, june 24-28, 2013. proceedings, lecture notes in computer science, vol.
+7927, pp. 311–329. springer (2013), https://doi.org/10.1007/978-3-642-38697-8 17
+29. leemans, s.j.j., fahland, d., van der aalst, w.m.p.: discovering block-structured process
+models from event logs containing infrequent behaviour. in: lohmann, n., song, m., wohed,
+p. (eds.) business process management workshops - bpm 2013 international workshops, bei-
+jing, china, august 26, 2013, revised papers, lecture notes in business information process-
+ing, vol. 171, pp. 66–78. springer (2013), https://doi.org/10.1007/978-3-319-06257-0 6
+30. de leoni, m., van der aalst, w.m.p., dees, m.: a general process mining framework for corre-
+lating, predicting and clustering dynamic behavior based on event logs. inf. syst. 56, 235–257
+(2016), https://doi.org/10.1016/j.is.2015.07.003
+31. luengo, d., sep ´ulveda, m.: applying clustering in process mining to ﬁnd different versions
+of a business process that changes over time. in: daniel, f., barkaoui, k., dustdar, s. (eds.)
+business process management workshops - bpm 2011 international workshops, clermont-
+ferrand, france, august 29, 2011, revised selected papers, part i. lecture notes in business
+information processing, vol. 99, pp. 153–158. springer (2011), https://doi.org/10.1007/978-3-
+642-28108-2 15
+32. mannhardt, f.: hospital billing-event log. eindhoven university of technology. dataset pp.
+326–347 (2017)
+33. mannhardt, f., de leoni, m., reijers, h.a., van der aalst, w.m.p.: data-driven process discov-
+ery - revealing conditional infrequent behavior from event logs. in: dubois, e., pohl, k. (eds.)
+advanced information systems engineering - 29th international conference, caise 2017, es-
+sen, germany, june 12-16, 2017, proceedings. lecture notes in computer science, vol. 10253,
+pp. 545–560. springer (2017), https://doi.org/10.1007/978-3-319-59536-8 34956 mohammadreza fani sani, sebastiaan j. van zelst1;, and wil van der aalst1;2
+34. mendling, j.: metrics for process models: empirical foundations of veriﬁcation, error predic-
+tion, and guidelines for correctness, lecture notes in business information processing, vol. 6.
+springer (2008), https://doi.org/10.1007/978-3-540-89224-3
+35. murata, t.: petri nets: properties, analysis and applications. proceedings of the ieee 77(4),
+541–580 (1989)
+36. pegoraro, m., uysal, m.s., van der aalst, w.m.p.: discovering process models from uncertain
+event data. in: francescomarino, c.d., dijkman, r.m., zdun, u. (eds.) business process man-
+agement workshops - bpm 2019 international workshops, vienna, austria, september 1-6,
+2019, revised selected papers. lecture notes in business information processing, vol. 362,
+pp. 238–249. springer (2019), https://doi.org/10.1007/978-3-030-37453-2 20
+37. p ´erez-castillo, r., fern ´andez-ropero, m., piattini, m.: business process model refactor-
+ing applying ibuprofen. an industrial evaluation. j. syst. softw. 147, 86–103 (2019),
+https://doi.org/10.1016/j.jss.2018.10.012
+38. pourbafrani, m., van zelst, s.j., van der aalst, w.m.p.: scenario-based prediction of business
+processes using system dynamics. in: panetto, h., debruyne, c., hepp, m., lewis, d., ardagna,
+c.a., meersman, r. (eds.) on the move to meaningful internet systems: otm 2019 con-
+ferences - confederated international conferences: coopis, odbase, c&tc 2019, rhodes,
+greece, october 21-25, 2019, proceedings. lecture notes in computer science, vol. 11877,
+pp. 422–439. springer (2019), https://doi.org/10.1007/978-3-030-33246-4 27
+39. qafari, m.s., van der aalst, w.m.p.: fairness-aware process mining. in: panetto, h., debruyne,
+c., hepp, m., lewis, d., ardagna, c.a., meersman, r. (eds.) on the move to meaningful
+internet systems: otm 2019 conferences - confederated international conferences: coopis,
+odbase, c&tc 2019, rhodes, greece, october 21-25, 2019, proceedings. lecture notes in
+computer science, vol. 11877, pp. 182–192. springer (2019), https://doi.org/10.1007/978-3-
+030-33246-4 11
+40. raﬁei, m., van der aalst, w.m.p.: mining roles from event logs while preserving pri-
+vacy. in: business process management workshops - bpm 2019 international work-
+shops, vienna, austria, september 1-6, 2019, revised selected papers. pp. 676–689 (2019),
+https://doi.org/10.1007/978-3-030-37453-2 54
+41. sani, m.f., van zelst, s.j., van der aalst, w.m.p.: the impact of event log subset selection
+on the performance of process discovery algorithms. in: welzer, t., eder, j., podgorelec, v .,
+wrembel, r., ivanovic, m., gamper, j., morzy, m., tzouramanis, t., darmont, j., latiﬁc, a.k.
+(eds.) new trends in databases and information systems, adbis 2019 short papers, work-
+shops bbigap, qauca, sembdm, simpda, m2p, madeisd, and doctoral consortium,
+bled, slovenia, september 8-11, 2019, proceedings. communications in computer and infor-
+mation science, vol. 1064, pp. 391–404. springer (2019), https://doi.org/10.1007/978-3-030-
+30278-8 39
+42. song, m., g ¨unther, c.w., van der aalst, w.m.p.: trace clustering in process mining. in:
+ardagna, d., mecella, m., yang, j. (eds.) business process management workshops, bpm
+2008 international workshops, milano, italy, september 1-4, 2008. revised papers. lec-
+ture notes in business information processing, vol. 17, pp. 109–120. springer (2008),
+https://doi.org/10.1007/978-3-642-00328-8 11
+43. van zelst, s., van dongen, b., van der aalst, w.m.p., verbeek, h.m.w.: discov-
+ering workﬂow nets using integer linear programming. computing (nov 2017),
+https://doi.org/10.1007/s00607-017-0582-5
+44. suriadi, s., andrews, r., ter hofstede, a.h.m., wynn, m.t.: event log imperfection patterns
+for process mining: towards a systematic approach to cleaning event logs. inf. syst. 64, 132–
+150 (2017), https://doi.org/10.1016/j.is.2016.07.011
+45. van dongen, b.f.: bpic 2012. eindhoven university of technology (2012),
+https://doi.org/10.4121/uuid:3926db30-f712-4394-aebc-75976070e91f
+46. van dongen, b.f.: bpic 2017. eindhoven university of technology (2017),
+https://doi.org/10.4121/uuid:5f3067df-f10b-45da-b98b-86ae4c7a310bimproving the performance of process discovery algorithms by instance selection??957
+47. van dongen, b.f.: bpic 2019. eindhoven university of technology (2019),
+https://doi.org/10.4121/uuid:d06aff4b-79f0-45e6-8ec8-e19730c248f1
+48. verbeek, h.m.w., buijs, j.c.a.m., van dongen, b.f., van der aalst, w.m.p.: xes, xesame, and
+prom 6. in: soffer, p., proper, e. (eds.) information systems evolution - caise forum 2010,
+hammamet, tunisia, june 7-9, 2010, selected extended papers. lecture notes in business
+information processing, vol. 72, pp. 60–75. springer (2010), https://doi.org/10.1007/978-3-
+642-17722-4 5
+49. ward steeman: bpic 2013. eindhoven university of technology (2013),
+https://doi.org/10.4121/uuid:a7ce5c55-03a7-4583-b855-98b86e1a2b07
+50. weerdt, j.d., backer, m.d., vanthienen, j., baesens, b.: a robust f-measure for evaluat-
+ing discovered process models. in: proceedings of the ieee symposium on computational
+intelligence and data mining, cidm 2011, part of the ieee symposium series on com-
+putational intelligence 2011, april 11-15, 2011, paris, france. pp. 148–155. ieee (2011),
+https://doi.org/10.1109/cidm.2011.5949428
+51. weerdt, j.d., vanden broucke, s.k.l.m., vanthienen, j., baesens, b.: active trace clustering
+for improved process discovery. ieee trans. knowl. data eng. 25(12), 2708–2720 (2013),
+https://doi.org/10.1109/tkde.2013.64
+52. weijters, a.j.m.m., ribeiro, j.t.s.: flexible heuristics miner (fhm). in: proceedings of the
+ieee symposium on computational intelligence and data mining, cidm 2011, part of the
+ieee symposium series on computational intelligence 2011, april 11-15, 2011, paris, france.
+pp. 310–317. ieee (2011), https://doi.org/10.1109/cidm.2011.5949453
+53. van der werf, j.m.e.m., van dongen, b.f., hurkens, c.a.j., serebrenik, a.: process
+discovery using integer linear programming. fundam. inform. 94(3-4), 387–412 (2009),
+https://doi.org/10.3233/fi-2009-136
+54. van zelst, s.j., van dongen, b.f., van der aalst, w.m.p.: avoiding over-ﬁtting in ilp-based
+process discovery. in: motahari-nezhad, h.r., recker, j., weidlich, m. (eds.) business process
+management - 13th international conference, bpm 2015, innsbruck, austria, august 31 -
+september 3, 2015, proceedings, lecture notes in computer science, vol. 9253, pp. 163–171.
+springer (2015), https://doi.org/10.1007/978-3-319-23063-4 10
+55. van zelst, s.j., fani sani, m., ostovar, a., conforti, r., rosa, m.l.: detection and removal
+of infrequent behavior from event streams of business processes. inf. syst. 90, 101451 (2020),
+https://doi.org/10.1016/j.is.2019.101451

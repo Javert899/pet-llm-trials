@@ -1,0 +1,696 @@
+conformance checking of interacting processes with
+overlapping instances
+dirk fahland, massimiliano de leoni, boudewijn f. van dongen, and
+wil m.p. van der aalst
+eindhoven university of technology, the netherlands
+(d.fahland|m.d.leoni|b.f.v.dongen|w.m.p.v.d.aalst)@tue.nl
+abstract. the usefulness of process models (e.g., for analysis, improvement,
+or execution) strongly depends on their ability to describe reality. conformance
+checking is a technique to validate how good a given process model describes
+recorded executions of the actual process. recently, artifacts have been proposed
+as a paradigm to capture dynamic, and inter-organizational processes in a more
+natural way. artifact-centric processes drop several restrictions and assumptions
+of classical processes. in particular, process instances cannot be considered in iso-
+lation as instances in artifact-centric processes may overlap and interact with each
+other. this signiﬁcantly complicates conformance checking; the entanglement of
+different instances complicates the quantiﬁcation and diagnosis of misalignments.
+this paper is the ﬁrst paper to address this problem. we show how conformance
+checking of artifact-centric processes can be decomposed into a set of smaller
+problems that can be analyzed using conventional techniques.
+keywords: artifacts, process models, conformance, overlapping process instances
+1 introduction
+business process models have become an integral part of modern information systems
+where they are used to document, execute, monitor, and optimize business processes.
+however, many studies show that models often deviate from reality (see. [1]). to avoid
+building on quicksand it is vital to know in advance to what extent a model conforms to
+reality.
+conformance checking is the problem of determining how good a given process
+modelmdescribes process executions that can be observed in a running system sin
+reality. several conformance metrics and techniques are available [2 –7]. the most basic
+metric is ﬁtness telling whether mcanreplay every observed execution of s. in case
+mcannot replay some (or all) of these executions, the model mneeds to be changed
+to match the reality recorded by s(or the system and/or its underlying processes are
+changed to align both).
+existing conformance checking techniques assume rather simple models where
+process instances can be considered in isolation. however, when looking at the data
+models of erp products such as sap business suite, microsoft dynamics ax, oracle e-
+business suite, exact globe, infor erp, and oracle jd edwards enterpriseone, one can
+easily see that this assumption is notvalid for real-life processes. there are one-to-manyand many-to-many relationships between data objects , such as customers, orderlines,
+orders, deliveries, payments, etc. for example, an online shop may split its customers’
+quotes into several orders , one per supplier of the quoted items, s.t. each order contains
+items for several customers . consequently, several customer cases synchronize on the
+same order at a supplier, and several supplier cases synchronize on the same quote of a
+customer. in consequence, we will not be able to identify a unique notion of a process
+instance by which we can trace and isolate executions of such a process, and classical
+modeling languages are no longer applicable [8–10].
+the fabric of real-life processes cannot be straightjacketed into monolithic processes.
+therefore, we need to address two problems:
+(1)find a modeling language lto express process executions where several cases of
+different objects overlap and synchronize.
+(2)determine whether a process model mexpressed inladequately describes actual
+executions of a process in reality — despite the absence of process instances.
+the ﬁrst problem is well-known [8 –10] and several modeling languages have been
+proposed to solve it culminating in the stream of artifact-centric process modeling that
+emerged in recent years [8 –12]. in short, an artifact instance is an object that participates
+in the process. it is equipped with a life-cycle that describes the states and possible
+transitions of the object. an artifact describes a class of similar objects, e.g., all orders .
+a process model then describes how artifacts interact with each other, e.g., by exchanging
+messages [11, 12]. note that several instances of one artifact may interact with several
+instances of another artifact, e.g., when placing two orders consisting of multiple items
+with an electronic bookstore items from both orders may end up in the same delivery
+while items in the same order may be split over multiple deliveries.
+in this paper we use proclets [8] as a modeling language for artifacts to study
+and solve the second problem. a proclet describes one artifact, i.e., a class of objects
+with their own life cycle, together with an interface to other proclets. a proclet system
+connects the interfaces of its proclets via unidirectional channels, allowing the life-
+cycles of instances of the connected proclets to interact with each other by exchanging
+messages; one instance may send messages to multiple other instances, or an instance
+may receive messages from multiple instances.
+after selecting proclets as a representation, we can focus on the second problem;
+determine whether a given proclet system pallows for the behavior recorded by the
+actual information system s, and if not, to which degree pdeviates from sand where.
+the problem is difﬁcult because sdoes not structure its executions into isolated process
+instances. for this reason we develop the notion of an instance-aware log . the system
+srecords executed life-cycle cases of its objects in separate logs l1;:::;l n— one
+log per class of objects. each logconsists of several cases , and each event in a case is
+associated to a speciﬁc object. for each event, it is recorded with which other objects
+(having a case in another log) the event interacted by sending or receiving messages.
+theartifact conformance problem then reads as follows: given a proclet system pand
+instance-aware logs l1;:::;l n, can the proclets of pbe instantiated s.t. the life-cycles
+of all proclets and their interactions “replay” l1;:::;l n?
+depending on how objects in sinteract and overlap, a single execution of scan
+be long, possibly spanning the entire lifetime of swhich results in having to replay all
+2cases of all logs at once . depending on the number of objects and cases, this may turn
+out infeasible for conformance checking with existing techniques. proclets may also
+be intertwined in various ways. this makes conformance checking a computationally
+challenging problem. analysis becomes intractable when actual instance identiﬁers are
+taken into account. existing techniques simply abstract from the identities of instances
+and their interactions.
+therefore, we have developed an approach to decompose the problem into a set of
+smaller problems: we minimally enrich each case in each log to an interaction case ,
+describing how one object evolves through the process andsynchronizes with other
+objects, according to other cases in other logs. we then show how to abstract a given
+proclet systempto an abstract proclet system pjpfor each proclet ps.t.pcan replay
+l1;:::;l niff the abstract proclet system pjpcan replay each interaction case of p, for
+each proclet pofp. as an interaction case focuses on a single instance of a single proclet
+at a time (while taking its interactions into account), existing conformance checkers [6,7]
+can be used to check conformance.
+this paper is structured as follows. section 2 recalls how artifacts describe processes
+where cases of different objects overlap and interact. there, we also introduce the notion
+of an instance-aware event log that contains just enough information to reconstruct
+executions of such processes. further, proclets are introduced as a formal language
+to describe such processes. section 3 then formally states the conformance checking
+problem in this setting, and section 4 presents our technique of decomposing proclet
+systems and logs for conformance checking. the entire approach is implemented in the
+process mining toolkit prom; section 5 presents the tool’s functionality and shows how
+it can discover deviations in artifact-centric processes. section 6 concludes the paper.
+2 artifacts
+this section recalls how the artifact-centric approach allows to describe processes where
+cases of different objects overlap and interact.
+2.1 artifacts and proclets: an example
+to motivate all relevant concepts and to establish our terminology, we consider a backend
+process of a cd online shop that serves as a running example in this paper. the cd
+online shop offers a large collection of cds from different suppliers to its customers.
+its backend process is triggered by a customer’s request for cds and the shop returns a
+quote regarding the offered cds. if the customer accepts, the shop splits the quote into
+several orders , one for each cd supplier. one order handles all quoted cds by the same
+supplier. the order then is executed and the suppliers ship the cds to the shop which
+distributes cds from different orders according to the original quotes. some cds may
+be unavailable at the supplier; in this case notiﬁcations are sent to the cd shop which
+forwards the information to the customer. the order closes when all cds are shipped and
+all notiﬁcations are sent. the quote closes after the customer rejected the quote, or after
+notiﬁcations, cds, and invoice have been sent. in the recent years, the artifact-centric
+approach emerged as a paradigm to describe processes like in our cd shop example
+3/mt113/mt117/mt111/mt116/mt101 /mt111/mt114/mt100/mt101/mt114
+/mt115/mt101/mt110/mt100/mt32/mt113/mt117/mt111/mt116/mt101
+/mt43/mt44/mt49/mt99/mt114/mt101/mt97/mt116/mt101/mt32/mt102/mt114/mt111/mt109
+/mt114/mt101/mt113/mt117/mt101/mt115/mt116
+/mt97/mt99/mt99/mt101/mt112/mt116
+/mt114/mt101/mt106/mt101/mt99/mt116/mt112/mt114/mt111/mt99/mt101/mt115/mt115/mt101/mt100 /mt43/mt44/mt63
+/mt100/mt101/mt108/mt105/mt118/mt101/mt114/mt103/mt101/mt110/mt101/mt114/mt97/mt116/mt101
+/mt105/mt110/mt118/mt111/mt105/mt99/mt101/mt110/mt111/mt116/mt105/mt102/mt105/mt101/mt100/mt32/mt117/mt110/mt45
+/mt97/mt118/mt97/mt105/mt108/mt97/mt98/mt105/mt108/mt105/mt116/mt121/mt43/mt44/mt63
+/mt99/mt108/mt111/mt115/mt101/mt97/mt100/mt100/mt32/mt67/mt68 /mt49/mt44/mt43
+/mt97/mt100/mt100/mt32/mt67/mt68
+/mt111/mt114/mt100/mt101/mt114/mt32/mt97/mt116
+/mt115/mt117/mt112/mt112/mt108/mt105/mt101/mt114
+/mt43/mt44/mt63
+/mt43/mt44/mt63/mt115/mt104/mt105/mt112
+/mt97/mt118/mt97/mt105/mt108/mt97/mt98/mt108/mt101
+/mt110/mt111/mt116/mt105/mt102/mt121/mt32/mt117/mt110/mt45
+/mt97/mt118/mt97/mt105/mt108/mt97/mt98/mt108/mt101
+/mt99/mt108/mt111/mt115/mt101fig. 1. a proclet system describing the back-end process of a cd online shop. a customer’s quote
+is split into several orders according to the suppliers of the cds; an order at a supplier handles
+several quotes from different customers.
+where several cases of quotes object interact with several cases of orders. quotes and
+orders are the artifacts of this process. figure 1 models the above process in terms of a
+proclet system [8] consisting of two proclets : one describing the life-cycle of quotes and
+the other describing the life-cycle of orders . note that fig. 1 abstracts from interactions
+between the cd shop and the customers. instead the focus is on interactions between
+quotes in the cd shop and orders handled by suppliers.
+the distinctive quality in the interactions between quotes and orders is their cardi-
+nality : each quote may interact with several orders, and each order may interact with
+several quotes. that is, we observe many-to-many relations between quotes and orders.
+for example, consider a process execution involving two quote instances : one over cd a
+(q1) and the other over cd a,cd b, and cd c(q2).cd bandcd chave the same supplier,
+cd ahas a different supplier. hence, the quotes are split into two order instances ( o1
+ando2). in the execution, cd aandcd bturn out to be available whereas cd cis not.
+consequently, cd ais shipped to the ﬁrst quote, and cd aandcd bare delivered to the
+second quote. the second quote is also notiﬁed regarding the unavailability of cd c.
+this execution gives rise to the following cases of quote andorder which interact as
+illustrated in fig. 2 (note that a cd is not an artifact as it does not follow a life-cycle in
+this process).
+q1:create;send;accept;processed;deliver;generate;close
+q2:create;send;accept;notiﬁed;processed;deliver;generate;close
+o1:add cd;add cd;order;ship;close
+o2:add cd;add cd;order;notify;ship;close
+4/mt67/mt68/mt97
+/mt67/mt68/mt97
+/mt67/mt68/mt98/mt67/mt68/mt99/mt67/mt68/mt97
+/mt67/mt68/mt97
+/mt67/mt68/mt99 /mt67/mt68/mt98/mt99/mt114/mt101/mt97/mt116/mt101 /mt115/mt101/mt110/mt100 /mt97/mt99/mt99/mt101/mt112/mt116 /mt112/mt114/mt111/mt99/mt101/mt115/mt115/mt101/mt100 /mt100/mt101/mt108/mt105/mt118/mt101/mt114 /mt103/mt101/mt110/mt101/mt114/mt97/mt116/mt101 /mt99/mt108/mt111/mt115/mt101
+/mt99/mt114/mt101/mt97/mt116/mt101 /mt115/mt101/mt110/mt100 /mt97/mt99/mt99/mt101/mt112/mt116 /mt112/mt114/mt111/mt99/mt101/mt115/mt115/mt101/mt100 /mt100/mt101/mt108/mt105/mt118/mt101/mt114 /mt103/mt101/mt110/mt101/mt114/mt97/mt116/mt101 /mt99/mt108/mt111/mt115/mt101 /mt110/mt111/mt116/mt105/mt102/mt105/mt101/mt100/mt113/mt49/mt58
+/mt113/mt50/mt58/mt97/mt100/mt100/mt32/mt67/mt68 /mt111/mt49/mt58 /mt97/mt100/mt100/mt32/mt67/mt68 /mt111/mt114/mt100/mt101/mt114 /mt115/mt104/mt105/mt112 /mt99/mt108/mt111/mt115/mt101
+/mt97/mt100/mt100/mt32/mt67/mt68 /mt111/mt114/mt100/mt101/mt114 /mt115/mt104/mt105/mt112 /mt99/mt108/mt111/mt115/mt101 /mt110/mt111/mt116/mt105/mt102/mt121 /mt111/mt50/mt58 /mt97/mt100/mt100/mt32/mt67/mt68fig. 2. an execution of the cd shop process involving two quote cases and two order cases that
+interact with each other in a many-to-many fashion.
+2.2 instance-aware logs
+the task of checking whether a given process model accurately describes the processes
+executed in a running system srequires that srecords the relevant events in a log.
+classically, each process execution in scorresponds to a case running in isolation.
+such a case can be represented by the sequence of events that occurred. in an artifact-
+centric process like fig. 1, one cannot abstract from interactions and many-to-many
+relations between different cases; quotes and orders are interacting in a way that cannot
+be abstracted away.
+relating events of different cases to each other is known as event correlation ; see [13]
+for a survey of correlation patterns. a set of events (of different cases) is said to be
+correlated by some property pif each event has this property p. the set of all correlated
+events deﬁnes a conversation . for instance in fig. 2, events accept andprocessed ofq1,
+and events add cd andship ofo1form a conversation. various correlation mechanisms
+to deﬁne and set the correlation property of an event are possible [13]. in this paper,
+we do not focus on the actual correlation mechanism. we simply assume that such
+correlations have been derived; these are the connections between the different instances
+illustrated in fig. 2.
+to abstract from a speciﬁc correlation mechanism we introduce the notion of an
+instance-aware log . in the following we assume asynchronous interaction between
+different instances. let ebe an event. event correlation deﬁned the instances from
+whichereceived a message and the instances to which esent a message. as ecould
+send/receive several messages to/from the same instance, correlation data are stored as
+multisets of instance ids. for sake of simplicity, in this paper we assume that correlation
+data on receiving and sending messages was deﬁned by a single correlation property
+each. hence, eis associated to one multiset of instances from which ereceived messages
+and to one multiset of instances to which esent messages. a multisetm2niover a set
+iof instance ids is technically a mapping m:i!ndeﬁning how often each id2i
+occurs inm;[]denotes the empty multiset.
+deﬁnition 1 (instance-aware events). let=fa1;a2;:::;a ngbe a ﬁnite set of
+event types , and leti=fid1;id2;:::gbe a set of instance identiﬁers . an instance-
+aware event eis a 4-tuple e= (a;id;sid;rid)wherea2is the event type, id
+5is the instance in which eoccurred, sid= [sid1;:::;sid k]2niis the multiset of
+instances from which econsumed messages, and rid = [rid1;:::;rid l]2niis the
+multiset of instances for which eproduced messages.let e(;i)denote the set of all
+instance-aware events over andi.
+consider for example the third event of q2in fig. 2. this instance aware event is denoted
+as(accept;q2;[];[o1;o2;o2]). the ﬁfth event of q2is denoted as
+(processed;q2;[o1;o2];[]). instance-aware events capture the essence of event cor-
+relation and abstraction from the underlying correlation property, e.g., cd a.
+all events of one instance of an artifact adeﬁne a case; all cases of adeﬁne the
+log ofa. an execution of the entire process records the cases of the involved artifact
+instances in different logs that together constitute an instance-aware log.
+deﬁnition 2 (instance-aware cases and logs). aninstance-aware case =he1;:::;e ri
+2e(;i)is a ﬁnite sequence of instance-aware events occurring all in the same in-
+stance id2i. letl1;:::;l nbe sets of ﬁnitely many instance-aware cases s.t. no two
+cases use the same instance id. further, let <be a total order on all events in all cases
+s.t.e<e0whenevereoccurs before e0in the same case.1thenl= (fl1;:::;l ng;<)
+is called an instance-aware log .
+for example, the instance-aware cases of fig. 2 are the following:
+q1:h(create;q1;[];[]);(send;q1;[];[]);(accept;q1;[];[o1]);(processed;q1;[o1];[]);
+(deliver;q1;[];[]);(generate;q1;[];[]);(close;q1;[];[])i
+q2:h(create;q2;[];[]);(send;q2;[];[]);(accept;q2;[];[o1;o2;o2]);(notiﬁed;q2;[o2];[]);
+(processed;q2;[o1;o2];[]);(deliver;q2;[];[]);(generate;q2;[];[]);(close;q2;[];[])i
+o1:h(add cd;o1;[q1];[]);(add cd;o1;[q2];[]);(order;o1;[];[]);(ship;o1;[];[q1;q2]);
+(close;o1;[];[])i
+o2:h(add cd;o2;[q2];[]);(add cd;o2;[q2];[]);(order;o2;[];[]);(notify;o2;[];[q2]);
+(ship;o2;[];[q2]);(close;o1;[];[])i
+together these instances form an instance-aware log with an ordering relation <, e.g.,
+(accept;q1;[];[o1])<(add cd;o1;[q1];[]).
+2.3 proclets
+different languages for describing artifacts have been proposed [8 –12]. in the following,
+we use proclets [8] to study instantiation of artifacts and the many-to-many interactions
+between different artifact instances in a light-weight formal model. a proclet describes
+an artifact life-cycle as a labeled petri net where some transitions are attached to ports . a
+proclet system consists of a set of proclets together with channels between the proclets’
+ports. annotations at the ports specify how many instances interact with each other via a
+channel.
+deﬁnition 3 (petri net, labeled). apetri netn= (s;t;f;` )consists of a set sof
+places , a settoftransitions disjoint from s, arcsf(st)[(ts), and a
+labeling`:t![fgassigning each transition tan action name `(t)2or the
+invisible label .
+1note that technically two different events could have the same properties (e.g., in a loop). we
+assume these to be different, but did not introduce additional identiﬁers.
+6deﬁnition 4 (proclet). aprocletp= (n;ports )consists of a labeled petri net n=
+(s;t;f;` )and a set of ports , where
+–some transition initial2thas no pre-place (i.e., fsj(s;initial )2fg=;) and
+some transition nal2thas no post-place (i.e., fsj(nal;s)2fg=;),
+–each portp= (tp;dirp;card p;mult p)is (1) associated to a set tptof
+transitions, has (2) a direction of communication dirp2fin;outg(i.e., receive or
+send messages, resp.), (3) a cardinality card p2f?;1;;+g, and (4) a multiplicity
+mult p2f?;1;;+g, and
+–each transition is attached to at most one input port and to at most one output port,
+i.e., for allt2tholdsjfp2portsjt2tp;dirp=ingj1,jfp2portsjt2
+tp;dirp=outgj1.
+instead of an initial marking a proclet has an initial transition which will produce the
+ﬁrst tokens in the net. this will allow us to express the creation of multiple instances of
+the same proclet.
+figure 1 shows two proclets. each has three ports. the output port of accept has
+cardinality +(one event may send messages to multiple orders) and multiplicity 1(this
+is done only once per quote). the input port of add cd has a cardinality of 1(each
+individual input message triggers one of the add cd transitions) and a multiplicity +
+(at least one message is received during the life-cycle of an order). although the example
+happens to be acyclic, proclets may contain cycles.
+deﬁnition 5 (proclet system). aproclet systemp= (fp1;:::;p ng;c)consists of a
+ﬁnite setfp1;:::;p ng2of proclets together with a set cof channels s.t. each channel
+(p;q)2cconnects an output port pto an input port q,p;q2sn
+i=1portsi;dirp=
+out;dirq=in.
+without loss of generality, we assume the proclets’ sets of transitions and places to
+be pairwise disjoint. hence, the labeling of the proclets lifts to the proclet system:
+`p(t) :=`i(t), for each transition t2tiof each proclet i= 1;:::;n . we will also
+writep=p1:::pnas a shorthand for p= (fp1;:::;p ng;c). figure 1 shows
+the proclet system consisting of proclets quote andorder . extending the usual notation
+for petri nets, each half-round shape represents a port; the bow indicates the direction of
+communication. a dashed line between 2 ports denotes a channel of the proclet system.
+2.4 semantics of proclets: overlapping cases
+during execution, there may be several instances of the same proclet running concur-
+rently. instances are created dynamically during process execution, that is, whenever
+there is a need for a new instance, one will be created. initial and ﬁnal transitions of
+a proclet (depicted in bold in fig. 1) express instantiation and termination, i.e., when-
+evercreate of proclet quote occurs, a newinstance of quote is created; the top-most
+transition add cd creates a new order instance .
+2introducing pimplicitly introduces its components np= (sp;tp;fp;`p)andportp; the
+same applies to p0,p1, etc. and their components n0= (s0;t0;f0;`0)andport0, andn1=
+(s1;t1;f1;`1)andport1, respectively.
+7proclet instances interact with each other by sending messages over the channels of
+the proclet system. a transition attached to an output port sends messages, a transition
+attached to an input port receives messages. a port p’s annotations specify how many
+messages are sent or received (cardinality card p) and how often the port can be used
+by a proclet instance to send or receive messages (multiplicity mult p). for example,
+cardinality +of the port of accept denotes that a quote sends out one or more messages
+on quoted cds to multiple orders per invocation. its multiplicity 1indicates that there
+is precisely one such invocation during the lifecycle of a quote . conversely, the process
+repeatedly (multiplicity +) adds one cd of a quote to an order (cardinality 1).
+each message contains the sender’s instance idsand the recipient’s instance idrto
+properly identify which proclet instances are interacting with each other; thus a message
+is formally a pair (ids;idr). so, altogether a state of a proclet system is a conﬁguration.
+deﬁnition 6 (conﬁguration). aconﬁguration k= (i;ms;mc)of a proclet system
+p= (fp1;:::;p ng;c)is deﬁned as follows:
+–the setideﬁnes the active proclet instances in the system (as a set of instance ids).
+–theplace marking msdeﬁnes for each place s2s:=sn
+i=1sithe number of
+tokens that are on place sin instance id. formally,ms:s!niassigns each
+places2sa multiset of instance ids, i.e., ms(s)(id)deﬁnes the number of tokens
+onsinid.
+–thechannel marking mcdeﬁnes for each channel c2cthe messages in this
+channel. formally mc:c!niiis a multiset of pairs of instances ids, i.e.,
+mc(c)(ids;idr)deﬁnes the number of messages that are in transit from idstoidr
+in channelc.
+theinitial conﬁguration k0:= (;;ms;0;mc;0)deﬁnesms;0(s) = [] , for alls2s, and
+mc;0(c) = [] , for allc2c.
+an execution ofpstarts in the initial conﬁguration k0= (;;ms;0;mc;0)and occur-
+rences of transitions of ptake the system from conﬁguration to conﬁguration, creating
+and terminating proclet instances as the execution evolves. each transition toccurs in
+a speciﬁc proclet instance id, thereby consuming a set of messages received from a
+multiset sid ofsender instances and producing messages to a multiset rid ofrecipient
+instances . iftis not attached to an input or output port, then sid and/or rid are,
+respectively, always empty for each occurrence of t.
+a transition tcan only occur if it is enabled at the given conﬁguration k= (i;ms;
+mc)in instance id. the enabling of tdepends on the validity of the multiset sid of
+sender instances, from which texpects to receive messages.
+deﬁnition 7 (valid multiset of senders). letpbe a proclet system, k= (i;ms;mc)
+a conﬁguration ofp,p= (n;ports )a proclet ofpandt2tpa transition of p. let
+sid be a multiset of sender instances, from which texpects to receive messages. sid is
+valid w.r.t.tin proclet instance idat conﬁguration k= (i;ms;mc)iff
+–iftis not attached to any port, then sid= [ ], and
+–iftis attached to an input port p= (tp;dirp;card p;mult p),t2tp,dirp=in
+at channelc= (q;p)2cand the channel contains messages from senders x=
+fidsj(ids;idr)2mc(c)^idr=idgthen
+81.card p= 1implies sidxandjsidj= 1,
+2.card p= ?implies sidxand ifx6=;thenjsidj= 1,
+3.card p= + implies sid=xandjsidj1, and
+4.card p=implies sid=x.
+validity of the recipient ids rid w.r.t.tis deﬁned correspondingly: rid is either empty
+(ifthas no output port), or rid satisﬁes the cardinality constraint of its output port (i.e.,
+1impliesjridj= 1,?impliesjridj2f0;1gj,+impliesjridj1).
+deﬁnition 8 (enabled transition). letpbe a proclet system, k= (i;ms;mc)a
+conﬁguration ofp,pa proclet ofp. a transition t2tpisenabled in instance idat
+conﬁguration kw.r.t. multisets sid of sender- and rid of recipient ids, iff
+1. ifthas no pre-place, then id62i(an initial transition creates a new instance),
+2. each pre-place softin instance idhas a token, i.e., ms(s)(id)>0, and
+3.sid andrid are both valid with respect to t.
+when an enabled transition toccurs , it takes the system from a conﬁguration k=
+(i;ms;mc)to the successor conﬁguration k0= (i0;m0
+s;m0
+c), depending on sid
+andrid .
+deﬁnition 9 (occurrence of a transition). letpbe a proclet system, ka conﬁgu-
+ration ofp, andpa proclet ofp. if transition t2tpis enabled in instance idat
+conﬁguration kw.r.t. sid andrid , thentcanoccur which deﬁnes an instance-aware
+evente= (`p(t);id;sid;rid), and yields the successor conﬁguration k0as follows:
+1.in instance id, consume a token from each pre-place soft, and produce a token on
+each post-place soft,
+2.iftis attached to an input port p, then for each ids2sid, consume from channel
+c= (q;p)2cas many messages (ids;id)as expected, i.e., sid(ids)messages,
+and
+3.iftis attached to an output port p, then for each idr2rid , produce on channel
+c= (p;q)2cas many messages (id;idr)as intended, i.e., rid(idr)messages.
+an execution of the proclet system pis a sequence k0e1 !k1e2 !:::k nwhere each
+ki+1is the successor conﬁguration of kiunder the instance-aware event ei.
+this semantics also allows to replay an instance-aware log l= (fl1;:::;l ng;<)
+on a given proclet system p=p1:::pn, or to check whether pcan replayl. for
+this replay, merge all events of all cases of all logs l1;:::;l ninto a single sequence 
+of events that are ordered by <.pcan replayliff the events of deﬁne an execution of
+p. for instance, merging the cases q1;q2;o1;o2of section 2.2 yields a case that
+can be replayed in the proclet system of fig. 1.
+note that proclets may have -labeled transitions which are usually interpreted
+as internal or unobservable transitions. the corresponding instance-aware event e=
+(;id;sid;rid)would not be recorded in an event log . replaying a log on a model
+with unobservable transitions is the main technical problem addressed by conformance
+checking as we discuss next.
+93 the interaction conformance problem
+the problem of determining how accurately a process model describes the process imple-
+mented in an actual information system sis called conformance checking problem [2].
+classically, a system sexecutes a process as a set of isolated instances. the corre-
+sponding observed system execution is a sequence of events, called case, and a set of
+cases is a logl. the semantics of a process model mdeﬁne the set of valid process
+executions as sequences of m’s actions. conformance of mtolcan be characterized
+in several dimensions [2]. in the following, we consider only ﬁtness . this is the most
+dominant conformance metric that describes to which degree a model mcan replay all
+cases of a given log l, e.g., [7].mﬁtslless, for instance, if mexecutes some actions
+in a different order than observed in l, or iflcontains actions not described in m.
+there exist several techniques for the classical conformance checking problem
+[2–7, 14, 15]. the approaches compare cases in a log with possible executions of a
+process model, often by replaying the log on the model to see where model and log
+deviate. the most advanced conformance metrics reﬂect that only parts of a case are
+deviating [14], and pinpoint where deviations occur [6], while taking into account that
+models may contain behavior that is unobservable by nature [7,15]. the latter techniques
+ﬁnd for each case 2lan execution 0ofmthat is as similar as possible to ; the
+similarity of all to their respective 0deﬁnes the ﬁtness of mtol. this particulary
+allows to extend 0with-labeled transitions not recorded in , so0can be replayed
+on a model with unobservable transitions (see sect. 2.4).
+a proclet system raises a more general conformance checking problem, because a
+case contains events of several proclet instances that all may interact with each other. in
+our example from section 2, handling one quote of the cd shop involves several order
+instances, i.e., the case spans one quote instance and several order instances. from a
+different angle, a complete handling of an order involves several quote instances.
+in the light of this observation, we identify the following artifact conformance
+problem . a system records events in an instance-aware event log l. each event can be
+associated to a speciﬁc proclet pof a proclet system p, it knows the instance in which it
+occurs and the instances with which it communicates. can the proclet system preplay
+l? if not, to which degree does pdeviate from the behavior recorded in l?
+4 solving interaction conformance
+a na ¨ıve solution of the artifact conformance problem would replay the entire log l
+on the proclet system p, by instantiating proclets and exchanging messages between
+different proclet instances. this approach can become practically infeasible because of
+the sheer size ofland the number of active instances. in typical case studies we found
+logs with 80,000 events of 40-60 distinct actions. checking conformance would deﬁne a
+search space of 6080;000possible solutions among which the most similar log l0has to
+be found. even exploring only a small fraction of such a search space quickly turns out
+infeasible. moreover, existing techniques would be unable to distinguish the difference
+instances. for these two reasons, we decompose the problem and reduce it to a classical
+conformance checking problem. here we will use the technique presented in [7, 15]
+which is most robust and ﬂexible.
+104.1 reducing artifact conformance to existing techniques
+a naive solution would be to simply decompose the conformance problem of proclet
+system (fp1;:::;p ng;c)and instance-aware event log l= (fl1;:::;l ng;<)inton
+smaller problems where classical techniques are used to compare piandli. however,
+it is not sufﬁcient as the life-cycle of some case iddoes not only depend on “local”
+events, but also on events that sent messages to idor received messages from id. so,
+all events of idtogether with all events oflthat exchange messages with idconstitute
+theinteraction case idofid. it contains all behavioral information showing how id
+interacts with other proclet instances.
+an interaction case idof a proclet instance pidgives rise to the following confor-
+mance problem. the proclet system pﬁtsidiffid(1) follows the life-cycle of p, and
+(2) has as many communication events as required by the channels in p. the interaction
+conformance problem is to check how good pﬁts all interactions cases of all proclets.
+we will show in the next section that decomposing artifact conformance into interac-
+tion conformance is correct: if pﬁtsl, thenpﬁts each interaction case of each proclet
+pofp; and ifpdoes not ﬁtl, then there is an interaction case of a proclet pto which
+pdoes not ﬁt. as each interaction case is signiﬁcantly smaller than land involves only
+one proclet instance, the conformance checking problem becomes feasible and can be
+solved with existing techniques.
+4.2 structural viewpoint: a proclet and its environment
+/mt111/mt114/mt100/mt101/mt114 /mt111/mt114/mt100/mt101/mt114
+/mt43/mt44/mt49 /mt97/mt99/mt99/mt101/mt112/mt116
+/mt112/mt114/mt111/mt99/mt101/mt115/mt115/mt101/mt100 /mt43/mt44/mt63
+/mt110/mt111/mt116/mt105/mt102/mt105/mt101/mt100/mt32/mt117/mt110/mt45
+/mt97/mt118/mt97/mt105/mt108/mt97/mt98/mt105/mt108/mt105/mt116/mt121/mt43/mt44/mt63/mt97/mt100/mt100/mt32/mt67/mt68 /mt49/mt44/mt43
+/mt97/mt100/mt100/mt32/mt67/mt68
+/mt111/mt114/mt100/mt101/mt114/mt32/mt97/mt116
+/mt115/mt117/mt112/mt112/mt108/mt105/mt101/mt114
+/mt43/mt44/mt63
+/mt43/mt44/mt63/mt115/mt104/mt105/mt112
+/mt97/mt118/mt97/mt105/mt108/mt97/mt98/mt108/mt101/mt110/mt111/mt116/mt105/mt102/mt121/mt32/mt117/mt110/mt45
+/mt97/mt118/mt97/mt105/mt108/mt97/mt98/mt108/mt101
+/mt99/mt108/mt111/mt115/mt101
+fig. 3. the proclet order of fig. 1 together with
+its environment order .our aim is to decompose the confor-
+mance checking problem of a proclet
+systemp=p1:::pnw.r.t.
+linto a set of smaller problems: we
+check interaction conformance for each
+procletpi. interaction conformance of
+piconsiders the behavior of pito-
+gether with the immediate interaction
+behavior of piwith all other proclets
+p1;:::;p i 1;pi+1;:::;p n.
+we capture this immediate in-
+teraction behavior by abstracting
+p1;:::;p i 1; pi+1;:::;p nto an en-
+vironmentpiofpi.piis a proclet
+that contains just those transitions of
+p1;:::;p i 1;pi+1;:::;p nat the remote ends of the channels that reach pi— together
+with the corresponding ports for exchanging messages with pi. obviously, occurrences
+of transitions of piare unconstrained up to messages sent by pi. composing piandpi
+yields the proclet system pipiin which we can replay the interaction cases of pi.
+figure 3 shows the proclet order together with its abstracted environment order
+from the proclet system of fig. 1. the formal deﬁnition reads as follows.
+deﬁnition 10 (environment abstraction). letp= (fp1;:::;p ng;c)be a proclet
+system,pi= (ni;portsi);ni= (si;ti;fi;`i);i= 1;:::;n with the global labeling
+11`p(t) =`i(t);t2ti;i= 1;:::;n . we writet2tpif a transition tis attached to port p.
+the channels that reach piareci=f(p;q)2cj(tp[tq)\ti6=;g. the transitions
+at the remote ends of these channels are ti=ftj(p;q)2ci;t2(tp[tq)ntig.
+the abstract environment w.r.t.piis the proclet pi= (n;ports )withn=
+(;;ti;;;`pjti), and ports =fqj(p;q)2ci[c 1
+i;q62portsig. the abstracted
+systempipiis(fpi;pig;ci).
+4.3 behavioral viewpoint: extending cases to interaction cases
+after decomposing the proclet system, the next step is to check conformance of each
+single proclet piwith its abstract environment pi. for this, each case of pithat is stored
+in the instance-aware log lneeds to be extended to an interaction case by inserting all
+events oflthat correspond to transitions of piand exchange messages with the instance
+idof this case.
+deﬁnition 11 (interaction case, interaction log). letl= (fl1;:::;l ng;<)be an
+instance-aware log. let ebe the set of all events in all cases in l. letpibe a proclet
+of a proclet system p=p1:::pn,i2f1;:::;ng. let2libe a case of an
+instance idofpi.
+the setejidof events oflthat involve idcontains event e= (a;id0;sid;rid)iff
+e2e^ (id0=id_id2sid_id2rid). the interaction case ofis the sequence
+containing all events ejidordered by<ofl. the interaction log ofpiw.r.t.lis the
+setljpi:=fj2ligcontaining the interaction case of each case of piinl.
+for example, the interaction cases o1ofo1ando2ofo2shown in section 2.2 are
+o1:h(accept;q1;[];[o1]);(accept;q2;[];[o1;o2;o2]);(add cd;o1;[q1];[]);
+(add cd;o1;[q2];[]);(order;o1;[];[]);(ship;o1;[];[q1;q2]);(processed;q1;[o1];[]);
+(processed;q2;[o1;o2];[]);(close;o1;[];[])i
+o2:h(accept;q2;[];[o1;o2;o2]);(add cd;o2;[q2];[]);(add cd;o2;[q2];[]);(order;o2;[];[]);
+(notify;o2;[];[q2]);(notiﬁed;q2;[o2];[]);(ship;o2;[];[q2]);(processed;q2;[o1;o2];[]);
+(close;o1;[];[])i:
+the abstracted proclet system quotequote can replay both interaction cases.
+4.4 the decomposition is correct
+decomposing a proclet system p=p1:::pninto abstracted proclet systems pipi
+and replaying the interaction log of pionpipi, for eachi= 1;:::;n equivalently
+preserves the ﬁtness of pw.r.t. the given instance-aware event log l.
+recall from sect. 2.4 that lis replayed onpby ordering all events of lin a single
+case. from def. 11 follows that we obtain each interaction case idof an instance id
+of a procletpialso by projecting onto events that occur in idor exchange messages
+with id. by induction then holds that p1:::pncan replayiff each proclet with
+its environment pipican replay each projection of idonto events of each instance
+idofpi. in other words, p1:::pnﬁtsliffpipiﬁts each interaction case of pi,
+i.e.pipiﬁtsljpi. the full proof is given in [16].
+124.5 checking interaction conformance
+the previous transformations of abstracting a proclet’s environment and extracting inter-
+action cases allow us to isolate a single proclet instance for conformance checking w.r.t.
+the proclet and its associated channels. in other words, we reduced artifact conformance
+to the problem of checking whether the proclet system pipican replay the interaction
+logljpi, where each case in ljpionly refers to exactly one proclet instance. thus, the
+problem can be fed into existing conformance checkers.
+our conformance checker leverages the technique described in [7, 15]. as this
+technique only takes petri nets as input, the conformance checking problem of pipi
+w.r.t.ljpiis further reduced to a conformance checking problem on petri nets. this
+reduction translates the proclet ports into petri net patterns that have the same semantics.
+replacing each port of pinppwith its respective pattern yields a petri net npthat
+equivalently replays the interaction cases ljp. fig. 4 shows an example. each channel
+of fig. 3 translates to a place, the port annotations of proclet order translate to additional
+nodes and arcs.
+/mt111/mt114/mt100/mt101/mt114/mt111/mt114/mt100/mt101/mt114/mt97/mt99/mt99/mt101/mt112/mt116
+/mt112/mt114/mt111/mt99/mt101/mt115/mt115/mt101/mt100
+/mt110/mt111/mt116/mt105/mt102/mt105/mt101/mt100/mt32/mt117/mt110/mt45
+/mt97/mt118/mt97/mt105/mt108/mt97/mt98/mt105/mt108/mt105/mt116/mt121/mt97/mt100/mt100/mt32/mt67/mt68
+/mt97/mt100/mt100/mt32/mt67/mt68
+/mt111/mt114/mt100/mt101/mt114/mt32/mt97/mt116
+/mt115/mt117/mt112/mt112/mt108/mt105/mt101/mt114
+/mt115/mt104/mt105/mt112
+/mt97/mt118/mt97/mt105/mt108/mt97/mt98/mt108/mt101
+/mt110/mt111/mt116/mt105/mt102/mt121/mt32/mt117/mt110/mt45
+/mt97/mt118/mt97/mt105/mt108/mt97/mt98/mt108/mt101
+/mt99/mt108/mt111/mt115/mt101/mt116/mt49/mt112/mt49
+/mt116/mt50
+/mt112/mt50
+fig. 4. the result of translating orderorder of fig. 3
+to a petri net norder.for instance, cardinality +of
+the output port of ship available
+translates to the petri net pat-
+tern highlighted grey in fig. 4.
+it ensures that an occurrence of
+ship available yields one ( t2) or
+more messages ( t1) on the chan-
+nel. the multiplicity +of the input
+port of add cd translates to place
+p2and adjacent arcs: each occur-
+rence of add cd produces a token,
+the normal arc to the ﬁnal transi-
+tionclose ensures that add cd oc-
+curred at least once during the life-
+time of order , the reset arc (double
+arrow head) removes all other to-
+kens onp2(allowing for multiple
+occurrences of add cd ), the inhibitor arc from the channel to close ensures that all
+messages were consumed; see [16] for details.
+moreover, the technique described in [7,15] is not aware of interaction cases (def. 11).
+in particular, it is unaware that event e= (a;id0;[id;id;id00];[])sends two messages to
+instance idand one message to instance id00. in our translation of ports to petri nets [16],
+each eventemay produce one message to one instance. in order to preserve the number of
+messages sent to instance idin an interaction case, we replace eby as many occurrences
+ofaasesends messages to id, i.e., two occurrences of a. for example, the interac-
+tion caseo2(sect. 4.3) is transformed to haccept;accept;add cd;add cd;order;
+notify;notiﬁed;ship;processed;closei, which can be replayed on the net of fig. 4.
+further details are given in [16].
+after converting the proclets into petri nets np1;:::;n pnand translating their
+interaction cases as mentioned above, our conformance checker applies the technique
+13of [7, 15] to check how good the net npireplaysljpi, for eachi= 1;:::;n separately.
+technically, the checker ﬁnds for each interaction case 2lj pian execution 0of
+npithat is as similar as possible to t. ifnpicannot execute , thenis changed to
+an execution 0ofnpiby inserting or removing actions of npi. the more0deviates
+from, the lessnpiﬁts. the ﬁtness of npionis deﬁned by a cost-function that
+assigns a penalty on 0for each event that has to be added or removed from to obtain
+0. the most similar 0is found by efﬁciently exploring the search space of ﬁnite
+sequences of actions of npiguided by the cost function [7, 15]; this technique also
+checks conformance of cyclic models. the ﬁtness of npiw.r.t.lpiis the average ﬁtness
+ofnpiw.r.t. all cases in lpi.
+the ﬁtness of the entire proclet system p1:::pnw.r.t.lis currently computed
+as the average ﬁtness of each pito its interaction cases ljpi. alternatively, a weighted
+average could measure the ﬁtness of the entire proclet system: a proclet’s weight could
+be for instance its size (i.e., number of transitions), or the size of its interface (i.e., the
+number of ports, measuring the amount of interaction of the proclet).
+to illustrate the misconformances that can be discovered with this technique, assume
+that in the process execution of fig. 2, case q1did not contain an accept event. this
+would lead to the following interaction case of o1:
+h(accept;q2;[];[o1;o2;o2]);(add cd;o1;[q1];[]);
+(add cd;o1;[q2];[]);(order;o1;[];[]);(ship;o1;[];[q1;q2]);(processed;q1;[o1];[]);
+(processed;q2;[o1;o2];[]);(close;o1;[];[])i:
+our conformance checker would then detect that the cardinality constraint +of the input
+port of add cd would be violated: only one message is produced in the channel, but
+two occurrences of add cd are noted, each requiring one message.
+5 implementation as a prom plug-in
+fig. 5. the cd shop example in prom.the interaction conformance checker is
+implemented as a software plug-in of
+prom, a generic open-source framework
+for implementing process mining tools in
+a standard environment [17]. the plug-in
+takes as input the proclet system model
+and the interaction logs of the proclet of
+interests and, by employing the techniques
+described in sect. 4, returns an overview
+of the deviations between the cases in the
+log and the proclet system model.
+as input for initial experiments, we
+generated event logs by modeling our cd
+shop example as an artifact-centric system
+in cpn tools (http://cpntools.org) and sim-
+ulating the model. the simulation yielded
+to instance-aware log of about 2914 events of 15 different types. next we created the
+14fig. 6. the conformance results for the order proclet in prom.
+proclet model of the cd shop which is visualized in prom as shown in fig. 5; invisible
+transitions are depicted as black rectangles. then we generated interaction logs from the
+instance-aware log (def. 11). the longest interaction case was part of the interaction
+log of quote and contained 31events over 11types. therefore, our approach of decom-
+posing the artifact conformance-checking problem into a set of smaller sub-problems
+reduced the worst-case search space size from 152914to1131.
+for conformance checking, we implemented generic conversions from proclet sys-
+tems to petri nets as explained in sects. 4.2 and 4.5. the resulting petri nets were then
+checked for conformance w.r.t. the respective interaction logs using the existing confor-
+mance checker [15], capable to replay logs on petri nets with reset- and inhibitor arcs.
+the result of the conformance checking is shown in figure 6. for clarity, we show a
+log with only two cases, one conforming case, one deviating case. every row identiﬁes a
+different case in which the replayed execution is represented as a sequence of wedges.
+every wedge corresponds to (a)a “move” in both the model and the log, (b)just a “move”
+in the model (skipped transition), or (c)just a “move” in the event log (inserted event).
+for a case without any problems, i.e., just moves of type (a), ﬁtness is 1. the ﬁrst case
+in figure 6 has ﬁtness 1. note that the conformance checker identiﬁed some invisible
+transitions to have ﬁred (indicated by the black triangles). these are the transitions
+necessary in the petri net to model cardinality of the ports. the second case shows a
+lower conformance. the conformance checker identiﬁes where the case and the model
+deviate; and a color coding indicates the type of deviation.
+6 conclusion
+in this paper, we considered the problem of determining whether different objects of
+a process interact according to their speciﬁcation. we took the emerging paradigm of
+artifact-centric processes as a starting point. here, processes are composed of interacting
+artifacts, i.e., data objects with a life-cycle. the paradigm allows to model many-to-many
+relationships and complex interactions between objects.
+existing conformance checking techniques allow only for checking the conformance
+of artifacts in isolation. in this paper we went beyond and checked whether the complex
+15interactions among artifacts that are proposed in an artifact model ﬁt the actual behavior
+observed in reality. in particular, we showed that the problem of interaction conformance
+can be decomposed a set of smaller sub-problems for which we can use classical
+conformance checking techniques. the feasibility of the approach is demonstrated by a
+concrete operationalization in the prom framework.
+an open problem is to generalize instance-aware events to have correlation data de-
+ﬁned by multiple correlation properties, and correspondingly to allow proclet transitions
+to be attached to an arbitrary number of ports.
+acknowledgements. the research leading to these results has received funding from
+the european community’s seventh framework programme fp7/2007-2013 under grant
+agreement no257593 (acsi).
+references
+1.rozinat, a., jong, i., gunther, c., van der aalst, w.: conformance analysis of asml’s test
+process. in: grcis’09. v olume 459 of ceur-ws.org. (2009) 1–15
+2.rozinat, a., de medeiros, a.k.a., g ¨unther, c.w., weijters, a.j.m.m., van der aalst, w.m.p.:
+the need for a process mining evaluation framework in research and practice. in: bpm’07
+workshops. v olume 4928 of lncs., springer (2007) 84–89
+3.greco, g., guzzo, a., pontieri, l., sacca, d.: discovering expressive process models by
+clustering log traces. ieee trans. on knowl. and data eng. 18(2006) 1010–1027
+4.weijters, a., van der aalst, w.: rediscovering workﬂow models from event-based data
+using little thumb. integrated computer-aided engineering 10(2003) 151–162
+5.medeiros, a., weijters, a., van der aalst, w.: genetic process mining: an experimental
+evaluation. data mining and knowledge discovery 14(2007) 245–304
+6.rozinat, a., van der aalst, w.: conformance checking of processes based on monitoring
+real behavior. information systems 33(2008) 64–95
+7.adriansyah, a., van dongen, b., van der aalst, w.: towards robust conformance checking.
+in: business process management workshops. v olume 66 of lnbip. (2010) 122–133
+8.van der aalst, w., barthelmess, p., ellis, c., wainer, j.: proclets: a framework for lightweight
+interacting workﬂow processes. int. j. cooperative inf. syst. 10(2001) 443–481
+9.nigam, a., caswell, n.: business artifacts: an approach to operational speciﬁcation. ibm
+systems journal 42(2003) 428–445
+10.cohn, d., hull, r.: business artifacts: a data-centric approach to modeling business operations
+and processes. ieee data eng. bull. 32(2009) 3–9
+11.fritz, c., hull, r., su, j.: automatic construction of simple artifact-based business pro-
+cesses. in: icdt’09. v olume 361 of acm icps. (2009) 225–238
+12.lohmann, n., wolf, k.: artifact-centric choreographies. in: icsoc 2010. v olume 6470 of
+lncs., springer (2010) 32–46
+13.barros, a.p., decker, g., dumas, m., weber, f.: correlation patterns in service-oriented
+architectures. in: fase. v olume 4422 of lncs., springer (2007) 245–259
+14.van der aalst, w.: process mining: discovery, conformance and enhancement of business
+processes. springer (2011)
+15.adriansyah, a., sidorova, n., van dongen, b.: cost-based ﬁtness in conformance checking.
+in: acsd’11. (2011) to appear.
+16.fahland, d., de leoni, m., van dongen, b., van der aalst, w.: checking behavioral confor-
+mance of artifacts. bpm center report bpm-11-08, bpmcenter.org (2011)
+17.verbeek, h., buijs, j.c., van dongen, b.f., van der aalst, w.m.p.: prom: the process mining
+toolkit. in: bpm demos 2010. v olume 615 of ceur-ws. (2010)
+16

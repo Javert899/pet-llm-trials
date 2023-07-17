@@ -1,0 +1,705 @@
+mining blockchain processes: extracting process
+mining data from blockchain applications
+christopher klinkm uller1, alexander ponomarev1, an binh tran1,
+ingo weber2;3, and wil van der aalst4
+1data61, csiro, level 5, 13 garden st, eveleigh nsw 2015, australia
+fchristopher.klinkmuller, alex.ponomarev, anbinh.tran g@data61.csiro.au
+2technische universitaet berlin, germany, hfirstnamei.hlastnamei@tu-berlin.de
+3university of new south wales, nsw 2052, australia
+4rwth aachen university, germany, wvdaalst@pads.rwth-aachen.de
+abstract. blockchain technology has been gaining popularity as a plat-
+form for developing decentralized applications and executing cross-orga-
+nisational processes. however, extracting data that allows analysing the
+process view from blockchains is surprisingly hard. therefore, blockchain
+data are rarely used for process mining. in this paper, we propose a
+framework for alleviating that pain. the framework comprises three main
+parts: a manifest specifying how data is logged, an extractor for retriev-
+ing data (structured according to the xes standard), and a generator
+that produces logging code to support smart contract developers. among
+others, we propose a convenient way to encode logging data in a compact
+form, to achieve relatively low cost and high throughput for on-chain log-
+ging. the proposal is evaluated with logs created from generated logging
+code, as well as with existing blockchain applications that do not make
+use of the proposed code generator.
+keywords: process mining, blockchain, smart contracts, logging, xes
+1 introduction
+blockchain technology has been gaining popularity as a platform for developing
+decentralized application s (dapp) [14] that are, amongst others, used to exe-
+cute cross-organisational processes [13,3,10,7]. in such cases, process mining [1]
+can assist developers in (i) understanding the actual usage of the dapp, (ii)
+comparing it to the intended usage, and (iii) adapting the dapp accordingly. a
+prerequisite for the application of process mining technology is the availability
+ofevent data , e.g., stored in the form of xes logs. yet, extracting such data
+from dapps is surprisingly hard, as demonstrated by di ciccio et al. [2] on the
+attempt of extracting meaningful logs from the caterpillar on-chain bpms [5].
+the challenges derive from a mismatch between the logged data and the event
+data required for analysis, e.g., minimising logged information keeps the cost and
+data volume manageable. challenges also arise from the underlying technology
+itself, e.g., ethereum's block timestamps refer to the time when mining started,
+not to the block production. moreover, as the dapp's source code is by default2 c. klinkm uller, a. ponomarev, a. b. tran, i. weber, w. van der aalst
+not shared, process participants are potentially left with cryptic information that
+is hard to decode.
+to alleviate this pain, we propose a framework for extracting process event
+data from ethereum-based dapps that utilize ethereum's transaction log as a
+storage for logged data. the framework comprises three main parts:
+{the manifest enables users to capture and share their view of how data
+logged by a dapp should be interpreted from a process perspective. it is
+input to all other parts and is processed without access to the source code.
+thus, our framework eliminates the need to share dapp code. to support
+users in developing a manifest, our framework includes a validator , which
+checks if a particular manifest adheres to the rules outlined in this paper.
+{the extractor retrieves logged data from the ethereum transaction log, ap-
+plies the rules from the manifest to transform the logged data into event
+data, and formats this data according to the xes standard [4]. as a con-
+sequence, the extracted data can readily be imported into process mining
+tools from academia and industry (e.g., prom, celonis, processgold, disco,
+minit, qpr, apromore, and rapidprom).
+{the generator automatically creates logging functionality from the mani-
+fest. it further includes proposals for several optimisations, such as a means
+for encoding logged data in the compact form of a bitmap, which helps in
+achieving relatively low cost and high throughput for on-chain logging.
+the proposal is evaluated with logs created from generated logging code, as well
+as with an existing dapp. it was created by developers other than the authors of
+this paper and thus demonstrates the universal applicability of the framework.
+in the following, we rst introduce relevant background information on pro-
+cess mining, blockchain and logging in section 2. the approach is introduced in
+section 3 and evaluated in section 4, before section 5 concludes.
+2 background
+2.1 process mining and process event data
+process mining. the roots of process mining lie in the business process man-
+agement (bpm) discipline where it was introduced as a way to infer workows
+and to eectively use the audit trails present in modern information systems.
+evidence-based bpm powered by process mining helps to create a common
+ground for business process improvement and information systems development.
+the uptake of process mining is reected by the growing number of commercial
+tools including celonis, disco, processgold, minit, myinvenio and qpr. exam-
+ples like siemens where over 6,000 people are using process mining to improve
+operations in many areas attest the value of process mining for businesses.
+process mining is widely used to diagnose and address compliance and per-
+formance problems. there are three main types: (i) process discovery , (ii) con-
+formance checking , and (iii) model enhancement . starting from raw event datamining blockchain processes: extracting process mining data... 3
+log trace event
+attribute
+key : string
+list string
+value : stringdate
+value : datetimeint
+value : longfloat
+value : doubleboolean
+value : booleanid
+value : stringclassifier extension
+name : string
+prefix : string
+uri : string
+datetime1
+*1 <event-classifier>* *1
+<trace-global>
+*1
+<event-global>
+*1* 1
+1 <trace-classifier>
+*1 * * 1
+*1
+*1
+1
+*1
+*
+1 * *<orders>
+1{ordered} {ordered}
+fig. 1: xes meta-model (cf. [4])
+process discovery creates process models that reect reality and that include all
+or only the most frequent behavior. conformance checking combines modeled
+and observed behavior. by replaying event data on a process model (modeled
+or automatically learned) one can diagnose and quantify deviations, e.g., to nd
+root causes for non-compliance. model enhancement is used to improve or extend
+a process model using event data. process mining can also be used in an online
+setting and to predict compliance or performance problems before they occur.
+there are hundreds of process discovery, conformance checking, and model en-
+hancement techniques that rely on model representations like petri nets, directly-
+follows graphs, transition systems, process trees, bpmn and statecharts.
+event data. event data is represented as an event log which provides a view
+on a process from a particular angle. each event in an event log refers to (i)
+a particular process instance (ii) an activity , and (iii) a timestamp . there may
+be various other attributes referring to costs, risks, resources, locations, etc.
+the xes standard [4] denes a format for storing such event logs. due to its
+widespread use and tooling support, it is a suitable target format for blockchain
+logged data, enabling analysts to examine dapps using process mining.
+fig. 1 shows the xes meta-model as specied in [4]. the meta-model is
+oriented towards the general notion of logs,traces , and events . a log represents
+a process and consists of a sequence of traces which record information about
+individual process instances. each trace contains a sequence of events referring
+to activities executed within the process instance. logs, traces and events are
+described by attributes that have a key, atype, and a value . attributes can also
+be nested, i.e., an attribute can contain other attributes. the xes standard does
+not prescribe terms for the keys and is thus free of domain semantics. however,
+to assign meanings to attribute keys, extensions can be included that dene the
+meaning and the type associated with specic keys. moreover, global values can
+be specied for any attribute at the event or trace level. setting the global value
+vfor the event (trace) attribute ameans that if the value of attribute ais not
+specied for an event (trace), it implicitly takes value v. finally, event (trace)
+classiers comprise one or more attributes and each event (trace) with the same
+combination of values for these attributes belongs to the same class.
+2.2 ethereum: a blockchain system
+blockchain. a blockchain is an append-only store of transactions, distributed
+across computational nodes and structured as a linked list of blocks, each con-4 c. klinkm uller, a. ponomarev, a. b. tran, i. weber, w. van der aalst
+taining a set of transactions [14]. blockchain was introduced as the technology
+behind bitcoin [8]. its concepts have been generalized to distributed ledger sys-
+tems that verify and store any transactions without coins or tokens [11], without
+relying on any central trusted authority like traditional banking or payment sys-
+tems. instead, all participants in the network can reach agreement on the states
+of transactional data to achieve trust.
+a smart contract is a user-dened program that is deployed and executed on
+a blockchain system [9,14], which can express triggers, conditions and business
+logic [13] to enable complex programmable transactions. smart contracts can be
+deployed and invoked through transactions, and are executed across the block-
+chain network by all connected nodes. the signature of the transaction sender
+authorizes the data payload of a transaction to create or execute a smart con-
+tract. trust in the correct execution of smart contracts extends directly from
+regular transactions, since (i) they are deployed as data in a transaction and are
+thus immutable; (ii) all their inputs are through transactions and the current
+state; (iii) their code is deterministic; and (iv) the results of transactions are
+captured in the state and receipt trees, which are part of the consensus.5
+ethereum. ethereum is a specic blockchain system that allows users to deploy
+and execute smart contracts. we focus on this system as it is the longest-running
+blockchain with expressive smart contract capabilities. it provides an interface
+to store information in the transaction log. in general, smart contracts can only
+write information to the log, but not retrieve information from it. however, appli-
+cations connected to an ethereum node can query the log for information. this
+enables the implementation of an event-driven dapp architecture where smart
+contracts share information and applications react to published information.
+smart contracts for ethereum are typically written in solidity . this language
+provides write access to the transaction log via so called events . events are
+specied through their signature including the event's name and a list of typed
+parameters (as of solidity version 0.5.x only xed-length types can be used), but
+no return type. events also do not have an implementation. instead, when an
+event is emitted, the event's signature and parameter values are automatically
+written to the transaction log as a structured log entry . there is also a low-level
+interface that allows developers to exibly dene the structure of log entries,
+but the burden for retrieving those entries is increased. in practice this interface
+is rarely used as revealed by our analysis of 21,205 dierent real-world smart
+contracts which we downloaded from etherscan6, covering a period of 10 months
+starting in june 2018. within these smart contracts, we found more than 300,000
+event emissions, but only 127 calls to the low-level interface. hence, we decided
+to focus on extracting log entries whose structure follows that of the solidity
+events and leave the full support for the low-level interface to future work.
+the conceptual schema of the data from the transaction log is shown in fig. 2.
+alog entry represents an emitted event. we use the term log entry instead
+of event to avoid confusion with xes events (see section 2.1). a log entry is
+5summary adapted from [12].
+6http://etherscan.iomining blockchain processes: extracting process mining data... 5
+signature
+function name : stringparameter
+position : integer
+block
+hash : bytes[32]
+timestamp : longtransaction
+hash : bytes[32]
+sender : string
+recipient : string [0..1]
+payload : bytes[32] [*]
+id : integerlog entry
+id : integervaluesmartcontract
+address : string<<enumeration>> 
+soliditytype
+bool
+int
+address
+bytes[1..32]
+string
+bytes
+bytes[32]*1
+*1
+*
+1* 1
+* 1
+0..1 successor
+1 predecessor10..1
+1*1*
+fig. 2: evm logging meta-model
+associated with its signature , the smart contract that emitted the log entry and
+thetransaction from which the log entry originated. the idof a log entry is only
+unique within the transaction and a smart contract is identied by its address .
+the signature contains the function name and a list of parameters dened by
+their position andtype. moreover, the transaction log contains the value for each
+parameter. for the transaction, we can retrieve its hash, the payload , the sender
+of the transaction, and the recipient , if available. similar to the log entry, the
+idof a transaction is unique within the block that included the transaction. for
+such a block, we can load the hash and the timestamp as well as the predecessor
+andsuccessor (which do not exist for the rst and the latest block, respectively).
+3 approach
+a high-level overview of our framework for extracting event data from ethereum's
+transaction log is presented in fig. 3. the extractor is a rule-based transforma-
+tion algorithm that converts a set of log entries from the transaction log into les
+containing xes logs. the transformation rules can be exibly adapted via the
+manifest which e.g., species which smart contracts to consider, how to lter
+events, which timestamps to include and where to nd the concept (activity)
+name. the extractor can generate xes logs from any smart contract, given a
+tting manifest, and given the required information has been logged in the rst
+place. the validator supports the creation of a manifest by checking if it fol-
+lows the rules of the manifest specication. moreover, from a given manifest
+thegenerator automatically produces solidity code for logging, which can then
+be integrated into smart contracts. this is particularly useful when using the
+feature mentioned in the introduction: compact encoding of data in a bitmap
+(details in section 3.2). following, we outline the dierent elements in detail.
+ieee 1849 -2016 bloxes ethereum
+transaction
+logxes
+files
+manifest
+smart 
+contract executeemitextractor
+generatorvalidator
+fig. 3: high-level overview of the components6 c. klinkm uller, a. ponomarev, a. b. tran, i. weber, w. van der aalst
+algorithm 1: extraction algorithm
+input: manifest
+output: xesfiles
+1logs=fg
+2foreach smartcontractmapping inmanifest do
+3 logentries selectlogentries (scm)
+4 foreach logentry inlogentries do
+5 foreach logentrymapping insmartcontractmapping do
+6 iflogentrymapping:signature =logentry:signature then
+7 forall elementmapping inlogentrymapping do
+8 attributemappings =elementmapping:mappings
+9 attributes extract (entry ,attributemappings )
+10 ifiseventmapping (elementmapping )then
+11 addeventattributes (attributes ,logs)
+12 else if istracemapping (elementmapping )then
+13 addtraceattributes (attributes ,logs)
+14xesfiles createxesfiles (smartcontractmapping ,xesfiles )
+3.1 the extractor and the manifest
+the extraction algorithm, algorithm 1, takes the manifest as input and rst
+initializes an empty set of logs (line 1). this set can be viewed as the root of a
+log hierarchy where each child is a log that, according to the xes standard (see
+fig. 1), contains traces and events. next, the algorithm iterates over the smart
+contract mapping s from the manifest (lines 2-13) and for each such mapping
+selects the log entries from the transaction log (line 3). information is extracted
+from each log entry (lines 4-13) by applying the log entry mappings whose sig-
+nature is equal to that of the entry (lines 5-6); the signature can thus be seen as
+the head of a mapping rule. two signatures match if they have the same func-
+tion name, the same number and types of parameters in the same order. for all
+matching log entry mappings, the algorithm maps the log entry to xes elements
+(lines 7-13). as one log entry might contain information for multiple traces or
+events, there can be multiple element mappings in a log entry mapping. for each
+element mapping (line 7-13) the algorithm extracts the attributes from the log
+entry according to the respective attribute mappings (lines 8-9). if the element
+mapping is a trace mapping (event mapping ) the algorithm adds the attributes
+to a new or an existing trace (event) in the log hierarchy (lines 10-13). lastly,
+the algorithm creates the xes les from the logs (line 14) and returns the les.
+below, we describe the steps of the algorithm and explain how the steps can be
+congured using the manifest. further, we discuss exception handling. we also
+present a consolidated manifest meta-model and details of the validator.
+selecting log entries. for a smart contract mapping, log entries are selected
+based on two criteria. first, the log entries must have been written by a transac-
+tion that is included in a block from a specied block range [ fromblock; toblock ].
+if no block range is dened, the log entries of the 1000 most current blocks are
+retrieved. second, the log entries must have been emitted by a smart contractmining blockchain processes: extracting process mining data... 7
+table 1: support for casting solidity into xes types (`+' = cast supported; `!'
+= cast supported, runtime exception possible; `-' = cast not supported)
+xes types
+solidity types int oat date string boolean id list
+int ! ! ! + - - -
+string - - - + + ! -
+address - - - + - - -
+byte + + - + + - -
+bytes - - - + + - -
+boolean - - - + + - -
+array - - - - - - !
+whose address is in a set of predened addresses and there must be at least one
+address. note that by specifying multiple addresses, a developer can apply the
+same transformation rules to dierent smart contracts. finally, log entries are
+retrieved in the order in which they were written into the transaction log and
+the created xes elements follow this ordering.
+extracting attributes. for every attribute mapping, the developer needs to
+specify the attribute's name and a value builder . a value builder is a function
+that (i) takes a log entry, (ii) returns a value, and (iii) is applied to each log entry
+the element mapping is executed for. a value builder is congured by specifying
+itsfunction name and the return type, an xes type that becomes the type of
+the attribute. moreover, the builder's parameters , a list of key-value pairs, must
+be set. static parameters have a xed value, whereas value builder parameters
+specify another value builder. we provide the following value builders:
+{astatic value is a xed value that is assigned to the attribute. we support
+static values for all xes types except lists.
+{parameter casts access a log entry parameter or attributes of the associated
+block or transaction identied by their name and cast the value of the respec-
+tive solidity type into the xes type. table 1 lists the supported type casts.
+some type casts might result in a runtime exception, if the parameter value
+violates the range of allowed values, e.g., only string values that represent
+uuids can be cast into id attributes [4].
+{astring concatenation returns a formatted strings that joins the values of
+value builders that return a string, int or id.
+{value dictionaries map the value returned by another value builder to at-
+tribute values. value maps can be specied for arbitrary xes type combi-
+nations and must include a default value.
+{bit mappings are used when data from the smart contracts is compressed
+before being written into the transaction log. this is typically achieved by
+assigning bit ranges of a single log entry parameter to certain variables. we
+support the decompression of such bit ranges. to this end, the value of a
+specied bit range of length lis at runtime mapped to an integer value p
+from the interval [0 ;2l). then, pis converted into a meaningful value based
+on a value array with 2lelements from which we return the pth value.8 c. klinkm uller, a. ponomarev, a. b. tran, i. weber, w. van der aalst
+table 2: xes extension for identity attributes (name: \identity", prex: \ident",
+uri: \https://www.data61.csiro.au/ident.xesext")
+key denition type cardinality element
+pid identies a particular process string 0-1 event, trace
+piid identies a particular process instance string 0-1 event, trace
+eid identies a particular event string 0-1 event
+appending attributes to the log hierarchy. the processing of an element
+mapping for a log entry results in a set of attributes which belongs to the same
+xes element. we determine the identity of this element, add the attribute set
+to it, and integrate it into the log hierarchy in the following way. each attribute
+set is considered to contain identity attributes. in particular, we dened three
+identity attributes within our custom ident xes extension (see table 2). the
+ident:pid attribute identies the process that an event or a trace belongs to and
+each distinct pid-value results in a separate log element. the ident:piid attribute
+determines the identity of a trace element within a certain log element, i.e., the
+global identity of a trace element is determined by its pid and piid-values. finally,
+theident:eid attribute establishes the identity of an event within a trace, i.e.,
+the global identity of an event is given by the pid, piid, and eid-values. if the
+extracted attribute set does not include any of the identity attributes, we add
+those attributes and set their values to a default value.
+we then use these attributes to add the entire attribute set to the log hierar-
+chy. first, we select the log element with the respective pid-value. if such a log
+element does not exist, we create a new one with the respective pid-value, add
+it to the hierarchy, and select it. next, we look for the trace element with the
+respective piid-value within the selected log element. again, if we cannot nd
+such an element, we create a new one, add it to the log element, and select it.
+if the element mapping is a trace mapping, we append the attribute set to the
+trace. otherwise, we select or create an event element within the selected trace
+element based on the specied eid-value and append the attributes to this ele-
+ment. following this strategy, we can integrate log entries from dierent smart
+contracts within the same log hierarchy. if no ident-attributes were specied, the
+algorithm generates one log element, containing one trace element and all log
+entries are mapped to individual event elements under this trace element.
+creating xes files. the last step is to create xes les. here, we create one
+xes le per log in the log hierarchy and set the le's name to the log's pid-value.
+to fully support the xes standard [4] and to relieve developers of having to edit
+the generated xes les, we allow users to specify xes extensions, global values
+and classiers within the manifest. each of these elements can be bound to a
+range of pids. if pids are specied for an element, the element is only included
+in the xes les corresponding to one of those pids. otherwise, the element is
+added to all xes les. the inclusion of those features requires developers to
+adhere to the constraints that they impose on xes attributes. we discuss those
+constraints in more detail in the context of the validator (see below).mining blockchain processes: extracting process mining data... 9
+manifest
+xesextension
+name : string
+prefix : string
+uri : string
+pids : string [*]smartcontractmapping
+addresses : address [1..*]
+fromblock : long
+toblock : long
+logentrymapping
+signature : signatureattributemapping
+key : stringvaluebuilder
+functionname : string
+type : stringparameter
+key : stringxesclassifier
+name : string
+scope : string
+keys : string
+pids : string [*]xesglobal
+scope : string
+name : string
+type : string
+value : string
+pids : string [*]<<enumeration>> 
+exceptionhandling
+ignore
+determine
+writetolog
+<<enumeration>> 
+duplicatehandling
+ignore
+replace
+throwexceptionelementmapping
+<<enumeration>> 
+elementtype
+trace
+eventstaticparameter
+value : stringbuilderparameter
+exceptionh
+andling*1
+*1*
+1
+1 1**1
+* 11
+1*
+1**
+1
+1*
+1
+1
+fig. 4: manifest meta-model
+runtime exceptions. some of the operations can result in runtime exceptions.
+the rst exception type can occur when casting solidity to xes types and was
+already discussed above. the second type refers to situations where the value
+of a certain xes attribute is set multiple times. while we restrict developers
+to set the value for an attribute only once within an element mapping, the
+problem can occur when adding attributes to existing elements. to circumvent
+this problem, the user can specify one duplicate handling strategy per attribute
+mapping. there are three dierent strategies: (i) throw an exception , (ii) replace
+the old value, and (iii) ignore the new value. lastly, an extension exception is
+thrown in cases where an xes extension attribute is added to the log hierarchy,
+but the extension is not dened for the respective pid. hence, extensions should
+only be restricted to certain pid-values, if the pid values are known in advance.
+developers can select one of three exception handling strategies for the entire
+manifest: (i) determine the algorithm (default option), (ii) ignore exceptions,
+and (iii) write exceptions to the xes logs. when the last option is selected,
+exceptions are converted into attributes. in case of a type cast exception and an
+extension exception, the algorithm creates a list with the key \error" and adds
+it to the attribute set. the exception information is added as a separate string
+attribute to the list's values section and the attribute's key is set to the key of
+the attribute that caused the exception. if there are multiple exceptions when
+processing one attribute mapping, the exceptions are grouped in the same error
+list. in case of a duplicate handling exception, we also create an error list which
+contains a string attribute per exception. in contrast to the other exceptions, we
+add the list to the attribute for which the value is set multiple times.
+the manifest. a consolidated view of the manifest which has been introduced
+throughout the introduction of the extraction algorithm is presented in fig. 4.
+the validator. the validation of a manifest is a two-step process. first, we
+check whether the manifest's structure adheres to the meta-model from fig. 4.
+to this end, we ensure that (i) all manifest elements are structured according to
+their meta-model type, (ii) the relationships between the model elements adhere
+to those specied in the meta-model, (iii) all required elements, relationships10 c. klinkm uller, a. ponomarev, a. b. tran, i. weber, w. van der aalst
+and attributes are present, and (iv) that specied values have a valid format,
+e.g., that the specied solidity types or xes types are known.
+second, we investigate the denition and usage of attributes as well as log
+entry parameters. to this end, we check that all combinations of attribute keys
+and types specied in attribute mappings, extensions and global values are con-
+sistent. we also verify that for each attribute that contains a prex there is an
+extension that denes this attribute. following the xes standard [4], we validate
+that there is a global value for all attribute keys used within classier denitions.
+further, we check the validity of the value builder specications including their
+parameters. if a static value is specied, its string representation from the mani-
+fest must be castable into the specied type. for parameter casts, we check that
+they reference a valid parameter or attribute and that the type cast is supported
+(see table 1). for all other value builders, we recursively verify that the return
+type of its child value builders is compatible with the expected input types, e.g.,
+the concatenation value builder only allows the use of xs:string ,xs:id, and xs:int .
+while the validator veries that the generated xes documents adheres to
+the xes standard, it cannot be guaranteed that all log entries can be processed,
+as discussed above in the context of runtime exceptions.
+3.2 the generator
+we support developers of new smart contracts by generating logging function-
+ality from the manifest. first, we use the signatures specied in the log entry
+mappings to generate solidity events. this step is straightforward, as the sig-
+nature specication in the manifest corresponds to the representation of events
+in solidity's contract application binary interface specication , or abi, the in-
+terface specication of smart contracts which is shared with users that want to
+interact with the respective smart contracts.
+additionally, we implemented the generation of logging functionality for value
+dictionaries or bit mapping builders specied in the manifest. as mentioned in
+section 2.2, smart contract developers can log various information via solidity's
+event parameters. on the public ethereum blockchain, there is a cost involved
+for emitting smart contract events, which is proportional to the size of event
+parameters values being emitted (for example, a parameter of type string may
+cost more to log than an intparameter, if the string value is longer than 32
+bytes). therefore, developers can choose to log smart contract event parameters
+of a smaller type, such as int, then dene a value dictionary in the manifest to
+map the solidity event parameter values to a corresponding description of the
+value. in such cases, the generator produces (i) the solidity event signature, (ii)
+anenum of the dictionary values which are mapped to the event parameter, and
+(iii) a logging function which accepts an enum value, then emits the solidity
+event with the corresponding parameter value. an example of solidity code
+generated from a manifest value dictionary is provided in listing 1.1.
+another pattern that developers can use to further reduce the smart contract
+event log size is to encode multiple pieces of information into one log entry
+parameter with a small type such as int. to do this, they can specify a bitmapmining blockchain processes: extracting process mining data... 11
+1contract xeslogger {
+2 event gitcommit ( uint authorid , bytes32 sha);
+3 enum author {first , second , third , fourth };
+4 uint [] enumvalsauthor = [1000 , 2000 , 3000 , 4000];
+5 function logcommit ( author author , bytes32 sha) internal {
+6 uint authorid = enumvalsauthor [ uint8 ( author )];
+7 emit gitcommit ( authorid , sha);
+8 }
+9}
+listing 1.1: solidity generated from manifest with value dictionary builder
+value builder in the manifest, which maps a subset of consecutive bits in a log
+entry parameter to a range of values. this is essentially a generalization of the
+bitmapping strategy adopted in earlier works of one author [3,6]. to eectively
+encode multiple pieces of information, multiple bitmap value builders can be
+dened on separate bit ranges of the same parameter.
+as an example, assume we dene a manifest for extracting events from shirt-
+produced log entries, which are emitted each time a new shirt is produced in a
+textile factory . three attributes related to a shirt, size,fabric and quality are
+extracted from the same parameter, encodedattributes . the rst 3 bits (oset 0
+to 2) are used to encode eight size classications, bits 3-5 encode six shirt fabric
+types, and bits 6-7 represent four quality classes. table 3 shows the bit mapping
+denitions for this example. from the respective value builder, the generator
+can produce a solidity logging function which takes quality ,fabric and size
+input parameters as enums, and emits an event whose value correctly encodes
+the above information according to the mapping dened (see listing 1.2).
+1contract xeslogger {
+2 enum quality {low , normal , high , excellent };
+3 enum fabric { cotton , linen , wool , silk , polyester , blend };
+4 enum size {xxs , xs , s, m, l, xl , xxl , xxl };
+5 event shirtproduced ( uint256 shirtid , uint256
+encodedattributes , uint256 batchid );
+6 function logshirtproduced ( uint256 shirtid , quality q,
+fabric fabric , size size , uint256 batchid ) internal {
+7 uint256 qmask = uint256 (q) * (2**(6) );
+8 uint256 fabricmask = uint256 ( fabric ) * (2**(3) );
+9 uint256 sizemask = uint256 ( size ) * (2**(0) );
+10 uint256 encodedattributes = qmask | fabricmask |
+sizemask ;
+11 emit shirtproduced ( shirtid , encodedattributes , batchid );
+12 }
+13 }
+listing 1.2: solidity generated from manifest with bit mapping builders12 c. klinkm uller, a. ponomarev, a. b. tran, i. weber, w. van der aalst
+table 3: encode info in solidity event parameter with bit mapping builders
+quality - bit range: 6..7 fabric - bit range: 3..5 size - bit range: 0..2
+key value keyvalue keyvalue
+00 low 000 cotton 000 2x small
+01 normal 001 linen 001 extra small
+10 high 010 wool 010 small
+11 excellent 011 silk 011 medium
+100 polyester 100 large
+101 blend 101 extra large
+110 2x large
+111 3x large
+4 implementation, evaluation, and discussion
+4.1 implementation
+we implemented the framework. the extractor and generator have been writ-
+ten in javascript for node.js, and manifests are specied in json format. the
+extractor takes several parameters as command line inputs:
+{rpc: the url of the blockchain node to query through the rpc interface
+{m: manifest specication
+{output : folder for storing extracted xes les
+the complexity of the manifest le strongly depends on the complexity of the
+analyzed contracts. the manifest for our case study below has approximately
+230 lines; the one for the code generation evaluation has about 65 lines.
+4.2 code generation evaluation
+we tested the generator of logging code with a proof-of-concept demonstration
+of the textile factory example from section 3.2. to this end, we rst wrote the
+manifest specication, used it to generate logging code, then wrote a simple
+smart contract using this logging code and deployed it on a geth ethereum
+client using ganache (a test mode that simulates an ethereum blockchain in
+memory, but is otherwise identical in behavior). we then ran a test script against
+this geth client, to `produce' shirts according to a `production schedule' which
+generated solidity logs, and nally used the extractor to extract xes logs.
+in this part of the evaluation, we tested the functional correctness of the
+generator and the extractor, which we found to be operating as per the design:
+the xes logs contained the same data in the same order as the production
+schedule. the tests of value and bit mapping functionality were successful as
+well: data was encoded as assumed, in 8 bits per shirt.mining blockchain processes: extracting process mining data... 13
+1event birth ( address owner , uint256 kittyid , uint256
+matronid , uint256 sireid , uint256 genes );
+2event transfer ( address from , address to , uint256 tokenid );
+3event pregnant ( address owner , uint256 matronid , uint256
+sireid , uint256 cooldownendblock );
+4event auctioncreated ( uint256 tokenid , uint256 startingprice ,
+uint256 endingprice , uint256 duration );
+5event auctionsuccessful ( uint256 tokenid , uint256 totalprice ,
+address winner );
+6event auctioncancelled ( uint256 tokenid );
+listing 1.3: event denitions in the cryptokittie contract
+4.3 case study: cryptokitties
+cryptokitties is \a game centered around breedable, collectible, and oh-so-
+adorable creatures we call cryptokitties"7. while not ethereum's most serious
+application, it is a well-known example of a dapp (that is primarily based on
+smart contracts), has been used heavily at times (likely due some of the kitties
+being sold for thousands of dollars), and has been in operation since december
+2017. it also was developed without involvement of any of the paper's authors,
+making it a suitable candidate for demonstrating the framework's applicability.
+a cryptokitty is the ethereum version of a tamagotchi. it is a digital asset
+owned by an ethereum account and it can be traded. a cryptokitty can breed
+new cryptokitties. to this end, the owner can trigger the impregnation of a
+cat when having access to a second cat (either by owning it or by having the
+permission of the cat's owner). after a cat becomes pregnant, the owner must
+publish a \birth helper request" asking an independent account to trigger the
+birth in exchange of a certain amount of ether. a cryptokitty is represented by
+an identier and its dna, from which its features and appearance are derived.
+the source code of the cryptokitties smart contracts is available on etherscan8
+and listing 1.3 summarizes the event denitions from the source code.
+we extracted two logs from these smart contracts with our framework and
+implementation9. the genesis log stems from the rst 3000 blocks after creation
+of the smart contract at block 4605167. the everyday log is based on log entries
+from a random block range containing 13000 blocks, starting from block 6605100.
+in both cases, we only extracted information about the lifecycle process of the
+cats. thus, we grouped all process instances in the same log and the id of a cat
+is used as the process instance id, i.e., the lifecycle of each cat is viewed as an
+independent process instance. moreover, each log entry is mapped to individual
+events. per auction and transfer-related log entry, we created one event in the
+trace of the cat represented by the tokenid. the birth and pregnant log entries
+7https://www.cryptokitties.co/ , accessed 30/5/2019
+8https://etherscan.io/address/0x06012c8cf97bead5deae237070f9587f8e7a266d#
+code, accessed: 17/05/2019
+9generated xes les and manifest available under https://doi.org/10.25919/
+5d242b0be338414 c. klinkm uller, a. ponomarev, a. b. tran, i. weber, w. van der aalst
+(a) genesis
+ (b) everyday
+fig. 5: directly-follows graphs (dfgs) generated using prom from both logs
+involve multiple cats (matronid, sireid, kittyid) and are hence mapped to events
+in each cat's lifecycle. note that choosing the pid, piid and eid-values is critical
+and a general concern for process analytics, on blockchain data or otherwise.
+for example, in our case study, we take the viewpoint of an individual kitty,
+but this may not be suitable for analysing the complete population. to gener-
+ate dierent views, our framework allows analysts to materialize their choice of
+identity attributes in the manifest, and for some applications multiple manifests
+with dierent choices might be required to obtain the desired views.
+we mined the extracted event ows from both logs as depicted in fig. 5.
+fig. 5a shows that the developer started with two kitties initially, and bred
+them 3000 times for bootstrapping the game. the behavior during the everyday
+use (fig. 5b) shows considerably more variation and includes all types of events.
+while we could delve into a deep analysis of kitty behaviour, the purpose
+of the case study in this paper was to test if the proposed framework can be
+applied to existing smart contracts { which we deem to be the case. we success-
+fully extracted event logs, stored them in the xes format, and loaded them for
+analysis in both prom and disco.
+5 conclusion and discussion
+in this paper, we addressed the problem of applying process mining to smart
+contracts and focused on extracting meaningful event data from blockchain sys-
+tems, in particular from ethereum transaction logs. our proposed framework
+includes (i) the manifest specication for dening transformation rules that are
+automatically validated; (ii) the extractor that transforms log entries from a
+transaction log to xes logs; and (iii) the generator that produces high-level log-
+ging functionality for user-dened dapps. we showed that the generator pro-
+duces logging functionality adhering to the log entries and data compressionmining blockchain processes: extracting process mining data... 15
+rules from the manifest. further, we successfully applied the extractor to logs
+created from generated code, as well as logs from a pre-existing, long running
+and heavily used dapp, demonstrating its broad applicability.
+there are a few limitations that impact the applicability of our framework.
+first, we focused on ethereum and disregarded other blockchain systems which
+might use dierent logging mechanisms, potentially requiring a generalization of
+our framework. second, our framework only oers a certain set of functionality;
+e.g., there are currently ve types of value builders; complex conditions for l-
+tering attributes and elements are not supported; and we do not fully support
+the low-level logging interface. while this emphasizes the need for further gen-
+eralization, we also plan to improve the extensibility of the framework and to
+release it as open source, enabling users to adapt it to their needs. further, pro-
+cess mining can be used for many purposes; here we only used it for exploration
+of the data, to demonstrate the feasibility of our framework. in future work, we
+will apply the tool to more use cases and purposes.
+references
+1. aalst, w.v.d.: process mining - data science in action. springer (2016)
+2. di ciccio, c., cecconi, a., mendling, j., felix, d., haas, d., lilek, d., riel, f.,
+rumpl, a., uhlig, p.: blockchain-based traceability of inter-organisational business
+processes. in: bmsd (2018)
+3. garc a-ba~ nuelos, l., ponomarev, a., dumas, m., weber, i.: optimized execution
+of business processes on blockchain. in: bpm (2017)
+4. ieee standard for extensible event stream (xes) for achieving interoperability in
+event logs and event streams (nov 2016), ieee std 1849-2016
+5. l opez-pintado, o., garc a-ba~ nuelos, l., dumas, m., weber, i., ponomarev, a.:
+caterpillar: a business process execution engine on the ethereum blockchain.
+softw: pract exper pp. 1{32 (2019)
+6. l opez-pintado, o., dumas, m., garc a-ba~ nuelos, l., weber, i.: dynamic role bind-
+ing in blockchain-based collaborative business processes. in: caise (2019)
+7. mendling, j., weber, i., aalst, w.v.d., et al: blockchains for business process man-
+agement { challenges and opportunities. acm tmis 9(1), 4:1{4:16 (2018)
+8. nakamoto, s.: bitcoin: a peer-to-peer electronic cash system (2008)
+9. omohundro, s.: cryptocurrencies, smart contracts, and articial intelligence. ai
+matters 1(2), 19{21 (dec 2014)
+10. prybila, c., schulte, s., hochreiner, c., weber, i.: runtime verication for business
+processes utilizing the bitcoin blockchain. fgcs (aug 2017)
+11. tschorsch, f., scheuermann, b.: bitcoin and beyond: a technical survey on decen-
+tralized digital currencies. ieee commun. surv. tutor. 18(3), 2084{2123 (2016)
+12. weber, i., lu, q., tran, a.b., deshmukh, a., gorski, m., strazds, m.: a platform
+architecture for multi-tenant blockchain-based systems. in: icsa (2019)
+13. weber, i., xu, x., riveret, r., governatori, g., ponomarev, a., mendling, j.:
+untrusted business process monitoring and execution using blockchain. in: intl.
+conf. business process management (bpm) (2016)
+14. xu, x., weber, i., staples, m.: architecture for blockchain applications. springer
+(2019)

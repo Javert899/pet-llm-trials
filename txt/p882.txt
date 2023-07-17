@@ -1,0 +1,753 @@
+online discovery of cooperative structures in
+business processes
+s.j. van zelst, b.f. van dongen, and w.m.p. van der aalst
+department of mathematics and computer science
+eindhoven university of technology
+p.o. box 513, 5600 mb eindhoven, the netherlands
+{s.j.v.zelst,b.f.v.dongen,w.m.p.v.d.aalst}@tue.nl
+abstract. process mining is a data-driven technique aiming to provide
+novel insights and help organizations to improve their business processes.
+in this paper, we focus on the cooperative aspect of process mining, i.e.,
+discovering networks of cooperating resources that together perform pro-
+cesses. we use online streams of events as an input rather than event logs,
+which are typically used in an o-line setting. we present the online co-
+operative network (ocn) framework, which denes online cooperative
+resource network discovery in a generic way. a prototypical implemen-
+tation of the framework is available in the open source process mining
+toolkit prom. by means of an empirical evaluation we show the ap-
+plicability of the framework in the streaming domain. the techniques
+presented operate in a real time fashion and are able to handle unlim-
+ited amounts of data. moreover, the implementation allows to visualize
+network dynamics, which helps in gaining insights in changes in the ex-
+ecution of the underlying business process.
+keywords: process miningprocess enhancement event streams
+cooperative resource networks
+1 introduction
+the goal of process mining [1] is to improve business processes by analyzing
+event logs. an event log captures the behavior of a business process by means of
+sequences of executed business process events . process mining consists of three
+elds: process discovery ,conformance checking and process enhancement . pro-
+cess discovery aims at discovering a process model based on an event log. con-
+formance checking aims at assessing whether a process model conforms w.r.t.
+behavior recorded in an event log. finally, process enhancement aims at improv-
+ing business process models, e.g., by discovering resource interaction, applying
+bottleneck analysis, etc. most work within process mining is devoted to pro-
+cess discovery, however, various other perspectives are of interest in context of
+business processes. in particular, the organizational perspective is of interest,
+i.e., interaction of employees, resources, devices etc. within the business pro-
+cess. analyzing this perspective is useful for process enhancement as it reveals
+deciencies in resource utilization, cooperation, sub-contracting schemes etc.work aiming at the organizational perspective [2], [15], [10], [14], typically
+use event logs as a primary input, and thus result in a historical/static view.
+processes are subject to change and evolution, hence, we are often interested in
+a recent/dynamic view of the process. the tight alignment of it and business
+processes enables us to capture events at the moment they occur. analyzing
+such real-time, online streams of events enables us to inspect a recent view
+of the process. however, the high emission rate and potential unboundedness
+of the event stream forces us to design novel ecient methods that are able
+to cope with innite data. additionally, as the number of events recorded for
+operational processes increases tremendously each year, and, new data sources
+become intertwined with operational processes (sensor networks, mobile devices,
+etc.), event logs may exceed a computer's physical memory and hard disk(s). as
+we assume event streams to be innite, the techniques presented in this paper
+additionally allow us to analyze conventional event logs of arbitrary size.
+in this paper, we present the online cooperative networks (ocn) frame-
+work, i.e., a new organizational process enhancement method that describes
+online cooperative resource network discovery. the framework allows the user
+to view multiple cooperative resource networks, based on a single event stream.
+events on the stream are assumed to (at least) contain information about (1)
+thecase for which the event occurred, (2) the activity that was performed and
+(3) the resource that performed the activity. the framework denes means to
+organize the data observed on the stream in a nite data structure. the user
+inspects a cooperative network in which new events are incorporated within the
+network as fast as possible, i.e., in a real-time and incremental fashion. whenever
+the user decides to inspect a dierent network, e.g., changing from a handover of
+work to a reassignment network, an initial network is computed on the basis of
+the current data structure. hence, a property of the proposed approach is that
+such switch does not need any form of warm-up period , i.e., after initialization
+of the network new events are immediately incorporated in the network.
+the remainder of this paper is organized as follows. in section 2, we present
+background material covering conventional discovery of cooperative resource net-
+works. in section 3 we present the ocn framework. section 4 details on the im-
+plementation of the ocn framework within the process mining toolkit prom [16].
+in section 5, we present empirical results w.r.t. event processing time, memory
+usage etc. of some example cooperative metrics. section 7 concludes the paper
+and discusses future work.
+2 background
+this section provides a brief summary of the typical input and output artifacts of
+conventional cooperative resource network discovery. to ease the reader, we build
+on top of the following mathematical notation. let x=fe1;e2;:::;engdenote
+a set ofnelements.n=f1;2;3;:::gdenotes natural numbers, n0=n[f0g
+includes 0, and rdenotes real numbers. a sequence of lengthnover setx
+is a function :f1;2;:::;ng!x. a sequence is written as =h(1);(2);:::;table 1: fictional example of events stored within an information system.
+identier case activity time-stamp resource
+... ... ... ... ...
+1c1 register payment 2016/07/07 09:05:34 john
+2c2 create fine 2016/07/07 09:07:34 lucy
+3c1 close case 2016/07/07 09:08:15 rob
+4c2 send fine 2016/07/07 09:15:23 rob
+5c2 register payment 2016/07/07 10:02:23 john
+... ... ... ... ...
+(n)i. for concatenation we write 12, and,denotes the empty sequence.
+xdenotes the set of all possible sequences over x.
+2.1 event logs
+a single execution of a process is referred to as a process instance . a process
+instance is related to a specic case for which the process is being executed.
+as an example consider a business process handling road nes. typically, the
+process is executed per driver's oense, hence, an oense can be considered a
+case. the actual activities performed for a case may depend on data attributes
+related to the case. if the oense is related to illegal parking, sending a ne to
+the oender suces. however, if the oense is related to speeding, apart from
+sending a ne, the driver's license might need to be revoked.
+the activities executed for a process are stored in a company's information
+system's database. consider table 1 as an example, where a row describes the
+individual execution of an activity, which we refer to as an event . events are
+unique and have a unique identier . events describe the case, at what time,
+and, by which resource an activity was performed. often other data attributes
+are available for an event, i.e., an event is a vector/tuple of data values, e.g., (5,
+c2, register payment, 2016/07/07 10:02:23, john) . based on the case column
+we are able to extract a sequence of events executed for a specic case, also
+referred to as a trace. in this paper we are merely interested in the activity
+performed for a case, and, the resource executing the activity. let idenote the
+universe of unique identiers, let cdenote the universe of cases, athe universe
+of activities and rthe universe of resources. we dene the universe of events
+ase= (icar ). an event ( ;c;a;r )2e is a quadruple describing
+(1) the event's unique identier , (2) the corresponding casec, (3) activity a
+that was performed, and, (4) resource rthat performed the activity. to access
+individual elements of an event, we dene projection functions, i.e., given event
+e= (;c;a;r )2e, we havei(e) =,c(e) =c,a(e) =aandr(e) =r.
+anevent log acts as the main source of input for most conventional process
+mining techniques. an event log is typically extracted from a company's infor-
+mation system and is dened as a set of traces. the order of events within a
+trace is usually imposed by time-stamp information.
+denition 1 (event log). letedenote the universe of events. an event log
+lis a set of traces, i.e., le. a casec2cuniquely denes a trace, i.e., forall2land1i;jjjwe havec((i)) =c((j)), and, for all ;02l
+s.t.6=0, and, 1ijj,1jj0j, we havec((i))6=c(0(j)). event
+are unique, i.e., for all 2land1i<jjjwe have(i)6=(j), and, for
+any;02land1ijj,1jj0j, we have(i)6=0(j).
+as an example of a trace consider case c2in table 1 describing c2=h(2;c2;
+create fine ;lucy);(4;c2;send fine;rob);(5;c2;register payment, john) i.
+note that multiple traces might exist that share the same type of behavior,
+i.e., there may be more traces for some case ciof the formh(x;ci;create fine ;
+lucy);(y;ci;send fine;rob);(z;ci;register payment, john) i.
+2.2 discovering cooperative resource networks
+in this section we present a general denition of resource networks based on
+event logs which we, in section 3, adopt into an event stream context.
+in [2] a wide range of cooperative metrics is dened on the basis of event
+logs. in essence, all these metrics are dened over pairs of resources, e.g., given a
+certain pair of resources, what is the value for the handover of work metric ?, how
+strong is the working together metric ?, what is the minkowski distance for the
+joint case metric ? etc. given the universe of resources r, we dene a cooperative
+metricas:rr!r. acooperative resource network is simply a weighted
+(un)directed graph, having some vr as vertices, a set err as edges,
+and,as an edge weight function.
+denition 2 (cooperative resource network). letrdenote the universe
+of resources, let vr, leterr , and, let:rr!rbe a cooperative
+metric. resource network nis a weighted (un)directed graph n= (v;e; ).
+in denition 2, v,eandare not connected. in practice, often denes vand
+e, e.g., given a metric s.t. 0(r1;r2)1;8r1;r22r, thenv=fr2rj
+9r02r((r;r0)>0_(r0;r)>0), and,e=f(r1;r2)2rrj(r1;r2)>0g.
+consider the following handover of work metric as an example. given a non-
+empty event log land a pair of resources r1;r22r, for any2lwe dene:
+jr1r2j=jj 1x
+i=1(
+1;ir((i)) =r1^r((i+ 1)) =r2
+0;otherwise(1)
+the relationjr1r2jdenotes the number of times a handover occurs from
+resourcer1to resource r2within. reconsider the event data depicted in table 1
+where, for trace c2related to case c2, we havejlucyc2robj= 1,jrobc2lucyj= 0 etc. in general jr1r2jdescribes a local trace-based metric . to
+express handover of work in a global, event log based metric, we dene r1blr2:
+r1blr2= x
+2ljr1r2j! x
+2l(jj 1)!
+(2)
+as a simple example, assume that cases c1andc2are the only two traces in the
+example event data of table 1. observe that we have john blrob = lucy blrob = rob bljohn =1
+3. in [2] a more generalized denition is presented
+that allows us to incorporate relations between resources at longer distances,
+e.g., given a distance of 2, lucy also hands over work to john in case c2. for
+simplicity we only consider relations of distance 1 within this paper.
+3 discovering cooperative structures online
+when we apply blon a real event log, e.g., the bpi challenge 2012 event log [9],
+we get the network depicted in fig. 1.
+fig. 1: result of calculating blbased on
+the bpi challenge 2012 [9].apart from observing that var-
+ious resources hand over work to
+each other, we are not able to gain
+any valuable insights. moreover, we
+are not able to deduce whether cer-
+tain resources became more/less ac-
+tive, stopped working etc. due to
+the tight alignment of it and busi-
+ness processes we are able to capture
+events in an real-time fashion, i.e., at
+the moment they occur. therefore, we
+propose to discover social networks on
+the basis of such event streams . to
+this purpose, we present the online
+cooperative network (ocn) frame-
+work, which allows us to discover and
+visualize a live view of dierent co-
+operative networks, based on event
+streams. additionally we discuss the
+update complexity of resource network metrics in a streaming context. prior to
+this, we dene the notion of event streams , which we formalize as a possibly
+innite sequence of events .
+denition 3 (event stream). letedenote the universe of events. an event
+stream is a (innite) sequence of events, i.e., s:n!e . given some i2n,
+s(i)denotes the ithevent on the event stream. each event in an event stream
+is unique, i.e.,sis injective: for i;j2ns(i) =s(j) =)i=j.
+note that event logs and event streams dier signicantly. first, an event
+log has nal information regarding cases, i.e., each trace is completed and thus
+the information on some case cdoes not change. for event streams this is not
+the case, i.e., after receiving the rst ievents we have seen jevents related
+toc, (ji). within the next i0activities we may see j0events related to
+casec, (j0i0). thus, the trace of case cafter receiving ievents may dier
+from the trace for case cafter receiving i+i0events. second, an event log is
+assumed to be nite, whereas we assume event streams to be innite. hence, we
+need ways to temporarily store traces seen on the event stream, and moreover,ways to remove events and/or traces at some point in time. since transforming
+conventional event logs to an event stream is trivial, we are able to analyze any
+event log with the proposed techniques.
+3.1 the ocn framework
+given a stream of events, we are interested in constructing resource networks.
+since multiple cooperative metrics are dened, we aim at designing a framework
+that allows us to discover several dierent networks on an event stream. more-
+over, the user needs to be able to seamlessly switch between dierent networks.
+hence, we present the ocn framework, depicted in fig. 2, which describes this
+in a generic way.
+from each new event, (activity,resource)-pair information (i.e. ( a;r)) is ex-
+tracted. in case administration dc, we store for each case the (partial) sequence
+of (activity,resource)-pairs seen so far. update function constantly updates dc,
+and handles case/event deletion. at any point in time, we are able to query dc
+what sequences of events are stored for a (collection) of case(s). due to the nite
+nature ofdc, enforced by , the answer to such query changes over time, i.e.,
+dcdiscards old data . after receiving ievents, the user inspects some cooperative
+networknj
+i. networknj
+iis constantly updated by j, in a real-time fashion.
+the information stored in dcallows the user to switch the current network nj
+i
+to an other network nj0
+i, e.g., changing from a handover of work network to a
+reassignment network.
+we identify four main components: (1) case administration dc, (2) case ad-
+ministration update function , (3) resource network builders 1,2, ...,n, and,
+(4) resource networks n1,n2, ...,nn. only one network builder is active at a
+specic point in time ( jin fig. 2). in the remainder of this section we discuss
+the components in more detail.
+case administration most cooperative metrics are dened on the basis of
+resource information present in traces within event logs. hence, in an event
+:::;(;c;a;r );:::
+event streamscase admin. updater case administration
+dc1
+
+n1
+i.........
+j
+
+nj
+i active network
+.........
+n
+
+
+nn
+iuser
+fig. 2: schematic overview of the ocn framework .c1
+c2
+:::
+cn
+:::casesh(a1;r1)i
+h(a1;r1);(a2;r2)i
+h(a1;r1);(a2;r2);(a3;r3)i
+:::receive (x;c1;a2;r2)c1
+c2
+:::
+cn
+:::cases?
+h(a1;r1);(a2;r2)i
+h(a1;r1);(a2;r2);(a3;r3)i
+:::
+fig. 3: a simple example of a case administration dc.
+stream setting, we need a data structure, i.e., a case administration , that allows
+us to determine, for a given case identier, what sequence of events has thus
+far been emitted on the event stream. since we receive events over time, the
+case administration evolves over time. we dene the case administration as a
+functiondc: (n0c)!(ar ). giveni2n0andc2 c,dc(i;c) is
+the sequence of (activity,resource)-pairs related to case cobserved on the event
+stream, after ievents. this sequence is not necessarily containing all events ever
+observed/observable for case c, i.e., as the memory is nite, events related to
+casecmight be removed, and/or, new events related to case cmight arrive later.
+to keep the case administration up to date, we need some update function ,
+which updates the case administration based on the ithevent. a simple initial
+design of a case administration is depicted in fig. 3. we maintain a collection,
+e.g., an array, consisting of case identiers seen earlier on the event stream.
+each case identier points to a corresponding sequence. for case c1we have
+seenha1;r1i. if we receive new event ( x;c1;a2;r2), we update c1's pointer to
+h(a1;r1);(a2;r2)i. as there is no case identier pointing to h(ai;ri)iwe remove
+it from the collection of sequences. since the stream is possibly innite, we need
+anaging mechanism that allows us to forget some of the data elements stored
+in the case administration. we identify two aging strategies, i.e., case level and
+event level . in the case level strategy, we store all events for a given case identier
+until we decide to completely remove the case, and all its related events, from
+the administration. in the event level strategy, we remove individual events from
+the case administration.
+there are several ways to design case level strategy data structures, primarily
+based on the eld of data stream analysis [13], [3], [11]. for example, if we are
+interested in maintaining a view of the most recent cases, we use a decay function
+on the cases, that allows us to determine whether a case is eligible for deletion [8].
+if we are on the other hand interested in the most active, or, most frequently
+updated cases, we are able to use frequency approximation algorithms dened
+for data streams [7]. when the underlying technique removes a case due to its
+age or relative infrequency, the associated sequence is removed.
+in the theoretical case where we only have one active case within the process
+that has an innite sequence of dierent events, the case level strategy does not
+work. in such case we adopt an event based strategy. as an example consider the
+following approach. we maintain three data structures, two of which as depictedin fig. 3, i.e., a collection of cases pointing to a collection of sequences. the
+third data structure is simply an array consisting of case identiers that have
+been emitted on the stream. note that we store each case identier of each
+event, i.e., if we have received nevents related to case c, we have (at most) n
+occurrences of cwithin the array. we use a decay function to apply aging on the
+elements of the case identier array [8]. whenever the decay function indicates
+that a case is eligible for deletion we remove the rst (activity,resource)-pair of
+the sequence that the case is currently pointing to. if the case now points to the
+empty sequence, we remove it from the collection of cases.
+networks & builders we maintain knowledge about the cases seen so far in
+memory to be able to switch from one resource network to the other. hence, the
+network discovery components 1;2;:::;n, consist of two separate tasks: (1)
+initialization of the network based on the current state of dcand (2) update of
+the network based on new events owing in. the rst step, i.e., initialization,
+equals the conventional computation of the resource network. the second step,
+i.e., updating, is of particular interest. consider that we obtain some network
+ni 1, based ondcafteri 1 events, and, we receive ithevent (;c;a;r ). the
+new event either introduces, or, updates a network metric value for a pair of
+resources. also, the metric value for a pair of resources usually depends on a
+global property, e.g., the divisor of bl, hence the new event also aects the
+metric value of other pairs of resources within the network. thus, network ni,
+based ondcafterievents, is very likely to dier from the previous network ni 1,
+i.e., a new handover is added/removed due to the new event/removed data. from
+an implementation perspective, we need to refresh the internal data structures
+that maintain the network after each new event. the complexity of this operation
+is expected to grow in terms of the network size. for most metrics we additionally
+need to design supporting data structures that allow us to recompute the actual
+metric value. for example, to be able to compute the blmetric, for each resource
+pair, we need to maintain a denominator and a divisor. the denominator is
+resource pair specic, whereas the divisor can be maintained globally.
+some supporting data structures turn out to be computable in an incremen-
+tal fashion. if the incremental computation of the data structures is inexpensive,
+we are able to update them in a real-time fashion. however, some metrics do
+not support inexpensive incremental updates of their supporting data structures,
+i.e., we potentially need to recompute them from scratch after a new event. in
+such case we need a more periodic update scheme of the network in order to
+maintain the network in a real-time fasion. hence, we propose two network up-
+date strategies: right-time , i.e. at the user's request, and real-time , i.e. updating
+after each event, which dene how we need to update our network over time.
+3.2 network update strategies
+if we reconsider the handover of work metric as presented in section 2.2, design-
+ing supporting data structures that allow us to maintain the metric is straightfor-
+ward. we maintain a map m:rr!n0, that maintains the denominator ofr1bdc
+ir2, i.e.,p
+c2cjr1dc(i;c)r2jas the number of received events iincreases
+over time. moreover, since the divisor of r1bdc
+ir2has the same value for all
+possible combinations of r1andr2we maintain it i.e.,p
+c2c(jdc(i;c)j 1), as a
+single integer d2n. initially we have m(r1;r2) = 0;8r1;r22r. assume that
+after a while, we receive some ithevent (0;c0;a0;r0) s.t. we havedc
+i 1(c0) =,
+with6=. thus, at time i, we havedc
+i(c0) =h(a0;r0)i. moreover, assume that
+no case is removed from the case administration after receiving the ithevent.
+observe that for any r1;r22r, for the denominator of r1bdc
+ir2, we have:
+x
+c2cjr1dc(i;c)r2j=0
+@x
+c2cnfc0gjr1dc(i;c)r2j1
+a+jr1h(a0;r0)ir2j(3)
+we assumed that no sequence was removed from the case administration, thus:
+x
+c2cnfc0gjr1dc(i;c)r2j=x
+c2cnfc0gjr1dc(i 1;c)r2j (4)
+we also havejr1h(a0;r0)ir2j=jr1r2j+b, whereb= 1 ifr0=r2, and,
+r((jj)) =r1, else,b= 0. combing this with equations 3 and 4 yields:
+0
+@x
+c2cnfc0gjr1dc(i 1;c)r2j1
+a+jr1r2j+b= x
+c2cjr1dc(i 1;c)r2j!
++b(5)
+thus, the only action we need to perform is increasing the value of m(r;r0) by
+one, where rdenotes the resource that executed the last event of . note that,
+for the divisor, we are able to deduce di=di 1+ 1. if we drop the assumption
+that no case is removed from the case administration, we need to reduce the
+values ofmanddaccordingly. updating dbased on a dropped trace 0is
+trivial, i.e., we simply subtract j0j 1. formwe iterate over 0and for each
+pair of resources we decrease the corresponding mvalue by one.
+clearly, the bmetric is computable incrementally. hence, the bmetric is
+an example of a metric that we classify as a real-time metric . we dene cooper-
+ative metrics to be real-time if it is possible to update the metric's supporting
+data structures by means of an incremental update. however, since the divisor
+changes, we need to recompute all metric values for those r1;r22r with a
+non-zeromvalue. thus, in worst case this operation has complexity o(jrj2).
+there are examples of cooperative metrics that do not meet the real-time
+requirement. an example of such metric is the boolean-causal variation of the
+handover of work metric [2]. first, we introduce the notion of causality, after
+which we introduce the metric. consider example event log l2, in which we only
+record sequences of activities :l2=fha1;a2;a3;a4i;ha1;a3;a2;a4ig. in the event
+log,a1isdirectly followed bya2, which we write as a1> a 2. we additionally
+havea1>a3,a2>a3,a2>a4,a3>a2, and,a3>a4. two activities aiandaj
+are said to be in a causal relation , i.e.,ai!aj, iai> ajandajai. thus,
+for the example event log we have a1!a2,a1!a3,a2!a4, and,a3!a4.given a sequence of activity-resource pairs, we dene relation r1r2which
+species that resource r1hands over work of a case to resource r2, given that
+the corresponding executed activities are in a causal relation. moreover, relation
+r1r2does not count the number of occurrences of such handover, i.e., it only
+captures the fact that such handover occurred at least once in the trace.
+r1r2=n
+1 i91i<jj 1(r((i)) =r1^r((i+ 1)) =r2^a((i))!a((i+ 1)))
+0 otherwise
+(6)
+we now dene a corresponding cooperative network metric r1ddc
+ir2that
+captures this globally, based on event streams. let idenote the index of the
+latest received event on the event stream, then:
+r1ddc
+ir2= x
+c2cr1dc(i;c)r2!
+jfc2cjdc(i;c)6=gj
+maintaining the divisor is in this case trivial. we again maintain m:
+(rr )!n0, which represents the denominator of the dmetric. however,
+to maintain the metric we need to additionally keep tack of the causal relations
+present within the traces. to maintain the causal relations we maintain a map
+m>: (aa )!n0that maintains the >relation. based on m>we maintain
+a setm!that maintains causal pairs. when we receive ithevente= (;c;a;r )
+we increment entry m>(a0;a) with one, where a0denotes the last activity of
+dc(i 1;c). next, we update m!andm. there are four dierent possibilities
+related to the causality of a0anda, all having dierent implications on the way
+dis computed, and, the corresponding computational complexity.
+1.before processing e, we havem>(a0;a)>0andm>(a;a0) = 0 , i.e.,a0!a
+already holds. we check whether contains structure h:::;(a00;r0);(a000;r);
+:::i, s.t.a00!a000. if so, we do not update m(r0;r), otherwise, we increase
+m(r0;r) with one.
+2.before processing e, we havem>(a0;a) = 0 andm>(a;a0) = 0 , i.e.,a0!a
+starts to hold. we apply the same procedure as described in 1.
+3.before processing e, we havem>(a0;a)>0andm>(a;a0)>0, i.e.,a0!a
+did not and still does not hold. there is no need to update m.
+4.before processing e, we havem>(a0;a) = 0 andm>(a;a0)>0, i.e.,a!a0
+did hold, though no longer holds. we now need to remove the contribution of
+all cases that have a trace containing structure h:::;(a;r00);(a0;r000);:::i. we
+only need to reduce the m(r00;r000) value if within the same trace there is
+no structure of the form h:::;(a00;r00);(a000;r000);:::is.t.a00!a000. hence, we
+need to loop over all traces currently present in the case administration .
+the fourth case is problematic from an incremental point of view. within all
+other cases, it suces to analyze the trace related to cwithin the case admin-
+istration. if the fourth case applies we need to check all cases within the case
+administration in order to update m. depending on the size of the case admin-
+istration this procedure might be time consuming. moreover, the nature of theunderlying process, i.e., stable without a lot of variation vs. unstable/changing
+with variation in terms of causalities inuences the complexity. when we remove
+cases from the case administration, we again need to check the four possible sce-
+nario's w.r.t. modications in causality. in case of removal, a casual relation that
+is added results in the need to rescan the case administration.
+thedmetric is an example of a right-time metric, i.e., instead of continu-
+ously maintaining the supporting data structures, it should be recomputed at
+regular intervals, or, at the user's request. in section 5 we empirically assess the
+computational complexity of both metrics bandd. we also assess how often
+we need to recompute the internal data structures of dbased on real data, i.e.,
+how often does a causal change happen? prior to this, in section 4, we present
+details regarding the implementation of the ocn framework.
+4 implementation
+fig. 4: the ocn framework in prom.the ocn framework is implemented
+in the prom [16] ( http://promtools.
+org) framework (fig. 4). prom is the
+open-source standard for implement-
+ing process mining techniques. the
+ocn framework is distributed within
+the streamsocialnetworks package.1
+the current implementation provides
+support for: generalized handover of
+work metrics [2, denition 4.4], gen-
+eralized in-between metrics [2, denition 4.7], working together metrics [2,
+denition 4.8], and, joint activity metrics based on minkowski distance ,ham-
+ming distance andpearson's correlation coecent [2, denition 4.10]. moreover,
+the framework is easily extensible to support more cooperative network metrics.
+within the implementation, instead of maintaining sequences of events, a
+prex-tree of (activity,resource)-pairs is built in memory. each case within the
+case administration points to a node in the tree, that represents the latest
+(activity,resource)-pair received for the case. by walking from the root to a node
+pointed at by a case identier, we get the corresponding trace. the user can
+choose between two visualizations: (1) visualize each consecutive network, or,
+(2) makes use of windows in order to visualize changes within the network(s).
+to visualize changes, the visualizer stores two windows each containing wnet-
+works. for each link within the network it computes the average corresponding
+metric value for both windows. the width of the links within the network are
+based on the relative change of the average link values. a link labeled with new
+indicates a new relation, a "indicates an increase w.r.t. the previous window, a
+#indicates a decrease, and a label indicates that the relations was present in
+the rst window, though is no longer present in the second window. the size and
+1https://svn.win.tue.nl/repos/prom/packages/streamsocialnetworks/trunkfig. 5: three consecutive window-based cooperative networks based on an event
+stream of the bpi challenge 2012 event log [9].
+color of the resources within the network are based on their relative involvement
+within the network as a whole.
+to illustrate the usefulness and applicability of the framework, consider fig. 5
+which depict a sequence of subsequent window based cooperative networks. the
+networks depict the handover of work metric with a maximum distance of 5
+events, a fading factor of 0 :75, and, a window-size wof 50. in the rst network,
+all resources hand over work to themselves . some new relations become present,
+and, resource 10939 (top left) is completely new. resource 112 is the most active
+resource, and involved in the most dominant relations (although its self-loop
+decreased in relative frequency). in the second network, we observe that resource
+10912 became more active. resource 10939 now also hands over work to resource
+10912. again a new resource became active, i.e., resource 11019 (bottom right),
+and, the relations that involve resource 10862 became relatively less frequent. inthe third network, again a lot of new behavior becomes apparent. due to the self-
+loops, we conclude that most resources execute multiple subsequent activities for
+a case, or, execute subsequent activities within a span of at most ve activities .
+there are several other interesting observations that we can derive from fig. 5.
+5 evaluation
+in this section we assess the scalability of the metrics described in section 3.2,
+i.e.,bandd.2for the experiments we created an event stream based on the bpi
+challenge 2012 event log [9]. the event log contains real event data , related to a
+loan application process. in total, the event log contains 262.200 events. of these
+events, 244.190 events actually describe what resource executed the activity.
+within the event stream, events are ordered based on timestamps. using
+the event stream, for each metric we measured: (1) time needed to refresh the
+supporting data structure(s) (in nano seconds), (2) time needed to refresh the
+whole network (in nano seconds), (3) total memory consumption of the data
+structure(s) (in bytes), (4) network size (in number of edges). moreover, for each
+metric we investigated two scenario's: (1) no restriction on the case administra-
+tion's available memory, (2) nite memory restriction on the case administration
+(case level removal strategy ) using a forward decay model [8] with an exponen-
+tial decay function with a decay rate of 0:01 and a removal threshold of 0 :01.
+to reduce the eects of outliers in terms of run time measurements, e.g. caused
+by the java garbage collector, we ran each experiment ten times, removed the
+minimal and maximal measurement values, and, averaged the remaining eight
+values. additionally, in some charts the y-axes are restricted in order to highlight
+the overall trends, instead of outliers.
+in fig. 6 the results of discovering the bmetric, without any restriction on
+the available memory, are depicted. in fig. 6a the memory usage combined with
+the data structure update time are depicted. note that, since we do not restrict
+memory usage, no cases are removed from the case administration. as a result,
+the memory usage is steadily increasing. the data structure update time only
+consists of incrementally updating the divisor and the denominator values of the
+resource pairs aected by the update. we observe that initially there are some
+high values in terms of update time w.r.t. the overall trend. this is likely to
+be related to initialization of the underlying data structure. then, after a short
+period of increasing update time values, the update time seems to stabilize. in
+fig. 6b the network size combined with the network refresh time is depicted.
+when comparing the network size with the memory usage depicted in fig. 6a
+we observe that they follow the exact same pattern. this makes sense since the
+2experiments are performed on four dell poweredge r520, 2 x intel xeon
+e5-2407 v2 2.40ghz, 8 x 8 8gb rdimm machines running ubuntu 14.04 lts .
+experiment source code is available at: https://svn.win.tue.nl/repos/prom/
+packages/streamsocialnetworks/branches/publications/2016_coopis/ . raw
+experiment results are available at https://github.com/s-j-v-zelst/research/
+releases/download/final/2016_coopis_experiments.tar.gz .0 50000 100000 150000 200000 2500000 20000 60000
+eventsnano seconds
+2e+05 4e+05 6e+05
+bytesdata structure update
+memory usage(a) data structure updates and memory.
+0 50000 100000 150000 200000 2500000e+00 4e+05 8e+05
+eventsnano seconds
+0 500 1500 2500
+edgesnetwork refresh
+network size (b) network refresh time and size.
+fig. 6: results of discovering the bmetric without memory restrictions.
+0 50000 100000 150000 200000 2500000 20000 60000
+eventsnano seconds
+165000 175000 185000
+bytesdata structure update
+memory usage
+(a) data structure updates and memory.
+0 50000 100000 150000 200000 2500000 40000 100000
+eventsnano seconds
+0 40 80 120
+edgesnetwork refresh
+network size (b) network refresh time and network size.
+fig. 7: results of discovering the bmetric with memory restrictions.
+larger the network, the more absolute and relative values we need to store. the
+time to refresh the network follows the same shape. this is as expected as we
+need to calculate more relative values as the network size increases.
+in fig. 7 the results of discovering the bmetric, with nite memory re-
+striction, are depicted. in fig. 7a the memory usage combined with the data
+structure update time is depicted. in this case we observe that memory usage
+is uctuating. when we compare the time needed for data structure updates,
+we observe that this is now slightly higher than in fig. 6a. this is explained by
+the fact that when restricting memory to be nite, cases are dropped from the
+case administration. again, the network refresh rate follows the behavior of the
+memory/network size. due to the restrictions on memory usage, the refresh rate
+of the network is now comparable to the data structure update time.
+for metric dwe rst computed a baseline in terms update times and memory
+usage, depicted in fig. 8. within the baseline we recompute the complete data
+structure and network after each event that we receive. in fig. 8a the baseline
+without memory usage restrictions is depicted. due to the high computational
+costs, we only performed measurements for the rst 25.000 events. moreover,
+we took the median values out of four experiments. the time needed to refresh
+the data structure grows tremendously fast. as the gure shows, refreshing the
+data structure constantly is not feasible in a streaming setting. in fig. 8b the0 5000 10000 15000 20000 250000.0e+00 1.5e+08
+eventsnano seconds
+200000 300000 400000
+bytesdata structure update
+memory usage(a) no memory restrictions.
+0 50000 100000 150000 200000 2500000e+00 2e+07 4e+07
+eventsnano seconds
+0e+00 2e+05 4e+05
+bytedata structure update
+memory usage (b) restricted memory.
+fig. 8: baseline measurements for metric d.
+0 50000 100000 150000 200000 2500000e+00 2e+09 4e+09
+eventsnano seconds
+2e+05 4e+05
+bytesdata structure update
+memory usage
+(a) data structure updates and memory.
+0 50000 100000 150000 200000 2500000 50000 150000
+eventsnano secondsdata structure update (b) data structure updates (zoomed in).
+fig. 9: results of discovering the dmetric without memory restrictions.
+baseline with restricted memory use is depicted. in this case, the use of restricted
+memory limits the growth in terms of the data structure update time. still, the
+times needed to update the data structure are infeasible in a streaming setting.
+as explained in section 3.2, we do not need to update the internal data
+structure every single time. hence in fig. 9 we depict the results of the dmetric
+when only applying a data structure recalculation when it is indeed needed,
+without memory restrictions. in fig. 9a we observe that a recalculation of the
+internal data structure does not happen very often, i.e., there is a limited number
+of excessive peeks in the chart. in fig. 9b we zoomed in on the data structure
+update times. note that, on average the time needed is much higher than in the
+case of b. this makes sense as in case of d, we need to traverse the whole trace
+as opposed to a single constant update in case of b.
+in fig. 10 we depict the results of the dmetric with restricted memory. the
+drops in memory usage in fig. 10a correlate with the peeks in data structure
+update time, indicating that a recalculation of the data structure is needed
+at these points in time. again, the network size, depicted in fig. 10b follows
+the same shape as the memory usage. likewise the time needed to refresh the
+network follows the network size.
+in table 2, for both bandd, the average values for the data structure
+update time and the network refresh time are presented. the results show that0 50000 100000 150000 200000 2500000 100000 200000
+eventsnano seconds
+140000 200000 260000
+bytedata structure update
+memory usage(a) data structure updates and memory.
+0 50000 100000 150000 200000 2500001e+05 3e+05
+eventsnano seconds
+0 100 200 300 400
+edgesnetwork refresh
+network size (b) network refresh time and network size.
+fig. 10: results of discovering the dmetric without memory restrictions.
+table 2: average values and standard deviations for the data structure update
+time and network refresh time.
+metric memory avg./stdv. data structure update (ns.) avg./stdv. network refresh (ns.)
+b no restriction 8.459 / 2.436 567.652 / 199.991
+b restricted 2.176 / 2.285 78.817 / 9.896
+d no restriction 133.333 / 14.834.991 393.190 / 138.375
+d restricted 4.045 / 40.333 57.803 / 9.907
+memory restriction has a positive inuence on the time needed to update the
+data structures and refresh the network. moreover, the dmetric, in case of
+restricted memory, seems to need twice as much time compared to the bmetric.
+the experiments indicate that total recalculation of the network is not often
+needed. hence, it is feasible to update the metric real-time, and, whenever we
+need to recompute the data structure, temporarily buer new incoming events.
+the events can be processed in real-time after the data structures are refreshed.
+6 related work
+for an elaborate overview of process mining we refer to [1]. here, we primarily
+focus on work related to the organizational perspective of process mining, and,
+applications of event streams within process mining.
+in [2] a collection of social network metrics is dened in context of process
+mining, i.e., metrics based on event log data. the work can be regarded as one of
+the foundational works of the application of social network analysis in context
+of process mining. in [15] the authors extend the work of [2] with organiza-
+tional model mining and information ow mining. in [10] the authors identify
+that applying conventional techniques as dened in [2], [15] result in complex
+networks that are not easy to understand. the authors propose to solve this
+by applying hierarchical clustering on the social networks to form clusters of
+similar resources. in [14] an extensible framework is proposed that allows for
+extracting resource behavior time series. it allows process owners to visualize
+their resource's performance over time, using event logs as an objective source
+of information. recently, in [4], appice et al. propose a method to analyze evolv-ing communities within event logs. the method transforms the event log into a
+nite stream of events, and, subsequently divides the stream into windows. the
+method computes a resource community for each window and assess the changes
+within the communities of successive windows.
+in online, event stream based process mining, the majority of the work is
+devoted to stream based process discovery, exclusively focusing on control-ow.
+in [6] an adaptation of the heuristics miner [17] for the purpose of event stream
+based process discovery is presented. in [12] the authors improve the imple-
+mentation of [6] by the internal use of prex-trees. in [5] methods for nding
+declarative process models on the basis of event streams are proposed.
+to the best of our knowledge, this is the rst work that considers the orga-
+nizational perspective using real time ,online , and, innite event streams.
+7 conclusion
+in this paper we presented the online cooperative networks (ocn) framework,
+which allows us to discover several cooperative resource networks on the basis
+of event streams. the ocn framework in very general and in principle allows
+for many dierent types of analysis based on online/real-time event stream data.
+moreover, it enables us to gain insights in cooperative networks over time, rather
+than providing one monolithic view. due to the assumptions on the data, i.e.,
+event streams might be innite, the ocn framework additionally allows us to
+analyze event logs that exceed a computer's physical memory. therefore it can
+be used to speed up the analysis of large event logs and is not limited to streams.
+our experiments show that we are able to compute cooperative networks
+in an event stream setting. we have shown that there are cooperative network
+metrics suitable for real-time incremental update strategies. for these metrics,
+updating of the supporting data structures converges to a constant amount of
+time. the time needed to update the resource network however grows in terms of
+the size of the network. additionally, we have shown that limiting the available
+memory has a positive impact both on the use of memory as on the network
+refresh times. however, as consequence of limited available memory we remove
+cases, which slightly increases the data structure update times.
+future work the time needed to refresh the network is strongly related to the
+network size. however, in some cases, the eect of an increase in a metric's
+denominator/divisor might have little eect on the value of the metric, e.g.
+1:001:337
+2:133:700= 0;471:001:338
+2:133:700. an interesting direction for future work is the
+integration of fast identication whether the network should be recalculated.
+within this paper we primarily focus on the feasibility of adopting cooper-
+ative resource network metrics in an event stream setting. to gain more value
+out of stream based resource network analysis, an interesting direction for future
+work is the assessment of dierent visualization methods of the evolution of the
+networks. also, extensions such as community detection etc. are of interest.references
+1. aalst, w.m.p. van der: process mining - data science in action, second edition.
+springer (2016)
+2. aalst, w.m.p. van der, reijers, h.a., song, m.: discovering social networks from
+event logs. computer supported cooperative work 14(6), 549{593 (2005)
+3. aggarwal, c.c. (ed.): data streams - models and algorithms, advances in
+database systems, vol. 31. springer (2007)
+4. appice, a, pietro m. di, greco, c., malerba, d.: discovering and tracking organi-
+zational structures in event logs. in: ceci, m., loglisci, c., manco, g., masciari,
+e., ras, z.w. (eds.) ecml-pkdd nfmcp, revised selected papers. lncs, vol.
+9607, pp. 46{60. springer (2015)
+5. burattin, a., cimitile, m., maggi, f.m., sperduti, a.: online discovery of declar-
+ative process models from event streams. ieee trans. services computing 8(6),
+833{846 (2015)
+6. burattin, a., sperduti, a., aalst, w.m.p. van der: control-flow discovery from
+event streams. in: ieee cec 2014. pp. 2420{2427. ieee (2014)
+7. cormode, g., hadjieleftheriou, m.: methods for finding frequent items in data
+streams. vldb j. 19(1), 3{20 (2010)
+8. cormode, g., shkapenyuk, v., srivastava, d., xu, b.: forward decay: a practical
+time decay model for streaming systems. in: ioannidis, y.e., lee, d.l., ng, r.t.
+(eds.) ieee icde. pp. 138{149. ieee computer society (2009)
+9. dongen, b.f. van: bpi challenge 2012 (2012), http://dx.doi.org/10.4121/
+uuid:3926db30-f712-4394-aebc-75976070e91f
+10. ferreira, d.r., alves, c.: discovering user communities in large event logs. in:
+daniel, f., barkaoui, k., dustdar, s. (eds.) bpm workshops, revised selected
+papers. lecture notes in business information processing, vol. 99, pp. 123{134.
+springer (2011)
+11. gama, j.: knowledge discovery from data streams. chapman and hall / crc
+data mining and knowledge discovery series, crc press (2010)
+12. hassani, m., siccha, s., richter, f., seidl, t.: ecient process discovery from
+event streams using sequential pattern mining. in: ieee ssci 2015. pp. 1366{
+1373. ieee (2015)
+13. muthukrishnan, s.: data streams: algorithms and applications. foundations and
+trends in theoretical computer science 1(2) (2005)
+14. pika, a., wynn, m.t., fidge, c.j., hofstede, a.h.m. ter, leyer, m., aalst, w.m.p.
+van der: an extensible framework for analysing resource behaviour using event
+logs. in: jarke, m., mylopoulos, j., quix, c., rolland, c., manolopoulos, y.,
+mouratidis, h., horko, j. (eds.) caise 2014. lncs, vol. 8484, pp. 564{579.
+springer (2014)
+15. song, m, aalst, w.m.p. van der: towards comprehensive support for organiza-
+tional mining. decision support systems 46(1), 300{317 (2008)
+16. verbeek, h.m.w., buijs, j.c.a.m., dongen, b.f. van, aalst, w.m.p. van der:
+xes, xesame, and prom 6. in: soer, p., proper, e. (eds.) information systems
+evolution - caise forum 2010, selected extended papers. lnbip, vol. 72, pp.
+60{75. springer (2010)
+17. weijters, a.j.m.m., aalst, w.m.p. van der: rediscovering workow models from
+event-based data using little thumb. integrated computer-aided engineering
+10(2), 151{162 (2003)
+view publication statsview publication stats

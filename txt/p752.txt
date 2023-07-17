@@ -1,0 +1,658 @@
+service discovery from observed behavior while
+guaranteeing deadlock freedom in collaborations
+richard m uller1;2, christian stahl2, wil m.p. van der aalst2;3, and
+michael westergaard2;3
+1institut f ur informatik, humboldt-universit at zu berlin, germany
+richard.mueller@informatik.hu-berlin.de
+2department of mathematics and computer science,
+technische universiteit eindhoven, the netherlands
+fc.stahl, w.m.p.v.d.aalst, m.westergaard g@tue.nl
+3national research university higher school of economics, moscow, 101000, russia
+abstract. process discovery techniques can be used to derive a process
+model from observed example behavior (i.e., an event log). as the ob-
+served behavior is inherently incomplete and models may serve different
+purposes, four competing quality dimensions|fitness, precision, simplicity,
+and generalization|have to be balanced to produce a process model of high
+quality.
+in this paper, we investigate the discovery of processes that are specified as
+services. given a service sand observed behavior of a service pinteracting
+withs, we discover a service model of p. our algorithm balances the four
+quality dimensions based on user preferences. moreover, unlike existing discov-
+ery approaches, we guarantees that the composition of sandpis deadlock
+free. the service discovery technique has been implemented in prom and
+experiments using service models of industrial size demonstrate the scalability
+or our approach.
+1 introduction
+service-oriented design [ 27] reduces system complexity, and service models are useful
+to understand the running system, to verify the system's correctness, and to analyze
+its performance. however, it is often not realistic to assume that there exists a service
+model. even if there exists a formal model of the implemented service, it can differ
+significantly from the actual implementation; the formal model may have been
+implemented incorrectly, or the implementation may have been changed over time.
+fortunately, we can often observe behavior recorded in the form of an event log . such
+event logs may be extracted from databases, message logs, or audit trails. given
+an event log, there exist techniques to produce a (service) model. the term service
+discovery [6] or, more general, process discovery [3] has been coined for such techniques.
+in this paper, we assume a known service model sand an event log lcontain-
+ing observed behavior in the form of message sequences being exchanged between
+(instances of) the implementation of sand (instances of) its environment (i.e., the ser-
+vicessinteracts with) to be given. our goal is to produce a model of the environment2
+ofs. as the event log is inherently incomplete (i.e., not all possible behavior was
+necessarily observed), there are, in general, infinitely many models of the environment
+ofs. clearly, some models might be more appropriate than others regarding some
+user requirements. therefore, service discovery can be seen as a search process , aiming
+at producing a model of the environment that describes the observed behavior \best".
+to judge the discovered model we consider two aspects: correctness (internal con-
+sistency of model, e.g., no deadlocks) and quality (ability to describe the underlying
+observed process well).
+correctness is motivated by the discovery of sound workflow models in [ 11], where
+soundness refers to the ability to always terminate [ 1]. in our service-oriented setting,
+it is reasonable to require that sand its environment interact correctly. as a minimal
+requirement of correct interaction, we assume deadlock freedom throughout this paper.
+we refer to such model of the environment of sas a partner ofs. thus, we are
+interested in discovering a partner of s.
+regarding quality, there exist four quality dimensions for general process mod-
+els [3]: (1) fitness (i.e., the discovered model should allow the behavior seen in the event
+log), (2) precision (i.e., the discovered model should not allow behavior completely
+unrelated to what was seen in the event log), (3) generalization (i.e., the discovered
+model should generalize the example behavior seen in the event log), and (4) simplicity
+(i.e., the discovered model should be as simple as possible). these quality dimensions
+compete with each other. for example, to improve the fitness of a model one may end
+up with a substantially more complex model. a more general model usually means a
+less precise model. we assume that a user guides the balancing of these four quality
+dimensions. as a consequence, we aim at discovering a service model that is a partner
+ofsand, in addition, balances the four quality dimensions guided by user preferences .
+the actual challenge is now to find such a model. as a service shas, in general,
+infinitely many partners, the search space for service discovery is infinite . therefore,
+we are using a genetic algorithm to find a good but possibly not an optimal model of a
+partner ofs. we have implemented this algorithm. it takes as an input a service model
+s, an event log, and values for the four quality dimensions. the output of the algorithm
+is a model of a partner of sthat comes close to the specified values of the quality dimen-
+sions. we show its applicability using eight service models of industrial size. moreover,
+based on the notion of a finite representation of all partners of s[16]|referred to as
+operating guideline |we additionally apply an abstraction that reduces the search space
+to a finite one. although the abstraction only preserves fitness, our experimental results
+shows that the other quality dimensions do not suffer too much due to this abstraction.
+summarizing, the main contributions of this paper are:
+{adapting existing discovery techniques for workflows (i.e., closed systems) to
+services (i.e., reactive systems);
+{adapting the metrics for the four quality dimensions to cope with service models;
+{presenting an approach to reduce an infinite search space to a finite one ; and
+{validation of the algorithm based on a prototype.
+we continue with a motivating example in sect. 2. section 3 provides background
+information on our formal service model and process discovery techniques. section 4
+adapts existing discovery techniques and metrics for workflows for service mining3
+and reduces the infinite search space to a finite one. we present experimental results
+in sect. 5. section 6 reviews related work, and section 7 concludes the paper.
+2 motivating example
+figure 1 shows a service smodeled as a state machine and an event log l. a transition
+label !x(?x) denotes the sending (receiving) of a message xto (from) the environment
+ofs. the event log lcontains information on 210 traces. there are three types of
+traces:ac(10 times),ad(100 times), and bd(100 times). our goal is to produce a model
+of the environment of s. two example models are pandrin fig. 1.pincorporates the
+frequently observed behavior in l(tracesadandbd) and disregards trace ac, arguing
+thatacis negligible for a \good" model. rincorporates even more than the observed
+behavior in l|for example, the trace bcwhich was not observed in the interaction
+withs|generalizing the observed behavior in lin account for l's incompleteness.
+s0s1!a?c?d!b?ds2s3s4s5
+(a) services#trace
+10ac
+100ad
+100bd
+210
+(b) event log l
+p0p1?a!dp2?b⌧ (c) servicep
+r0r1?ar2?b⌧!c!d (d) servicer
+fig. 1: running example: the event log lrepresents observed communication
+behavior of sand its environment.
+the service pis a partner of s|they both interact without running into a
+deadlock|whereas the service ris not: ifssends a message b, thenrreceives this
+messageband may send a message c. however, scannot receive message cand
+rdoes not send any additional messages unless it receives a message aorb. thus,
+the interaction of sandrdeadlocks. for this reason, we prefer poverrand our
+discovery algorithm would exclude r. classical process mining approaches do not
+takesinto account and will allow for models that deadlock when composed.
+3 preliminaries
+for two sets aandb,a]bdenotes the disjoint union, i.e., writing a]bexpresses
+the implicit assumption that aandbare disjoint. let n+denote the positive
+integers. for a set a,jajdenotes the cardinality of a,b(a) the set of all multisets
+(bags) over a, and [ ] the empty multiset. throughout the paper, we assume a finite
+set of actionsasuch thatf;finalg\a =;.
+for a seta, letabe the set of finite sequences (words) over a. for two words v
+andw,vvwdenotes that vis aprefix ofw. for a ternary relation raba,4
+we shall use ab  !ra0to denote (a;b;a0)2r. if any of the elements a,b, ora0is
+omitted, we mean the existence of such an element. the relation rabais
+thereflexive and transitive closure ofr, defined by ab1:::bn     !ra0if and only if there
+area0;:::;an2asuch thata=a0,a0=an, and, for all 1in,ai 1bi  !rai.
+ifa !ra0, thena0isreachable fromainr.
+3.1 state machines for modeling services
+we model a service as a state machine extended by an interface , thereby restricting
+ourselves to the service's communication protocol. an interface consists of two disjoint
+sets of input and output labels corresponding to asynchronous message channels.
+in the model, we abstract from data and identify each message by the label of its
+message channel.
+definition 1 (state machine). astate machine s= (q;; 
+;;i;o) consists of
+a finite setqofstates , aninitial state 2q, a set of final states 
+q, atransition
+relationq(i]o]fg)q, and two disjoint, finite sets of input labels ia
+andoutput labels oa.
+letl(t) =adefine the label of a transition t= (q;a;q0)2. we canonically
+extendlto sequences of transitions. for a state q2q, define by en(q) =fajqa  !g
+the set of labels of outgoing transitions of q. the setr(s) =fqj !qgdenotes
+thereachable states ofs. the state machine sisdeterministic if for allq;q0;q002q
+anda2i]o, (q;;q0)2impliesq=q0and (q;a;q0);(q;a;q00)2impliesq0=q00;
+it isdeadlock free if, for allq2r(s),en(q) =;impliesq2
+. y
+graphically, we precede each transition label xwith ? (!) to denote an input
+(output) label. a final state is depicted with a double circle (e.g., s3in fig. 1(a)).
+an incoming arc denotes the initial state (e.g., s0in fig. 1(a)).
+for the composition of state machines, we assume that their interfaces completely
+overlap. we refer to state machines that fulfill this property as composable . we
+compose two composable state machines sandrby building a product automaton
+sr, thereby turning all transitions into (internal) -transitions. in addition, a
+multiset stores the pending messages between sandr.
+definition 2 (composition). two state machines sandrarecomposable if
+is=orandos=ir. the composition of two composable state machines sand
+ris the state machine sr= (q;; 
+;;;;;) withq=qsqrb(is]ir),
+= (s;r;[ ]),
+=
+s
+rf[ ]g,containing exactly the following elements:
+{(qs;qr;b)  !(q0
+s;qr;b), ifqs  !sq0
+s,
+{(qs;qr;b)  !(qs;q0
+r;b), ifqr  !rq0
+r,
+{(qs;qr;b+ [a])  !(q0
+s;qr;b), ifqsa  !sq0
+sanda2is,
+{(qs;qr;b+ [a])  !(qs;q0
+r;b), ifqra  !rq0
+randa2ir,
+{(qs;qr;b)  !(q0
+s;qr;b+ [a]), ifqsa  !sq0
+sanda2os, and
+{(qs;qr;b)  !(qs;q0
+r;b+ [a]), ifqra  !rq0
+randa2or. y5
+we compare two state machines sandrby a simulation relation , thereby treating
+like any action ina. a binary relation %qsqris asimulation relation ofs
+byrif (1) (s;r)2%, and (2) for all ( qs;qr)2%,a2a]fg,q0
+s2qssuch that
+qsa  !sq0
+s, there exists a state q0
+r2qrsuch thatqra  !rq0
+rand (q0
+s;q0
+r)2%.
+if such a%exists, we say that rsimulatess. a simulation relation %ofsbyris
+minimal , if for all simulation relations %0ofsbyr,%%0.
+we want the composition of two services to be correct . as a minimal criterion
+for correctness, we require deadlock freedom and that every reachable state contains
+only finitely many pending messages (i.e., the message channels are bounded). we
+refer to services that interact correctly as partners .
+definition 3 ( b-partner). letb2 n+. a state machine ris ab-partner of a
+state machine sifsris deadlock free and for all ( qs;qr;b)2r(sr) and all
+a2is]ir,b(a)b. y
+in fig. 1,pis a 1-partner of s, butris not because the composition srcan
+deadlock.
+if a state machine shas oneb-partner, then it has infinitely many b-partners.
+lohmann et al. [ 16] introduce operating guidelines as a way to represent the infinite
+set ofb-partners of sin a finite manner. technically, an operating guideline is a
+deterministic state machine twhere each state is annotated with a boolean formula
+, which specifies the allowed combinations of outgoing transitions. a state machine
+ris represented by an operating guideline if (1) there exists a minimal simulation
+relation%ofrbyt(astis deterministic, %is uniquely defined); and (2) for every
+pair of states ( qr;qt)2%, the outgoing transitions of qrand the fact whether qr
+is a final state must define a satisfying assignment to (qt).
+definition 4 ( b-operating guideline). anannotated state machine (t;) con-
+sists of a deterministic state machine tand a boolean annotation , assigning to
+each stateq2qoftaboolean formula (q) over the literals i]o]f;finalg.
+a state machine rmatches with (t;) if there exists a minimal simulation
+relation%ofrbytsuch that for all ( qr;qt)2%,(qt) evaluates to true for the
+following assignment :(a) =true ifa6=final^qra  !rora=final^qr2
+r,
+and(a) =false otherwise.
+letb2 n+. theb-operating guideline ogb(s) of a state machine sis an anno-
+tated state machine such that for all state machines r,rmatches with ogb(s) iff
+ris ab-partner ofs. y
+figure 2a depicts og 1(s) = (t;) of the service s. the state machine p(fig. 1c)
+matches with ( t;): the minimal simulation relation of pbytis%=f(p0;t0);
+(p1;t3);(p1;t1);(p2;t5);(p2;t4);(p0;t5);(p0;t4);(p1;t7);(p2;t7);(p0;t7)g,
+and the formula is evaluated to true, for all pairs of %. for example, for ( p0;t0)
+we have(p0) = ( true_false)^(true_false) which is true and for ( p0;t4) we have
+(t4) =true. thus,pis a 1-partner of s. figure 2b depicts the smallest subgraph
+gofog 1(s) such that pis still simulated by g, i.e., the subgraph used for the
+simulation relation above. in contrast, the state machine r(fig. 1d) does not match6
+with (t;), because (r1;t1) violates the simulation relation: we have r1!c  ! but
+t16!c  !. thus,ris not a 1-partner of s.
+dt1a^bt2c_dt3(a_d)^(b_d)t0finalt6finalt4finalt5?b?a!d!c!d?a?b!dtruet7?a,?b?a,?b?a,?b?a,?b?a,?b?a,?b,!c,!d
+(a)og 1(s).
+t1t3t0t4t5?b!d?a!dt7?a,?b?a,?b?a,?b,!d⌧⌧⌧ (b) subgraph gofog 1(s).
+fig. 2: og 1(s) and its smallest subgraph gsuch thatpis simulated by g. the
+annotation of a state is depicted inside the state. for og 1(s), every state has a
+-labeled self-loop and the annotation an additional disjunct , which is omitted
+in the figure for reasons of readability.
+in the remainder of the paper, we abstract from the actual bound chosen and
+use the terms partner and operating guideline rather than b-partner and b-operating
+guideline.
+3.2 event logs and alignments
+anevent log is a multiset of traces. each trace describes the communication between
+sandrin a particular case in terms of a sequence of events (i.e., sent and received
+messages). we describe an event as an action label and abstract from extra infor-
+mation, such as the message content or the timestamp of the message. formally, a
+tracew2ais a sequence of actions, and l2b(a) is an event log.
+to compare a (discovered) service model rwith the given event log l, we use the
+alignment-based approach described in [ 4]. this approach relates each trace w2l
+to a sequence of transitions of rthat can be executed from r's initial state by
+pairing events in wto events of .
+formally, a move is a pair (x;y)2 
+(a]fg )(r]fg )
+nf(;)g. we
+call (x;y) amove in the model ifx=^y6=, amove in the log ifx6=^y=,
+asynchronous move ifx6=^y6=, and a silent move ifx=^y6=^l(y) =.
+analignment of a tracew2ltoris a sequence = (x1;y1):::(xk;yk) of
+moves, such that the projection of ( x1:::xk) toaisw; the projection of ( y1:::yk)
+toris (r;a1;q1):::(qj 1;aj;qj); and transition label l(yi) and action xicoincide
+for every synchronous move ( xi;yi) of. lettrace ()2adenote the word by
+removing all -labels from l(y1):::l(yk).7
+some alignments for landpin fig. 1 are:
+1=ac
+a
+(p0;a;p 1)2=ad
+ad
+(p0;a;p 1)(p1;d;p 2)3=bd
+bd
+(p0;b;p 1)(p1;d;p 2)
+the top row of 1corresponds to the trace ac2land the bottom two rows corre-
+spond to the service p. there are two bottom rows because multiple transitions of p
+may have the same label; the upper bottom row consists of transition labels, and the
+lower bottom row consists of transitions. we have pa  !
+pbutp6ac     !
+p; that
+is,acdeviates from aby adding an additional c-labeled transition. thus, a move in
+the log, a \" appears in the upper bottom row.
+the goal is to find a best alignment that has as many synchronous and silent
+moves as possible. the approach in [ 4] finds such an alignment using a cost function
+on moves . letbe an alignment of a trace wtor. formally, a cost function assigns
+to each move ( x;y) of an alignment a cost((x;y)) such that a synchronous or silent
+move has cost 0, and all other types of moves have cost >0. the cost of is() =pk
+i=1((xi;yi));is a best alignment if, for all alignments 0ofwtor,(0)().
+we use the function rto give us for each trace w2la best alignment of wtor.
+finally, we combine the best alignment of each trace of ltorinto a weighted
+automaton aa. a state of aaencodes a sequence of (labels of) transitions of r.
+we define the weight !(w) of each state was the number of times a trace of lwas
+aligned tow. we shall use aafor the computation of metrics for the two quality
+dimensions precision and generalization later on.
+definition 5 (alignment automaton). the alignment automaton aa(l;r) =
+(v;v 0; e;! ) oflandrconsists of a set of states v=a, an initial state v0="
+("is the empty trace), a transition relation evavwithva  !evaiff there
+existsw2lsuch thatvavtrace (r(w)), and a weight function !:v! n+such
+that!(v) =p
+w2l^vvtrace (r(w))l(w) for allv2v. y
+figure 3 depicts the alignment automaton aa(l;p) of the event log land the
+state machine p. each trace in lis either aligned to the transition sequence labeled
+witha,adorbd(ignoring's), as a transition sequence labeled with acis not present
+inp. the weight of each state is depicted inside the state; for example, !(a) = 110
+means 110 traces of lcan be aligned to a transition sequence of pwhose prefix is a.
+210100bdad110100100
+fig. 3: the alignment automaton aa(l;p)8
+4 service discovery
+given a state machine sand an event log l, service discovery aims to produce a
+servicerthat is (1) a partner of sand (2) of high quality. the first requirement
+reduces the search space from all composable services to partners of sand can be
+achieved by model checking sror checking whether rmatches with the operating
+guideline og(s) ofs. in the following, discuss the second requirement.
+4.1 incorporating the quality dimensions
+we are interested in discovering a partner of highest quality. numerous metrics for
+measuring the four quality dimensions have been developed [ 4,7,29]. however, we
+cannot simply use these metrics but have to adapt them to cope with service models.
+fitness letrbe a partner of sandlan event log. fitness indicates how much
+of the behavior in the event log lis captured by the model r. a state machine with
+good fitness allows for most of the behavior seen in the event log. we redefine the
+cost-based fitness metrics from [ 4] for state machines: we quantify fitness as the total
+alignment costs for landr(computed using the best alignments provided by r)
+compared to the worst total alignment costs. the worst total alignment costs are the
+sum of \log-only moves" for the events in the observed trace and \model-only moves"
+to reach a final state. for the latter, we consider the \least expensive path" because htodo: check:
+original formulation
+seemed wrong.ia best alignment will try to minimize costs [4].
+definition 6 (fitness). the fitness oflandris defined by
+fit(l;r) = 1 p
+w2l 
+l(w)(r(w))
+p
+w2l 
+l(w)p
+x2w((x;)). y
+assume a cost function where each synchronous and each silent move has
+cost 0, and all other types of moves have cost 1. the best alignments given by p
+are1{3. we have costs of 1 for 1, 0 for2, and 0 for3; therefore, we calculate
+fit(l;p) = 1 101+1000+1000
+102+1002+10020:976. as expected, the fitness value is high because
+only 10 out of 210 traces are nonfitting traces in l(i.e., the traces ac).
+simplicity simplicity refers to state machines minimal in structure, which clearly re-
+flect the log's behavior. this dimension is related to occam's razor, which states that
+\one should not increase, beyond what is necessary, the number of entities required
+to explain anything." various techniques exist to quantify model complexity [ 19]. we
+define the complexity of the model rby its number of states and transitions, and
+compare it with the smallest subgraph gofog(s) such that ris simulated by g.
+although both randghave the same behavior, gis not necessarily less complex
+thanr. our metric takes this into account. htodo: this part
+remains a bit weak,
+but the paper has
+enough content.idefinition 7 (simplicity). letog(s) = (t;). the simplicity sim(l;r) ofl
+andrisjqgj+jgj
+jqrj+jrjifjqgj+jgj<=jqrj+jrjand 1 otherwise, where gis the
+smallest subgraph of tsuch thatgsimulatesr. y9
+figure 2b shows the smallest subgraph gofog(s) such thatgsimulatesp.g
+consists of 6 states and 14 transitions (including the -loops at states t4,t5, andt7).
+therefore,jqgj+jgj= 6+14 = 20 and jqpj+jpj= 3+4 = 7; thus, sim(l;p) = 1.
+as expected, landphave a perfect simplicity value, as pis less complex than g.
+precision precision indicates whether a state machine is not general. to avoid \under-
+fitting", we prefer state machines with minimal behavior to represent the behavior ob-
+served in the event log as closely as possible. we redefine the alignment-based precision
+metric from [ 7] for state machines. this metric relies on building the alignment automa-
+tonaa, which relates executed and available actions after an aligned trace of the log.
+definition 8 (precision). letaa(l;r) = (v;v 0;e;! ) be the alignment au-
+tomaton of landr. then the precision oflandris defined by
+pre(l;r) = p
+v2v 
+!(v)jexec(v)j
+= p
+v2v 
+!(v)javail(v)j
+, where exec(v) =
+en(v) inaa(l;r), and avail(v) =s
+q2xen(q) withx=fqjrw  !
+rq^wja=vg
+inr. y
+figure 3 shows the alignment automaton aa(l;p), which has been build from
+the best alignments 1{3. we obtain pre(l;p) =2102+1101+1001
+2102+1101+1102+1001+1002= 0:6.htodo: also add
+parts 1000+1000 ?i as expected, landphave average precision, as pallows for far more behavior than
+the behavior observed in l.
+generalization generalization penalizes overly precise state machines which \over-
+fit" the given log. in general, a state machine should not restrict behavior to just
+the behavior observed in the event log. often only a fraction of the possible behavior
+has been observed, e.g., due to concurrency. for this dimension, we developed a new
+metric. we combine the generalization metric from [ 4] with the alignment automaton
+aa(l;r). the idea is to use the estimated probability (x;y) that a next visit to
+a statewof the alignment automaton will reveal a new trace not observed before:
+x=jen(w)jis the number of unique activities observed at leaving state w, and
+y=!(w) is the number of times wwas visited by the event log. we employ an
+estimator for (x;y), which is inspired by [10].
+definition 9 (generalization). letaa(l;r) = (v;v 0;e;! ) be the alignment
+automaton of landr. the generalization oflandris defined by gen(l;r) =
+1  1
+jvjp
+v2v(jen(v)j;!(v))
+, wherecan be approximated [ 4] by(x;y) =x(x+1)
+y(y 1),
+ifyx+ 2, and(x;y) = 1, ifyx+ 1. y
+we obtain gen(l;p) = 1 1
+5 23
+210209+12
+110109+12
+10099
+1. given the numbers
+of traces in l,landphave nearly perfect generalization as expected, because it
+is unlikely to reveal a new trace not observed before.
+balancing the quality dimensions as quality refers to the possibly competing
+quality dimensions fitness, simplicity, precision and generalization [ 3], we cannot
+assume the existence of a partner that has the highest value for every dimension. we10
+rather need to balance these dimensions and, therefore, assume that a user specified
+his requirements using weights !fit,!sim,!pre, and!gen. with these four weights,
+we can actually search for the partner of sthat has highest quality.
+definition 10 (quality). let!all=!fit+!sim+!pre+!gen. the quality ofr
+forlis defined by quality (l;r) =!fit
+!allfit(l;r) +!sim
+!allsim(l;r) +!pre
+!allpre(l;r) +
+!gen
+!allgen(l;r) y
+using weights of 2 for fitness, precision, and generalization, and a weight of 1 for
+simplicity (incorporating that the discovered service can be simpler than its simulation
+subgraph), we obtain quality (l;p) =2
+70:976 +1
+71 +2
+70:6 +2
+710:879.
+4.2 a finite abstraction of the search space
+the actual challenge of service discovery is that the search space is the set partners
+ofs, which is infinite. in the following we present abstraction that reduces the search
+space to a finite number of partners. to this end, we restrict ourselves to partners of
+sthat are valid subgraphs ofog(s) = (t;), i.e., subgraphs of twhose states are
+connected and contain the initial state of tand that match with og(s). astcontains
+only finitely many states, the number of valid subgraphs of og(s) is finite too. so,
+instead of investigating any partner of s, we only consider valid subgraphs of og(s).
+however, this finite abstraction comes at a price: although every valid subgraph is
+a partner of s, we may have excluded partners of sthat have a better quality than any
+valid subgraph. more precisely, it can be shown that this abstraction only preserves
+fitness. we do not elaborate on this and refer the interested reader to [ 25]. the exper-
+imental results in the next section illustrate the appropriateness of the abstraction.
+5 experimental results
+in this section, we report on experiments with eight service models of industrial size.
+5.1 algorithm and implementation
+discovering a partner for a given state machine sand an event log lis challenging
+because the search space is the infinite set of partners of s. even the finite abstraction
+of the search space to valid subgraphs (see sect. 4.2) may still be too large to search
+for an optimal candidate exhaustively. thus, we are using a genetic algorithm to find a
+good but possibly not a best partner. genetic algorithms have been successfully applied
+for discovering workflow models [ 18,11]. a genetic algorithm evolves a population of
+candidate solutions (i.e., the individuals ) step-wise (i.e., in generations ) toward better
+solutions of an optimization problem. in our setting, an individual is a state machine
+r. the quality of a candidate solution is determined by the quality of r(see def. 10).
+our algorithm employs the general procedure of genetic algorithms, which is
+depicted in fig. 4. it creates children through the operations crossover (i.e., randomly
+exchanging subgraphs between two given individuals), mutation (i.e., randomly adding11
+or removing a transition or a final state from a given individual), and replacement
+(i.e., replacing a randomly chosen individual by a new, randomly generated individ-
+ual). we employ a combination of four different termination criteria: a time and a
+generation limit (i.e., the evolution stops after a given amount of time or generations),
+a stagnation limit (i.e., the evolution stops if the quality of the high-quality individual
+stagnates a given number of generations), and a quality limit (i.e., the evolution stops
+if the high-quality individual meets a specified threshold).
+fig. 4: the different phases of the genetic algorithm
+we have implemented the genetic algorithm, both with and without the abstrac-
+tion presented in sect. 4.2, in java as a plug-in [23] in the prom framework [5].
+5.2 validation
+we evaluate the feasibility of our approach by discovering partners for eight service
+models of industrial size, see table 1. the services \loan approval" and \purchase
+order" are taken from the ws-bpel specification [ 14], all other examples are
+industrial service models provided by a consulting company.
+table 1: size of the service models, the operating guidelines, and event logs
+services og(s) event log l
+name (abbreviation) jqj jj jqj jjcases events
+car breakdown (cb) 11 ;381 39;865 1;449 13;863 300 1;938
+deliver goods (dg) 4 ;148 13;832 1;377 13;838 300 1;938
+loan approval (la) 30 41 21 84 300 2 ;537
+purchase order (po) 402 955 169 1 ;182 300 2;537
+internal order (io) 1 ;516 4;996 97 567 300 1 ;938
+ticket reservation (tr) 304 614 111 731 300 2 ;381
+reservations (rs) 28 33 370 3 ;083 300 2;671
+contract negotiation (cn) 784 1 ;959 577 4 ;859 300 1;93812
+as most services were specified in ws-bpel, we had to translate them into
+state machines using the compiler bpel2owfn [ 15]. for each state machine s, we
+calculated the operating guideline og(s) using the tool wendy [ 17]. next, we used
+the underlying state machine tofog(s) to generate a random event log lusing
+the tool locretia [ 13]. becausetis the \most permissive" partner [ 16] ofs, there
+exists a partner exhibiting the observed behavior in l. each such event log lis free
+of noise and consists of 300 cases with about 1 ;900{2;700 events. table 1 shows
+the details. the size of our generated event logs is the size of event logs successfully
+applied to evaluate the genetic process discovery algorithm in [ 11]. finally, we used
+our implementation to discover a partner of sfrom og(s) andl.
+as parameters for the genetic algorithm, we used an initial population of 100
+individuals, a mutation/crossover/replacement probability of 0 :3 with at most 1
+crossover point, and elitism of 0 :3, i.e., the 30 individuals with the highest quality are
+directly shifted to the next generation. the algorithm stops after 1 ;000 generations,
+if it stagnates for 750 generations, if a quality of 0 :999 is reached, or if it ran for
+60 minutes. to take into account that a discovered service can be simpler than the
+subgraph to be compared, we chose a weight of 1 for simplicity and a weight of 2
+for all other dimensions. the experiment is available at [22].
+to the best of our knowledge, there does not exist any other service discovery
+implementation with which we could compare our algorithm. therefore, we performed
+two different experiments: one discovering a partner from the complete search space
+and the other from the abstract search space.
+the results in table 2 show that discovered partners in experiment 1 are more
+complex than the ones in experiment 2; that is, valid subgraphs are smaller than
+arbitrary partners. this explains the higher computation time in experiment 1 by
+a factor of 2{10 compared to experiment 2: smaller candidates enable the algorithm
+to compute more generations in less time.
+for the same reason, experiment 2 produced, in general, partners with higher
+fitness. the simplicity values are by def. 6 higher for experiment 2. however, dis-
+covered partners in experiment 2 have slightly lower precision and generalization
+values than the partners discovered in experiment 1. restricting the search space to
+valid subgraphs is an abstraction, which neither preserves precision nor generalization.
+despite the loss of preservation of the abstraction, the overall quality is in all examples
+better. in particular, if the discovered partner is in experiment 1 is too large (e.g.,
+car breakdown, reservations), then the quality of the respective partner discovered
+in experiment 2 is much better.
+summing up, our experimental results validate that, in general, partner discovery
+produces better results on a finite abstraction of the search space than on the complete
+search space. although the abstraction only preserves fitness, the values of the other
+three dimensions and the quality are high.
+6 related work
+the term \service discovery" describes techniques for producing a service model from
+observed communication behavior of services [ 6], one the on hand, and techniques for13
+table 2: discovery of an ordinary partner (experiment 1) and a valid subgraph
+(experiment 2) using the genetic algorithm (with quality andtime) conducted on
+a macbook pro, intel core i5 cpu with 2.4 ghz and 8 gb of ram.
+discovered partner in experiment 1 discovered partner in experiment 2
+s jqj jjqfit sim pre gen tjqj jjqfit sim pre gen t
+cb>31k>31k0:58 0:11 0:02 0:9 1 1h75 375 0:96 0:9 1 0:98 0:93 1h
+dg 569 568 0 :61 0:14 0:14 0:92 1 1h225 845 0:97 0:91 1 0:98 0:98 29m
+la 33 53 0 :91 0:87 0:69 0:99 1 30m14 29 0:98 0:98 1 0:98 0:97 2m
+po 125 168 0 :92 0:96 0:58 1 0:98 1h81 243 0:98 0:91 1 1 1 5 m
+io 61 60 0 :57 0:2 0:38 0:85 0:75 1h9 12 0:89 0:62 1 0:97 0:96 51m
+tr 129 219 0 :92 0:92 0:64 0:99 0:99 1h28 111 0:97 0:95 1 0:98 0:94 3m
+rs>24k>24k0:48 0:33 0:02 0:33 1 1h104 372 0:98 1 1 0 :91 1 3m
+cn 721 720 0 :59 0:07 0:05 0:98 1 1h40 119 0:93 0:81 1 0:98 0:94 1h
+finding a service model in a service repository in service-oriented architectures [ 27],
+on the other hand. in this paper, we investigated the discovery of a service model
+from observed communication behavior, which corresponds to a particular form of
+process mining [ 3]. process mining research has been focused on workflows (i.e.,
+closed systems) but during the last few years, process mining techniques have also
+been applied to services resulting in the term \service mining". paper [ 2] reviews
+service mining research and identifies two main challenges regarding the discovery
+of services: (1) the correlation of instances of a service with instances of another
+service (e.g., [ 9,21]) and (2) the discovery of services based on observed behavior
+(e.g., [12,28,26,8,30,20]). this paper contributes to the second challenge.
+in [24], we considered with weak termination a stronger correctness criterion than
+deadlock freedom but solely focused on the fitness dimension, thus, ignored the three
+other quality dimensions. to make the discovery efficient, we do not discover a \best"
+model as in [ 24] but a model of high quality using a genetic algorithm. the idea of
+using an genetic algorithm is inspired by the work of buijs et al. [ 11] on discovering
+sound workflow models while balancing the four conflicting quality dimensions. in
+sect. 4, we discussed the relation of our metrics for these four quality dimensions
+and the metrics used in [ 11]. for the simplicity metric, we used the structure of
+the operating guideline, which does not exist for workflow models. correctness in
+our setting is deadlock freedom of the service composition, a weaker criterion than
+soundness in [ 11]. to deal with correctness in the setting of services, we assume a
+servicesto be given and we discover a partner of sfrom observed behavior of s.
+musaraj et al. [ 26] correlate messages from an event log without correlation infor-
+mation and use this information in their discovery algorithm. in contrast, we abstract
+from correlation information and assume cases to be independent. furthermore, our ap-
+proach produces a partner of a given service model sand balances the four conflicting
+quality dimensions guided by user preferences. motahari-nezhad et al. [ 20] only con-
+sider the fitness and the precision dimension and ignore generalization and simplicity
+of the discovered service. like musaraj et al. [ 26], they do not assume a service model14
+to be given and, thus, they cannot guarantee that their produced service model can
+interact correctly with its environment. other approaches discover workflow models
+from service interaction [ 12] from interaction patterns [ 8,30]. whereas our algorithm
+produces a complete service model, [12,8,30] can only discover parts of a service.
+7 conclusion and future work
+we presented a technique to discover a service model from a given service sand
+observed behavior of a service pinteracting with s. our technique produces a service
+model forpthat can interact correctly (no deadlocks) with sand, in addition,
+balances the four conflicting quality dimensions (i.e., fitness, simplicity, precision, and
+generalization). as an additional improvement, we proposed an abstraction technique
+to reduce the infinite search space to a finite one. as an exhaustive search to find
+an optimal solution may still be intractable, we implemented our technique as a
+genetic algorithm. in a prototypical implementation, we experimented with several
+service models of industrial size. our results showed that the algorithm finds (nearly)
+optimal solutions in acceptable time. it is worth mentioning that our approach is not
+restricted to service models but can discover arbitrary reactive systems.
+in future work, we aim to extend our presented approach by improving the
+simplicity metrics, studying the impact of different weights of the quality dimensions on
+the quality of the discovered partner, and investigating how the abstraction technique
+based on valid subgraphs can be improved such that it preserves all metrics. we also
+plan to extend our approach to stronger correctness criteria than deadlock freedom, e.g.,
+weak termination (i.e., the possibility to always terminate in a service composition).
+acknowledgement support from the basic research program of the national
+research university higher school of economics is gratefully acknowledged. htodo: change ref-
+erences 22 and 23 into
+footnotes? saves space
+and avoids having too
+many self references. ireferences
+1.aalst, w.m.p.v.d.: the application of petri nets to workflow management. journal
+of circuits, systems, and computers 8(1), 21{66 (1998)
+2.aalst, w.m.p.v.d.: service mining: using process mining to discover, check, and
+improve service behavior. ieee transactions on services computing (2012)
+3.aalst, w.m.p.v.d.: process mining: discovery, conformance and enhancement of
+business processes. springer (2011)
+4.aalst, w.m.p.v.d., adriansyah, a., dongen, b.f.v.: replaying history on process
+models for conformance checking and performance analysis. wiley interdisciplinary
+reviews: data mining and knowledge discovery 2(2), 182{192 (2012)
+5.aalst, w.m.p.v.d., brand, p.v.d., dongen, b.f.v., g unther, c.w., verbeek, e.: prom
+6.2.http://www.promtools.org/prom6/
+6.aalst, w.m.p.v.d., et al.: process mining manifesto. in: bpm 2011 workshops
+proceedings. pp. 169{194. springer-verlag (2012)
+7.adriansyah, a., munoz-gama, j., carmona, j., dongen, b., aalst, w.: alignment based
+precision checking. in: bpi workshops. lnbip, vol. 132, pp. 137{149. springer (2013)15
+8.asbagh, m., abolhassani, h.: web service usage mining: mining for executable
+sequences. in: wseas 2007. vol. 7, pp. 266{271 (2007)
+9.basu, s., casati, f., daniel, f.: toward web service dependency discovery for soa
+management. in: scc 2008. vol. 2, pp. 422 {429 (2008)
+10.boender, c., rinnooy kan, a.: a bayesian analysis of the number of cells of a
+multinomial distribution. the statistician pp. 240{248 (1983)
+11.buijs, j.c.a.m., dongen, b.f.v., aalst, w.m.p.v.d.: on the role of fitness, precision,
+generalization and simplicity in process discovery. in: coopis 2012. lncs, vol. 7565,
+pp. 305{322. springer (2012)
+12.dustdar, s., gombotz, r.: discovering web service workflows using web services
+interaction mining. int. journal of business process integration and management 1(4),
+256{266 (2006)
+13.heiden, s., m uller, r.: locretia - generating logs. http://svn.gna.org/viewcvs/
+service-tech/trunk/locretia/
+14.jordan, d., et al.: web services business process execution language version 2.0. oasis
+standard 11 (2007)
+15.lohmann, n.: a feature-complete petri net semantics for ws-bpel 2.0. in: ws-fm
+2007. lncs, vol. 4937, pp. 77{91. springer-verlag (2008)
+16.lohmann, n., massuthe, p., wolf, k.: operating guidelines for finite-state services. in:
+icatpn 2007. lncs, vol. 4546, pp. 321{341. springer (2007)
+17.lohmann, n., weinberg, d.: wendy: a tool to synthesize partners for services. fundam.
+inform. 113(3-4), 295{311 (2011)
+18.medeiros, a., weijters, a., aalst, w.m.p.v.d., et al.: genetic process mining: an
+experimental evaluation. data mining and knowledge discovery 14, 245{304 (2007)
+19.mendling, j., neumann, g., van der aalst, w.m.p.: understanding the occurrence
+of errors in process models based on metrics. in: coopis 2007, lncs, vol. 4803, pp.
+113{130. springer (2007)
+20.motahari-nezhad, h.r., saint-paul, r., benatallah, b.: deriving protocol models from
+imperfect service conversation logs. ieee trans. knowl. data eng. 20(12), 1683{1698
+(2008)
+21.motahari nezhad, h.r., saint-paul, r., casati, f., benatallah, b.: event correlation for
+process discovery from web service interaction logs. the vldb journal 20(3), 417{444
+(sep 2010)
+22.m uller, r.: data for the evaluation. https://www2.informatik.hu-berlin.de/top/
+en/www/mitarbeiter/richard_mueller#
+23.m uller, r.: service discovery plug-in. https://svn.win.tue.nl/repos/prom/packages/
+servicediscovery/
+24.m uller, r., aalst, w.m.p.v.d., stahl, c.: conformance checking of services using the best
+matching private view. in: ws-fm 2012. lncs, vol. 7843, pp. 49{68. springer (2013)
+25.m uller, r., stahl, c., aalst, w.m.p.v.d., westergaard, m.: service discovery from
+observed behavior while guaranteeing deadlock freedom in collaborations. bpm-center.org
+(2013)
+26.musaraj, k., yoshida, t., daniel, f., hacid, m.s., casati, f., benatallah, b.: message
+correlation and web service protocol mining from inaccurate logs. in: icws 2010. pp.
+259 {266 (2010)
+27. papazoglou, m.: web services - principles and technology. prentice hall (2008)
+28.rouached, m., gaaloul, w., aalst, w.m.p.v.d., bhiri, s., godart, c.: web service
+mining and verification of properties: an approach based on event calculus. in: coopis
+2006, lncs, vol. 4275, pp. 408{425. springer (2006)
+29.rozinat, a., aalst, w.m.p.v.d.: conformance checking of processes based on monitoring
+real behavior. information systems 33(1), 64{95 (2008)16
+30.tang, r., zou, y.: an approach for mining web service composition patterns from
+execution logs. in: wse 2010. pp. 53 {62 (2010)

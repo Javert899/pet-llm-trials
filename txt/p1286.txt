@@ -1,0 +1,498 @@
+monitoring constraints in business processes
+using object-centric constraint graphs
+gyunam park and wil. m. p. van der aalst
+process and data science group (pads), rwth aachen university
+fgnpark,wvdaalst g@pads.rwth-aachen.de
+abstract. constraint monitoring aims to monitor the violation of con-
+straints in business processes, e.g., an invoice should be cleared within
+48 hours after the corresponding goods receipt, by analyzing event data.
+existing techniques for constraint monitoring assume that a single case
+notion exists in a business process, e.g., a patient in a healthcare process,
+and each event is associated with the case notion. however, in reality,
+business processes are object-centric , i.e., multiple case notions (objects)
+exist, and an event may be associated with multiple objects. for in-
+stance, an order-to-cash (o2c) process involves order ,item,delivery ,
+etc., and they interact when executing an event, e.g., packing multiple
+items together for a delivery. the existing techniques produce misleading
+insights when applied to such object-centric business processes. in this
+work, we propose an approach to monitoring constraints in object-centric
+business processes. to this end, we introduce object-centric constraint
+graphs (occgs) to represent constraints that consider the interaction
+of objects. next, we evaluate the constraints represented by occgs by
+analyzing object-centric event logs (ocels) that store the interaction
+of dierent objects in events. we have implemented a web application to
+support the proposed approach and conducted two case studies using a
+real-life sap erp system.
+keywords: constraint monitoring ·object-centricity ·compliance check-
+ing ·conformance checking
+1 introduction
+it is indispensable for organizations to continuously monitor their operational
+problems and take proactive actions to mitigate risks and improve performances [1].
+constraint monitoring aims at detecting violations of constraints (i.e., opera-
+tional problems) in business processes of an organization by analyzing event
+data recorded by information systems [7]. once violations are detected, the or-
+ganization can redesign its process to cover the respective violation.
+a plethora of techniques has been suggested to implement constraint moni-
+toring. for instance, in [11], a technique is proposed to detect events violating
+constraints, e.g., detecting an x-ray event with a long waiting time, using be-
+havioral proles and complex event processing (cep). in [8], authors proposearxiv:2210.12080v1  [cs.ai]  21 oct 20222 g. park and w.m.p. van der aalst
+a technique to detect process instances violating constraints, e.g., detecting a
+patient with multiple executions of x-rays, using linear temporal logic (ltl).
+the existing techniques assume that an event in event data is associated with
+a single object of a unique type (so-called case), e.g., a patient in a healthcare pro-
+cess. thus, constraints are dened over the single case notion, e.g., each patient
+(i.e., case) should be registered before triage. however, in real-life business pro-
+cesses, an event may be associated with multiple objects of dierent types, i.e.,
+real-life business processes are object-centric [2]. for instance, the omnipresent
+purchase-to-pay (p2p) process involves dierent object types, e.g., purchase
+order ,material ,invoice ,goods receipt , etc., and an event may be associated with
+multiple objects of dierent types, e.g., clearing invoice is associated with a
+purchase order, an invoice, and a goods receipt to enable so-called three-way
+matching .
+fig. 1. comparing (a) traditional and (b) object-centric constraint monitoring
+applying the existing techniques to such object-centric settings results in
+misleading insights. figure 1(a) shows events of a \case" in an order-to-cash
+(o2c) process using order as the case notion. first, an order is placed, and the
+availability of two items of the order is checked, respectively. next, one of the
+items is picked, and the invoice of the order is sent to the customer. afterward,
+the other item is picked, and the payment of the invoice is collected. finally, the
+items are packed and delivered to the customer. the three constraints shown inmonitoring object-centric constraints in business processes 3
+figure 1(a) are violated by the case. for instance, constraint 1 is violated since
+pick item is followed by send invoice in the case and constraint 3 is violated
+since pick item is preceded by send invoice .
+however, in reality, the order and each item have dierent lifecycles as shown
+in figure 1(b). first, we place an order with two items. while the invoice is sent
+and the payment is collected for the order, we check the availability of each item
+and pick each of them. we nally deliver the order with two items after packing
+two items together. in this object-centric setting, constraints should be dened
+in relation to objects to provide accurate insights. for instance, constraint 1*
+extends constraint 1 with the corresponding object type (i.e., item). contrary
+toconstraint 1 ,constraint 1* is not violated since pick item is directly followed
+bypack item for any items. moreover, we can analyze more object-centric con-
+straints by considering the interaction of dierent objects. first, we can analyze
+if an execution of an activity involves (un)necessary objects (cf. constraint 4
+and constraint 5 ). also, we can analyze the cardinality of objects for executing
+an activity (cf. constraint 6 and constraint 7 ).
+in this work, we propose a technique for constraint monitoring in object-
+centric settings. to this end, we rst introduce object-centric behavioral metrics
+that can be computed from object-centric event logs (ocels), e.g., a metric
+to measure the degree to which pick item precedes pack items in the lifecycle of
+items . next, we develop object-centric constraint graphs (occgs) to formally
+represent constraints using such metrics. finally, monitoring engine evaluates
+the violation of the constraints represented by occgs by analyzing ocels.
+we have implemented a web application to support the approach. a demo
+video and a manual are available at https://github.com/gyunamister/proppa.
+git. moreover, we have conducted case studies with a production process and a
+purchase-to-pay (p2p) process supported by an sap erp system.
+the remainder is organized as follows. we discuss the related work in sec-
+tion 2 and present the preliminaries, including ocels in section 3. in section 4,
+we introduce object-centric behavioral metrics. afterward, we present occgs
+to formally represent constraints and the monitoring engine to evaluate the vio-
+lation of the constraints in section 5. next, section 6 introduces the implementa-
+tion of the proposed approach and case studies using real-life event data. finally,
+section 7 concludes the paper.
+2 related work
+many approaches have been proposed to monitor the violation of constraints
+by analyzing event data. weidlich et al. [11] propose a technique to abstract
+process models to behavioral proles and produce event queries from the prole.
+violated executions of events are monitored using complex event processing
+(cep) engines with the event queries. awad et al. [5] dene a set of generic
+patterns regarding the occurrence of tasks, their ordering, and resource assign-
+ments and generate anti-patterns from the generic patterns to monitor event
+executions. maggi et al. [8] represent control-ow properties of a running pro-4 g. park and w.m.p. van der aalst
+cess instance using linear temporal logic (ltl) and evaluate their violations at
+runtime. in [10], petri-net-based constraints are aligned with event logs to eval-
+uate whether the execution of business processes conforms to the constraints.
+the existing techniques may produce misleading insights in object-centric set-
+tings since it does not consider the interaction among objects. moreover, object-
+centric constraints, e.g., the cardinality of an object type for the execution of an
+activity, are not supported in the existing techniques.
+this paper is in line with the recent developments in object-centric process
+mining [2]. object-centric process mining breaks the assumption of traditional
+process mining techniques that each event is associated with a single case notion
+(i.e., object), allowing one event to be associated with multiple objects. in [3],
+a process discovery technique is proposed to discover object-centric petri nets
+(ocpns) from ocels. a conformance checking technique to determine the
+precision and tness of the net is suggested in [4], and an approach to object-
+centric performance analysis is proposed in [9]. esser and fahland [6] propose
+a graph database as a storage format for object-centric event data, enabling
+a user to use queries to calculate dierent statistics. this work extends the
+current development in the eld of object-centric process mining by proposing a
+constraint monitoring technique in object-centric settings.
+3 preliminaries
+given a set x, the powersetp(x) denotes the set of all possible subsets. we
+denote a sequence with =hx1;:::;xniand the set of all sequences over xwith
+x. given a sequence 2x,x2if and only if91ijj(i) =x.
+denition 1 (universes). ueiis the universe of event identiers, uoiis the
+universe of object identiers, uactis the universe of activity names, utime is
+the universe of timestamps, uotis the universe of object types, uattr is the
+universe of attributes, uvalis the universe of values, and umap=uattr9 u val
+is the universe of attribute-value mappings. for any f2umap andx =2dom(f),
+f(x) =?.
+using the universes, we dene an object-centric event log as follows.
+denition 2 (object-centric event log). an object-centric event log is a
+tuplel= (e;o;;r ), whereeuevent is a set of events, ouoiis a set of
+objects,2(e!umap)[(o!(utime!umap))is a mapping, and reo
+is a relation, such that for any e2e,(e)(act)2uactand(e)(time)2utime,
+and for any o2oandt;t02utime,(o)(t)(type) =(o)(t0)(type)2uot.ulis
+the set of all possible object-centric event logs.
+for the sake of brevity, we denote (e)(x) asx(e) and(o)(t)(x) ast
+x(o).
+since the type of an object does not change over time, we denote t
+type(o) as
+type(o). table 1 describes a fraction of a simple event log l1= (e1;o1;1;r1)
+withe1=fe93;e94;e95g,o1=fo1;i1;i2;i3g,r1=f(e93;o1);(e93;i1);:::g,monitoring object-centric constraints in business processes 5
+table 1. a fragment of an event log.
+event id activity timestamp order item
+e93 place order (po) 25-10-2022:09.35 fo1gfi1;i2;i3g
+e94 evaluate credit (ec) 25-10-2022:13.35 fo1g ;
+e95 conrm order (co) 25-10-2022:15.35 fo1gfi1;i2;i3g
+act(e93) =po,time(e93) = 25-10-2022:09.35 ,type(o1) =order , andtype(i1) =
+item.
+we dene functions to query event logs as follows:
+denition 3 (notations). for an object-centric event log l= (e;o;;r ),
+we introduce the following notations:
+{acts(l) =fact(e)je2egis the set of activities,
+{events (a) =fe2ejact(e) =agis the set of the events associated to
+a2acts(l),
+{types (l) =ftype(o)jo2ogis the set of object types,
+{objects (ot) =fo2ojtype(o) =otgis the set of the objects associated to
+ot2types (l),
+{events (o) =fe2ej(e;o)2rgis the set of the events containing o2o,
+{objects (e) =fo2oj(e;o)2rgis the set of the objects involved in e2e,
+{seq(o) =he1;e2;:::;enisuch that events (o) =fe1;e2;:::;engandtime(ei)
+time(ej)for any 1i < jnis the sequence of all events where object
+o2ois involved in, and
+{trace (o) =ha1;a2;:::;anisuch that seq (o) =he1;e2;:::;eniandai=
+act(ei)for any 1inis the trace of object o2o.
+for instance, acts(l1) =fpo;ec;cog,events (po) =fe93g,types (l1) =forder;
+itemg,objects (order ) =fo1g,events (o1) =fe93;e94;e95g,objects (e93) =fo1;i1;
+i2;i3g,seq(o1) =he93;e94;e95i, and trace (o1) =hpo;ec;coi.
+using the notations, we characterize an event log as follows:
+denition 4 (log characteristics). letl= (e;o;;r )be an object-centric
+event log. for ot2types (l)anda;b2acts(l), we dene the following charac-
+teristics of l:
+{#l(ot;x ) =jfo2objects (ot)j8x2xx2trace (o)gjcounts the objects of
+typeotwhose trace contains xacts(l),
+{#l(ot;a;b ) =jfo2objects (ot)j91i<jjtrace (o)jtrace (o)(i) =a^trace (o)(j) =
+bgjcounts the objects of type otwhose trace contains afollowed by b,
+{#0
+l(ot;a) =jfe2events (a)jjfo2objects (e)jtype(o) =otgj= 0gjcounts
+the events relating no objects of type otfor the execution of a,
+{#1
+l(ot;a) =jfe2events (a)jjfo2objects (e)jtype(o) =otgj= 1gjcounts
+the events relating one object of type otfor the execution of a, and
+{#
+l(ot;a) =jfe2events (a)jjfo2objects (e)jtype(o) =otgj>1gjcounts
+the events relating more than one object of type otfor the execution of a.6 g. park and w.m.p. van der aalst
+for instance, # l1(order;fpog) = 1, #l1(item;fpog) = 3, #l1(item;fpo;ecg) =
+0, #l1(order;po;ec) = 1, #0
+l1(order;ec) = 0, #0
+l1(item;ec) = 1, #1
+l1(order;po) =
+1, #1
+l1(item;po) = 0, #
+l1(order;po) = 0, and #
+l1(item;po) = 1.
+4 object-centric behavioral metrics
+to introduce occgs, we rst explain three types of object-centric behavioral
+metrics derived from an event log: ordering relation ,object involvement , and
+performance metrics. such metrics are used to dene the semantics of occgs
+in section 5.
+an ordering relation metric refers to the strength of a causal/concurrent/choice
+relation between two activities in an ocel w.r.t. an object type.
+denition 5 (ordering relation metrics). letlbe an object-centric event
+log. forot2types (l)anda;b2acts(l), we dene the following ordering rela-
+tion metrics of l:
+{causal l(ot;a;b ) =(#l(ot;a;b )
+#l(ot;fa;bg);if#l(ot;fa;bg)>0
+0;otherwise
+{concur l(ot;a;b ) =8
+><
+>:1 max(#l(ot;a;b );#l(ot;b;a )) min(#l(ot;a;b );#l(ot;b;a ))
+#l(ot;a;b )+#l(ot;b;a );
+if#l(ot;a;b ) + #l(ot;b;a )>0
+0;otherwise
+{choice l(ot;a;b ) =(
+1 #l(ot;fa;bg)+#l(ot;fa;bg)
+#l(ot;fag)+#l(ot;fbg);if#l(ot;fag)+#l(ot;fbg)>0
+0;otherwise
+causal l(ot;a;b ),concur l(ot;a;b ), and choice l(ot;a;b ) all produce values be-
+tween 0 (weak) and 1 (strong). for l1in table 1, causal l1(order;po;co) = 1,
+concur l1(order;po;co) = 0, choice l1(order;po;co) = 0, showing that poandco
+has a strong causal ordering relation.
+next, an object involvement metric quantitatively represents how the execu-
+tion of an activity involves objects.
+denition 6 (object involvement metrics). letlbe an object-centric
+event log. for ot2types (l)anda2acts(l), we dene three object involve-
+ment metrics of lin the following.
+{absent l(ot;a) =#0
+l(ot;a)
+jevents (a)jis the strength of ot's absence in a's execution.
+{singularl(ot;a) =#1
+l(ot;a)
+jevents (a)jis the strength of ot's singularity in a's execu-
+tion.
+{multiplel(ot;a) =#
+l(ot;a)
+jevents (a)jis the strength of ot's multiplicity in a's execu-
+tion.
+all object involvement metrics produce values between 0 (weak) and 1 (strong).
+forl1in table 1, absentl1(item;ec) = 1, showing that items are not involved
+in the execution of ec.singularl1(order;po) = 1 and multiplel1(item;po) = 1,
+indicating that the execution of poinvolves only one order and multiple items.monitoring object-centric constraints in business processes 7
+finally, a performance metric refers to a performance/frequency value related
+to the execution of an activity.
+denition 7 (performance metrics). letlbe an object-centric event log.
+letumeasure be the universe of performance/frequency measure names, e.g., the
+average waiting time. a performance metric of l, perfl2(acts(l)umeasure )9
+r, maps an activity and a performance/frequency measure to the value of the
+performance/frequency measure w.r.t. the activity.
+note that we deliberately \underspecify" performance metrics, abstracting
+from the denition of individual performance metrics. performance metrics may
+include the average number of objects per object type for the execution of an
+activity (e.g., the average number of items for placing an order), the average
+sojourn time for the execution of an activity (e.g., the average sojourn time
+for conrming an order), etc. for l1in table 1, perfl1(po;avg-num-items ) = 3,
+which denotes that the average number of items forpoinl1is 3. also, perfl1(co;
+avg-sojourn-time ) = 2 hours , which denotes that the average sojourn time for
+coinl1is 2 hours.
+5 object-centric constraint monitoring
+in this section, we explain our proposed approach to object-centric constraint
+monitoring. to this end, we rst introduce object-centric constraint graphs
+(occgs) to represent constraints. next, we introduce a monitoring engine to
+evaluate the violation of constraints represented by occgs by analyzing ocels.
+5.1 object-centric constraint graphs (occgs)
+an occg is a directed graph that consists of nodes and edges, as depicted in
+figure 2. nodes consist of activities, object types, and formulas . a formula is a
+logical expression dened over performance measures of an activity using rela-
+tional operators ( ;;=) as well as logical operators such as conjunction ( ^),
+disjunction (_), and negation ( :). edges describe control-ow, object involve-
+ment, and performance edges.
+denition 8 (object-centric constraint graph). letf(x)be the set of
+all possible logical expressions with set x. letauact,otuot, andf
+f(umeasure ). letc=fcausal;concur;choice;skipgbe the set of control-ow
+labels andi=f0::0;1::1;1::;2::gthe set of object involvement labels. an
+object-centric constraint graph is a graph cg = (v;e ow;eobj;eperf;lc;li;l)
+where
+{va[ot[f is a set of nodes,
+{eowaotais a set of control-ow edges,
+{eobjotais a set of object involvement edges,
+{eperffais a set of performance edges,8 g. park and w.m.p. van der aalst
+fig. 2. graphical notations of occgs. act2uact,ot2uot, and2[0;1].
+{lc2eow!cmaps control-ow edges to control-ow labels such that, for
+any(a;ot;b )2eow, iflc((a;ot;b )) = skip,a=b,
+{li2eobj!imaps object involvement edges to object involvement labels,
+and
+{l2eow[eobj![0;1]maps control-ow and object involvement edges to
+thresholds.
+ucgdenotes the set of all possible object-centric constraint graphs.
+figure 3(a)-(k) introduces some example of occgs dened in an o2c pro-
+cess. for instance, figure 3(a) is formally represented as follows: cg0= (v0;e0
+ow;
+;;;;l0
+c;;;l0
+) wherev0=fcollect payment ;send reminderg,e0
+ow=fe1= (collect
+payment;order;send reminder )g,l0
+c(e1) =causal , andl0
+(e1) = 0.
+fig. 3. examples of object-centric constraint graphs.
+we dene the semantics of an occg with the notion of violation . an occg
+isviolated in an ocel if nine conditions are satised, each of which corresponds
+to the dierent edges of the occg.monitoring object-centric constraints in business processes 9
+denition 9 (semantics of object-centric constraint graphs). letlbe
+an object-centric event log. an object-centric constraint graph cg = (v;e ow;eobj;
+eperf;lc;li;l)is violated in lif
+1.8e=(a;ot;b )2eows.t.ot2types (l)^a;b2acts(l)^lc(e)=causal causal l(ot;a;b )>l(e),
+2.8e=(a;ot;b )2eows.t.ot2types (l)^a;b2acts(l)^lc(e)=concur concur l(ot;a;b )>l(e),
+3.8e=(a;ot;b )2eows.t.ot2types (l)^a;b2acts(l)^lc(e)=choice choice l(ot;a;b )>l(e),
+4.8e=(a;ot;a )2eows.t.ot2types (l)^a2acts(l)^lc(e)=skip1 #l(ot;fag)
+jobjects (ot)j>l(e),
+5.8e=(ot;a)2eobjs.t.ot2types (l)^a2acts(l)^li(e)=0::0absent l(ot;a)>l(e),
+6.8e=(ot;a)2eobjs.t.ot2types (l)^a2acts(l)^li(e)=1::1singularl(ot;a)>l(e),
+7.8e=(ot;a)2eobjs.t.ot2types (l)^a2acts(l)^li(e)=1::1 absent l(ot;a)>l(e),
+8.8e=(ot;a)2eobjs.t.ot2types (l)^a2acts(l)^li(e)=2::multiplel(ot;a)>l(e), and
+9.8(f;a)2eperfs.t.a2acts(l)f evaluates to true w.r.t. perfl.
+for instance, figure 3(a) is violated if collect payment is preceded by send
+reminder at all w.r.t. order , figure 3(b) is violated if pick item andpack item are
+concurrently executed with the strength higher than 0 :7 w.r.t. item, figure 3(e)
+is violated if conrm order is executed without involving item at all, figure 3(k)
+is violated if the average waiting time of the last two days for deliver order is
+longer than 15 hours, and its execution involves multiple orders with the strength
+higher than 0 :1, etc.
+5.2 monitoring engine
+a monitoring engine analyzes the violation of occgs by analyzing an ocel.
+denition 10 (monitoring engine). a monitoring engine monitor 2ul
+ucg!ftrue;falsegis a function that maps an object-centric event log and an
+object-centric constraint graph to a boolean value. for any l2ulandcg2ucg,
+monitor (l;cg) =true ifcgis violated in l, and false, otherwise.
+we implement the monitoring engine by 1) computing the object-centric
+behavioral metrics of an event log and 2) evaluating the violation of occgs
+based on them. first, the derivation of ordering relation metrics and object
+involvement metrics is deterministic according to denition 5 and denition 6,
+respectively. however, the computation of performance metrics is non-trivial. in
+this work, we use the approach proposed in [9] to compute performance measures,
+such as sojourn time ,waiting time ,service time ,ow time ,synchronization time ,
+pooling time , and lagging time , and frequency measures, such as object count ,
+object type count , etc. finally, using the object-centric behavioral metrics, we
+evaluate the violation of occgs according to denition 9.
+6 implementation and case studies
+this section presents the implementation of the approach presented in this paper
+and evaluates its feasibility by applying it to a production process and a p2p
+process of a real-life sap erp system.10 g. park and w.m.p. van der aalst
+6.1 implementation
+the approach presented in this work has been fully implemented as a web appli-
+cation1with a dedicated user interface. the following functions are supported:
+{importing ocels in dierent formats, including ocel json, ocel xml,
+and csv.
+{designing object-centric constraint graphs using graphical tools.
+{computing object-centric behavioral metrics of ocels and evaluating the
+violation of object-centric constraint graphs based on the metrics.
+{visualizing monitoring results with detailed analysis results.
+6.2 case study: production process
+using the implementation, we conduct a case study on a production process of a
+ctitious company supported by an sap erp system. the process involves four
+object types: production order ,reservation ,purchase requisition , and purchase
+order . figure 4 shows a process model of the production process using object-
+centric petri nets (ocpns) as a formalism. we refer readers to [3] for the details
+of ocpns.
+fig. 4. production process: first, a production order is created with a variable number
+of reservations (i.e., required materials). next, a purchase requisition is released and
+approved. afterward, a purchase order is created based on the purchase requisition.
+once the order is released, the reservations are received and issued for production.
+finally, the production order is conrmed.
+we represent the following constraints using occgs:
+{skipping purchase requisition approval (pra) ; a purchase requisition should
+not skip the approval step at all. figure 5(a) represents the constraint.
+{no reservation for purchase requisition approval (pra) ; the execution
+ofapprove purchase requisition is supposed to include the corresponding
+reservation most of the time. figure 5(b) represents the constraint.
+{excessive reservations per production order (po) ; the execution of create
+production order should not involve more than one reservation on average.
+figure 5(c) represents the constraint.
+1a demo video and sources: https://github.com/gyunamister/proppa.gitmonitoring object-centric constraints in business processes 11
+{delayed purchase order release (por) ; the average sojourn time of re-
+lease purchase order should be less than 15 days. figure 5(d) represents the
+constraint.
+fig. 5. occgs representing the constraints of the production process.
+we monitor the process using three ocels extracted from the sap erp
+system. each event log contains events of dierent time windows; ljan22
+prod ,lfeb22
+prod ,
+andlmar22
+prod contain events of jan., feb., and mar. 20222. table 2 shows the mon-
+itoring result. for instance, no reservation for pra and excessive reservations
+per po are violated for the three months. skipping pra only is violated in the
+last two months, while delayed rpo is violated only for feb. 2022.
+table 2. monitoring results of the production process. xdenotes the violation of the
+constraint in the corresponding event log.
+constraintsevent log
+ljan22
+prodlfeb22
+prodlmar22
+prod
+skipping pra x x
+no reservation for pra x x x
+excessive reservations per po x x x
+delayed por x
+6.3 case study: procure-to-pay (p2p) process
+next, we explain a case study on the p2p process. the process involves ve
+object types: purchase requisition ,material ,purchase order ,goods receipt , and
+invoice . figure 6 shows a process model of the process.
+we represent the following constraints using occgs:
+{concurrency between verify material (vm) and plan goods issue (pgi) ;
+vm and pgi are usually not supposed to be concurrently executed. fig-
+ure 7(a) represents the constraint.
+{clearance of multiple invoices ; the execution of clear invoice should not
+involve multiple invoices at all. figure 7(b) represents the constraint.
+{excessive materials per purchase order (po) ; the execution of create pur-
+chase order should involve less than ve materials on average. figure 7(c)
+represents the constraint.
+2event logs are publicly available at https://github.com/gyunamister/proppa.git .12 g. park and w.m.p. van der aalst
+fig. 6. p2p process: first, a purchase requisition is created with multiple materials.
+next, a purchase order is created based on the purchase requisition and materials.
+afterward, the materials are received and a goods receipt is issued. then, the materials
+are veried and issued, and concurrently the invoice for the purchase order is received
+and cleared.
+{delayed purchase order creation (poc) ; the average sojourn time of create
+purchase order should be less than three days. figure 7(d) represents the
+constraint.
+fig. 7. occgs representing the constraints of the p2p process.
+we monitor the process using three ocels extracted from the sap erp
+system. each event log contains events of dierent time windows; l1
+p2pstarting
+from 01-aug-2021 and ending at 14-oct-2021 ,l2
+p2pstarting from 15-oct-2021 and end-
+ing at 18-jan-2022 , andl3
+p2pstarting from 01-feb-2022 and ending at 16-may-2022 .
+table 3 shows the monitoring result. concurrency between vm and pgi and
+clearance of multiple invoices are only violated in the rst two time windows,
+whereas excessive materials per po and delayed poc are only violated in the
+last time window.
+table 3. monitoring results of the p2p process. xdenotes the violation of the con-
+straint in the event log.
+constraintsevent log
+l1
+p2pl2
+p2pl3
+p2p
+concurrency between vm and pgi xx
+clearance of multiple invoices xx
+excessive materials per po x
+delayed poc xmonitoring object-centric constraints in business processes 13
+7 conclusion
+in this paper, we proposed an approach to process-level object-centric constraint
+monitoring. to this end, we rst introduced object-centric behavioral metrics and
+dened occgs using the metrics. the proposed monitoring engine evaluates the
+constraints represented by occgs by analyzing ocels. we have implemented
+the approach as a web application and discussed two case studies.
+this paper has several limitations. the suggested object-centric constraint
+graphs only represent the constraints selectively introduced in this work. more
+advanced constraints are not considered, e.g., ordering relations with the tempo-
+rality (e.g., eventual or direct causality). also, constraint graphs do not support
+timed constraints, e.g., no involvement of an object type during a specic period
+of time. in future work, we plan to extend the proposed approach by including
+more advanced constraints. another interesting direction of future work is to
+apply the proposed approach to real-life business processes.
+acknowledgements we thank the alexander von humboldt (avh) stiftung
+for supporting our research.
+references
+1. van der aalst, w.m.p.: process mining - data science in action. springer (2016).
+https://doi.org/10.1007/978-3-662-49851-4
+2. van der aalst, w.m.p.: object-centric process mining: dealing with divergence
+and convergence in event data. in: olveczky, p.c., sala un, g. (eds.) sefm
+2019. lecture notes in computer science, vol. 11724, pp. 3{25. springer (2019).
+https://doi.org/10.1007/978-3-030-30446-1 1
+3. van der aalst, w.m.p., berti, a.: discovering object-centric petri nets. fundam.
+informaticae 175(1-4), 1{40 (2020)
+4. adams, j.n., van der aalst, w.m.p.: precision and tness in object-centric process
+mining. in: ciccio, c.d., francescomarino, c.d., soer, p. (eds.) icpm 2021. pp.
+128{135. ieee (2021). https://doi.org/10.1109/icpm53251.2021.9576886
+5. awad, a., et al.: runtime detection of business process compliance violations: an
+approach based on anti patterns. in: wainwright, r.l., corchado, j.m., bechini,
+a., hong, j. (eds.) 30th acm symposium on applied computing. pp. 1203{1210.
+acm (2015). https://doi.org/10.1145/2695664.2699488
+6. esser, s., fahland, d.: multi-dimensional event data in graph databases. j. data
+semant. 10(1-2), 109{141 (2021). https://doi.org/10.1007/s13740-021-00122-1
+7. ly, l.t., maggi, f.m., montali, m., rinderle-ma, s., van der aalst, w.m.p.: com-
+pliance monitoring in business processes: functionalities, application, and tool-
+support. inf. syst. 54, 209{234 (2015). https://doi.org/10.1016/j.is.2015.02.007
+8. maggi, f.m., westergaard, m., montali, m., van der aalst, w.m.p.: runtime ver-
+ication of ltl-based declarative process models. in: khurshid, s., sen, k. (eds.)
+rv 2011. lecture notes in computer science, vol. 7186, pp. 131{146. springer
+(2011). https://doi.org/10.1007/978-3-642-29860-8 11
+9. park, g., adams, j.n., van der aalst, w.m.p.: opera: object-centric performance
+analysis. in: ralyt e, j., chakravarthy, s., mohania, m., jeusfeld, m.a., karla-
+palem, k. (eds.) conceptual modeling - 41st international conference, er 2022,14 g. park and w.m.p. van der aalst
+hyderabad, india, october 17-20, 2022, proceedings. lecture notes in computer
+science, vol. 13607, pp. 281{292. springer (2022). https://doi.org/10.1007/978-3-
+031-17995-2 20,https://doi.org/10.1007/978-3-031-17995-2_20
+10. ramezani, e., fahland, d., van der aalst, w.m.p.: where did i misbehave? di-
+agnostic information in compliance checking. in: barros, a., gal, a., kindler, e.
+(eds.) bpm 2012. lecture notes in computer science, vol. 7481, pp. 262{278.
+springer (2012). https://doi.org/10.1007/978-3-642-32885-5 21
+11. weidlich, m., ziekow, h., mendling, j., g unther, o., weske, m., desai, n.: event-
+based monitoring of process execution violations. in: rinderle-ma, s., toumani,
+f., wolf, k. (eds.) bpm 2011. lecture notes in computer science, vol. 6896, pp.
+182{198. springer (2011). https://doi.org/10.1007/978-3-642-23059-2 16

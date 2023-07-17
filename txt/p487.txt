@@ -1,0 +1,1040 @@
+assessing state spaces using petri-net
+synthesis and attribute-based visualization
+h.m.w. (eric) verbeek, a. johannes pretorius, wil m.p. van der aalst,
+and jarke j. van wijk
+technische universiteit eindhoven
+po box 513, 5600 mb eindhoven, the n etherlands
+{h.m.w.verbeek, a.j.pretorius, w.m.p.v.d.aalst, j.j.v.wijk }@tue.nl
+abstract. state spaces are commonly used representations of system
+behavior. a state space may be derived from a model of system behavior
+but can also be obtained through process mining. for a good under-
+standing of the system’s behavior, an analyst may need to assess the
+state space. unfortunately, state spaces of realistic applications tend to
+be very large. this makes this assessment hard. in this paper, we tackle
+this problem by combining petri-net synthesis (i.e., regions theory) and
+visualization. using petri-net synthesis we generate the attributes needed
+for attribute-based visualization. using visualization we can assess the
+state space. we demonstrate that such an approach is possible and de-
+scribe our implementation using existing tools. the only limiting factor
+of our approach is the performance of current synthesis techniques.
+keywords: state spaces, visualization, attributes, petri-net synthesis.
+1 introduction
+state spaces are popular for the representation and veriﬁcation of complex sys-
+tems [7]. system behavior is modeled as a number of states that evolve over time
+by following transitions . transitions are “source-action-target” triplets where the
+execution of an action triggers a change of state. by analyzing state spaces more
+insights can be gained into the systems they describe.
+in many cases, state spaces can be dir ectly linked to a model that has some
+form of formal/executable semantics (e .g. petri nets, proces s algebras, state
+charts, epcs [20], uml-ads [17], mscs [18], bpel [6], yawl [2], etc.). if
+such a model does not allow for a more direct analysis, the state space allows
+for a “brute force” analysis by considerin g all states and transitions. however,
+many state spaces cannot be linked to some formal model, either because the
+formal model is not available for some reason, or because the formal model does
+not exist at all. as examples of the latter, the state space may be based on the
+analysis of program code, the merging of diﬀerent low-level models, or as the
+result of process mining [1,4]. although the approach presented in this paper is
+generic, we will devote special attention to state spaces obtained through process
+mining, as we think that especially in the process mining area our approach looks
+promising.
+k. jensen, w. van der aalst, and j. billington (eds.): topnoc i, lncs 5100, pp. 152–171, 2008.
+c/circlecopyrtspringer-verlag berlin heidelberg 2008assessing state spaces using petri-net synthesis 153
+process mining techniques are applicable to a wide range of systems. these
+systems may be pure information systems (e.g. erp systems) or systems where
+the hardware plays a more prominent role (e.g. embedded systems). the only
+requirement is that the system produces event logs , thus recording (parts of) the
+actual behavior. an example is the “customercare remote services net-
+work” of philips medical systems (pms). this is a worldwide internet-based
+private network that links pms equipment to remote service centers. any event
+that occurs within an x-ray machine (e.g. moving the table, setting the de-
+ﬂector, etc.) is recorded and analyzed . another example is the common event
+infrastructure (cei) of ibm. cei oﬀers a uniﬁed way of storing events in the
+context of middleware and web services . using cei it is possible to record all
+kinds of business events. process mining techniques are then used to discover
+models by analyzing these event logs. an example is the α-algorithm, which
+constructs a petri net model describing the behavior observed in the event log
+[5]. however, most techniques that directly discover models from event logs have
+a “model bias” and tend to either overgeneralize or produce incorrect results
+(e.g. a model with deadlocks). therefore, several approaches do not try to con-
+struct the model directly, but construct a state space ﬁrst. classical approaches
+stop when the state space i s constructed [9] while more recent approaches use
+multiple steps to obtain a higher level model [3,24].
+state spaces tend to be very large. the state explosion problem is well-known,
+especially in the presence of concurrenc y. therefore, many researchers try to
+reduce the state space or handle it more eﬃciently. nevertheless, the most pop-
+ular analysis approach is still to specify and check requirements by inspecting
+the state space, e.g. model checking approaches [12]. for this approach to be
+successful, the premise is that all requirements are known. when this is not the
+case, the system cannot be veriﬁed.
+in such cases, one approach is to directly inspect the state space with the
+aim of gaining insight into the behavior it describes. interactive visualization
+provides the user with a visual representation of the state space and with con-
+trols to change this view, i.e., through interaction the user can take diﬀerent
+perspectives on the state space. we argue that interactive visualization oﬀers
+three advantages:
+1. by giving visual form to an abstract notion, communication among analysts
+and with other stakeh olders is enhanced.
+2. users often do not have precise questi ons about the systems they study, they
+simply want to “get a feeling” for their behavior. visualization allows them
+to start formulating hypotheses about system behavior.
+3. interactivity provides the user with a mechanism for analyzing particular
+features and for answering questions about state spaces and the behavior
+they describe.
+attribute-based visualization enables users to analyze state spaces in terms of at-
+tributes associated with every state [23]. users typically understand the meaning
+of this data and can use this as a starting point for gaining further insights. for
+example, by clustering on certain da ta, the user can obtain a summary view154 h.m.w. verbeek et al.
+on the state space, where details on the n on-clustered data have been left out.
+based on such a view, the user can come to understand how the system behaves
+with respect to the clustered data.
+attribute-based visualization is only possible if states have meaningful at-
+tributes. when the model is obtained through process mining this is not the
+case. event logs typically only refer to eve nts and not to states. therefore, state
+spaces based on event logs do not provide intuitive descriptions of states other
+than the actions they relate to. hence, th e challenge is to generate meaningful
+attributes. in this paper we investigate the possibility of automatically deriving
+attribute information for visualization purposes. to do so, we use existing syn-
+thesis techniques to generate a petri net from a given state space [10,13,14,21,22].
+the places of this petri net are considered as new derived state attributes.
+the remainder of the paper is structured as follows. section 2 provides a
+concise overview of petri nets, the petrify tool, the diagraphica tool, and the
+prom tool. the petrify tool implements the techniques to derive a petri net
+from a state space, diagraphica is an attribute-based visualization tool, while
+the prom tool implements process mining techniques and provides the neces-
+sary interoperability between the tools. section 3 discusses the approach using
+both petrify and diagraphica . section 4 shows, using a small example, how the
+approach works, whereas sect. 5 discusses the challenges we faced while using
+the approach. finally, sect. 6 concludes the paper.
+2 preliminaries
+2.1 petri nets
+a classical petri net can be represented as a triplet ( p,t,f )w h e r e pis the set
+of places, tis the set of petri net transitions1,a n df⊆(p×t)∪(t×p)t h es e t
+of arcs. for the state of a petri net only the set of places pis relevant, because
+the network structure of a petri net does not change and only the distribution of
+tokens over places changes. a state, also referred to as a marking , corresponds
+to a mapping from places to natural numbers. any state scan be presented as
+s∈p→{0,1,2,...}, i.e., a state can be considered as a multiset, function, or
+vector. the combination of a petri net ( p,t,f ) and an initial state sis called
+am a r k e dp e t r in e t( p,t,f,s ). in the context of state spaces, we use places as
+attributes. in any state the value of each place attribute is known: s(p)i st h e
+value of attribute p∈pin state s.
+a petri net also comes with an unambiguous visualization. places are repre-
+sented by circles or ovals, transitions by squares or rectangles, and arcs by lines.
+using existing layout algorithms, it is straightforward to generate a diagram for
+this, for example, using dot[15].
+1the transitions in a petri net should not be confused with transitions in a state space,
+i.e., one petri net transition may correspond to many transitions in the corresponding
+state space. for example, many transitions in fig. 2 refer to the petri net transition
+t1i nf i g .3 .assessing state spaces using petri-net synthesis 155
+a
+b
+fe
+c
+d r
+renter
+regionexit
+regiondo not cross 
+region
+a
+b
+a
+a
+bc
+d
+d
+d
+cf
+e
+f
+ee f
+(a) state space with region r. (b) petri net with place r.
+fig. 1. translation of regions to places
+2.2 petrify
+the petrify [11] tool is based on the classical theory of regions [10,14,22]. using
+regions it is possible to synthesize a ﬁnite transition system (i.e., a state space)
+i n t oap e t r in e t .
+a (labeled) transition system is a tuple ts=(s, e, t, s i)w h e r e sis the set
+of states, eis the set of events, t⊆s×e×sis the transition relation, and
+si∈sis the initial state. given a transition system ts=(s, e, t, s i), a subset
+of states s/prime⊆sis a region if for all events e∈eone of the following properties
+holds:
+–all transitions with event eenter the region , i.e., for all s1,s2∈sand
+(s1,e,s 2)∈t:s1/negationslash∈s/primeands2∈s/prime;o r
+–all transitions with event eexit the region , i.e., for all s1,s2∈sand
+(s1,e,s 2)∈t:s1∈s/primeands2/negationslash∈s/prime;o r
+–all transitions with event edo not “cross” the region , i.e., for all s1,s2∈s
+and (s1,e,s 2)∈t:s1,s2∈s/primeors1,s2/negationslash∈s/prime.
+the basic idea of using regions is that each region s/primecorresponds to a place in
+the corresponding petri net and that each event corresponds to a transition in
+the corresponding petri net. given a region all the events that enter the region
+are the transitions producing tokens for this place and all the events that exitthe
+region are the transitions consuming tokens from this place. figure 1 illustrates
+how regions translate to places. a region rreferring to a set of states in the state
+space is mapped onto a place: aandbenter the region, canddexit the region,
+andeandfdo not cross the region.
+in the original theory of regions many simplifying assumptions are made, e.g.
+elementary transitions systems are assumed [14] and in the resulting petri net
+there is one transition for each event. many transition systems do not satisfy such
+assumptions. hence many reﬁnements have been developed and implemented in
+tools like petrify [10,11]. as a result it is possible to synthesize a petri net for156 h.m.w. verbeek et al.
+s40s39 s38s37s36 s35
+s34 s33s32 s31s30 s29
+s28 s27s26 s25
+s24 s23
+s22 s21
+s20 s19 s18s17 s16 s15s14 s13 s12s11
+s182s181s180
+s179s178 s177s176s175
+s174s173s172 s171s170 s169
+s168s167 s166s165
+s164
+s163s162s161 s160s159s158 s157
+s156s155
+s154 s153s152s151
+s100s99 s98
+s97s96 s95 s150s94
+s149s93
+s148
+s92s147
+s91s146s145 s144
+s143s142 s141
+s90s89 s88
+s87 s86s85s140
+s84s139
+s83s138
+s82s137
+s81
+s136s135s134s133 s132
+s131s80 s79s78 s77
+s76
+s75s130
+s74s129
+s73s128
+s72s127
+s71s126
+s125
+s124s123 s122s121s70
+s69 s68s67 s66s65
+s120s64
+s119s63
+s118s62
+s117s61s10
+s116s9
+s115s8
+s114s7
+s113s6
+s112s5
+s111s4 s3s2s1
+s60 s59 s58s57 s56 s55
+s110s54
+s109s53
+s108s52 s107 s51s106
+s105s104
+s103 s102s101
+s50s49 s48 s47 s46s45 s44 s43s42 s41t3
+t6t7
+t9t7 t2
+t9t3
+x1
+t3t6 t12
+t6
+t8t12
+t7t6
+t3t13t12
+x3
+t12x3
+t10t4
+t3t4
+t14
+t14t8t11t4
+t5t1
+t6t1 t5
+t1
+t7t2
+t12
+t10 t14 t7t5
+t12 t6t12
+t1x1
+t14t7
+t4
+t7t7t9t14
+t12t7 t5t12
+t1 t8
+t8t10t11
+t9t11t12t2
+t1
+t13t12
+t10t13t2
+x2t6t2
+t14t14
+t6t2
+t3
+t4t11 t8
+t14t5
+t8t8
+t3
+t6t1
+t11t10t9
+t8 t12
+t4 t2
+t14t11
+t3t12
+t13t10
+t4 t13
+tot1
+t7
+t14t13
+t11
+t12t5
+t10t3
+t13t13 t13
+t8t3
+t6t3
+t13t6x1
+t1
+t6
+t14t8x2
+t7t8
+t5
+t7t5t13
+t9t8t2
+t10t13
+t12t2
+t11
+t5t11
+t13
+t8t11
+t5t13t14
+t8
+t9t7
+t1
+t14t2
+x2
+t9t4
+t10t6
+t4t13t13
+t14t4
+t4t4
+t11t4
+t10t11
+t9t2
+t8
+t12t10t1
+t10t12
+t9t6t3
+t12t1
+t14t3
+t6t11t13t3
+t10t1
+t3t10t1
+t11
+t12
+t9t1
+t10t6t6
+t6t12
+t4t9t4
+t5t2
+t4t7
+t8t4
+t7t3
+t3t8t11
+t14t8
+t13t3
+t14t5t3
+t10
+t3t4
+t9t14t11
+t2
+t10t11 t11 t2
+t3 t11t11 t1
+x3t5t2
+t11
+t10t13t2
+t13t4t3
+t14 t8t2
+t13x3
+t7t2
+t7 t9
+x1
+t10 t11
+t12t8t13
+t7t5
+t10
+t5t12
+t3 t8t9 t3t12
+t14t7 t2
+t7t6t2
+t5t1
+t5 t3
+t6 t13
+t9t4
+t14 t3 t11t7
+t12t7
+t14 t7t1t6
+t7x2t12
+t7t11t6
+t8t13
+t9t2
+t14t11
+t1 t10
+t8t7t10t11
+t9t2
+t10
+t8t12
+t14t1
+t9 t6t12t4
+t6
+t5 t9t6
+t8 t2
+t6t8
+t5
+t1 t10
+t12t1
+t11t13 t5
+t5 t9
+t9 t4t12t1t11
+t14t5
+t4t3t11
+t11
+t13
+t13t3
+t9t9 t14
+t7
+t6
+t8t3
+t11t5
+t2t6t1
+t10t14t5
+t1 t1
+t14t14t4 t8
+t13
+t13t8t6 t14
+x3
+t9t6t4
+t14
+t7t5
+t2t2
+t13
+t10t1
+t11t9
+t12
+x3
+t9t13t12
+t7 t12
+t2t14t1
+t9t4t13t13
+t4t4
+t11t14 t5
+t5
+x2t2
+t10ti
+t2
+t2 t12
+t13t9t3
+t12 t13t8
+t9x1
+t12
+t13t11 t5
+t14
+t10t4
+t5t4 t14t1
+t11t11
+t12t7
+t1
+t14t5
+t10t10
+fig. 2. state space visualization with oﬀ-the-shelf graph-drawing tools
+t5
+t9
+x3
+t14t3
+t6x2
+tot7
+t2x1
+t10
+t12t8t1
+t11ti
+t13t4
+fig. 3. petri net synthesized from the state space in fig. 2
+any transition system. moreover, tools such as petrify provide diﬀerent settings
+to balance compactness and readability and one can specify desirable properties
+of the target model. for example, one can specify that the petri net should be
+free-choice. for more information we refer the reader to [10,11].
+with a state space as input petrify derives a petri net for which the reachabil-
+ity graph is bisimilar [16] to the original state space. we already mentioned that
+the petri net shown in fig. 3 can be synthesized from the state space depicted
+in fig. 2. this petri net is indeed bisimilar to the state space. for the sake of
+completeness we mention that we used petrify version 4.2 ( www.lsi.upc.es/
+petrify/ ) with the following options: -d2(debug level 2), -p(generate a pure
+petri net), -dead (do not check for the existence of deadlock states), and -ip
+(show implicit places).
+2.3 diagraphica
+diagraphica is a prototype for the interactive visual analysis of state spaces with
+attributes and can be downloaded from www.win.tue.nl/∼apretori/
+diagraphica/ . it builds on a previous work [23] and addresses the gap between
+the semantics that users asso ciate with attributes that describe states and theirassessing state spaces using petri-net synthesis 157
+fig. 4. diagraphica incorporates a number of correlated visualizations that use para-
+meterized diagrams
+visual representation. to do so, the user can deﬁne custom diagrams that re-
+ﬂect associated semantics. these diagr ams are incorporated into a number of
+correlated visualizations.
+diagrams are composed of a number of shapes such as ellipses, rectangles and
+lines. every shape has a number of degr ees of freedom (dofs) such as position
+and color. it is possible to link a dof with a state attribute, which translates
+to the following in the context of this paper. suppose we have a state space
+that has been annotated with attributes that correspond to the markings of the
+places in its associated petri net. it is p ossible to represent this petri net with
+a diagram composed out of a number of circles, squares and lines corresponding
+to its places, transitions and arcs. now, we can parameterize a circle (place) in
+this diagram by linking, for example, its color with the attribute representing
+the marking of the corresponding places. as a result, the color of the circle will
+reﬂect the actual marking of the corresponding place. for example, the circle
+could be white if the place contains no to kens, green if it contains one token,
+and red if it contains more than one tokens.
+diagraphica has a ﬁle format for representing parameterized diagrams. this
+facility makes it possible to import petri nets generated with petrify as diagrams.
+parameterized diagrams are used in a number of correlated visualizations.
+as starting point the user can perform attribute based clustering. first, the158 h.m.w. verbeek et al.
+user selects a subset of attr ibutes. next, the program partitions all states into
+clusters that diﬀer in terms of the value s assumed for this subset of attributes.
+the results are visualized in the clust er view (see fig. 4a). here a node-link
+diagram, a bar tree and an arc diagram are used to represent the clustering
+hierarchy, the number of states in every cluster, and the aggregated state space
+[23]. by clicking on clusters they are annotated with diagrams where the dofs
+of shapes are calculated as outlined above. a cluster can contain more than one
+state and it is possible to step through the associated diagrams. transitions are
+visualized as arcs between clusters. the direction of transitions is encoded by
+the orientation of the arcs whi ch are interpreted clockwise.
+the user can also load a diagram into the simulation view as shown in fig. 4b.
+this visualization shows the “current” state as well as all incoming and outgoing
+states as diagrams. this enables the user to explore a local neighborhood around
+an area of interest. transitions are visualized by arrows and an overview of all
+action labels is provided. the user can navigate through the state space by
+selecting any incoming or outgoing diagram, by using the keyboard or by clicking
+on navigation icons. consequently, this diagram slides toward the center and all
+incoming and outgoing diagrams are updated.
+the inspection view enables the user to inspect interesting diagrams more
+closely and to temporarily store them (see fig. 4c). first, it serves as a magni-
+fying glass. second, the user can use this view as a temporary storage facility.
+users may, for instance, want to keep a history, store a number of diagrams from
+various locations in the state space to compare, or keep diagrams as seeds for
+further discussions with colleagues. these are visualized as a list of diagrams
+through which the user can scroll.
+diagrams can be seamlessly moved between diﬀerent views by clicking on an
+icon on the diagram. to maintain context, the current selection in the simulation
+or inspection view is highlighted in the clustering hierarchy.
+2.4 prom
+prom is an open-source plug-able framework that provides a wide range of
+process mining techniques [1,25]. g iven event logs of diﬀerent systems, prom
+is able to construct diﬀerent types of models (ranging from plain state spaces
+to colored petri nets). moreover, prom c a nb eu s e dt oc o n v e r tm o d e l sf r o m
+one notation into another, e.g. translate an event-driven process chain (epc)
+[20] into a petri net or a state space. prom oﬀers connections to petrify and
+diagraphica in various ways. for example, a state space mined by prom can be
+automatically converted into a petri net by petrify and then loaded into prom
+and diagraphica .
+3 using petrify to obtain attributed states described
+by attributes
+the behavior of systems can be captured in many ways. for instance, as an
+event log ,a saf o r m a l model or as a state space . typically, system behavior isassessing state spaces using petri-net synthesis 159
+with
+attributes
+attribute-based
+visualizationstandard
+visualizationpetri
+nets
+petrify
+fig. 5. t h ea p p r o a c hp r o p o s e di nt h i sp a p e r
+not directly described as a state space. however, as already mentioned in the
+introduction, it is possible to generat e state spaces from process models (i.e.,
+model-based state space generation) or directly from code or other artifacts.
+moreover, using process mining techniqu es [4,5] event logs can be used to con-
+struct state spaces. this is illustrated in fig. 5.
+both ways of obtaining state spaces are shown by the two arrows in the lower
+left and right of the ﬁgure. the arrow in the lower right shows that using model-
+based state space generation the behavior of a (ﬁnite) model can be captured
+as a state space. the arrow in the lower left shows that using process mining
+the behavior extracted from an event log can be represented as a state space [3].
+note that an event log provides executi on sequences of a (possibly unknown)
+model. the event log does not show explicit states. however, there are various
+ways to construct a state representatio n for each state visited in the execution
+sequence, e.g. the preﬁx or postﬁx of the execution sequence under consideration.
+similarly transitions can be distilled from the event log, resulting in a full state
+space.
+figure 5 also shows that there is a relation between event logs and models,
+i.e., a model can be used to generate event logs with example behavior and
+b a s e do na ne v e n tl o gt h e r em a yb ep r o c e s sm ining techniques to directly extract
+models, e.g. using the α-algorithm [5] a representati ve petri net can be discovered
+based on an event log with example behavior. since the focus is on state space
+visualization, we do not consider the double-headed arrow at the top and focus
+on the lower half of the diagram.
+we make a distinction between event logs, models and state spaces that have
+descriptive attributes and those that do not (inner and outer sectors of fig. 5).
+for example, it is possible to model behavior simply in terms of transitions160 h.m.w. verbeek et al.
+without providing any further informat ion that describes th e diﬀerent states
+that a system can be in. figure 2 shows a state space where nodes and arcs
+have labels but without any attributes associated to states. in some cases it is
+possible to attach attributes to states. f or example, in a state space generated
+from a petri net, the token count for each state can be seen as a state attribute.
+when a state space is generated using p rocess mining techniques, the state may
+have state attributes referring to acti vities or documents recorded earlier.
+it is far from trivial to generate state spaces that contain state attributes
+from event logs or models where this information is absent. moreover, there
+may be an abundance of possible attributes making it diﬃcult to select the
+attributes relevant for the behavior. f or example, a variety of data elements
+may be associated to a state, most of which do not inﬂuence the occurrence
+of events. fortunately, as the upward pointing arrow in fig. 5 shows, tools like
+petrify can transform a state space without attributes into a state space with
+attributes .
+consider the state space in fig. 2. since it does not have any state attributes,
+we cannot employ attribute-based visualization techniques. when we perform
+synthesis, we derive a petri net that is guaranteed to be bisimilar to this state
+space. that is, the behavior described by the petri net is equivalent to that
+described by the state space [11]. figure 3 shows a petri net derived using petrify .
+note that the approach, as illustrated in fig. 5, does not require starting
+with a state space. it is possible to use a model or event log as a starting point.
+using process mining an event log can be converted into a state space [3,24]. any
+process model (e.g. petri net) can also be handled as input, provided that its
+state space can be constructed within reasonable time. for a bounded petri net,
+this state space is its reachability graph, which will be ﬁnite. the approach can
+also be extended for unbounded nets by using the coverability graph. in this case,
+s∈p→{0,1,2,...}∪{ω}where s(p)=ωdenotes that the number of tokens in
+pis unbounded. this can also be visualized in the petri net representation. we
+also argue that our technique is applicable to other graphical modeling languages
+with some form of semantics, e.g. the various uml diagrams describing behavior.
+in the context of this paper, we use state spaces as starting point because of the
+many ways to obtain them (i.e., process mining, code analysis, model-based
+generation, etc.).
+4 proof of concept
+to demonstrate the feasibility of our approach, we now present a small case
+study, using the implementation of the approach as outlined above. figure 6
+illustrates the route we have taken in terms of the strategy introduced in sect. 3.
+4.1 setting
+the case study concerns a t raﬃc light controller for the road intersection shown
+in fig. 7, which corresponds to an existing road intersection in eindhoven, theassessing state spaces using petri-net synthesis 161
+log w/o
+attributes
+state space 
+w/o attributespetri net
+state space 
+w/ attributes
+fig. 6. the approach taken with the case study
+netherlands. as fig. 7 shows, there are 12 diﬀerent traﬃc lights on the intersec-
+tion, labeled athrough l. traﬃc light acontrols the two southbound lanes that
+take a right turn, whereas bc o n t r o l st h el a n ef o rt h eo ther directions; traﬃc
+light ccontrols all three westbound lanes; and so forth.
+the case study starts with a log for the traﬃc light controller. this log is free
+of any noise and contains over 1,300,000 events without data attributes. possible
+event labels in the log are start,end,arg,bgy,a n d cyr, which have to following
+meaning:
+start indicates that the controller has been started,
+endindicates that the controller is about to stop,
+argindicates that traﬃc light ahas moved from red to green,
+bgyindicates that traﬃc light bhas moved from green to yellow (amber), and
+cyrindicates that traﬃc light chas moved from yellow to red.
+figure 8 shows a small fragment of the log. it shows, that at some point in time,
+traﬃc light hmoved from green to yellow, after which bmoved ﬁrst from green
+to yellow and then from yellow to red, and so forth.
+a relevant question is whether the tra ﬃc light controller, according to the
+log, has behaved in a safe way. from fig. 7 it is clear, that traﬃc lights a,b,
+and cshould not all signal go(that is, show either green or yellow) at any given
+moment in time. traﬃc lights aand bcould signal goat the same time, but
+both are in conﬂict with c. thus, if either aorbsignal go,t h e n chas to signal
+stop(that is, show red). the goal of our case study is to show how we can use
+our approach to answer the question whether the controller indeed has behaved
+in a safe way.162 h.m.w. verbeek et al.
+ab
+cd
+ef
+gh
+i j
+lk
+fig. 7. a road intersection with traﬃc lights in eindhoven
+fig. 8. a small fragment of the log visualized
+4.2 findings
+using process mining techniques, we con structed a state space from the event
+log. figure 9 shows a visualization of a fragment of the entire state space, which
+contains 40,825 states and 221,618 edges. note that this visualization does not
+help us to verify that the controller behaved in a safe way. also note that, as we
+took a log as starting point, we cannot show that the controller will behave in a
+safe way in the future.
+from the above state space, we constructed a petri net using petrify .t h i s
+petri net contains 26 transitions and 28 places and is shown in fig. 10. as men-
+tioned in sect. 1, the place labels in the petri net have no intuitive description.
+therefore, these labels can only be used to identify places. the transitions la-
+bels, however, correspond one-to-one t o the event labels that were found in the
+original log.assessing state spaces using petri-net synthesis 163
+fig. 9. a visualization of a fragment of the entire state space for the traﬃc light
+controller
+lyr
+bgy
+drgiyr
+crg
+krgend
+hyrerg
+lgy lrg
+dgyayrigy
+fyrjyrstart
+dyrgyr grg
+jrghrg
+frgeyr
+t:1egy
+kgy
+jgyarg
+fgycgybrg
+cyrggy
+hgyirg
+kyragybyr
+fig. 10. the synthesized petri net for the traﬃc light controller164 h.m.w. verbeek et al.
+fig. 11. the synthesized petri net ﬁtsthe log
+next, we tested whether the construct ed petri net can actually replay all
+instances present in the log. if some in stance cannot be replayed by the petri
+net, then some actual behavior is not covered by the petri net, and we cannot
+make any claim that certain situations did not occur by looking at the petri net
+only. figure 11 shows that the petri net can actually replay all behavior which
+is present in the log: their ﬁtness measure equals 1 .0. possibly, the petri net can
+generate behavior which is not in the log, but at least the petri net covers the
+behavior present in the log. as a result, we can use the petri net to show that
+certain situations did not occur in the traﬃc light controller: if the situation is
+not possible according to the petri net, it was not possible according to the log.
+after having recreated the state space from the petri net, which is guaranteed
+to be bisimilar to the original state space (that is, the state space we derived
+from the log), we can now use diagraphica to answer the question whether the
+controller behaved in a safe way. from t he petri net, we learn that the places
+p22,a n d p14signal gofor the traﬃc light a,p10and p21signal gofor b,a n d
+p23and p16for c. figure 12 shows the state space after we have abstracted
+from all places except the ones just mentioned. note that the 40,825 states have
+been clustered in such a way that only 1 1 clusters remain. as a result, we can
+actually see some structure in this state space. for example, the rightmost cluster
+in fig. 12 shows clearly that the other places are empty if place p23contains a
+token. thus, if traﬃc light cshows green, then aand bshow red. likewise, we
+can now show that the controller behaved in a safe way for the other conﬂicts
+as well. figure 12 also shows the representation of the controller state using
+the petri net layout in the right bottom corner, and possible predecessor and
+successor states. using this, it is possible to navigate over individual states in the
+state space.assessing state spaces using petri-net synthesis 165
+fig. 12. analyzing safeness using diagraphica
+4.3 conclusion
+using both process mining and petri net synthesis techniques, we were able to
+convert a log that contains no data attributes into a state space that does contain
+data attributes: the synthesized places . based on these attributes, we were able
+to verify that, according to the log, the controller has behaved in a safe way.
+thus, in an automated way, we have been able to derive sensible attributes from
+this log, and using these attributes we are able to deduce a meaningful result.
+5 challenges
+in the previous section, we showed how attribute-based visualization assisted us
+in providing new insights even if the corresponding state space is large. given the
+many ways of obtaining state spaces (e.g. through process mining), the applica-
+bility and relevance of this type of visualization is evident. however, in order to
+attach attributes to states, our approach requires the automatic construction of
+a suitable petri net.166 h.m.w. verbeek et al.
+ahod done
+freshfresh
+l2l2proc
+l2
+proc
+r2afrsh
+l1l1proc
+l1
+proc
+l3
+l3
+fresh
+l3
+proc
+l4
+l4
+fresh
+l4r1aproc
+r1a
+fresh
+r1a
+r2a
+fresh
+r2aproc
+r1b
+r1b
+fresh
+r1b
+proc
+r2b
+r2b
+fresh
+r2bprep
+prep
+fresh
+prepprepproc
+prep
+procproc
+proc
+prep
+procl2t
+t2l
+l2t
+t2l
+l2t
+t2l
+l2t
+t2lr2l
+l2r
+r2l
+l2r
+r2l
+l2r
+r2l
+l2rrotate
+rotate
+rotate
+rotate
+rotate
+rotate
+rotate
+rotate
+rotate
+rotatec2r
+r2c
+c2r
+r2cswap
+swap
+swap
+prepproc6
+1111
+1
+11
+111
+6
+fig. 13. a petri net for the wafer stepper machine
+although the approach works well for some examples, we have found that
+the synthesis of petri nets from arbitrary state spaces can be a true bottle-neck.
+the performance of current region-based approaches is poor in two respects: (1)
+the computational complexity of the algorithms makes wide-scale applicability
+intractable and (2) the resulting models are sometimes more complex than the
+original transition systems and therefore oﬀer little insight. one of the key points
+is that synthesis works well if there is a lot of “true” and “full” concurrency. if
+aandbc a no c c u ri np a r a l l e li ns t a t e s1, there are transitions s1a→s2,s1b→s3,
+s2b→s4,a n ds3a→s4forming a so-called “diamond” in the state space. such dia-
+monds allow for compact petri nets that provide additional insights. tools such
+aspetrify have problems dealing with large state spaces having “incomplete”
+diamonds.
+to illustrate the problem we revisit the state space shown in fig. 4 [19]. this
+state space contains 55,043 nodes and 289,443 edges and represents the behavior
+of a wafer stepper. although the initial state space was not based on a petri net
+model we discovered that it can be generated by the petri net shown in fig. 13.
+the wafer stepper machine consists of four locks ( l1–l4), two rotating robots
+(r1and r2), a preparing station ( prep, and a processing station ( proc). fresh
+wafers start at the left (place fresh), are moved to the right, are prepared, are
+processed, and are moved back to the left, where they end as processed wafers
+(place done). the visualization by diagraphica shown in fig. 4 is not based on
+the petri net depicted in fig. 13, i.e., the state space was provided to us and the
+visualization was based on existing attributes in the state space and the diagram
+(cf. fig. 4c) was hand-made based on domain knowledge.assessing state spaces using petri-net synthesis 167
+c2r
+end
+l2rr2cl2t
+startr2l proc
+t2lswap
+t:1rotate._3rotate._2rotate._1
+prep
+rotate
+fig. 14. a petri net for the wafer stepper machine with only one wafer
+given the fact that diagraphica is able to nicely visualize the state space
+and that there exists a petri net with a bi similar state space, we expected to be
+able to apply the approach presented in this paper. unfortunately, petrify was
+unable to derive a petri net as shown in fig. 13 from the given state space. as a
+result, this state space could not be used to illustrate our approach. however, it
+might be of interest to know why petrify failed. in this section, we try to answer
+this question. it should be noted that the problem is not speciﬁc for petrify ;i t
+applies to all region based approaches [8,10,13,14,21,22].
+our ﬁrst observation is that the places freshand doneare not safe, which
+might be a problem for petrify . however, both places can be modeled in a
+straightforward way using six safe places , and hence, there exists a safe petri net
+that corresponds to the given state space. clearly, petrify was unable to ﬁnd
+this petri net.
+second, we reduced the number of wafers in the system from six to one, that
+is, we generated a state space for the s ituation where only one wafer needs to
+be processed by the wafer stepper. in this case, petrify was able to construct
+a suitable petri net, which is shown in fig. 14. this petri net shows that the
+s i n g l ew a f e ri sﬁ r s tm o v e dt oal o c k( t2l), moved to a robot ( l2r), rotated by the
+robot ( rotate ), moved to the preparing station ( r2c), prepared ( prep), swapped
+to the processing station ( swap), processed ( proc), swapped back, moved to the
+robot, rotated by the robot, moved to the lock, and ﬁnally moved back onto the
+tray. note that the structure around the transitions prep,proc,a n d swap takes
+care of the fact that the wafer needs to be swapped both before and after the
+processing step. apparently, petrify preferred this solution above having two
+swap t r a n s i t i o n s( l i k ew eh a v ef o u r rotate transitions).
+having succeeded for one wafer, we next tried the same for two wafers. petrify
+did construct a petri net for this situation, but, unfortunately, this petri net is
+too complex to be used.
+finally, we again tried the situation with two wafers, but with increased ca-
+pacity for the robots, the preparing station, and the processing station. as a
+result, the wafers need not to wait for a resource (such as a robot or a prepar-
+ing station) as these will always be available. clearly, the net as shown in fig. 14168 h.m.w. verbeek et al.
+corresponds to this system, where only its initial marking needs to be changed
+(two wafers instead of one). unfortunately, petrify was unable to construct such
+a net. apparently, petrify cannot generate a petri net where multiple tokens
+follow an identical route.
+the experiment using variants of the state space shown in fig. 4 illustrates
+that classical synthesis approaches hav e problems when dealing with real-life
+state spaces. typically, the application of regions is intractable and/or results
+in a petri net of the same size as the original state space.
+when applying synthesis approaches to state spaces generated through
+process mining another problem surfaces; synthesis approaches assume that the
+state space is precise and complete . however, the state space is based on an event
+log that only shows example behavior. in reality logs are seldom complete in the
+sense that all possible execution sequen ces are not necessarily included [5]. con-
+sider for example ten parallel activities. to see all possible interleaving at least
+10! = 3,628,800 diﬀerent sequences need to be observed. even if all sequences
+have equal probability (which is typically not the case) much more sequences
+are needed to have some coverage of these 3,628,800 possible sequences. hence,
+it is likely that some possibilities will be missing. therefore, the challenge is
+not to create a petri net that exactly reproduces the transition system or log.
+the challenge is to ﬁnd a petri net that captures the “characteristic behavior”
+described by the transition system.
+if the system does not allow for a compact and intuitive representation in
+terms of a labeled petri net, it is probably n o tu s e f u lt ot r ya n dr e p r e s e n tt h e
+system state in full detail . hence more abstract repres entations are needed when
+showing the individual states. the abstraction does not need to be a petri net.
+however, even in the context of regions and petri nets, there are several straight-
+forward abstraction mechanisms .
+first of all, it is possible to split the sets of states and transitions into in-
+teresting and less interesting. for example, in the context of process mining
+states that are rarely visited and/or transitions that are rarely executed can
+be left out using abstraction or encapsulation. there may be other reasons for
+removing particular transitions, e.g. the analyst rates them as less interesting.
+using abstraction (transitions are hidden, i.e., renamed to τand removed while
+preserving branching bisimilarity) or encapsulation (paths containing particular
+transitions are blocked), the state space is eﬀectively reduced. the reduced state
+space will be easier to inspect and allows fo r a simpler petri net4 representation.
+another approach is not to simplify the state space but to generate a model
+that serves as a simpliﬁed over-approximation of the state space .t h ec o m p l e x -
+ity of a generated petri net that precisely captures the behavior represented by
+the state space is due to the non-trivial relations between places and transi-
+tions. if places are removed from such a m odel, the resulting petri net is still
+able to reproduce the original state space (but most likely also allows for more
+and even inﬁnite behavior). in terms of regions this corresponds to only in-
+cluding the most “interesting” regions resulting in an over-approximation ofassessing state spaces using petri-net synthesis 169
+the state space. future research aims at selecting the right abstractions and
+over-approximations.
+6 conclusions and future work
+in this paper we have investigated an approach for state space visualization with
+petri nets. using existing techniques we derive petri nets from state spaces in
+an automated fashion. the places of these petri are considered as newly derived
+attributes that describe every state. consequently, we append all states in the
+original state space with these attributes. this allows us to apply a visualization
+technique where attribute-based visualizations of state spaces are annotated with
+petri net diagrams.
+the approach provides the user with two representations that describe the
+same behavior: state spaces and petri ne ts. these are integrated into a number
+of correlated visualizations. by presenting a case study, we have shown that the
+combination of state space visualization and petri net diagrams assists users in
+visually analyzing system behavior.
+we argue that the combination of the above two visual representations is
+more eﬀective than any one of them in isolation. for example, using state space
+visualization it is possible to identify all states that have a speciﬁc marking for
+a subset of petri net places. using the p etri net representation the user can
+consider how other places are marked for this conﬁguration. if we suppose that
+the user has identiﬁed an interesting marking of the petri net, he or she can
+identify all its predecessor states, again by using a visualization of the state
+space. once these are identiﬁed, they are easy to study by considering their
+petri net markings.
+in this paper, we have taken a step toward state space visualization with
+automatically generated petri nets. as we have shown in sect. 4, the ability to
+combine both representations can lead t o interesting discoveries. the approach
+also illustrates the ﬂexibility of parameterized diagrams to visualize state spaces.
+in particular, we are quite excited about the prospect of annotating visualizations
+of state spaces with other types of automatically generated diagrams.
+finally, as indicated in sect. 5, current synthesis techniques are not always
+suitable: if no elegant petri net exists for a given state space, then petrify will
+not be able to ﬁnd such a net, and even if such a net exists, petrify might fail
+to ﬁnd it. in such a situation, allowing for some additional behavior in the petri
+net, that is, by over-approximating the state space, might result in a far more
+elegant net. for example, the net as sh own in fig. 14 would be an acceptable
+solution for the wafer stepper state space containing six wafers. furthermore, one
+single “sick” trace in a state space might prevent the construction of a suitable
+petri net. therefore, we are interested in automated abstraction techniques and
+over-approximations of the state space. of course, there’s also a downside: the
+state space corresponding to the resulting petri net is no longer bisimilar to the
+original state space. nevertheless, we feel that having an elegant approximation
+is better than having an exact solution that is of no use.170 h.m.w. verbeek et al.
+acknowledgments
+we are grateful to jordi cortadella for his kind support on issues related to the
+petrify tool. furthermore, we thank the anonymous reviewers for helping to im-
+prove the paper. hannes pretorius is supported by the netherlands organization
+for scientiﬁc research (nwo) under grant 612.065.410.
+references
+1. van der aalst, w.m.p., van dongen, b.f., g¨ unther, c.w., mans, r.s., alves de
+medeiros, a.k., rozinat, a., rubin, v., song, m., verbeek, h.m.w., weijters,
+a.j.m.m.: prom 4.0: comprehensive support for real process analysis. in: kleijn,
+j., yakovlev, a. (eds.) icatpn 2007. lncs, vol. 4546, pp. 484–494. springer,
+heidelberg (2007)
+2. van der aalst, w.m.p., ter hofstede, a.h.m.: yawl: yet another workﬂow lan-
+guage. information systems 30(4), 245–275 (2005)
+3. van der aalst, w.m.p., rubin, v., van dongen, b.f., kindler, e., g¨ unther, c.w.:
+process mining: a two-step approach using transition systems and regions. bpm
+center report bpm-06-30, bpmcenter.org (2006)
+4. van der aalst, w.m.p., van dongen, b.f., herbst, j., maruster, l., schimm, g.,
+weijters, a.j.m.m.: workﬂow mining: a survey of issues and approaches. data
+and knowledge engineering 47(2), 237–267 (2003)
+5. van der aalst, w.m.p., weijters, a.j.m.m., maruster, l.: workﬂow mining: dis-
+covering process models from event logs. ieee transactions on knowledge and
+data engineering 16(9), 1128–1142 (2004)
+6. alves, a., arkin, a., askary, s., barreto, c., bloch, b., curbera, f., ford, m.,
+goland, y., gu´ ızar, a., kartha, n., liu, c.k., khalaf, r., koenig, d., marin,
+m., mehta, v., thatte, s., rijn, d., yendluri, p., yiu, a.: web services business
+process execution language version 2.0 (oasis standard). ws-bpel tc oasis
+(2007), http://docs.oasis-open.org/wsbpel/2.0/wsbpel-v2.0.html
+7. arnold, a.: finite transition systems. prentice-hall, englewood cliﬀs (1994)
+8. bergenthum, r., desel, j., lorenz, r., mauser, s.: process mining based on re-
+gions of languages. in: alonso, g., dadam, p., rosemann, m. (eds.) bpm 2007.
+lncs, vol. 4714, pp. 375–383. springer, heidelberg (2007)
+9. cook, j.e., wolf, a.l.: discovering models of software processes from event-based
+data. acm transactions on software engineering and methodology 7(3), 215–249
+(1998)
+10. cortadella, j., kishinevsky, m., lavagno, l., yakovlev, a.: synthesizing petri nets
+from state-based models. in: proceedings of the 1995 ieee/acm international
+conference on computer-aided design (iccad 1995), pp. 164–171. ieee com-
+puter society, los alamitos (1995)
+11. cortadella, j., kishinevsky, m., lavagno, l., yakovlev, a.: deriving petri nets
+from ﬁnite transition systems. ieee transactions on computers 47(8), 859–882
+(1998)
+12. dams, d., gerth, r.: abstract interpretation of reactive systems. acm transac-
+tions on programming languages and systems 19(2), 253–291 (1997)
+13. darondeau, p.: unbounded petri net synthesis. in: desel, j., reisig, w., rozenberg,
+g. (eds.) lectures on concurrency and petri nets. lncs, vol. 3098, pp. 413–438.
+springer, heidelberg (2004)assessing state spaces using petri-net synthesis 171
+14. ehrenfeucht, a., rozenberg, g.: partial (set) 2-structures - part 1 and part 2.
+acta informatica 27(4), 315–368 (1989)
+15. gansner, e.r., koutsoﬁos, e., north, s.c., vo, k.-p.: a technique for drawing
+directed graphs. ieee transactions on software engineering 19(3), 214–230 (1993)
+16. van glabbeek, r.j., weijland, w.p.: branching time and abstraction in bisimula-
+tion semantics. journal of the acm 43(3), 555–600 (1996)
+17. object management group. omg uniﬁed modeling language 2.0. omg (2005),
+http://www.omg.com/uml/
+18. harel, d., thiagarajan, p.s.: message sequence charts. in: uml for real: design of
+embedded real-time systems, norwell, ma, usa, pp. 77–105. kluwer academic
+publishers, dordrecht (2003)
+19. hendriks, m., van den nieuwelaar, n.j.m., vaandrager, f.w.: model checker aided
+design of a controller for a wafer scanner. int. j. softw. tools technol. transf. 8(6),
+633–647 (2006)
+20. keller, g., n¨ uttgens, m., scheer, a.w.: semantische processmodellierung auf der
+grundlage ereignisgesteuerter processketten (epk). ver¨ oﬀentlichungen des in-
+stituts f¨ ur wirtschaftsinformatik, heft 89 (in german), university of saarland,
+saarbr¨ ucken (1992)
+21. lorenz, r., juhas, g.: towards synthesis of petri nets from scenariose. in: do-
+natelli, s., thiagarajan, p.s. (eds.) icatpn 2006. lncs, vol. 4024, pp. 302–321.
+springer, heidelberg (2006)
+22. nielsen, m., rozenberg, g., thiagarajan, p.s.: elementary transition systems. in:
+second workshop on concurrency and compositionality, essex, uk, pp. 3–33. el-
+sevier science publishers ltd., amsterdam (1992)
+23. pretorius, a.j., van wijk, j.j.: visual analysis of multivariate state transition
+graphs. ieee transactions on visualization and computer graphics 12(5), 685–
+692 (2006)
+24. rubin, v., g¨ unther, c.w., van der aalst, w.m.p., kindler, e., van dongen, b.f.,
+sch¨afer, w.: process mining framework for software processes. in: wang, q., pfahl,
+d., raﬀo, d.m. (eds.) icsp 2007. lncs, vol. 4470, pp. 169–181. springer, heidel-
+berg (2007)
+25. verbeek, h.m.w., van dongen, b.f., mendling, j., van der aalst, w.m.p.: inter-
+operability in the prom framework. in: latour, t., petit, m. (eds.) proceedings of
+the emoi-interop workshop at the 18th international conference on advanced
+information systems engineering (caise 2006), pp. 619–630. namur university
+press (2006)

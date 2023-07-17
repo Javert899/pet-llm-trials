@@ -1,0 +1,939 @@
+discovering block-structured
+process models from incomplete event logs
+sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+eindhoven university of technology, the netherlands
+fs.j.j.leemans, d.fahland, w.m.p.v.d.aalst g@tue.nl
+abstract one of the main challenges in process mining is to discover a process
+model describing observed behaviour in the best possible manner. since event
+logs only contain example behaviour and one cannot assume to have seen all
+possible process executions, process discovery techniques need to be able to han-
+dle incompleteness. in this paper, we study the effects of such incomplete logs
+on process discovery. we analyse the impact of incompleteness of logs on be-
+havioural relations, which are abstractions often used by process discovery tech-
+niques. we introduce probabilistic behavioural relations that are less sensitive to
+incompleteness, and exploit these relations to provide a more robust process dis-
+covery algorithm. we prove this algorithm to be able to rediscover a model of the
+original system. furthermore, we show in experiments that our approach even re-
+discovers models from incomplete event logs that are much smaller than required
+by other process discovery algorithms.
+keywords: process discovery, block-structured process models, rediscoverability, pro-
+cess trees
+1 introduction
+organisations nowadays collect and store considerable amounts of event data. for in-
+stance, workﬂow management systems log audit trails, and enterprise resource planning
+systems store transaction logs. from these event logs, process mining aims to extract
+information, such as business process models, social networks, bottlenecks and com-
+pliance with regulations [1]. in this paper we focus on the most challenging problem:
+discovering a process model from example traces. learning a process model (e.g., a
+petri net) from example traces in an event log, called process discovery , is one of the
+ﬁrst and most challenging steps of process mining.
+two problems of logs are particularly challenging for process discovery algorithms.
+first, the log may contain infrequent behaviour , which forces algorithms to either ex-
+clude this behaviour or return complicated, unreadable models describing all behaviour
+[18]. second, the log might contain insufﬁcient information to discover a process model
+that represents the system well: the log might be incomplete . incompleteness forces al-
+gorithms to either exclude the missing behaviour, thereby reducing the as yet unseen
+behaviour the model can produce, or include the missing, unknown, behaviour, thereby
+risk guessing wrong. in this paper, we focus on handling incomplete logs.2 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+model event log systemprocess discovery produces
+measure /f_itness,
+precision, generalisationrediscoverability
+figure 1: traditional model quality assessment (ﬁtness, precision, generalisation) and
+rediscoverability.
+a notion closely related to incompleteness is rediscoverability. if a process discovery
+technique has rediscoverability , it is able to discover models that have the same lan-
+guage as the real-life process by which a log was produced [3,5,17]. figure 1 shows
+the context of process discovery, rediscoverability, and how discovered models can be
+evaluated. traditionally, models are evaluated with respect to the event log: ﬁtness mea-
+sures what part of the event log is described by the model, precision is high when the
+model does not allow too much behaviour that was not in the event log, and generalisa-
+tionis high when the model allows more behaviour than just the behaviour in the event
+log. although ﬁtness, precision, and generalisation are intuitively clear, different formal
+deﬁnitions are possible [13,24,25]. measuring the quality of a discovered model with
+respect to its event log might be useful, but whether the best model for the event log
+is the best model for the system is not captured by these measures. therefore, to com-
+pare process discovery techniques it is useful to study rediscoverability, as that gives
+theoretical bounds to when a model is language-equivalent to its real-life system.
+rediscoverability is usually proven using assumptions about both log and model
+[3,5,17]. a model must be from a certain class, and a log must contain sufﬁcient infor-
+mation. the notion what information is sufﬁcient, completeness , depends on the discov-
+ery algorithm. generally, the strongest completeness notion is language-completeness ,
+i.e., each trace through the process must be present in the log. the weakest completeness
+notion is that each process step must occur at least once in the log: activity-completeness
+[17].
+typically, rediscoverability can only be guaranteed if the log is complete. in this pa-
+per, we investigate the problem of rediscovering process models from event logs, in
+particular from incomplete event logs.
+another desirable property of process discovery algorithms is that they return simple
+and sound models. a simple model needs few constructs to express its behaviour, and
+asound model is a model free of deadlocks and other anomalies. while an unsound
+model might be useful, it is, for instance, not well suited for compliance evaluation
+and bottleneck analysis [18]. therefore, in this paper we will focus on process trees :
+abstract hierarchical block-structured petri nets that are guaranteed to be sound.
+the inductive miner (im) [17] is an example of an algorithm that discovers process
+trees and for which rediscoverability has been proven. im applies a divide-and-conquer
+approach: it partitions the activities, selects the most important process construct, splits
+the log and recurses until a base case is encountered.
+in this paper, we adapt im to handle incomplete logs: we keep the divide-and-conquer
+approach, but replace the activity partition step by an optimisation problem. we intro-discovering process models from incomplete event logs 3
+duce relations between activities, estimate probabilities of these relations and search
+for a partition of activities that is optimal with respect to these probabilities. rediscov-
+erability is proven assuming log completeness and a sufﬁciently large log; we give a
+lower bound for sufﬁciency.
+in the remainder of this paper, we ﬁrst explore related work. in section 3, we in-
+troduce logs, petri nets, process trees and completeness notions. we study effects of
+incompleteness on behavioural relations in section 4 and describe behavioural prob-
+abilisations. section 5 describes the algorithm, section 6 proves rediscoverability for
+sufﬁciently large logs, and illustrates how incompleteness is handled by the new ap-
+proach, compared with other approaches. section 7 concludes the paper.
+2 related work
+petri net synthesis aims to build an equivalent petri net from a transition system or a
+language. region theory, that characterises places in a petri net, was introduced in [15],
+and several synthesis methods were proposed, for instance in [11,21,6,12].
+process discovery differs from petri net synthesis in the assumption regarding com-
+pleteness. synthesis assumes that the complete language of the system is described in
+some form. for process discovery we cannot assume the log to be language-complete,
+as typically only a fraction of the possible behaviour can be observed in the event log,
+making language-completeness often impossible or infeasible. for example, the lan-
+guage of a model with a loop in it contains inﬁnitely many traces, and the language of a
+model describing the parallel execution of 10 activities contains at least 10!=3628800
+different traces [1]. in contrast, a typical log only contains a fraction of that.
+many process discovery techniques have been proposed. for instance, after a tran-
+sition system has been constructed from the log, state-based region miner techniques
+construct a petri net by folding regions of states into places [4,30]. typically, state-
+based region techniques provide rediscoverability guarantees [10], but have problems
+dealing with incompleteness (concurrency is only discovered if sufﬁcient/all interleav-
+ings are present).
+process trees, or block structures in general, have been used in process discovery,
+both inside the scope of petri nets [8,2,22], as outside [26,27] the scope of petri nets.
+they provide a natural, structured, well-deﬁned way of describing processes that are
+often easily translatable to petri nets. the process tree formalisms used in [8,17,18]
+guarantee soundness as well. process tree discovery techniques have also been pro-
+posed before. for instance, the approach used by [28] constructs a process tree from
+a log by enumerating all traces, after which the process tree is simpliﬁed. the evolu-
+tionary tree miner (etm) [8] uses a genetic approach to discover a process tree, i.e., a
+random population is mutated until a certain stop criterion is met, but as it is steered by
+log-based metrics, ﬁtness, precision, generalisation and simplicity, and by its random
+nature, it is unable to guarantee rediscoverability. a natural strategy when using block
+structures is to apply a divide-and-conquer strategy, which has been applied to process
+discovery in for instance [9,38,17,18].
+in distinguishing languages of classes of petri nets, behavioural relations have proved
+their worth [31], and they have been used to reﬁne or coarsen models, i.e., making them4 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+more or less abstract [29,16], to compare process models [32], and to perform pro-
+cess discovery. for instance, the behavioural relation used in the algorithm [3], its
+derivatives [35,36], and in [17,18], the directly-follows relation, holds for two activ-
+ities if one activity can consecutively follow the other activity. a notion close to the
+directly-follows relation is the eventually-follows relation, which holds if one activity
+can eventually be followed by another. this eventually-follows relation has been used
+in the context of process discovery [28,31,18].
+to the best of our knowledge, the inﬂuence of incompleteness has not been system-
+atically studied either on behavioural relations or process discovery.
+3 traces, event logs, petri nets and completeness
+traces, event logs. atrace is a sequence of activities: xa;a;b ydenotes a trace in which
+ﬁrstaoccurred, then aagain and ﬁnally b. traces can be concatenated: xa;b y  xc y 
+xa;b;c y. an event log is a multiset of traces. for instance, rxa;a;b y3; xb;b y2sdenotes
+an event log in which the trace xa;a;b yhappened 3 times and xb;b yhappened 2 times.
+the function settransforms a multiset into a set: set pl q  tt |t pl u; the function 
+gives the alphabet of the log, i.e., the activities used in it.
+petri nets, workﬂow nets and block-structured workﬂow nets. apetri net is a bipar-
+tite directed graph of interconnected places andtransitions , in which tokens on places
+model the system state and transitions model process step execution. we use the stan-
+dard semantics of petri nets, see [23].
+aworkﬂow net is a petri net having a single input and a single output place, mod-
+elling the initial and ﬁnal states of the system. moreover, each element is on a path from
+input to output [3]. a consecutive sequence of process executions that brings the system
+from the initial state into the ﬁnal state, corresponds to a trace . the set of traces that
+can be produced by a model m, the language ofm, is denoted by l pm q.
+ablock-structured workﬂow net is a hierarchical workﬂow net: it can be divided
+recursively into workﬂow nets. an example is shown in figure 2.
+b
+cd ef
+ga
+figure 2: a block-structured workﬂow net me; ﬁlled regions denote the block-
+structure; process tree ñpp^pa;b q;c q; p ö pñpd;e q;f q;g qqcorresponds to this net.
+process trees. aprocess tree is an abstract hierarchical representation of a block-
+structured workﬂow net. the leaves of the tree are activities , representing transitions.
+the nodes of the tree, operators , describe how their children are combined. this paper
+uses four operators: , ñ, ^and ö. the operator describes the exclusive choice be-
+tween its children, ñthe sequential composition and ^the parallel composition. thediscovering process models from incomplete event logs 5
+ﬁrst child of a ötree is the loop body , the non-ﬁrst children are redo parts. for instance,
+ö pa;b qis the composition of a trace of the body a, then zero-or-more times a trace from
+a redo partband a bodyaagain:a pba q.
+each process tree is easily translatable to a sound workﬂow net. for example, fig-
+ure 2 shows the block-structured workﬂow net corresponding to the process tree me 
+ñpp^pa;b q;c q; p ö pñpd;e q;f q;g qq.
+to deﬁne the semantics of process trees, we assume a ﬁnite set of activities to be
+given. the language of an activity is the execution of that activity (a process step). the
+language of the silent activity contains only the empty trace: executing adds nothing
+to the log. the language of an operator is a combination of the languages of its children.
+in the following deﬁnition, we use the standard language notations |, and[20]. to
+characterise ^, we use the shufﬂe product s1 :::sn, which takes sets of traces from
+s1:::snand interleaves their traces t1 ps1;:::;tn psnwhile maintaining the partial
+order within each ti[7]. for instance,
+txa;b yu  txc;d yu  txa;b;c;d y; xa;c;b;d y; xa;c;d;b y;
+xc;d;a;b y; xc;a;d;b y; xc;a;b;d yu
+using this notation, we deﬁne the semantics of process trees:
+l p q  tx yu
+l pa q  txa yufora p
+l ppm1;:::;mn qq l pm1 q|l pm2 q:::l pmn q
+l pñpm1;:::;mn qq l pm1 q l pm2 q   l pmn q
+l p^pm1;:::;mn qq l pm1 q l pm2 q:::l pmn q
+l p ö pm1;:::;mn qq l pm1 qpl ppm2;:::;mn qql pm1 qq
+as an example, the language of meis pab |ba |c qpde pfde q|g q. the function gives
+the alphabet of a process tree:  pme q  ta;b;c;d;e;f;g u. we useàto denote
+the set of operators, and often `to denote a process tree operator: ` pà,à
+t; ñ; ^; ö u. obviously, the order of children for and ^and the order of non-ﬁrst
+children of öis arbitrary.
+directly-follows relation, transitive closure and graphs. thedirectly-follows rela-
+tion þñhas been proposed in [3] as an abstraction of the behaviour described by a model
+or a log. from a model m, take two activities aandb. ifbcan followadirectly inm,
+x:::;a;b;::: y pl pm q, thena þñmb. for a logl, þñlis deﬁned similarly. for logs,
+þñis monotonic: for a pair of activities, þñcannot cease to hold by adding more traces
+to the log.
+a þñ-path is a sequence a1:::akof activities such that k ¥2and @1 ¤i  kai þñai  1.
+the transitive closure of þñis denoted by þñ : for activities aandb, the relation a þñ b
+holds if there exists a þñ-path fromatob.1for a model m(resp. a logl),start pm q
+1we did not choose the eventually-follows/weak-order relation [18,31], as its completeness
+does not survive log splitting; lemma 11 does not hold for it.6 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+b
+agcf
+de
+(a) þñ-graph ofme
+b
+agcf
+de (b) þñ -graph ofme
+figure 3: graphs of meshowing its directly-follows relation þñand its transitive
+closure þñ .
+(resp.start pl q) denotes the start activities, found at the beginning of a trace, and
+end pm q(resp.end pl q) the end activities, that can conclude a trace.
+figure 3a shows the directly-follows relation of mein graph notation: a directly-
+follows graph. in this graph, an edge is drawn between a pair of activities px;y qif
+x þñy. similarly, figure 3b shows the graph of þñ forme.
+completeness. using these relations, we introduce two completeness notions, between
+a modelmand a logl:
+–lisactivity complete tom(l m), if each activity of mis present in lat least
+once: pm q  pl q.
+–lisdirectly-follows complete tom(l  þñm), iflis activity-complete to m, its
+directly-follows relation is complete, and both start and end activities are complete:
+l m, þñm  þñl,start pm q start pl qandend pm q end pl q.
+partitions and cuts. apartition is a distribution of an activity set into disjoint non-
+empty subsets 1:::n, withn ¡1. a pair of activities pa;b qispartitioned by a
+partition1;:::;nifaandbare not both in the same i. acutis a partition com-
+bined with a process tree operator. if a pair of activities is partitioned by the partition
+in a cut, the pair crosses the cut. for example, pñ; ta u; tb;c;d;e;f uqis a cut, activity
+pair pa;b qcrosses it and activity pair pb;d qdoes not.
+obviously, any process tree can be rewritten to a language-equivalent binary pro-
+cess tree. therefore, without loss of generality, in this paper we consider only binary
+partitions and cuts.
+4 behavioural relations
+in many petri net discovery algorithms, such as [3,17,18,35,36], a two-stage approach
+is used: ﬁrst, an abstraction of the log is derived, and second, from this abstraction a
+model is generated. the directly-follows relation þñis often used as a behavioural re-
+lation. in this section, we ﬁrst describe the inﬂuence of incompleteness on behavioural
+relations. to this end, we classify pairs of activities inspired by the process tree oper-
+ators, by using the þñrelation, after which we show the effect incompleteness has ondiscovering process models from incomplete event logs 7
+this classiﬁcation. second, we introduce a probabilistic version of the classiﬁcation that
+helps discovery techniques deal with incompleteness.
+figure 4 identiﬁes nine cases for þñand þñ between two given activities aandb,
+and organises these cases in a lattice. the structure of the lattice follows from þñand
+þñ : an edge in the lattice corresponds to an extension of the þñ-relation with one pair
+of activities.
+the lattice yields ﬁve relations between activities: the commutative , ^and öi, and
+the non-commutative ñand ös. for instance, if b þñaanda þñ b, then ñ pa;b q, and if
+a þñ b,b þñ a,a þñbandb þña, then öi pa;b q. informally,  pa;b qdenotes that aand
+bare in an exclusive choice relation, ñ pa;b qdenotes that aandbare in a sequence
+relation, and ^ pa;b qdenotes that aandbare in a parallel relation. these are similar to
+the-relations #w, ñwandkw[3], but act globally instead of locally.
+both öi pa;b q(loop indirect ) and ös pa;b q(loop single ) denote that aandbare in a
+loop relation. if we combined them into a single relation, this single relation would not
+give sufﬁcient information to partition the activities. using the two relations ösand öi
+as given by the lattice does, as will be proven in section 6.
+we consider the commutative cases, for instance ^ pa;b qand ^ pb;a q, to be equiva-
+lent.
+a/mapsto→b b/mapsto→a
+a/mapsto→b b/mapsto→a)a,b(∧
+)a,b(→a/mapsto→b b/mapsto→a)b,a(→
+)a,b(×
+)b,a(×)b,a(∧
+)b,a(→ )a,b(→)b,a(s/anticlockwise )a,b(s/anticlockwise
+)a,b(i/anticlockwise
+)b,a(i/anticlockwise a→/mapsto/negationslashb b→/mapsto/negationslashaa→/mapsto/negationslashb b→/mapsto/negationslashab→/mapsto/negationslasha a→/mapsto/negationslashb
+b+/mapsto→a b+→/mapsto/negationslash/negationslashab+/mapsto→a
+b+→/mapsto/negationslash/negationslashab+/mapsto→a b+/mapsto→ab+/mapsto→ab+/mapsto→a
+a→/mapsto/negationslashb
+a→/mapsto/negationslashb
+a→/mapsto/negationslashb b→/mapsto/negationslashab→/mapsto/negationslashab→/mapsto/negationslasha
+a+→/mapsto/negationslash/negationslashba+→/mapsto/negationslash/negationslashb
+a+→/mapsto/negationslash/negationslashba+/mapsto→ba+/mapsto→b a+/mapsto→ba+/mapsto→ba+/mapsto→b
+a+/mapsto→b
+b+→/mapsto/negationslash/negationslasha
+figure 4: activity relations; the arrows deﬁne a lattice.
+consider again petri net meshown in figure 2. figure 5 shows the activity re-
+lations ofmeas graphs. consider the log le  rxc;d;e;f;d;e;f;d;e y, xb;a;d;e y,
+xa;b;d;e;f;d;e y, xc;g ys, which we produced using me, butleis not directly-follows
+complete to me, asa þñg,b þñg,a þñ gandb þñ ghold inmebut not inle. there-
+fore,  pa;g qand  pb;g qhold inle; figure 6 shows how and ñchange. for le,
+a process discovery algorithm will regard aandbto be exclusive to g, whilemeputs
+them in sequence, and thus be unable to rediscover me. the problem illustrated with
+these activity relations is inherent to any process discovery algorithm using behavioural
+relations; any technique that just uses behavioural relations is likely unable to rediscover
+a model if the behavioural relations of the log are not complete.8 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+b
+agcf
+de
+(a) -graph
+b
+agcf
+de (b) ñ-graph
+b
+agcf
+de (c) öi-graph
+b
+agcf
+de
+(d) ös-graph
+b
+agcf
+de (e) ^-graph
+figure 5: activity relations of meas graphs. in the ñ-graph a directed edge is
+drawn from atobif ñ pa;b qholds, and similar for ös. for , ^and öi, which are
+commutative, undirected edges are drawn.
+b
+agcf
+de
+(a) -graph
+b
+agcf
+de (b) ñ-graph
+figure 6: two activity relations of leas graphs. notice that ñpa;g qand ñpb;g qdo
+not hold anymore, while pa;g qand pb;g qnow do.
+in the following, we explore ways to use information from incomplete logs that could
+help to rediscover the original model. therefore, in the remainder of this paper we as-
+sume that the log only contains behaviour from its system, i.e., no noise is present. first,
+some information in the log may allow us to conclude that a particular relation between
+two activities cannot hold. for instance, if the log contains a trace xb;a y, then ñ pa;b q
+cannot hold. these violations follow from figure 4: if the log contains information that
+a relation `holds, then any weaker relation, i.e., not reachable from `, cannot hold;
+one can only move up in the lattice.
+second, the idea is, instead of using a binary choice, to rather use an estimated proba-
+bility that a relation holds, an idea also used in for instance the heuristics miner [33,34].
+for each of the activity relations `, we introduce a probabilistic version p `: for activ-
+itiesaandb,p ` pa;b qdenotes an artiﬁcially estimated probability that pa;b qare in a
+`-related. using the probabilistic versions makes it easier for techniques to handle in-
+completeness: in our example, instead of a binary choice whether ñ pa;g qand ñ pb;g q
+hold or not, we can compare the probabilities p ñandp to make a choice.discovering process models from incomplete event logs 9
+our choice for these p `is shown in table 1. let mbe a model and la log ofm.
+then, using figure 4, we distinguish three cases and choose p ` pa;b qas follows:
+–if ` pa;b qholds inl, it makes sense to choose p ` pa;b qas the highest of all relations
+for the pair pa;b q. the more frequent activities aandboccur inl, the more conﬁdent
+we are that ` pa;b qholds form, and not some stronger relation. we choose p ` pa;b q
+as follows: let z pa;b q |a | |b |
+2denote the average number of occurrences of aand
+b, then we deﬁne p ` pa;b q 1 1
+z pa;b q 1, yielding a number between1
+2and1.
+–if some relation b pa;b q, holds inlfrom which ` pa;b qis unreachable, then lcon-
+tains a violation to p ` pa;b q, as we assumed lto be noise-free and the behavioural
+relations cannot cease to hold by adding observations. therefore, we choose p ` pa;b q
+low:0.
+–if some relation b1pa;b qholds inlfrom which ` pa;b qcan be reached, i.e., p ` pa;b q
+could hold by adding more traces to l, we choose to divide the remaining1
+z pa;b q 1
+evenly over all remaining entries, such that the probabilities for each pair pa;b qsum
+up to 1.
+for example, in case of le, we get p  pa;g q 0:6andp ñ pa;g q 0:07.
+table 1: our proposal for probabilistic activity relations for activities aandb, with
+z pa;b q  p|a |   |b |q{2. negations of relations are omitted from the ﬁrst column.
+p  pa;b qp ñ pa;b qp ñ pb;a qp öi pa;b qp ös pa;b qp ös pb;a qp ^ pa;b q
+(nothing) 1 1
+z  11
+61
+z  11
+61
+z  11
+61
+z  11
+61
+z  11
+61
+z  11
+61
+z  1
+a þñ b 0 1 1
+z  101
+41
+z  11
+41
+z  11
+41
+z  11
+41
+z  1
+b þñ a 0 0 1 1
+z  11
+41
+z  11
+41
+z  11
+41
+z  11
+41
+z  1
+a þñ b ^b þñ a0 0 0 1 1
+z  11
+31
+z  11
+31
+z  11
+31
+z  1
+a þñb 0 1 1
+z  10 01
+21
+z  101
+21
+z  1
+a þñb ^b þñ a0 0 0 0 1 1
+z  101
+z  1
+b þña 0 0 1 1
+z  10 01
+21
+z  11
+21
+z  1
+b þña ^a þñ b0 0 0 0 0 1 1
+z  11
+z  1
+a þñb ^b þña 0 0 0 0 0 0 1
+in the next section, we demonstrate how to use any system of probabilistic relations
+in a concrete algorithm; one could deﬁne table 1 differently, as long as for each pair of
+activities pa;b qand each relation `, a probability p ` pa;b qis available. in section 6, we
+will show that our choices for p `lead to a correct algorithm. we expect that the proofs
+given in section 6 easily extend to other choices, but the precise class of acceptable p `
+needs further research.
+5 algorithm
+in this section, we demonstrate how the probabilistic activity relations deﬁned in sec-
+tion 4 can be used to discover process trees.
+we use a divide-and-conquer approach and adapt ideas from im [17] to introduce
+a new disovery algorithm that we call inductive miner - incompleteness (imin). imin10 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+consists of three steps that are applied recursively: ﬁrst, the þñ-graph of the log and
+its transitive closure þñ are computed. second, a cut is chosen such that the relations
+between pairs crossing the cut have the highest probability according to table 1. the
+operator of the chosen cut is recorded. third, using the cut, the log is split into a sublog
+for each part and on each sublog, imin recurses. the recursion ends when a base case, a
+log containing just a single activity, is encountered. the hierarchy of recorded operators
+is a process tree.
+we ﬁrst describe how to accumulate the probabilities of table 1 to assess the prob-
+ability of a cut. second, we give the algorithm, an example and a description of our
+implementation.
+5.1 accumulated estimated probabilities for cuts
+given activity relation probabilities, such as the ones deﬁned in table 1, we compute
+an accumulated probability for a cut. informally, for ` p t; ñ; ^u, the accumulated
+probability p `is the average p `over all partitioned pairs of activities.
+deﬁnition 1 (accumulated probability for , ñand ^).letc  p`;1;2 qbe a
+cut, with ` p t; ñ; ^u. then p ` p1;2 qdenotes the accumulated probability of c:
+p ` p1;2 q °
+a p1;b p2p ` pa;b q
+|1 |  |2 |
+note that a ñ, , or ^cut requires all pairs of activities to be in the same relation
+sufﬁciently often. for a loop cut, this is not sufﬁcient, as all crossing pairs of activities in
+a loop are in a loop relation ( ös y öi). this loop relation sufﬁces to describe the prob-
+ability whether all activities are indeed in a loop, but on its own cannot distinguish the
+body of a loop from its redo parts. for this, we have to explicitly pick the start and end
+activities of the redo parts, such that a redo start activity follows a body end activity , and
+a redo end activity is followed by a body start activity. this direct succession in a loop
+is expressed in ös. hence, we obtain the following probability that c  p ö;1;2 q
+is a loop cut for the chosen redo start activities s2and loop redo end activities e2; the
+start and end activities of the body are the start and end activities of the log. in the next
+section, we show how s2ande2could be chosen.
+deﬁnition 2 (accumulated probability for ö).letc  p ö;1;2 qbe a cut,lbe a
+log, ands2,e2be sets of activities. we aggregate over three parts: start of a redo part,
+end of a redo part and everything else:
+redo start ¸
+pa;b qpend pl qs2p ös pa;b q
+redo end ¸
+pa;b qpe2 start pl qp ös pa;b q
+indirect ¸
+a p1;b p2
+pa;b qrpend pl qs2 qype2 start pl qqp öi pa;b qdiscovering process models from incomplete event logs 11
+then, p ö p1;2;s2;e2 qdenotes the accumulated probability of c:
+p ö p1;2;s2;e2 q redo start  redo end  indirect
+|1 |  |2 |
+in this deﬁnition, redo start and redo endcapture the strength of s2ande2really being
+the start and end of the redo parts; indirect captures the strength that all other pairs of
+activities that cross 1,2are in a loop relation.
+for readability reasons, in the following, we will omit the parameters s2ande2.
+5.2 the algorithm: inductive miner - incompleteness (imin)
+next, we introduce a process discovery algorithm that uses the accumulated estimations
+of deﬁnitions 1 and 2 in a divide-and-conquer approach.
+for this, we introduce a parameter that inﬂuences a threshold of acceptable incom-
+pleteness. by default, a cut with highest p `is to be selected at all times. however,
+a low p `might indicate that the behaviour in the log cannot be described well by a
+block-structured petri net. therefore, a parameter his included: if there is no cut with
+p ` ¥h, a ﬂower model ö p;a1;:::;am qwith ta1;:::;am u  pl q, allowing for
+any trace over  pl q[17], is returned.
+function imin(l)
+ifl  rxa yxswitha pandx ¥1then
+returna
+end if
+p`;1;2 q ð cut of pl qwith highest p ` p1;2 q; ` pà
+ifp ` p1;2 q ¥hthen
+l1;l2 ðsplit pl; p`;1;2 qq
+return `pimin pl1 q;imin pl2 qq
+else
+return ö p;a1;:::;am qwhere ta1;:::;am u  pl q
+end if
+end function
+imin contains two non-trivial operations: selecting a cut with highest p `and the
+split function. to select a cut with highest p `, and in case of öto chooses2ande2,
+our implementation uses an smt-solver. for more details of the translation to smt,
+please refer to [19].
+the function split splits a loglinto sublogs l1andl2, according to a given cut
+c  p`;1;2 q, by projecting the traces of lon1and2. for example, split
+applied to a sequence cut pñ; ta u; tb uqand a trace xa;a;b;b yyields xa;a yand xb;b y.
+in addition, for ö, traces are split on the points where the trace ‘leaves’ 1and ‘en-
+ters’2. for example: split prxa;b;a;a;b;a ys; p ö; ta u; tb uqqyields rxa y2; xa;a ysand
+rxb y2s. for a more detailed formal description, please refer to [17].
+imin has been implemented as part of the inductive miner plug-in of the prom frame-
+work [14], available at http://www.promtools.org.
+example 3. as an example, consider again the log le  rxc;d;e;f;d;e;f;d;e y,
+xb;a;d;e y, xa;b;d;e;f;d;e y, xc;g ys. if imin is applied to lewithh 0, the ﬁrst12 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+most likely cut is pñ; ta;b;c u; td;e;f;g uq, with a p ñof about 0:64. the choice for ñ
+is recorded, and leis split into rxc y2; xb;a y; xa;b ysand rxd;e;f;d;e;f;d;e y, xd;e y,
+xd;e;f;d;e y, xg ys. then, imin recurses on both these sublogs. figure 7 shows the
+recursive steps that are taken by imin. the ﬁnal result is ñpp^pa;b q;c q;
+p ö pñpd;e q;f q;g qq, which is equal to me.
+)} d,e,f,g }{ a,b,c{,→(
+)}c{,}a,b{,×(
+)}b{,}a{,∧()}g{,} d,e,f{,×(
+)}f{,}d,e{,/anticlockwise(
+)}e{,}d{,→( a bc
+d efg64.0
+74.0
+00.174.0
+82.0
+86.0
+figure 7: running example: imin ple q. as a ﬁrst step, the cut with highest p `is
+pñ; ta;b;c u; td;e;f;g uq, with p ` 0:64. then, imin recurses as shown.
+6 rediscoverability
+in this section, we report on the rediscoverability of imin. we ﬁrst describe a class of
+process trees, for which we then prove that imin has rediscoverability, given a directly-
+follows complete log in which each activity occurs sufﬁciently often. after that, we
+report on experiments showing that imin manages to rediscover these process trees,
+even from smaller logs than those needed by other discovery algorithms.
+6.1 class of rediscoverable process trees; normal form
+the class of process trees crfor which we will prove rediscoverability is as follows:
+deﬁnition 4 (class cr).letmbe a process tree. then mbelongs tocrif for each
+(sub)treem1at any position in m, it holds that
+–the subtree is not a silent activity: m1
+–ifm1 `pm1
+1:::m1
+n q, with ` pà, then no activity appears more than once:
+@1 ¤i  j ¤n pm1
+i q x pm1
+j q  h
+–ifm1 ö pm1
+1:::m1
+n q, thenm1
+1is required to have disjoint start and end activities:
+start pm1
+1 q xend pm1
+1 q  h
+in order to prove language-rediscoverability, we use a language-unique normal form.
+each process tree can be converted into this normal form using the following language-
+preserving reduction rules. if no rule can be applied to a tree, the tree is in language-
+unique normal form [17].
+note that the order of children of and ^, and redo children of ö, is arbitrary.discovering process models from incomplete event logs 13
+deﬁnition 5 (normal form). letmbe a process tree. then applying the following
+reduction rules exhaustively on subtrees of myields a language-unique normal form,
+in which `denotes a process tree operator:
+`pm1q ñm1
+p   1; p   2 q;   3 q ñ p   1;   2;   3 q
+ñp   1; ñp   2 q;   3 q ñ ñp   1;   2;   3 q
+^p   1; ^p   2 q;   3 q ñ ^p   1;   2;   3 q
+ö p ö pm1;   1 q;   2 q ñ ö pm1;   1;   2 q
+ö pm1;   1; p   2 q;   3 q ñ ö pm1;   1;   2;   3 q
+using this normal form, imin can discover the language of any tree by searching for
+only binary cuts. for example, if m  ñpm1;m2;m3 q, it is perfectly ﬁne to discover
+either ñpm1; ñpm2;m3 qqor ñpñpm1;m2 q;m3 q.
+we say that a cut cconforms to a modelmin normal form if selecting cdoes not
+disable discovery of a tree equivalent to m:
+deﬁnition 6. letc  p`;1;2 qbe a cut and let m  `pm1:::mn qbe a model
+in normal form. then cconforms tomif no pmi qis partitioned: @i dj pmi q j.
+moreover, for non-commutative operators, order must be maintained.
+6.2 formal rediscoverability
+the main theorem states that any model from class crcan be rediscovered from a
+directly-follows complete log whose activities occur at least a certain number of times.
+letleast pl qdenote the number of times the least occurring activity occurs in a log l.
+theorem 7. assume a model mthat is of class cr. then there exists a k pnsuch
+that for all logs lwith set pl q l pm q,l  þñmandleast pl q ¥k, it holds that
+l pimin pl qq l pm q.
+we prove the theorem as follows: we ﬁrst show that imin selects the correct root oper-
+ator (lemma 9), then that imin selects a partition corresponding to m(lemma 10), and
+ﬁnally that log splitting yields correct directly-follows complete sublogs (lemma 11),
+on which imin recurses.
+in these lemmas, we will use a very general property of partitions: any two partitions
+share at least one pair of activities that crosses both partitions.
+lemma 8. take two binary partitions 1;2and1
+1;1
+2, both of the same . then
+there is a pair of activities that is partitioned by both partitions.
+proof. towards contradiction, assume there is no pair that is partitioned by both 1;2
+and1
+1;1
+2. takea1;a1
+1 p1,a2 p2. pairs pa1;a2 qand pa1
+1;a2 qare partitioned
+by1;2, so by assumption they are not partitioned by 1
+1;1
+2. thus, there is an
+1 ¤i ¤2such thata1;a1
+1;a2 p1
+i. as we posed no restrictions on a1anda1
+1, for some
+1 ¤i ¤2,1 1
+i. by similar reasoning, 2 1
+i, so1 y2 1
+i. therefore,
+1
+i and hence1
+1;1
+2is not a partition. [ \14 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+in the following lemma, we prove that for each log for which least is sufﬁciently
+large, imin selects the correct root operator.
+lemma 9. assume a reduced model m  `pm1;:::;mn q. then there exists a k pn
+such that for all logs lwithset pl q l pm q,l  þñmandleast pl q ¥k, it holds that
+imin pl qselects `.
+proof. imin selects binary cuts, while mcan have an arbitrary number of children.
+without loss of generality, assume that c  p`;1,2 qis a binary cut conforming to
+m. letc1 pb;1
+1;1
+2 qbe an arbitrary cut of m, with b  ` . we need to prove that
+p ` p1;2 q ¡p b p1
+1;1
+2 q, which we do by computing a lower bound for p ` p1;2 q
+and an upper bound for p b p1
+1;1
+2 qand then comparing these two bounds. apply case
+distinction on whether `  ö:
+–case `  ö. we start with the lower bound for p ` p1;2 q. by deﬁnition 1,
+p ` p1;2 q °
+a p1;b p2p ` pa;b q
+|1 |  |2 |
+by semantics of process trees, figure 4, set pl q l pm qandl  þñm, for each ac-
+tivity pair pa;b qthat crossesc, ` pa;b qholds. for each such pair, we chose p ` pa;b q ¥
+1 1
+z pa;b q 1(note that this would be an equality, save for p ^ pa;b q, which is 1). thus,
+p ` p1;2 q ¥°
+a p1;b p21 1
+z pa;b q 1
+|1 |  |2 |
+for allaandb,z pa;b q |a | |b |
+2¥min p|a |; |b |q ¥least pl q. thus,
+p ` p1;2 q ¥1 1
+least pl q  1(1)
+next, we prove an upper bound for p b p1
+1;1
+2 q. by deﬁnition 1,
+°
+a p1
+1;b p1
+2p b pa;b q
+|1
+1 |  |1
+2 |p b p1
+1;1
+2 q
+let pu;v qbe a pair partitioned by both 1;2and1
+1;1
+2. by lemma 8, such a
+pair exists. for all other pa;b q  pu;v q, it holds that p b pa;b q ¤1(abusing notation
+a bit by combining öiand ös), and there are |1 |  |2 | 1of those pairs.
+p|1
+1 |  |1
+2 | 1 q 1  1 p b pu;v q
+|1
+1 |  |1
+2 |¥p b p1
+1;1
+2 q
+as pu;v qcrossesc, ` pu;v qholds. then by inspection of table 1, p b pu;v q ¤
+1
+z pu;v q 1. deﬁneyto be |1
+1 |  |1
+2 |.
+py 1 q  1
+z pu;v q 1
+y¥p b p1
+1;1
+2 qdiscovering process models from incomplete event logs 15
+fromz pa;b q |a | |b |
+2¥1follows that1
+z pu;v q 1¤1
+2. thus,
+py 1 q  1
+2
+y¥p b p1
+1;1
+2 q (2)
+using the two bounds (1) and (2), we need to prove that
+1 1
+least pl q  1¡py 1 q  1
+2
+y(3)
+note thatyis at most t pm q{2 u  r pm q{2 s, which allows us to choose ksuch that
+k ¡2y 1. by initial assumption least pl q ¥k, and therefore (3) holds. hence,
+p ` p1;2 q ¡p b p1
+1;1
+2 q.
+–case `  ö. using reasoning similar to the `  öcase, we derive (1). we directly
+reuse (2) to arrive at (3) and conclude that p ` p1;2 q ¡p b p1
+1;1
+2 q.
+thus, p ` p1;2 q ¡p b p1
+1;1
+2 qholds for all `. as imin selects the cut with highest
+p `, imin selects `. [ \
+next, we prove that for a log l, ifleast pl qis sufﬁciently large, then imin will select
+a partition conforming to m.
+lemma 10. assume a model m  `pm1;:::;mn qin normal form. let c 
+p`;1;2 qbe a cut conforming to m, and letc1 p`;1
+1;1
+2 qbe a cut not con-
+forming tom. then there exists a k pnsuch that for all logs lwithset pl q l pm q,
+l  þñmandleast pl q ¥k, holds that p ` p1;2 q ¡p ` p1
+1;1
+2 q.
+the proof strategy for this lemma is similar to the proof of lemma 9: we prove that
+at least one “misclassiﬁed” activity pair pu;v qcontributes to the average p ` p1
+1;1
+2 q.
+please refer to [19] for a detailed proof.
+as a last lemma, we show that log splitting produces correct and directly-follows
+complete sublogs.
+lemma 11. assume a model min normal form and a log lsuch that set pl q l pm q
+andl  þñm. letc  p`;1;2 qbe a cut corresponding to m, and letl1;l2
+be the result of split pl;c q. then, there exist process trees m1andm2, such that
+1  pm1 q,2  pm2 q, the normal form of `pm1;m2 qism,set pl1 q l pm1 q,
+l1  þñm1,set pl2 q l pm2 qandl2  þñm2.
+for this lemma, we use that mcan be converted into a binary tree by using the reduc-
+tion rules of deﬁnition 5 reversed. as cconforms to m, it is possible to convert mto
+`pm1;m2 qsuch that1  pm1 qand2  pm2 q. the strategy for the remaining
+part of the proof is to show for each operator that split returns sublogs l1andl2
+that are valid for m1andm2( @i: set pli q l pmi q). we then prove that l1andl2
+are directly-follows complete to m1andm2( @i:li  þñmi). please refer to [19] for
+details.
+using these lemmas, we can prove rediscoverability for sufﬁciently large logs.
+proof (of theorem 7). we prove the theorem by induction on model sizes, being | pm q|.16 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+–base case:m a. as set pl q l pm q,l  rxa yxsfor somex ¥1. by code
+inspection, l pimin pl qq l pm q.
+–induction step: assume that the theorem holds for all models smaller than m. by
+lemma 9 and 10, imin selects a cut c  p`;1;2 qconforming to m. next
+split (l;c) returns anl1andl2. by lemma 11, there exists process trees m1,m2
+such that l p`pm1;m2 qq l pm q. by lemma 11, set pl1 q l pm1 q,l1  þñm1,
+set pl2 q l pm2 qandl2  þñm2. as of the induction hypothesis and the fact that
+l1andl2are sufﬁciently large by construction, l p`pimin pl1 q;imin pl2 qqq 
+l p`pm1;m2 qq l pm q. because imin pl q  `p imin pl1 q;imin pl2 qq, there exists
+ak pnsuch that ifleast pl q ¥k, then l pimin pl qq l pm q. [ \
+in the proofs of lemmas 9 and 10, we chose k ¡2  t pm q{2 u  r pm q{2 s 1.
+this gives an upper bound for the minimum least pl qrequired, and a characterisation
+of sufﬁciency:
+corollary 12. a bound for kandleast pl qas used in theorem 7 is determined by the
+size of the alphabet: least pl q ¥k ¥2  t | pm q|{2 u  r | pm q|{2 s.
+last, the unsolved question remaining is whether directly-follows completeness of a
+log implies that the log is sufﬁciently large, and that a generalised version of theorem 7
+holds:
+conjecture 13. assume a model mand a loglsuch that set pl q  l pm qand
+l  þñm. then l pimin pl qq l pm q.
+the experimental results reported in the remainder of this paper support this conjecture.
+6.3 experimental result
+in this section, we show that imin can rediscover models from small logs. in addi-
+tion, we investigate how various process discovery algorithms, including imin, handle
+incompleteness.
+experiment. in the experiment, we aim to answer three questions: 1) can imin redis-
+cover the language of models? 2) how does imin handle incomplete logs? 3) how do
+other algorithms handle incomplete logs?
+to answer questions 1 and 2, we investigated how large the log of a given model m
+has to be to rediscover the language of m, by generating logs of various sizes and trying
+to rediscover mfrom these logs. for question 3, we investigated how large logs need
+to be for other algorithms, such that adding more traces to the log would not change the
+result of the algorithm.
+setup. for answering questions 1 and 2, we generated 25 random process trees with
+15 activities from class cr. for each tree m, 20 random, sufﬁciently large, directly-
+follows complete logs were generated. for each log l, we veriﬁed that l pm qwas
+rediscovered from it: l pimin pl qq  l pm q. then we performed a binary search on
+lto ﬁnd the smallest sublog of lfrom which, in normal form, mwas rediscovered.discovering process models from incomplete event logs 17
+these sublogs were obtained by removing traces from l, and on each smallest sublog
+found, we measured the number of traces and completeness of þñ.
+to answer question 3, comparing imin to other algorithms, we used a similar proce-
+dure: for each discovery algorithm d, we used the same randomly generated process
+trees to ﬁnd, for each tree, the smallest logs ldsuch that adding more traces to ld
+would always return a model d1d pld q(up to isomorphism). we call the model
+d pld qfor such a smallest log ldatop modelmt. for this experiment, we con-
+sidered the following discovery algorithms: inductive miner (im) [17], integer linear
+programming miner (ilp) [37], -algorithm ( ) [3], region miner (rm) [30,4] and
+ﬂower model, all plug-ins of the prom framework [14]. the ﬂower model was included
+as a baseline, as it will reach its top model if l m: it only depends on the presence
+of activities in the log. all miners were applied using their default settings, and for
+iminhwas set to 0. for both procedures, we experimentally observed that event logs
+with 16000 traces were directly-follows complete and sufﬁciently large to rediscover
+the original model (in case of imin) or to ﬁnd the top model (for other algorithms).
+results. table 2 shows the results. for example, im on average required 97% of the
+þñ-pairs of the model to be present in the log to discover its top model mt. for some
+models, the ilp implementation we used did not return an answer. averages are given
+without these models and are marked with a preceding *.
+table 2: results of the experiments. column 2: for how many models mwas its
+language rediscovered in mt, averaged over logs. column 3: average number of traces
+in the smallest sublogs. column 4: average ratio of þñ-pairs present in smallest sublogs
+compared to the models m.
+miner l pm q l pmt q number of traces þñ-completeness
+ 0% 133.132 1.000
+ilp 12% *258.529 *0.980
+rm 4% 132.896 1.000
+im 100% 85.256 0.971
+imin 100% 32.568 0.875
+flower 0% 11.620 0.641
+a0a1
+a2a4
+a3a5 a6
+a7 a8
+a9 a10a14
+a11
+a13a12
+figure 8: petri net representation of mf: ñp ö pñpa0; pa1;a2 qq;
+a3;a4 q; ö p^pñpa5;a6 q; ñpa7;a8 q; ñpa9;a10 qq; ñpa11;a12 q;a13;a14 q
+one of the randomly generated models is shown in figure 8. to illustrate handling
+of incompleteness, we used this model to ﬁnd the smallest sublog for which imin re-18 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+discoveredmf, and applied other discovery algorithms to that sublog. the results are
+shown in figure 9.
+a0a3
+(a) excerpt of ;a0cannot ﬁre;
+unsound.
+(b) excerpt of rm; labels have been removed; lots of
+places necessary to represent parallelism.
+a0
+a2
+a5
+(c) excerpt of ilp; a0can ﬁre at any
+time.
+(d) im; labels have been removed; misses the central
+parallelism.
+figure 9: models resulting from discovery of a smallest sublog of imin.
+discussion. answering question 1, whether imin can rediscover the language of mod-
+els, for all models and logs, imin discovered the original model or a language-equivalent
+one, and even did not require the log to be directly-follows complete, which supports
+conjecture 13. imin required on average 87.5% of the þñ-relation pairs to be present
+in the log to discover its top model. this suggests that imin is able to handle directly-
+follows incomplete logs, answering question 2.
+the ﬂower model provides a baseline: it discovers a model based on the activities
+that are present in a log; no process discovery technique can be expected to reach its
+top model without all activities being present in the log. for all models, imin required
+fewer or equally many traces than any other discovery algorithm, except for the ﬂower
+model, to reach its top model.
+remarkably, also im did not require the þñrelation to be complete at all times. a
+possible explanation is that log splitting might help at times. for instance, ^pa;b;c q
+could be rediscovered as ^pa; ^pb;c qq. if a log lacks þñpb;c q, it could be introduced
+during log splitting: by splitting xb;a;c ywith ta uand tb;c uyields the trace xb;c yfor
+whichb þñcholds, enabling the rediscovery of ^pb;c q.
+figure 9 illustrates how other discovery algorithms handle models within the repre-
+sentational bias of im and imin, for which imin rediscovers its language. it would be
+interesting to see how these algorithms perform on process trees not derived from class
+cr, and on general petri nets.
+7 conclusion
+in this paper, we studied the effects of incompleteness on process discovery. we anal-
+ysed the impact of incompleteness of logs on behavioural relations. we introduceddiscovering process models from incomplete event logs 19
+probabilistic behavioural relations to make them more stable when dealing with in-
+completeness, and deﬁned an algorithm based on these probabilistic relations. this al-
+gorithm was proven to be able to rediscover the language of models, given sufﬁciently
+large directly-follows complete logs. moreover, in experiments it was shown to be able
+to rediscover the language of models, even when given small incomplete logs, and to
+need less information in the log to converge than other process discovery algorithms.
+an open question remaining is whether rediscoverability holds for imin (conjec-
+ture 13). other points of future research could be what characterises acceptable choices
+of probabilistic activity relations (table 1), (that could even be able to handle noise),
+and, if directly-follows completeness is an upper bound for rediscoverability, and if
+activity-completeness is a lower bound for it, whether these bounds are tight. the ex-
+periments we conducted suggest that there is a tighter upper bound than directly-follows
+completeness.
+references
+1. van der aalst, w.: process mining: discovery, conformance and enhancement of business
+processes. springer (2011)
+2. van der aalst, w., buijs, j., van dongen, b.: towards improving the representational bias of
+process mining. in: simpda. lecture notes in business information processing, vol. 116,
+pp. 39–54. springer (2011)
+3. van der aalst, w., weijters, a., maruster, l.: workﬂow mining: discovering process models
+from event logs. ieee trans. knowl. data eng. 16(9), 1128–1142 (2004)
+4. badouel, e., darondeau, p.: theory of regions. in: lectures on petri nets i: basic models.
+vol. 1491, pp. 529–586 (1998)
+5. badouel, e.: on the -reconstructibility of workﬂow nets. in: petri nets’12. lncs, vol.
+7347, pp. 128–147. springer (2012)
+6. bergenthum, r., desel, j., mauser, s., lorenz, r.: synthesis of petri nets from term based
+representations of inﬁnite partial languages. fundam. inform. 95(1), 187–217 (2009)
+7. bloom, s.l., ´esik, z.: free shufﬂe algebras in language varieties. theor. comput. sci.
+163(1&2), 55–98 (1996)
+8. buijs, j., van dongen, b., van der aalst, w.: a genetic algorithm for discovering process
+trees. in: ieee congress on evolutionary computation. pp. 1–8. ieee (2012)
+9. carmona, j.: projection approaches to process mining using region-based techniques. data
+mining and knowledge discovery 24(1), 218–246 (2012)
+10. cortadella, j., kishinevsky, m., lavagno, l., yakovlev, a.: deriving petri nets for ﬁnite
+transition systems. ieee trans. computers 47(8), 859–882 (1998)
+11. darondeau, p.: region based synthesis of p/t-nets and its potential applications. in: icatpn.
+pp. 16–23 (2000)
+12. darondeau, p.: unbounded petri net synthesis. in: lectures on concurrency and petri nets.
+lncs, vol. 3098, pp. 413–438. springer (2003)
+13. de weerdt, j., de backer, m., vanthienen, j., baesens, b.: a multi-dimensional quality
+assessment of state-of-the-art process discovery algorithms using real-life event logs.
+information systems 37, 654–676 (2012)
+14. van dongen, b., de medeiros, a., verbeek, h., weijters, a., van der aalst, w.: the prom
+framework: a new era in process mining tool support. icatpn 3536, 444–454 (2005)
+15. ehrenfeucht, a., rozenberg, g.: partial (set) 2-structures. acta informatica 27(4), 343–368
+(1990)20 sander j.j. leemans, dirk fahland, and wil m.p. van der aalst
+16. g ¨unther, c., van der aalst, w.: fuzzy mining–adaptive process simpliﬁcation based on
+multi-perspective metrics. business process management pp. 328–343 (2007)
+17. leemans, s., fahland, d., van der aalst, w.: discovering block-structured process models
+from event logs - a constructive approach. in: petri nets 2013. lncs, vol. 7927, pp.
+311–329. springer (2013)
+18. leemans, s., fahland, d., van der aalst, w.: discovering block-structured process mod-
+els from event logs containing infrequent behaviour. in: business process management
+workshops. springer (2013), to appear
+19. leemans, s., fahland, d., van der aalst, w.: discovering block-structured process models
+from incomplete event logs. tech. rep. bpm-14-05, eindhoven university of technology
+(march 2014)
+20. linz, p.: an introduction to formal languages and automata. jones & bartlett learning (2011)
+21. lorenz, r., mauser, s., juh ´as, g.: how to synthesize nets from languages: a survey. in:
+winter simulation conference. pp. 637–647. wsc (2007)
+22. polyvyanyy, a., vanhatalo, j., v ¨olzer, h.: simpliﬁed computation and generalization of the
+reﬁned process structure tree. in: ws-fm’10. lncs, vol. 6551, pp. 25–41. springer (2010)
+23. reisig, w., schnupp, p., muchnick, s.: primer in petri net design. springer (1992)
+24. rozinat, a., de medeiros, a., g ¨unther, c., weijters, a., van der aalst, w.: the need for
+a process mining evaluation framework in research and practice. in: business process
+management workshops. pp. 84–89. springer (2008)
+25. rozinat, a., veloso, m., van der aalst, w.: evaluating the quality of discovered process
+models. in: 2nd int. workshop on the induction of process models. pp. 45–52 (2008)
+26. schimm, g.: generic linear business process modeling. in: er (workshops). lncs, vol.
+1921, pp. 31–39. springer (2000)
+27. schimm, g.: process miner - a tool for mining process schemes from event-based data. in:
+jelia. lncs, vol. 2424, pp. 525–528. springer (2002)
+28. schimm, g.: mining most speciﬁc workﬂow models from event-based data. in: business
+process management. lncs, vol. 2678, pp. 25–40. springer (2003)
+29. smirnov, s., weidlich, m., mendling, j.: business process model abstraction based on
+synthesis from well-structured behavioral proﬁles. int. j. cooperative inf. syst. 21(1), 55–83
+(2012)
+30. sol ´e, m., carmona, j.: process mining from a basis of state regions. in: petri nets. lncs,
+vol. 6128, pp. 226–245. springer (2010)
+31. weidlich, m., van der werf, j.: on proﬁles and footprints - relational semantics for petri
+nets. in: petri nets. lncs, vol. 7347, pp. 148–167. springer (2012)
+32. weidlich, m., polyvyanyy, a., mendling, j., weske, m.: causal behavioural proﬁles - efﬁ-
+cient computation, applications, and evaluation. fundam. inform. 113(3-4), 399–435 (2011)
+33. weijters, a., van der aalst, w., de medeiros, a.: process mining with the heuristics miner-
+algorithm. beta working paper series 166, eindhoven university of technology (2006)
+34. weijters, a., ribeiro, j.: flexible heuristics miner. in: cidm. pp. 310–317. ieee (2011)
+35. wen, l., van der aalst, w., wang, j., sun, j.: mining process models with non-free-choice
+constructs. data mining and knowledge discovery 15(2), 145–180 (2007)
+36. wen, l., wang, j., sun, j.: mining invisible tasks from event logs. advances in data and
+web management pp. 358–365 (2007)
+37. van der werf, j., van dongen, b., hurkens, c., serebrenik, a.: process discovery using
+integer linear programming. fundam. inform. 94(3-4), 387–412 (2009)
+38. yzquierdo-herrera, r., silverio-castro, r., lazo-cort ´es, m.: sub-process discovery:
+opportunities for process diagnostics. in: eis of the future, pp. 48–57. springer (2013)
