@@ -3,6 +3,7 @@ import torch
 from transformers import GPT2Tokenizer, GPT2LMHeadModel, Trainer, TrainingArguments, GPT2Config
 from torch.utils.data import Dataset
 
+
 class TextDataset(Dataset):
     def __init__(self, text_file, block_size=1024):
         print(text_file)
@@ -14,9 +15,7 @@ class TextDataset(Dataset):
 
     def _tokenize_and_chunk_text(self):
         tokenized_text = self.tokenizer.tokenize(self.text)
-        lst = [tokenized_text[i:i+self.block_size] for i in range(0, len(tokenized_text), self.block_size)]
-        lst = [x for x in lst if x]
-        return lst
+        return [tokenized_text[i:i+self.block_size] for i in range(0, len(tokenized_text), self.block_size)]
 
     def __len__(self):
         return len(self.tokenized_text)
@@ -25,7 +24,9 @@ class TextDataset(Dataset):
         tokenized_block = self.tokenized_text[idx]
         input_ids = self.tokenizer.convert_tokens_to_ids(tokenized_block)
         input_ids = torch.tensor(input_ids)
-        return input_ids
+
+        # Return dictionary of input_ids, attention_mask, and labels (which are the same as input_ids for LM)
+        return {"input_ids": input_ids, "attention_mask": torch.ones_like(input_ids), "labels": input_ids}
 
 
 # Create a new tokenizer
