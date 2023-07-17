@@ -4,20 +4,29 @@ from transformers import GPT2Tokenizer, GPT2LMHeadModel, Trainer, TrainingArgume
 from torch.utils.data import Dataset
 
 class TextDataset(Dataset):
-    def __init__(self, text_file):
+    def __init__(self, text_file, block_size=1024):
         self.text_file = text_file
         self.text = []
+        self.block_size = block_size
         with open(text_file, "r", encoding="utf-8") as file:
             for line in file.readlines():
                 self.text.append(line)
         self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
-        self.encodings = self.tokenizer('\n'.join(self.text), return_tensors='pt')
+        self.input_ids = self.tokenizer('\n'.join(self.text), return_tensors='pt').input_ids[0]
+        self.input_ids = self._chunk_text(self.input_ids)
+
+    def _chunk_text(self, input_ids):
+        ids = [input_ids[i:i+self.block_size] for i in range(0, len(input_ids), self.block_size)]
+        if len(ids[-1]) < self.block_size:
+            ids[-1] = torch.cat([ids[-1], torch.tensor([self.tokenizer.eos_token_id]*(self.block_size-len(ids[-1])))])
+        return ids
 
     def __len__(self):
-        return len(self.text)
+        return len(self.input_ids)
 
     def __getitem__(self, idx):
-        return self.encodings.input_ids[0]
+        return self.input_ids[idx]
+
 
 # Create a new tokenizer
 tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
